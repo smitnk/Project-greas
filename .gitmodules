@@ -2,3 +2,8 @@
 	path = vendor/blender_android_upstream
 	url = https://github.com/Wanderson-Magalhaes/blender_for_android.git
 	branch = main
+
+[submodule "vendor/blender_android_arm64_reference"]
+	path = vendor/blender_android_arm64_reference
+	url = https://github.com/dshawshank/Blender-android_arm64.git
+	branch = master

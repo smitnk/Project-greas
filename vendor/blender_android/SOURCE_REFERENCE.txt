@@ -1,0 +1,6 @@
+Blender Android source reference
+Repository: Wanderson-Magalhaes/blender_for_android
+Ref: main
+Imported: 2026-09-22
+Purpose: Grease Pencil native-backend investigation for Project-greas.
+License: Blender GPL-2.0-or-later; Android fork inherits GPL-3 per its README.

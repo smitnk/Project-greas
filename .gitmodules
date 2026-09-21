@@ -1,0 +1,4 @@
+[submodule "vendor/blender_android_upstream"]
+	path = vendor/blender_android_upstream
+	url = https://github.com/Wanderson-Magalhaes/blender_for_android.git
+	branch = main

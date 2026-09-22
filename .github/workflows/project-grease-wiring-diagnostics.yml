@@ -9,13 +9,47 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 360
+    env:
+      ANDROID_SDK_ROOT: /home/runner/.android/sdk
+      ANDROID_HOME: /home/runner/.android/sdk
+      ANDROID_NDK_VERSION: 28.2.13676358
+      BUILD_BASE: /home/runner/work/Project-greas/.build/blender_build_android
     steps:
       - name: Checkout Project Grease
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Set up Android SDK and NDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-31 platforms;android-34 build-tools;35.0.1 ndk;28.2.13676358'
+
+      - name: Install Blender Android host build tools
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y             build-essential             gcc-14 g++-14             cmake             ninja-build             meson             pkg-config             patchelf             git-lfs             curl             unzip             zip
+          git lfs install --system
+          gcc-14 --version
+          cmake --version
+          ninja --version
+          meson --version
+          python3.13 --version
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --list >/dev/null
 
       - name: Fetch pinned Blender Android source
         run: |
@@ -29,8 +63,35 @@ jobs:
         run: |
           test -d vendor/blender_android_upstream/source
           test -f vendor/blender_android_upstream/build_files/android/build.py
+          test -f vendor/blender_android_upstream/build_files/android/deps/build.sh
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_SystemAndroid.cc
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_AndroidMain.cc
+
+      - name: Cache Android dependency harvest
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/blender_build_android/lib/android_arm64
+            .build/blender_build_android/android_deps_build/downloads
+          key: ${{ runner.os }}-blender-android-deps-76dc70d-${{ hashFiles('vendor/blender_android_upstream/build_files/build_environment/cmake/versions.cmake', 'vendor/blender_android_upstream/build_files/android/deps/build.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-blender-android-deps-76dc70d-
+
+      - name: Build Android dependencies
+        run: |
+          set -e
+          source vendor/blender_android_upstream/build_files/android/env.sh
+          export BUILD_BASE="$BUILD_BASE"
+          mkdir -p "$BUILD_BASE"
+          bash vendor/blender_android_upstream/build_files/android/deps/build.sh all
+
+      - name: Verify Android dependency prefix
+        run: |
+          set -e
+          test -d "$BUILD_BASE/lib/android_arm64"
+          count="$(find "$BUILD_BASE/lib/android_arm64" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          echo "Android dependency prefixes: $count"
+          test "$count" -ge 50
 
       - name: Verify wiring
         run: bash android/verify_project_grease_wiring.sh
@@ -41,7 +102,7 @@ jobs:
       - name: Find APKs
         run: |
           set -e
-          find vendor/blender_android_upstream -type f \( -name '*.apk' -o -name '*.aab' \) -print | tee apk-files.txt
+          find "$BUILD_BASE" -type f \( -name '*.apk' -o -name '*.aab' \) -print | tee apk-files.txt
           test -s apk-files.txt
 
       - name: Upload APK artifacts
@@ -49,7 +110,7 @@ jobs:
         with:
           name: project-grease-android-apk
           path: |
-            vendor/blender_android_upstream/**/*.apk
-            vendor/blender_android_upstream/**/*.aab
+            /home/runner/work/Project-greas/.build/blender_build_android/**/*.apk
+            /home/runner/work/Project-greas/.build/blender_build_android/**/*.aab
             apk-files.txt
           if-no-files-found: error

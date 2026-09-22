@@ -5,15 +5,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UPSTREAM="${1:-$ROOT/vendor/blender_android_upstream}"
 SRC="$ROOT/android/projectgrease"
 TARGET="$UPSTREAM/build_files/android/apk/app/src/main/java/com/smitnk/projectgrease"
+ASSETS="$UPSTREAM/build_files/android/apk/app/src/main/assets"
 
 if [ ! -d "$UPSTREAM/source" ]; then
   echo "Blender source not found at: $UPSTREAM" >&2
   exit 1
 fi
 
-mkdir -p "$TARGET"
+mkdir -p "$TARGET" "$ASSETS"
 cp "$SRC/ProjectGreaseOverlayActivity.java" "$TARGET/"
 cp "$SRC/ProjectGreaseOverlayView.java" "$TARGET/"
+cp "$SRC/project_grease_startup.py" "$ASSETS/"
 
 python3 - "$UPSTREAM" <<'PY'
 from pathlib import Path
@@ -27,6 +29,8 @@ activity = '''        <activity
             android:name="com.smitnk.projectgrease.ProjectGreaseOverlayActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
             android:screenOrientation="user"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|density|navigation|uiMode"
+            android:launchMode="singleTop"
             android:exported="false" />'''
 if "com.smitnk.projectgrease.ProjectGreaseOverlayActivity" not in s:
     s = s.replace("    </application>", activity + "\n    </application>")
@@ -34,11 +38,60 @@ manifest.write_text(s)
 
 activity_java = root / "build_files/android/apk/app/src/main/java/org/blender/blender/BlenderActivity.java"
 s = activity_java.read_text()
+
+imports = "import java.io.FileOutputStream;\nimport java.io.InputStream;\n"
+if imports.strip() not in s:
+    anchor = "import java.io.File;\n"
+    if anchor in s:
+        s = s.replace(anchor, anchor + imports, 1)
+    else:
+        raise SystemExit("BlenderActivity java.io import anchor not found")
+
+method = '''
+  private void prepareProjectGreaseStartup() {
+    try {
+      File startup = new File(getFilesDir(), "project_grease_startup.py");
+      try (InputStream in = getAssets().open("project_grease_startup.py");
+           FileOutputStream out = new FileOutputStream(startup)) {
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = in.read(buffer)) != -1) {
+          out.write(buffer, 0, n);
+        }
+      }
+
+      File args = new File(getFilesDir(), "blender_args.txt");
+      if (!args.exists()) {
+        try (FileOutputStream out = new FileOutputStream(args)) {
+          String value = "--python\n" + startup.getAbsolutePath() + "\n";
+          out.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+      }
+    }
+    catch (Exception ignored) {
+      // Blender can still launch without the optional Project Grease startup scene.
+    }
+  }
+
+'''
+if "private void prepareProjectGreaseStartup()" not in s:
+    anchor = "    @Override\n    protected void onCreate(Bundle state)"
+    if anchor in s:
+        s = s.replace(anchor, method + anchor, 1)
+    else:
+        raise SystemExit("BlenderActivity onCreate anchor not found")
+
+needle = "    publishLaunchFile(getIntent());\n"
+if "prepareProjectGreaseStartup();" not in s:
+    if needle not in s:
+        raise SystemExit("BlenderActivity launch anchor not found")
+    s = s.replace(needle, needle + "    prepareProjectGreaseStartup();\n", 1)
+
 needle = "    enterImmersive();\n"
 insert = "    enterImmersive();\n    startActivity(new Intent(this, com.smitnk.projectgrease.ProjectGreaseOverlayActivity.class));\n"
 if "startActivity(new Intent(this, com.smitnk.projectgrease.ProjectGreaseOverlayActivity.class))" not in s:
     if needle not in s:
-        raise SystemExit("BlenderActivity anchor not found")
+        raise SystemExit("BlenderActivity immersive anchor not found")
     s = s.replace(needle, insert, 1)
 activity_java.write_text(s)
 
@@ -51,8 +104,7 @@ insert = needle + '''
       int32_t action, float x, float y, float pressure, int32_t tool_type, int32_t meta_state);
 '''
 if "handleProjectGreaseTouch(" not in s:
-    if needle not in s:
-        raise SystemExit("GHOST header input anchor not found")
+    if needle not in s: raise SystemExit("GHOST header input anchor not found")
     s = s.replace(needle, insert, 1)
 
 needle = "  struct JavaKeyEvent {\n    int32_t keycode, action, meta_state;\n  };\n"
@@ -63,17 +115,16 @@ insert = needle + '''
   };
 '''
 if "struct ProjectGreaseTouchEvent" not in s:
+    if needle not in s: raise SystemExit("GHOST JavaKeyEvent anchor not found")
     s = s.replace(needle, insert, 1)
 
 needle = "  void dispatchJavaKeyEvent(int32_t keycode, int32_t action, int32_t meta_state);\n"
-insert = needle + "  void dispatchProjectGreaseTouch(const ProjectGreaseTouchEvent &event);\n"
 if "dispatchProjectGreaseTouch(" not in s:
-    s = s.replace(needle, insert, 1)
+    s = s.replace(needle, needle + "  void dispatchProjectGreaseTouch(const ProjectGreaseTouchEvent &event);\n", 1)
 
 needle = "  std::vector<std::string> java_open_files_;\n"
-insert = needle + "  std::vector<ProjectGreaseTouchEvent> project_grease_touches_;\n"
 if "project_grease_touches_" not in s:
-    s = s.replace(needle, insert, 1)
+    s = s.replace(needle, needle + "  std::vector<ProjectGreaseTouchEvent> project_grease_touches_;\n", 1)
 header.write_text(s)
 
 cc = root / "intern/ghost/intern/GHOST_SystemAndroid.cc"
@@ -88,18 +139,16 @@ needle = '''void GHOST_SystemAndroid::handleOpenMainFile(const char *path)
   java_open_files_.push_back(path);
 }
 '''
-insert = needle + '''
+if "void GHOST_SystemAndroid::handleProjectGreaseTouch(" not in s:
+    if needle not in s: raise SystemExit("GHOST open-file anchor not found")
+    s = s.replace(needle, needle + '''
 void GHOST_SystemAndroid::handleProjectGreaseTouch(
     int32_t action, float x, float y, float pressure, int32_t tool_type, int32_t meta_state)
 {
   std::scoped_lock lock(java_input_mutex_);
   project_grease_touches_.push_back({action, tool_type, meta_state, x, y, pressure});
 }
-'''
-if "void GHOST_SystemAndroid::handleProjectGreaseTouch(" not in s:
-    if needle not in s:
-        raise SystemExit("GHOST cc open-file anchor not found")
-    s = s.replace(needle, insert, 1)
+''', 1)
 
 needle = '''  std::vector<std::string> open_files;
   {
@@ -112,7 +161,9 @@ needle = '''  std::vector<std::string> open_files;
     open_files.swap(java_open_files_);
   }
 '''
-insert = '''  std::vector<std::string> open_files;
+if "project_grease_touches.swap" not in s:
+    if needle not in s: raise SystemExit("GHOST drain anchor not found")
+    s = s.replace(needle, '''  std::vector<std::string> open_files;
   std::vector<ProjectGreaseTouchEvent> project_grease_touches;
   {
     std::scoped_lock lock(java_input_mutex_);
@@ -125,27 +176,24 @@ insert = '''  std::vector<std::string> open_files;
     open_files.swap(java_open_files_);
     project_grease_touches.swap(project_grease_touches_);
   }
-'''
-if "project_grease_touches.swap" not in s:
-    if needle not in s:
-        raise SystemExit("GHOST drain anchor not found")
-    s = s.replace(needle, insert, 1)
+''', 1)
 
 needle = '''  for (const JavaKeyEvent &key : keys) {
     dispatchJavaKeyEvent(key.keycode, key.action, key.meta_state);
   }
 '''
-insert = needle + '''  for (const ProjectGreaseTouchEvent &event : project_grease_touches) {
+if "for (const ProjectGreaseTouchEvent &event" not in s:
+    s = s.replace(needle, needle + '''  for (const ProjectGreaseTouchEvent &event : project_grease_touches) {
     dispatchProjectGreaseTouch(event);
   }
-'''
-if "for (const ProjectGreaseTouchEvent &event" not in s:
-    s = s.replace(needle, insert, 1)
+''', 1)
 
 needle = '''void GHOST_SystemAndroid::dispatchJavaKeyEvent(int32_t keycode, int32_t action, int32_t meta_state)
 {
 '''
-insert = '''void GHOST_SystemAndroid::dispatchProjectGreaseTouch(
+if "void GHOST_SystemAndroid::dispatchProjectGreaseTouch(" not in s:
+    if needle not in s: raise SystemExit("GHOST key dispatch anchor not found")
+    s = s.replace(needle, '''void GHOST_SystemAndroid::dispatchProjectGreaseTouch(
     const ProjectGreaseTouchEvent &event)
 {
   if (!window_) {
@@ -183,19 +231,16 @@ insert = '''void GHOST_SystemAndroid::dispatchProjectGreaseTouch(
   }
 }
 
-''' + needle
-if "void GHOST_SystemAndroid::dispatchProjectGreaseTouch(" not in s:
-    if needle not in s:
-        raise SystemExit("GHOST dispatch key anchor not found")
-    s = s.replace(needle, insert, 1)
-
+''' + needle, 1)
 cc.write_text(s)
 
 main = root / "intern/ghost/intern/GHOST_AndroidMain.cc"
 s = main.read_text()
 needle = '''extern "C" JNIEXPORT void JNICALL Java_org_blender_blender_BlenderActivity_nativeOpenMainFile(
 '''
-jni = '''extern "C" JNIEXPORT void JNICALL
+if "Java_com_smitnk_projectgrease_ProjectGreaseOverlayActivity_nativeProjectGreaseTouch" not in s:
+    if needle not in s: raise SystemExit("GHOST Android JNI anchor not found")
+    jni = '''extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_ProjectGreaseOverlayActivity_nativeProjectGreaseTouch(
     JNIEnv * /*env*/,
     jobject /*thiz*/,
@@ -212,9 +257,6 @@ Java_com_smitnk_projectgrease_ProjectGreaseOverlayActivity_nativeProjectGreaseTo
 }
 
 '''
-if "Java_com_smitnk_projectgrease_ProjectGreaseOverlayActivity_nativeProjectGreaseTouch" not in s:
-    if needle not in s:
-        raise SystemExit("GHOST Android JNI anchor not found")
     s = s.replace(needle, jni + needle, 1)
 main.write_text(s)
 PY

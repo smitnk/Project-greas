@@ -1,57 +1,109 @@
 # Project Grease — Blender engine wiring
 
-This wiring keeps Blender's real Android NativeActivity/Vulkan/GHOST surface as the
-drawing surface. The MotionCanvas-style Project Grease UI is a transparent Android
-activity above it.
+This branch wires the MotionCanvas-style Project Grease UI above Blender's real Android NativeActivity/Vulkan/GHOST rendering surface.
 
 ## Runtime path
 
 Project Grease UI
-→ Android overlay activity
+→ transparent Android overlay activity
 → center touch forwarding JNI
 → GHOST_SystemAndroid
-→ Blender window manager
-→ Grease Pencil draw operators/input
+→ Blender window manager / Grease Pencil
 → Blender Draw Manager
-→ Blender GPU/Vulkan
+→ Blender GPU abstraction
+→ Vulkan
 → Android native surface
 
-The UI never draws a replacement artboard.
+The UI does not create a replacement artboard or stroke renderer.
 
-## Why this avoids the previous canvas failure
+## Drawing-surface rule
 
-The center of the UI overlay is transparent. It does not create a Compose/HTML
-canvas, white placeholder, custom stroke renderer, or second rendering surface.
+The center of the Project Grease UI is transparent.
 
-Blender continues to own the native rendering surface. Android's SurfaceView/native
-surface model is designed for an external renderer while regular UI can be composited
-above it. The Android Blender port already uses NativeActivity + ANativeWindow +
-Vulkan for its real window. citeturn1search0turn2search0
+Blender owns the real native rendering surface. The overlay only draws:
+- top controls
+- left tools
+- right layers/properties
+- bottom timeline
+- hide/show controls
+- home/new-project screen
 
-The overlay forwards center touch coordinates and pressure to the Blender GHOST
-input queue rather than trying to redraw strokes itself. Android identifies stylus
-and eraser tool types separately, and the bridge preserves those values. citeturn12search1
+This is specifically to avoid the previous failure mode where a UI canvas/placeholder covered the actual engine viewport.
+
+## Input rule
+
+Touches in the UI regions are consumed by the Project Grease overlay.
+
+Touches in the transparent center are forwarded through JNI into GHOST_SystemAndroid. The bridge preserves:
+- X/Y coordinates
+- action DOWN/MOVE/UP/CANCEL
+- stylus pressure
+- Android stylus tool type
+- Android eraser tool type
+
+The native bridge queues the events and dispatches them on Blender's GHOST thread.
+
+## Grease Pencil startup
+
+The wiring also installs project_grease_startup.py into Blender's Android APK assets. On first launch it is copied to the app's private files directory and passed to Blender with --python.
+
+The startup script:
+1. looks for an existing Grease Pencil object;
+2. creates a real Grease Pencil object if none exists;
+3. makes it active;
+4. enters Blender Grease Pencil Draw Mode.
+
+Therefore the center is intended to open on an actual Grease Pencil scene rather than an empty fake canvas.
+
+## UI
+
+The UI follows the uploaded MotionCanvas reference:
+- Brush
+- Eraser
+- Select
+- Lasso
+- Fill
+- Text
+- Eyedropper
+- Pan
+- Arrow
+- Shape
+- Undo/Redo
+- Brush/Color areas
+- Layers
+- Materials
+- Reference
+- Advanced
+- Audio
+- Timeline
+- FPS
+- Onion Skin
+- 2D / 3D viewport mode
+- Home/New Project
+
+Panel visibility has explicit controls:
+- T — Tools
+- L — Layers/properties
+- TL — Timeline
 
 ## Current scope
 
 Implemented in the wiring layer:
-- MotionCanvas-style Project Grease UI
-- Home/New Project surface
-- left tools
-- layers/properties panel
-- timeline
-- hide/show panel state
-- 2D/3D viewport state
-- center touch forwarding
-- stylus pressure forwarding
-- stylus eraser tool type forwarding
-- transparent center with no fake canvas
+- real Blender NativeActivity remains the renderer owner
+- transparent Project Grease overlay
+- real center touch → GHOST bridge
+- stylus pressure/tool information forwarding
+- real Grease Pencil startup object/mode
+- MotionCanvas-style UI
+- panel hide/show
+- scrollable tools/properties/timeline behavior
 
 Not yet claimed as complete:
-- every toolbar button mapped to a Blender operator
-- multi-pointer gesture forwarding from the overlay
-- save/load/project model synchronization
-- APK build verification on a physical device
+- every UI button mapped to a corresponding Blender operator
+- multi-pointer overlay forwarding
+- full Project Grease timeline/layer state synchronization with Blender data
+- save/load UI integration
+- physical-device APK smoke test
 
 ## Build
 
@@ -60,5 +112,4 @@ From the repository root:
     ./android/apply_project_grease_wiring.sh
     ./android/build_project_grease_lite.sh
 
-The scripts patch the pinned Blender-for-Android source in the submodule's working
-tree before building. No changes are made to the repository's main branch.
+The scripts modify the checked-out Blender Android submodule working tree before building. The repository's main branch is not modified.

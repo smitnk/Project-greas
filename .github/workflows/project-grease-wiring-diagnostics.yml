@@ -42,14 +42,30 @@ jobs:
         run: |
           set -e
           sudo apt-get update
-          sudo apt-get install -y             build-essential             gcc-14 g++-14             cmake             ninja-build             meson             pkg-config             patchelf             git-lfs             curl             unzip             zip
+          sudo apt-get install -y \
+            build-essential \
+            gcc-14 g++-14 \
+            cmake \
+            ninja-build \
+            meson \
+            pkg-config \
+            patchelf \
+            git-lfs \
+            curl \
+            unzip \
+            zip
           git lfs install --system
           gcc-14 --version
           cmake --version
           ninja --version
           meson --version
           python3.13 --version
-          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --list >/dev/null
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+          fi
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" --list >/dev/null
 
       - name: Fetch pinned Blender Android source
         run: |

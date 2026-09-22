@@ -165,10 +165,19 @@ jobs:
               raise SystemExit("expected extract() block not found")
           s = s.replace(old_extract, new_extract, 1)
 
+          old_x264 = '''  fetch "x264-$v.tar.gz" "https://code.videolan.org/videolan/x264/-/archive/$v/x264-$v.tar.gz"'''
+          new_x264 = '''  fetch "x264-$v.tar.gz" "https://github.com/mirror/x264/archive/$v/x264-$v.tar.gz"'''
+          if old_x264 not in s:
+              raise SystemExit("expected x264 VideoLAN fetch line not found")
+          s = s.replace(old_x264, new_x264, 1)
+
           path.write_text(s)
           PY
 
           rm -f "$BUILD_BASE/android_deps_build/downloads/openssl-3.5.6.tar.gz"
+          # Run #17 proved the VideoLAN x264 URL can return an anti-bot HTML page.
+          # Remove that cached non-archive so the new GitHub mirror is used.
+          rm -f "$BUILD_BASE/android_deps_build/downloads/x264-35fe20d1ba49918ec739a5b068c208ca82f977f7.tar.gz"
 
       - name: Cache Android dependency harvest
         uses: actions/cache@v4

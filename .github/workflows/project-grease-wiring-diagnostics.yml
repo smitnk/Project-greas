@@ -75,11 +75,21 @@ jobs:
           git -C vendor/blender_android_upstream fetch --depth 1 origin 76dc70df95ae32dcd15f3f86abfd82f4c5691140
           git -C vendor/blender_android_upstream checkout --detach 76dc70df95ae32dcd15f3f86abfd82f4c5691140
 
+      - name: Normalize upstream script permissions
+        run: |
+          set -e
+          find vendor/blender_android_upstream/build_files/android -type f -name '*.sh' -exec chmod +x {} \;
+          find vendor/blender_android_upstream/build_files/android -type f -name '*.py' -exec chmod +x {} \;
+          test -x vendor/blender_android_upstream/build_files/android/build_apk.sh
+          test -x vendor/blender_android_upstream/build_files/android/build.py
+          test -x vendor/blender_android_upstream/build_files/android/deps/build.sh
+
       - name: Verify Blender Android source
         run: |
           test -d vendor/blender_android_upstream/source
           test -f vendor/blender_android_upstream/build_files/android/build.py
           test -f vendor/blender_android_upstream/build_files/android/deps/build.sh
+          test -f vendor/blender_android_upstream/build_files/android/build_apk.sh
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_SystemAndroid.cc
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_AndroidMain.cc
 
@@ -158,7 +168,6 @@ jobs:
           path.write_text(s)
           PY
 
-          # The previous cached OpenSSL archive is known to be corrupt.
           rm -f "$BUILD_BASE/android_deps_build/downloads/openssl-3.5.6.tar.gz"
 
       - name: Cache Android dependency harvest
@@ -191,7 +200,15 @@ jobs:
         run: bash android/verify_project_grease_wiring.sh
 
       - name: Build Blender Android lite APK
-        run: bash android/build_project_grease_lite.sh lite
+        run: |
+          set -e
+          APK_SCRIPT="vendor/blender_android_upstream/build_files/android/build_apk.sh"
+          chmod +x "$APK_SCRIPT"
+          if [ ! -x "$APK_SCRIPT" ]; then
+            echo "::error::build_apk.sh is not executable after chmod — check filesystem/mount options"
+            exit 1
+          fi
+          bash -lc "${{ github.workspace }}/$APK_SCRIPT" lite
 
       - name: Find APKs
         run: |

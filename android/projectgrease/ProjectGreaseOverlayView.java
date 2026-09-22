@@ -1,4 +1,4 @@
-package com.smitnk.projectgrease;
+package org.blender.blender;
 
 import android.content.Context;
 import android.graphics.Canvas;

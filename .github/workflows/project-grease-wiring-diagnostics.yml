@@ -76,8 +76,35 @@ jobs:
           git -C vendor/blender_android_upstream checkout --detach 76dc70df95ae32dcd15f3f86abfd82f4c5691140
           git -C vendor/blender_android_upstream submodule sync --recursive
           git -C vendor/blender_android_upstream submodule update --init --recursive
-          test -d vendor/blender_android_upstream/lib/linux_x64
-          test -n "$(find vendor/blender_android_upstream/lib/linux_x64 -mindepth 1 -maxdepth 1 -print -quit)"
+
+      - name: Cache Blender host libraries
+        uses: actions/cache@v4
+        id: host-lib-cache
+        with:
+          path: vendor/blender_android_upstream/lib/linux_x64
+          key: blender-lib-linux_x64-main-v1
+          restore-keys: |
+            blender-lib-linux_x64-main-
+
+      - name: Fetch Blender host libraries (lib/linux_x64)
+        if: steps.host-lib-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          HOST_LIB="vendor/blender_android_upstream/lib/linux_x64"
+
+          if [ ! -d "$HOST_LIB" ] || [ -z "$(find "$HOST_LIB" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "[host-lib] lib/linux_x64 empty — fetching (update=none submodule, must clone manually)"
+            rm -rf "$HOST_LIB"
+            git clone --depth 1 --branch main \
+              https://projects.blender.org/blender/lib-linux_x64.git \
+              "$HOST_LIB"
+          else
+            echo "[host-lib] lib/linux_x64 already populated, skipping clone"
+          fi
+
+          test -d "$HOST_LIB" || { echo "::error::lib/linux_x64 still missing after clone"; exit 1; }
+          test -n "$(find "$HOST_LIB" -mindepth 1 -maxdepth 1 -print -quit)" || { echo "::error::lib/linux_x64 still empty after clone"; exit 1; }
+          echo "[host-lib] verified: $(find "$HOST_LIB" -mindepth 1 -maxdepth 1 | wc -l) top-level entries"
 
       - name: Normalize upstream script permissions
         run: |

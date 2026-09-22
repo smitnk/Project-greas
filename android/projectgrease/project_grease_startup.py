@@ -6,7 +6,7 @@ import bpy
 gp = next((obj for obj in bpy.data.objects if obj.type == 'GREASEPENCIL'), None)
 
 if gp is None:
-    bpy.ops.object.grease_pencil_add(location=(0.0, 0.0, 0.0))
+    bpy.ops.object.grease_pencil_add(type='STROKE', location=(0.0, 0.0, 0.0))
     gp = bpy.context.object
 
 if gp is not None:

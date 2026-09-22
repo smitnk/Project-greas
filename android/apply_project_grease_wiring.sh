@@ -132,6 +132,12 @@ header.write_text(s)
 
 cc = root / "intern/ghost/intern/GHOST_SystemAndroid.cc"
 s = cc.read_text()
+if "#include <algorithm>" not in s:
+    anchor = "#include <cmath>\n"
+    if anchor not in s:
+        raise SystemExit("GHOST_SystemAndroid.cc cmath include anchor not found")
+    s = s.replace(anchor, "#include <algorithm>\n" + anchor, 1)
+s = cc.read_text()
 
 method = """void GHOST_SystemAndroid::handleProjectGreaseTouch(
     int32_t action, float x, float y, float pressure, int32_t tool_type, int32_t meta_state)

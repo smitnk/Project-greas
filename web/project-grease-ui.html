@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Project Grease</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Inter,system-ui,sans-serif;background:#151515;color:#eee}
+button{background:#2b2b2b;color:#eee;border:1px solid #414141;border-radius:6px;padding:7px 9px;cursor:pointer}
+button:hover{background:#3a3a3a}.app{height:100%;display:flex;flex-direction:column}
+.top{height:58px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#252525;border-bottom:1px solid #3b3b3b}
+.brand{font-size:17px;font-weight:600;margin-right:auto}.top span{font-size:12px;color:#bbb}
+.workspace{flex:1;min-height:0;display:flex}
+.panel{background:#242424;overflow:auto}.left{width:88px;padding:7px 5px}.right{width:270px;padding:12px}
+.tool{width:100%;margin-bottom:5px;padding:9px 3px;display:flex;flex-direction:column;align-items:center;font-size:11px}
+.tool.active{background:#4b3850;border-color:#9a6aa8}.tool b{font-size:18px;margin-bottom:3px}
+.viewport{flex:1;min-width:0;position:relative;background:#202020;display:flex;align-items:center;justify-content:center}
+.canvas{width:min(78%,720px);aspect-ratio:16/9;background:#fff;border:2px solid #c86b9c;box-shadow:0 0 0 1px #111;position:relative}
+.canvas:after{content:"Blender Grease Pencil Viewport";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#777;font-size:13px;white-space:nowrap}
+.section{border-bottom:1px solid #414141;padding-bottom:12px;margin-bottom:12px}.section h3{font-size:13px;margin:0 0 8px}
+.row{display:flex;align-items:center;gap:7px;margin:7px 0}.row label{font-size:12px;color:#bbb;min-width:65px}
+input[type=range]{width:100%}.prop{width:100%;text-align:left;margin:3px 0}
+.timeline{height:180px;background:#252525;border-top:1px solid #3b3b3b;display:flex;flex-direction:column}
+.timelinebar{height:48px;display:flex;align-items:center;gap:7px;padding:0 9px}.timelinebar .spacer{flex:1}
+.frames{display:flex;gap:5px;overflow-x:auto;padding:8px}.frame{min-width:72px;height:70px;display:grid;place-items:center;background:#303030;border:1px solid #464646;border-radius:4px}.frame.selected{border-color:#c879a5;background:#49364a}
+.new{height:100%;display:none;align-items:center;justify-content:center;overflow:auto}.newbox{width:min(430px,90%);background:#242424;padding:25px;border-radius:10px}.newbox h1{margin-top:0}
+input[type=text]{width:100%;background:#171717;border:1px solid #444;color:#fff;padding:10px;border-radius:6px}
+.hidden{display:none!important}
+@media(max-width:800px){.right{width:230px}.top button{padding:6px}.canvas{width:82%}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top" id="top">
+  <div class="brand">Project Grease</div>
+  <button onclick="zoom(-.1)">−</button><span id="zoom">100%</span><button onclick="zoom(.1)">+</button>
+  <button onclick="toggle('onion')">◉ Onion</button>
+  <button onclick="action('Undo')">↶</button><button onclick="action('Redo')">↷</button>
+  <button onclick="toggleViewport()">▣ <span id="mode">2D Draw</span></button>
+  <button onclick="toggle('left')">☰</button><button onclick="toggle('right')">⚙</button><button onclick="toggle('timeline')">▤</button>
+</header>
+
+<section class="workspace" id="editor">
+  <aside class="panel left" id="left">
+    <button class="tool active" onclick="tool(this,'Draw')"><b>✎</b>Draw</button>
+    <button class="tool" onclick="tool(this,'Erase')"><b>⌫</b>Erase</button>
+    <button class="tool" onclick="tool(this,'Select')"><b>▣</b>Select</button>
+    <button class="tool" onclick="tool(this,'Lasso')"><b>⌁</b>Lasso</button>
+    <button class="tool" onclick="tool(this,'Fill')"><b>◈</b>Fill</button>
+    <button class="tool" onclick="tool(this,'Eyedropper')"><b>◉</b>Eyedropper</button>
+    <button class="tool" onclick="tool(this,'Shape')"><b>◇</b>Shape</button>
+    <button class="tool" onclick="tool(this,'Pan')"><b>✋</b>Pan</button>
+    <hr><button class="tool" onclick="action('Undo')"><b>↶</b>Undo</button>
+    <button class="tool" onclick="action('Redo')"><b>↷</b>Redo</button>
+  </aside>
+
+  <main class="viewport"><div class="canvas" id="canvas"></div></main>
+
+  <aside class="panel right" id="right">
+    <div class="section"><h3>Grease Pencil</h3><div id="toolname">Tool: Draw</div><div>Viewport: 2D_DRAW</div></div>
+    <div class="section"><h3>Stroke</h3>
+      <div class="row"><label>Width</label><input id="width" type="range" min="1" max="100" value="8"></div>
+      <div class="row"><label>Opacity</label><input id="opacity" type="range" min="0" max="100" value="100"></div>
+    </div>
+    <div class="section"><h3>Grease Pencil Layers</h3>
+      <button class="prop">◉ GP Layer 1</button><button class="prop">○ GP Layer 2</button><button class="prop">＋ Add GP Layer</button>
+    </div>
+    <div class="section"><h3>Grease Pencil Materials</h3>
+      <button class="prop">◉ Grease Pencil Material</button><button class="prop">＋ Add Material</button>
+    </div>
+    <div class="section"><h3>Blender Viewport</h3>
+      <button class="prop">Frame Selected</button><button class="prop">Reset View</button><button class="prop">Orthographic / Perspective</button><button class="prop">Viewport Navigation</button>
+    </div>
+    <div class="section"><h3>Animation</h3><label><input id="onion" type="checkbox"> Onion Skin</label></div>
+  </aside>
+</section>
+
+<section class="timeline" id="timeline">
+  <div class="timelinebar"><b>Timeline</b><span id="frameText">Frame 1</span><span>FPS <b id="fps">12</b></span><div class="spacer"></div>
+    <button onclick="play()">▶/Ⅱ</button><button onclick="action('Loop')">↻ Loop</button><button onclick="action('Add Frame')">＋ Frame</button><button onclick="action('Insert')">Insert</button><button onclick="action('Duplicate')">Duplicate</button><button onclick="action('Delete')">Delete</button>
+  </div>
+  <div class="frames" id="frames"></div>
+</section>
+
+<section class="new" id="new">
+  <div class="newbox"><h1>New Project</h1><p>Create a Project Grease drawing/animation project.</p>
+    <input id="projectName" type="text" value="Project Grease">
+    <p>FPS: <span id="newfps">12</span></p><input id="fpsRange" type="range" min="1" max="60" value="12" oninput="newfps.textContent=this.value">
+    <br><br><button onclick="createProject()">Create Project</button>
+  </div>
+</section>
+</div>
+
+<script>
+let z=1, frame=1, playing=false;
+function zoom(v){z=Math.max(.1,Math.min(8,z+v));document.getElementById('zoom').textContent=Math.round(z*100)+'%'}
+function toggle(id){document.getElementById(id).classList.toggle('hidden')}
+function action(x){console.log(x)}
+function tool(el,name){document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active'));el.classList.add('active');document.getElementById('toolname').textContent='Tool: '+name}
+function toggleViewport(){const m=document.getElementById('mode');m.textContent=m.textContent==='2D Draw'?'3D Viewport':'2D Draw'}
+function play(){playing=!playing}
+function selectFrame(n){frame=n;document.getElementById('frameText').textContent='Frame '+n;document.querySelectorAll('.frame').forEach((x,i)=>x.classList.toggle('selected',i+1===n))}
+function createFrames(){const f=document.getElementById('frames');for(let i=1;i<=60;i++){const b=document.createElement('button');b.className='frame';b.textContent=i;b.onclick=()=>selectFrame(i);f.appendChild(b)}selectFrame(1)}
+function createProject(){document.getElementById('editor').style.display='flex';document.getElementById('timeline').style.display='flex';document.getElementById('new').style.display='none';document.querySelector('.brand').textContent=document.getElementById('projectName').value||'Project Grease'}
+createFrames();
+</script>
+</body>
+</html>

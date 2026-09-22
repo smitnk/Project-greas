@@ -1,0 +1,24 @@
+name: Project Grease Wiring Diagnostics
+
+on:
+  push:
+    branches:
+      - project-grease-blender-ui-wiring
+  workflow_dispatch:
+
+jobs:
+  wiring-diagnostics:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Project Grease
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Run wiring diagnostics
+        run: bash android/verify_project_grease_wiring.sh
+
+      - name: Verify Blender Android build CLI
+        run: |
+          python3 vendor/blender_android_upstream/build_files/android/build.py --help

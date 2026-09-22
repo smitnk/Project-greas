@@ -1,4 +1,4 @@
-name: Project Grease Wiring Diagnostics
+name: Project Grease Android Build
 
 on:
   push:
@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  wiring-diagnostics:
+  build-android:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - name: Checkout Project Grease
         uses: actions/checkout@v4
@@ -16,9 +17,24 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Run wiring diagnostics
+      - name: Verify wiring
         run: bash android/verify_project_grease_wiring.sh
 
-      - name: Verify Blender Android build CLI
+      - name: Build Blender Android lite APK
+        run: bash android/build_project_grease_lite.sh lite
+
+      - name: Find APKs
         run: |
-          python3 vendor/blender_android_upstream/build_files/android/build.py --help
+          set -e
+          find vendor/blender_android_upstream -type f \( -name '*.apk' -o -name '*.aab' \) -print | tee apk-files.txt
+          test -s apk-files.txt
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-grease-android-apk
+          path: |
+            vendor/blender_android_upstream/**/*.apk
+            vendor/blender_android_upstream/**/*.aab
+            apk-files.txt
+          if-no-files-found: error

@@ -36,19 +36,8 @@ if imports not in s:
         raise SystemExit("BlenderActivity View import anchor not found")
     s = s.replace(anchor, anchor + imports, 1)
 
-native_decl = """  private native void nativeProjectGreaseTouch(
-      int action, float x, float y, float pressure, int toolType, int metaState);
-"""
-if "nativeProjectGreaseTouch(" not in s:
-    anchor = "  private native void nativeOpenMainFile(String path);\n"
-    if anchor not in s:
-        raise SystemExit("BlenderActivity native declaration anchor not found")
-    s = s.replace(anchor, anchor + native_decl, 1)
-
 method = """  private void installProjectGreaseOverlay() {
     ProjectGreaseOverlayView overlay = new ProjectGreaseOverlayView(this);
-    overlay.setBlenderTouchForwarder((action, x, y, pressure, toolType, meta) ->
-        nativeProjectGreaseTouch(action, x, y, pressure, toolType, meta));
     addContentView(
         overlay,
         new ViewGroup.LayoutParams(
@@ -69,11 +58,30 @@ if "installProjectGreaseOverlay();" not in s:
         raise SystemExit("BlenderActivity onCreate overlay anchor not found")
     s = s.replace(anchor, anchor + "    installProjectGreaseOverlay();\n", 1)
 
-# Remove the old experimental second-Activity launcher if a previous application
-# of this script inserted it.
 s = s.replace(
     "    startActivity(new Intent(this, com.smitnk.projectgrease.ProjectGreaseOverlayActivity.class));\n",
     "")
+activity_java.write_text(s)
+
+manifest = root / "build_files/android/apk/app/src/main/AndroidManifest.xml"
+m = manifest.read_text()
+old = """        <activity
+            android:name="com.smitnk.projectgrease.ProjectGreaseOverlayActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
+            android:screenOrientation="user"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|density|navigation|uiMode"
+            android:launchMode="singleTop"
+            android:exported="false" />
+"""
+m = m.replace(old, "")
+manifest.write_text(m)
+
+# Project Grease deliberately does not inject touch into GHOST. Blender's
+# Android InputView already owns the MotionEvent -> GHOST path, including
+# stylus pressure, eraser, gestures, focus and coordinate handling.
+# The overlay returns false for center events so Android dispatches them to
+# the underlying NativeActivity input surface.
+PY
 activity_java.write_text(s)
 
 # Remove the old experimental manifest Activity if it exists.

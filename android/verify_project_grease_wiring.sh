@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-bash -x "$ROOT/android/apply_project_grease_wiring.sh"
-bash -x "$ROOT/android/complete_project_grease_wiring.sh"
+bash "$ROOT/android/apply_project_grease_wiring.sh"
+bash "$ROOT/android/complete_project_grease_wiring.sh"
 
 UPSTREAM="$ROOT/vendor/blender_android_upstream"
 ACTIVITY="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blender/BlenderActivity.java"

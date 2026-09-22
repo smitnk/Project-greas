@@ -13,4 +13,7 @@ if [ ! -f "$UPSTREAM/build_files/android/build.py" ]; then
 fi
 
 cd "$UPSTREAM"
-python3 build_files/android/build.py "$CONFIG"
+
+# The wiring changes both native code and APK Java/assets. build.py must therefore
+# compile the changed Blender sources and repackage the Android runtime payload.
+python3 build_files/android/build.py "$CONFIG" --repackage

@@ -74,6 +74,10 @@ jobs:
           git clone --depth 1 https://github.com/Wanderson-Magalhaes/blender_for_android.git vendor/blender_android_upstream
           git -C vendor/blender_android_upstream fetch --depth 1 origin 76dc70df95ae32dcd15f3f86abfd82f4c5691140
           git -C vendor/blender_android_upstream checkout --detach 76dc70df95ae32dcd15f3f86abfd82f4c5691140
+          git -C vendor/blender_android_upstream submodule sync --recursive
+          git -C vendor/blender_android_upstream submodule update --init --recursive
+          test -d vendor/blender_android_upstream/lib/linux_x64
+          test -n "$(find vendor/blender_android_upstream/lib/linux_x64 -mindepth 1 -maxdepth 1 -print -quit)"
 
       - name: Normalize upstream script permissions
         run: |
@@ -92,6 +96,8 @@ jobs:
           test -f vendor/blender_android_upstream/build_files/android/build_apk.sh
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_SystemAndroid.cc
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_AndroidMain.cc
+          test -d vendor/blender_android_upstream/lib/linux_x64
+          test -n "$(find vendor/blender_android_upstream/lib/linux_x64 -mindepth 1 -maxdepth 1 -print -quit)"
 
       - name: Patch dependency download and enforce NDK
         run: |
@@ -207,6 +213,33 @@ jobs:
 
       - name: Verify wiring
         run: bash android/verify_project_grease_wiring.sh
+
+      - name: Patch Blender Android CI environment wiring
+        run: |
+          set -euo pipefail
+          APK_SCRIPT="vendor/blender_android_upstream/build_files/android/build_apk.sh"
+          python3 - "$APK_SCRIPT" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          s = path.read_text()
+          old = "unset ANDROID_HOME ANDROID_NDK_ROOT ANDROID_NDK_HOME"
+          new = """# Preserve CI-provided Android SDK/NDK paths.
+          # env.sh already honors ANDROID_HOME and ANDROID_NDK_ROOT; clearing them
+          # here would make Linux CI fall back to $HOME/android-sdk and lose the
+          # configured NDK/toolchain.
+          """
+          if old not in s:
+              raise SystemExit("expected Android path reset block not found")
+          path.write_text(s.replace(old, new, 1))
+          PY
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          test -f "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
+          echo "ANDROID_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
 
       - name: Build Blender Android lite APK
         run: |

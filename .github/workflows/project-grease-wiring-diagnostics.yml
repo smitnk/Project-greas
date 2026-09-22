@@ -17,6 +17,21 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Fetch pinned Blender Android source
+        run: |
+          set -e
+          rm -rf vendor/blender_android_upstream
+          git clone --depth 1 https://github.com/Wanderson-Magalhaes/blender_for_android.git vendor/blender_android_upstream
+          git -C vendor/blender_android_upstream fetch --depth 1 origin 76dc70df95ae32dcd15f3f86abfd82f4c5691140
+          git -C vendor/blender_android_upstream checkout --detach 76dc70df95ae32dcd15f3f86abfd82f4c5691140
+
+      - name: Verify Blender Android source
+        run: |
+          test -d vendor/blender_android_upstream/source
+          test -f vendor/blender_android_upstream/build_files/android/build.py
+          test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_SystemAndroid.cc
+          test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_AndroidMain.cc
+
       - name: Verify wiring
         run: bash android/verify_project_grease_wiring.sh
 

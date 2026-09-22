@@ -83,6 +83,84 @@ jobs:
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_SystemAndroid.cc
           test -f vendor/blender_android_upstream/intern/ghost/intern/GHOST_AndroidMain.cc
 
+      - name: Patch dependency download and enforce NDK
+        run: |
+          set -euo pipefail
+
+          NDK_ROOT="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          test -d "$NDK_ROOT"
+          NDK_CLANG="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang"
+          test -x "$NDK_CLANG"
+          echo "Using requested NDK: $NDK_ROOT"
+          "$NDK_CLANG" --version
+
+          python3 - vendor/blender_android_upstream/build_files/android/deps/build.sh <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          s = path.read_text()
+
+          old_fetch = '''fetch() {
+            local file="$1" url="$2"
+            if [ ! -f "$DL_DIR/$file" ]; then
+              echo "[deps] fetching $file"
+              curl -sL --max-time 300 -o "$DL_DIR/$file" "$url"
+            fi
+          }'''
+          new_fetch = '''fetch() {
+            local file="$1" url="$2"
+            if [ ! -f "$DL_DIR/$file" ]; then
+              echo "[deps] fetching $file"
+              if ! curl -fSL --retry 3 --retry-delay 2 --max-time 300 \
+                -o "$DL_DIR/$file.part" "$url"; then
+                echo "[deps] ERROR: failed to download $url" >&2
+                rm -f "$DL_DIR/$file.part"
+                exit 1
+              fi
+              mv "$DL_DIR/$file.part" "$DL_DIR/$file"
+            fi
+          }'''
+          if old_fetch not in s:
+              raise SystemExit("expected fetch() block not found")
+          s = s.replace(old_fetch, new_fetch, 1)
+
+          old_extract = '''extract() {
+            local file="$1" name="$2"
+            local dir="$WORK_DIR/$name"
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            tar -xf "$DL_DIR/$file" -C "$dir" --strip-components=1
+            echo "$dir"
+          }'''
+          new_extract = '''extract() {
+            local file="$1" name="$2"
+            local dir="$WORK_DIR/$name"
+            rm -rf "$dir"
+            if ! tar -tf "$DL_DIR/$file" >/dev/null 2>&1; then
+              echo "[deps] ERROR: $DL_DIR/$file is not a valid tar archive." >&2
+              echo "[deps] First 200 bytes of the file for diagnosis:" >&2
+              head -c 200 "$DL_DIR/$file" >&2 || true
+              echo >&2
+              exit 1
+            fi
+            mkdir -p "$dir"
+            if ! tar -xf "$DL_DIR/$file" -C "$dir" --strip-components=1; then
+              echo "[deps] ERROR: extraction of $file into $dir failed." >&2
+              exit 1
+            fi
+            echo "$dir"
+          }'''
+          if old_extract not in s:
+              raise SystemExit("expected extract() block not found")
+          s = s.replace(old_extract, new_extract, 1)
+
+          path.write_text(s)
+          PY
+
+          # The previous cached OpenSSL archive is known to be corrupt.
+          rm -f "$BUILD_BASE/android_deps_build/downloads/openssl-3.5.6.tar.gz"
+
       - name: Cache Android dependency harvest
         uses: actions/cache@v4
         with:

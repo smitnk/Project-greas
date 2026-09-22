@@ -5,7 +5,7 @@ This branch wires the MotionCanvas-style Project Grease UI above Blender's real 
 ## Runtime path
 
 Project Grease UI
-→ transparent Android overlay activity
+→ ProjectGreaseOverlayView inside BlenderActivity
 → center touch forwarding JNI
 → GHOST_SystemAndroid
 → Blender window manager / Grease Pencil
@@ -18,7 +18,7 @@ The UI does not create a replacement artboard or stroke renderer.
 
 ## Drawing-surface rule
 
-The center of the Project Grease UI is transparent.
+The center of the Project Grease UI is transparent. The UI is installed as a sibling view in the same Blender NativeActivity window; no second Activity or second Blender/native window is created.
 
 Blender owns the real native rendering surface. The overlay only draws:
 - top controls
@@ -90,7 +90,7 @@ Panel visibility has explicit controls:
 
 Implemented in the wiring layer:
 - real Blender NativeActivity remains the renderer owner
-- transparent Project Grease overlay
+- transparent Project Grease overlay in the existing BlenderActivity view hierarchy
 - real center touch → GHOST bridge
 - stylus pressure/tool information forwarding
 - real Grease Pencil startup object/mode
@@ -110,6 +110,8 @@ Not yet claimed as complete:
 From the repository root:
 
     ./android/apply_project_grease_wiring.sh
-    ./android/build_project_grease_lite.sh
+    ./android/build_project_grease_lite.sh lite
+
+`build.py --repackage` is required because the wiring changes APK Java/assets as well as native GHOST code.
 
 The scripts modify the checked-out Blender Android submodule working tree before building. The repository's main branch is not modified.

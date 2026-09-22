@@ -10,12 +10,7 @@ import android.view.View;
 
 /** MotionCanvas-style Project Grease UI over the real Blender surface. */
 public final class ProjectGreaseOverlayView extends View {
-  public interface BlenderTouchForwarder {
-    void send(int action, float x, float y, float pressure, int toolType, int metaState);
-  }
-
   private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private BlenderTouchForwarder forwarder;
   private boolean home = true, tools = true, layers = true, timeline = true, top = true;
   private boolean onion, view3d, scrolling;
   private int selectedTool, frame = 1, frameCount = 48;
@@ -31,8 +26,6 @@ public final class ProjectGreaseOverlayView extends View {
     setBackgroundColor(Color.TRANSPARENT);
     setClickable(true);
   }
-
-  public void setBlenderTouchForwarder(BlenderTouchForwarder f) { forwarder = f; }
 
   private void rect(Canvas c, int color, float l, float t, float r, float b, float rad) {
     p.setStyle(Paint.Style.FILL); p.setColor(color);
@@ -194,8 +187,9 @@ public final class ProjectGreaseOverlayView extends View {
       invalidate();return true;
     }
 
-    // Center: no placeholder, no custom drawing. Send original touch to Blender.
-    if(forwarder!=null)forwarder.send(a,x,y,e.getPressure(),e.getToolType(0),e.getMetaState());
-    return true;
+    // Center: do not consume the event. The underlying Blender NativeActivity
+    // InputView/GHOST path receives the original Android MotionEvent. This is
+    // deliberate: Project Grease does not create a second input pipeline.
+    return false;
   }
 }

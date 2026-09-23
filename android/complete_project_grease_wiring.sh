@@ -30,12 +30,12 @@ method = r'''  private void installProjectGreaseStartupScript() {
 if "installProjectGreaseStartupScript()" not in s:
     anchor = "  /* Scoped storage confines the app to its sandbox"
     if anchor not in s:
-        raise SystemExit("Activity insertion anchor not found")
+        raise SystemExit("::error::Activity insertion anchor not found")
     s = s.replace(anchor, method + anchor, 1)
 if "installProjectGreaseStartupScript();" not in s:
     anchor = "    extractRuntimeIfNeeded();\n"
     if anchor not in s:
-        raise SystemExit("Activity extractRuntimeIfNeeded anchor not found")
+        raise SystemExit("::error::Activity extractRuntimeIfNeeded anchor not found")
     s = s.replace(anchor, anchor + "    installProjectGreaseStartupScript();\n", 1)
 activity.write_text(s)
 
@@ -54,7 +54,7 @@ insert = needle + r'''        std::string project_grease_startup_script;
 '''
 if "BLENDER_ANDROID_STARTUP_SCRIPT" not in s:
     if needle not in s:
-        raise SystemExit("GHOST launch-argv anchor not found")
+        raise SystemExit("::error::GHOST launch-argv anchor not found")
     s = s.replace(needle, insert, 1)
 main.write_text(s)
 PY

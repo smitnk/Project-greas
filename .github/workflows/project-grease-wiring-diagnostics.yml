@@ -161,6 +161,10 @@ jobs:
           git -C vendor/blender_android_upstream submodule sync --recursive
           git -C vendor/blender_android_upstream submodule update --init --recursive
 
+      # Run immediately after the pinned source is available, before the expensive dependency harvest.
+      - name: Verify Project Grease wiring early
+        run: bash android/verify_project_grease_wiring.sh
+
       - name: Cache Blender host libraries
         uses: actions/cache@v6
         id: host-lib-cache
@@ -321,9 +325,6 @@ jobs:
           count="$(find "$BUILD_BASE/lib/android_arm64" -mindepth 1 -maxdepth 1 -type d | wc -l)"
           echo "Android dependency prefixes: $count"
           test "$count" -ge 50
-
-      - name: Verify wiring
-        run: bash android/verify_project_grease_wiring.sh
 
       - name: Patch Blender Android CI environment wiring
         run: |

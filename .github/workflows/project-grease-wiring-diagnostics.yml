@@ -16,6 +16,28 @@ jobs:
       ANDROID_NDK_VERSION: 28.2.13676358
       BUILD_BASE: /home/runner/work/Project-greas/.build/blender_build_android
     steps:
+      # Blender Android compilation can exceed the default GitHub-hosted runner
+      # disk budget. Free disposable preinstalled software before checkout so
+      # source, dependency prefixes, and C++ object files have maximum headroom.
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Initial disk-space audit
+        run: |
+          set -euo pipefail
+          echo "[disk] filesystem before checkout/build"
+          df -h /
+          echo "[disk] top-level runner usage"
+          sudo du -xhd1 /usr /opt 2>/dev/null | sort -h | tail -30 || true
+
       - name: Checkout Project Grease
         uses: actions/checkout@v6
         with:
@@ -328,6 +350,23 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
           echo "ANDROID_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
+
+      # Dependency compilation has already produced the Android prefix used by
+      # Blender. Remove only disposable dependency downloads before the much
+      # larger Blender C++ compilation. Keep lib/android_arm64 intact.
+      - name: Reclaim dependency downloads
+        run: |
+          set -euo pipefail
+          echo "[disk] before dependency-download cleanup"
+          df -h "$GITHUB_WORKSPACE"
+          if [ -d "$BUILD_BASE/android_deps_build/downloads" ]; then
+            echo "[disk] removing disposable dependency download archives"
+            rm -rf "$BUILD_BASE/android_deps_build/downloads"
+          fi
+          echo "[disk] after dependency-download cleanup"
+          df -h "$GITHUB_WORKSPACE"
+          echo "[disk] largest project directories"
+          du -xhd2 "$GITHUB_WORKSPACE" 2>/dev/null | sort -h | tail -40 || true
 
       - name: Build Blender Android lite APK
         run: |

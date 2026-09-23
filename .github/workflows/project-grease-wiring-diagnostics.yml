@@ -38,6 +38,38 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-31 platforms;android-34 build-tools;35.0.1 ndk;28.2.13676358'
 
+      - name: Normalize Android NDK environment
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK_ROOT"
+          NDK_ROOT="$SDK_ROOT/ndk/$ANDROID_NDK_VERSION"
+          test -d "$NDK_ROOT" || {
+            echo "::error::Requested NDK $ANDROID_NDK_VERSION not found at $NDK_ROOT"
+            find "$SDK_ROOT/ndk" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null || true
+            exit 1
+          }
+          CLANG="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang"
+          test -x "$CLANG" || {
+            echo "::error::Requested Android NDK compiler missing: $CLANG"
+            exit 1
+          }
+          {
+            echo "ANDROID_HOME=$SDK_ROOT"
+            echo "ANDROID_SDK_ROOT=$SDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+          } >> "$GITHUB_ENV"
+          echo "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+          echo "[android-env] SDK      = $SDK_ROOT"
+          echo "[android-env] NDK      = $NDK_ROOT"
+          echo "[android-env] compiler = $CLANG"
+          "$CLANG" --version
+          if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ "$ANDROID_NDK_ROOT" != "$NDK_ROOT" ]; then
+            echo "::error::NDK root mismatch before export: $ANDROID_NDK_ROOT"
+            exit 1
+          fi
+
       - name: Install Blender Android host build tools
         run: |
           set -e
@@ -218,9 +250,9 @@ jobs:
           path: |
             .build/blender_build_android/lib/android_arm64
             .build/blender_build_android/android_deps_build/downloads
-          key: ${{ runner.os }}-blender-android-deps-76dc70d-${{ hashFiles('vendor/blender_android_upstream/build_files/build_environment/cmake/versions.cmake', 'vendor/blender_android_upstream/build_files/android/deps/build.sh') }}
+          key: ${{ runner.os }}-blender-android-deps-76dc70d-ndk28.2-v2-${{ hashFiles('vendor/blender_android_upstream/build_files/build_environment/cmake/versions.cmake', 'vendor/blender_android_upstream/build_files/android/deps/build.sh') }}
           restore-keys: |
-            ${{ runner.os }}-blender-android-deps-76dc70d-
+            ${{ runner.os }}-blender-android-deps-76dc70d-ndk28.2-v2-
 
       - name: Build Android dependencies
         run: |
@@ -261,16 +293,20 @@ jobs:
               raise SystemExit("expected Android path reset block not found")
           path.write_text(s.replace(old, new, 1))
           PY
-          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
-          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           test -f "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
+          test "$ANDROID_NDK_ROOT" = "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
           echo "ANDROID_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
 
       - name: Build Blender Android lite APK
         run: |
-          set -e
+          set -euo pipefail
+          echo "[build-apk] ANDROID_HOME=$ANDROID_HOME"
+          echo "[build-apk] ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
+          test "$ANDROID_NDK_ROOT" = "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang"
+          "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang" --version
           APK_SCRIPT="vendor/blender_android_upstream/build_files/android/build_apk.sh"
           chmod +x "$APK_SCRIPT"
           if [ ! -x "$APK_SCRIPT" ]; then

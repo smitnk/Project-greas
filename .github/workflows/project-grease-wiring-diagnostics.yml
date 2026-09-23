@@ -57,10 +57,16 @@ jobs:
           # setup-android may leave ANDROID_NDK_ROOT pointing at a preinstalled
           # runner NDK (for example 27.3). The workflow explicitly requires 28.2,
           # so normalize rather than rejecting the stale environment value.
-          export ANDROID_HOME="$SDK_ROOT"
-          export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_ROOT="$NDK_ROOT"
-          export ANDROID_NDK_HOME="$NDK_ROOT"
+          # export only affects this run step; GITHUB_ENV persists the values
+          # into every later step (dependency build, CMake, and APK build).
+          test -d "$NDK_ROOT" || {
+            echo "::error::Requested NDK $NDK_ROOT was not installed by setup-android"
+            exit 1
+          }
+          test -x "$CLANG" || {
+            echo "::error::Requested Android NDK compiler missing: $CLANG"
+            exit 1
+          }
           {
             echo "ANDROID_HOME=$SDK_ROOT"
             echo "ANDROID_SDK_ROOT=$SDK_ROOT"
@@ -71,9 +77,28 @@ jobs:
           echo "[android-env] SDK      = $SDK_ROOT"
           echo "[android-env] NDK      = $NDK_ROOT"
           echo "[android-env] compiler = $CLANG"
-          echo "[android-env] previous NDK env was normalized to $NDK_ROOT"
+          echo "[android-env] normalized NDK environment will persist via GITHUB_ENV"
           "$CLANG" --version
-          test "$ANDROID_NDK_ROOT" = "$NDK_ROOT"
+
+      - name: Verify NDK env persisted
+        run: |
+          set -euo pipefail
+          EXPECTED_NDK="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "EXPECTED_NDK=$EXPECTED_NDK"
+          test "$ANDROID_NDK_ROOT" = "$EXPECTED_NDK" || {
+            echo "::error::NDK env did not persist from normalize step"
+            exit 1
+          }
+          test "$ANDROID_NDK_HOME" = "$EXPECTED_NDK" || {
+            echo "::error::ANDROID_NDK_HOME did not persist from normalize step"
+            exit 1
+          }
+          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang" || {
+            echo "::error::normalized NDK compiler is not executable"
+            exit 1
+          }
 
       - name: Install Blender Android host build tools
         run: |

@@ -58,7 +58,7 @@ jobs:
       - name: Set up Android SDK and NDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools platforms;android-31 platforms;android-34 build-tools;35.0.1 ndk;28.2.13676358'
+          packages: 'platform-tools platforms;android-31 platforms;android-34 platforms;android-35 build-tools;35.0.1 ndk;28.2.13676358'
 
       - name: Normalize Android NDK environment
         run: |
@@ -300,8 +300,9 @@ jobs:
           # Remove that cached non-archive so the new GitHub mirror is used.
           rm -f "$BUILD_BASE/android_deps_build/downloads/x264-35fe20d1ba49918ec739a5b068c208ca82f977f7.tar.gz"
 
-      - name: Cache Android dependency harvest
-        uses: actions/cache@v6
+      - name: Restore Android dependency harvest
+        id: android-deps-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             .build/blender_build_android/lib/android_arm64
@@ -311,6 +312,7 @@ jobs:
             ${{ runner.os }}-blender-android-deps-76dc70d-ndk28.2-v2-
 
       - name: Build Android dependencies
+        if: steps.android-deps-cache.outputs.cache-hit != 'true'
         run: |
           set -e
           source vendor/blender_android_upstream/build_files/android/env.sh
@@ -325,6 +327,19 @@ jobs:
           count="$(find "$BUILD_BASE/lib/android_arm64" -mindepth 1 -maxdepth 1 -type d | wc -l)"
           echo "Android dependency prefixes: $count"
           test "$count" -ge 50
+
+      # Save the expensive dependency prefix BEFORE the C++/APK build starts.
+      # Run #27 built all 70 dependencies but its later APK failure prevented
+      # the normal post-job cache save. This explicit save preserves a complete
+      # prefix even when a later Blender compile fails.
+      - name: Save Android dependency harvest
+        if: steps.android-deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            .build/blender_build_android/lib/android_arm64
+            .build/blender_build_android/android_deps_build/downloads
+          key: ${{ steps.android-deps-cache.outputs.cache-primary-key }}
 
       - name: Patch Blender Android CI environment wiring
         run: |

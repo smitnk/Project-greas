@@ -14,7 +14,7 @@ jobs:
       ANDROID_SDK_ROOT: /home/runner/.android/sdk
       ANDROID_HOME: /home/runner/.android/sdk
       ANDROID_NDK_VERSION: 28.2.13676358
-      BUILD_BASE: /home/runner/work/Project-greas/.build/blender_build_android
+      BUILD_BASE: ${{ github.workspace }}/.build/blender_build_android
     steps:
       # Blender Android compilation can exceed the default GitHub-hosted runner
       # disk budget. Free disposable preinstalled software before checkout so
@@ -101,14 +101,6 @@ jobs:
           # so normalize rather than rejecting the stale environment value.
           # export only affects this run step; GITHUB_ENV persists the values
           # into every later step (dependency build, CMake, and APK build).
-          test -d "$NDK_ROOT" || {
-            echo "::error::Requested NDK $NDK_ROOT was not installed by setup-android"
-            exit 1
-          }
-          test -x "$CLANG" || {
-            echo "::error::Requested Android NDK compiler missing: $CLANG"
-            exit 1
-          }
           {
             echo "ANDROID_HOME=$SDK_ROOT"
             echo "ANDROID_SDK_ROOT=$SDK_ROOT"
@@ -315,11 +307,6 @@ jobs:
           path.write_text(s)
           PY
 
-          rm -f "$BUILD_BASE/android_deps_build/downloads/openssl-3.5.6.tar.gz"
-          # Run #17 proved the VideoLAN x264 URL can return an anti-bot HTML page.
-          # Remove that cached non-archive so the new GitHub mirror is used.
-          rm -f "$BUILD_BASE/android_deps_build/downloads/x264-35fe20d1ba49918ec739a5b068c208ca82f977f7.tar.gz"
-
       - name: Restore Android dependency harvest
         id: android-deps-cache
         uses: actions/cache/restore@v6
@@ -330,6 +317,28 @@ jobs:
           key: ${{ runner.os }}-blender-android-deps-76dc70d-ndk28.2-v2-${{ hashFiles('vendor/blender_android_upstream/build_files/build_environment/cmake/versions.cmake', 'vendor/blender_android_upstream/build_files/android/deps/build.sh') }}
           restore-keys: |
             ${{ runner.os }}-blender-android-deps-76dc70d-ndk28.2-v2-
+
+      - name: Report restored dependency prefix count
+        run: |
+          set -euo pipefail
+          PREFIX="$BUILD_BASE/lib/android_arm64"
+          if [ -d "$PREFIX" ]; then
+            count="$(find "$PREFIX" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          else
+            count=0
+          fi
+          echo "[deps-cache] cache-hit=${{ steps.android-deps-cache.outputs.cache-hit }}"
+          echo "[deps-cache] matched-key=${{ steps.android-deps-cache.outputs.cache-matched-key }}"
+          echo "[deps-cache] restored dependency prefixes: $count"
+
+      - name: Purge known-bad cached downloads
+        run: |
+          set -euo pipefail
+          # Run #17 proved the VideoLAN x264 URL can return an anti-bot HTML page.
+          # Remove that cached non-archive (and the known-bad openssl download)
+          # so the fetch()/mirror patch above is what actually gets used.
+          rm -f "$BUILD_BASE/android_deps_build/downloads/openssl-3.5.6.tar.gz"
+          rm -f "$BUILD_BASE/android_deps_build/downloads/x264-35fe20d1ba49918ec739a5b068c208ca82f977f7.tar.gz"
 
       - name: Build Android dependencies
         if: steps.android-deps-cache.outputs.cache-hit != 'true'

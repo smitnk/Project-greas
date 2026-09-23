@@ -2,11 +2,56 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-bash "$ROOT/android/apply_project_grease_wiring.sh"
-bash "$ROOT/android/complete_project_grease_wiring.sh"
-
 UPSTREAM="$ROOT/vendor/blender_android_upstream"
 ACTIVITY="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blender/BlenderActivity.java"
+
+snapshot() {
+  local stage="$1"
+  cp "$ACTIVITY" "/tmp/BlenderActivity.$stage.java"
+}
+
+validate_activity() {
+  local stage="$1"
+  python3 - "$ACTIVITY" "$stage" <<'PY'
+from pathlib import Path
+import sys
+
+p = Path(sys.argv[1])
+stage = sys.argv[2]
+s = p.read_text()
+required = [
+    "import android.app.NativeActivity;",
+    "import android.view.View;",
+    "import android.view.ViewGroup;",
+    "public class BlenderActivity extends NativeActivity",
+    "getWindow().getDecorView()",
+]
+missing = [x for x in required if x not in s]
+if missing:
+    print(f"::error::BlenderActivity corrupted AFTER {stage}")
+    for x in missing:
+        print(f"  missing: {x}")
+    raise SystemExit(1)
+print(f"BlenderActivity OK after {stage}")
+PY
+}
+
+test -f "$ACTIVITY"
+snapshot pre
+validate_activity "pre-wiring (pristine checkout)"
+
+bash "$ROOT/android/apply_project_grease_wiring.sh"
+snapshot post-apply
+validate_activity "apply_project_grease_wiring.sh"
+echo "[diagnostic] diff introduced by apply_project_grease_wiring.sh"
+git -C "$UPSTREAM" diff --no-index "/tmp/BlenderActivity.pre.java" "$ACTIVITY" || true
+
+bash "$ROOT/android/complete_project_grease_wiring.sh"
+snapshot post-complete
+validate_activity "complete_project_grease_wiring.sh"
+echo "[diagnostic] diff introduced by complete_project_grease_wiring.sh"
+git -C "$UPSTREAM" diff --no-index "/tmp/BlenderActivity.post-apply.java" "$ACTIVITY" || true
+
 VIEW="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blender/ProjectGreaseOverlayView.java"
 MANIFEST="$UPSTREAM/build_files/android/apk/app/src/main/AndroidManifest.xml"
 GHOST_H="$UPSTREAM/intern/ghost/intern/GHOST_SystemAndroid.hh"

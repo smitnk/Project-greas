@@ -57,5 +57,19 @@ if "BLENDER_ANDROID_STARTUP_SCRIPT" not in s:
         raise SystemExit("::error::GHOST launch-argv anchor not found")
     s = s.replace(needle, insert, 1)
 main.write_text(s)
+
+package = root / "build_files/android/apk/package.sh"
+s = package.read_text()
+old = r'''"$JAVA_HOME/bin/javac" -classpath "$ANDROID_JAR" -source 17 -target 17 \
+  -d "$STAGE/javac" \
+  "$SCRIPT_DIR/app/src/main/java/org/blender/blender/BlenderActivity.java"'''
+new = r'''mapfile -d '' JAVA_SOURCES < <(find "$SCRIPT_DIR/app/src/main/java" -type f -name '*.java' -print0 | sort -z)
+test "\${#JAVA_SOURCES[@]}" -gt 0
+"$JAVA_HOME/bin/javac" -classpath "$ANDROID_JAR" -source 17 -target 17 \
+  -d "$STAGE/javac" \
+  "\${JAVA_SOURCES[@]}"'''
+if old not in s:
+    raise SystemExit("::error::expected single-file javac block not found in package.sh")
+package.write_text(s.replace(old, new, 1))
 PY
-echo "Project Grease startup execution wiring applied."
+echo "Project Grease startup + Java source compilation wiring applied."

@@ -28,6 +28,7 @@ target_include_directories(project_grease_blender_gp PUBLIC
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
   "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
   "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw"
   "${BLENDER_SOURCE_DIR}/source/blender/draw/intern"
   "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil"
   "${BLENDER_SOURCE_DIR}/source/blender/editors/include"

@@ -1,11 +1,28 @@
 #include "project_grease_gp_backend.h"
 
 #include <string>
+#include <vector>
+
+#include "BKE_gpencil_legacy.h"
+#include "BKE_idtype.h"
+#include "BKE_main.hh"
+
+#include "DNA_gpencil_legacy_types.h"
 
 namespace project_grease::gp {
 
 struct Backend::Impl {
   std::string last_error;
+
+  Main *bmain = nullptr;
+  bGPdata *gpd = nullptr;
+  bGPDlayer *layer = nullptr;
+  bGPDframe *frame = nullptr;
+  bGPDstroke *stroke = nullptr;
+
+  StrokeStyle stroke_style{};
+  std::vector<StrokePoint> pending_points;
+
   bool initialized = false;
   bool document_created = false;
   bool layer_created = false;
@@ -21,8 +38,22 @@ Backend::~Backend() {
 }
 
 bool Backend::initialize() {
-  // Runtime initialization is deliberately left behind the Blender-native
-  // dependency gate. This function must not fall back to Android Canvas.
+  if (impl_->initialized) {
+    return true;
+  }
+
+  /*
+   * The legacy GP data API allocates real Blender IDs. Initialize the ID
+   * system before creating a standalone Main database.
+   */
+  BKE_idtype_init();
+  impl_->bmain = BKE_main_new();
+
+  if (!impl_->bmain) {
+    impl_->last_error = "BKE_main_new() failed";
+    return false;
+  }
+
   impl_->initialized = true;
   return true;
 }
@@ -31,54 +62,99 @@ void Backend::shutdown() {
   if (!impl_) {
     return;
   }
+
+  impl_->stroke = nullptr;
+  impl_->frame = nullptr;
+  impl_->layer = nullptr;
+  impl_->gpd = nullptr;
   impl_->stroke_open = false;
   impl_->frame_created = false;
   impl_->layer_created = false;
   impl_->document_created = false;
+  impl_->pending_points.clear();
+
+  if (impl_->bmain) {
+    BKE_main_free(impl_->bmain);
+    impl_->bmain = nullptr;
+  }
+
   impl_->initialized = false;
 }
 
 bool Backend::create_document() {
-  if (!impl_->initialized) {
+  if (!impl_->initialized || !impl_->bmain) {
     impl_->last_error = "backend is not initialized";
     return false;
   }
+
+  impl_->gpd = BKE_gpencil_data_addnew(impl_->bmain, "Project Grease");
+  if (!impl_->gpd) {
+    impl_->last_error = "BKE_gpencil_data_addnew() failed";
+    return false;
+  }
+
   impl_->document_created = true;
   return true;
 }
 
-bool Backend::create_layer(const char* /*name*/) {
-  if (!impl_->document_created) {
+bool Backend::create_layer(const char *name) {
+  if (!impl_->document_created || !impl_->gpd) {
     impl_->last_error = "document is not created";
     return false;
   }
+
+  const char *layer_name = (name && name[0]) ? name : "GP_Layer";
+  impl_->layer = BKE_gpencil_layer_addnew(impl_->gpd, layer_name, true, false);
+
+  if (!impl_->layer) {
+    impl_->last_error = "BKE_gpencil_layer_addnew() failed";
+    return false;
+  }
+
   impl_->layer_created = true;
   return true;
 }
 
-bool Backend::create_frame(int /*frame_number*/) {
-  if (!impl_->layer_created) {
+bool Backend::create_frame(int frame_number) {
+  if (!impl_->layer_created || !impl_->layer) {
     impl_->last_error = "layer is not created";
     return false;
   }
+
+  impl_->frame = BKE_gpencil_frame_addnew(impl_->layer, frame_number);
+  if (!impl_->frame) {
+    impl_->last_error = "BKE_gpencil_frame_addnew() failed";
+    return false;
+  }
+
   impl_->frame_created = true;
   return true;
 }
 
-bool Backend::begin_stroke(const StrokeStyle& /*style*/) {
-  if (!impl_->frame_created) {
+bool Backend::begin_stroke(const StrokeStyle &style) {
+  if (!impl_->frame_created || !impl_->frame) {
     impl_->last_error = "frame is not created";
     return false;
   }
+  if (impl_->stroke_open) {
+    impl_->last_error = "a stroke is already open";
+    return false;
+  }
+
+  impl_->stroke_style = style;
+  impl_->pending_points.clear();
+  impl_->stroke = nullptr;
   impl_->stroke_open = true;
   return true;
 }
 
-bool Backend::add_point(const StrokePoint& /*point*/) {
+bool Backend::add_point(const StrokePoint &point) {
   if (!impl_->stroke_open) {
     impl_->last_error = "stroke is not open";
     return false;
   }
+
+  impl_->pending_points.push_back(point);
   return true;
 }
 
@@ -87,21 +163,79 @@ bool Backend::end_stroke() {
     impl_->last_error = "stroke is not open";
     return false;
   }
+
+  if (impl_->pending_points.empty()) {
+    impl_->last_error = "stroke has no points";
+    impl_->stroke_open = false;
+    return false;
+  }
+
+  const int point_count = static_cast<int>(impl_->pending_points.size());
+  const int material_index = impl_->stroke_style.material_index;
+  const short thickness =
+      static_cast<short>(impl_->stroke_style.thickness < 1.0f
+                             ? 1.0f
+                             : impl_->stroke_style.thickness);
+
+  /*
+   * This is the real legacy Blender GP stroke allocation. The points below
+   * become bGPDspoint data consumed by Blender's GP draw cache/renderer.
+   */
+  impl_->stroke =
+      BKE_gpencil_stroke_add(impl_->frame,
+                             material_index,
+                             point_count,
+                             thickness,
+                             false);
+
+  if (!impl_->stroke) {
+    impl_->last_error = "BKE_gpencil_stroke_add() failed";
+    impl_->stroke_open = false;
+    return false;
+  }
+
+  for (int i = 0; i < point_count; ++i) {
+    const StrokePoint &src = impl_->pending_points[i];
+    bGPDspoint &dst = impl_->stroke->points[i];
+
+    dst.x = src.x;
+    dst.y = src.y;
+    dst.z = src.z;
+    dst.pressure = src.pressure;
+    dst.strength = src.strength;
+    dst.time = src.time;
+  }
+
   impl_->stroke_open = false;
+  impl_->pending_points.clear();
+
+  /*
+   * Force Blender's legacy GP cache path to see the new stroke on the next
+   * renderer update.
+   */
+  impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+  BKE_gpencil_tag(impl_->gpd);
+
   return true;
 }
 
 bool Backend::render() {
-  if (!impl_->frame_created) {
-    impl_->last_error = "nothing to render";
+  if (!impl_->frame_created || !impl_->gpd || !impl_->stroke) {
+    impl_->last_error = "no native GP stroke is ready to render";
     return false;
   }
+
+  /*
+   * Data creation is now real Blender Legacy GP. The next gate is the
+   * renderer context: object/depsgraph + GP draw cache + DRW + GPU/EGL.
+   * Do not substitute Android Canvas here.
+   */
   impl_->last_error =
-      "GP draw-cache/DRW render target is not linked yet";
+      "native GP stroke created; GP draw-cache/DRW/GPU render target is next";
   return false;
 }
 
-const char* Backend::last_error() const {
+const char *Backend::last_error() const {
   return impl_->last_error.c_str();
 }
 

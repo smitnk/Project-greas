@@ -19,13 +19,14 @@ test -f "$VIEW_DST" || {
   echo "::error::ProjectGreaseOverlayView.java was not installed into Blender APK source set: $VIEW_DST"
   exit 1
 }
-python3 - "$ACTIVITY" "$GHOST_MAIN" "$ROOT" <<'PY'
+python3 - "$ACTIVITY" "$GHOST_MAIN" "$ROOT" "$UPSTREAM" <<'PY'
 from pathlib import Path
 import sys
 
 activity = Path(sys.argv[1])
 main = Path(sys.argv[2])
 root = Path(sys.argv[3])
+upstream = Path(sys.argv[4])
 s = activity.read_text()
 method = r'''  private void installProjectGreaseStartupScript() {
     File root = new File(getFilesDir(), "blender/" + VERSION);
@@ -73,7 +74,7 @@ if "BLENDER_ANDROID_STARTUP_SCRIPT" not in s:
     s = s.replace(needle, insert, 1)
 main.write_text(s)
 
-package = root / "build_files/android/apk/package.sh"
+package = upstream / "build_files/android/apk/package.sh"
 s = package.read_text()
 old = r'''"$JAVA_HOME/bin/javac" -classpath "$ANDROID_JAR" -source 17 -target 17 \
   -d "$STAGE/javac" \

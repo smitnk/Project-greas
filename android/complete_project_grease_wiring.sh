@@ -6,6 +6,7 @@ ACTIVITY="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blende
 GHOST_MAIN="$UPSTREAM/intern/ghost/intern/GHOST_AndroidMain.cc"
 VIEW_SRC="$ROOT/android/projectgrease/ProjectGreaseOverlayView.java"
 VIEW_DST="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blender/ProjectGreaseOverlayView.java"
+test -n "$ROOT" || { echo "::error::ROOT is not set before invoking wiring completion"; exit 1; }
 test -f "$ACTIVITY"
 test -f "$GHOST_MAIN"
 test -f "$VIEW_SRC" || {
@@ -18,11 +19,13 @@ test -f "$VIEW_DST" || {
   echo "::error::ProjectGreaseOverlayView.java was not installed into Blender APK source set: $VIEW_DST"
   exit 1
 }
-python3 - "$ACTIVITY" "$GHOST_MAIN" <<'PY'
+python3 - "$ACTIVITY" "$GHOST_MAIN" "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 
 activity = Path(sys.argv[1])
+main = Path(sys.argv[2])
+root = Path(sys.argv[3])
 s = activity.read_text()
 method = r'''  private void installProjectGreaseStartupScript() {
     File root = new File(getFilesDir(), "blender/" + VERSION);

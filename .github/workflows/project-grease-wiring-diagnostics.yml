@@ -36,6 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n android/*.sh
+          shellcheck -x android/*.sh
           python3 -m py_compile android/projectgrease/project_grease_startup.py
           if grep -RFn "\${PARTS[@]}" .github/workflows; then
             echo "::error::escaped PARTS array expansion found in workflow"

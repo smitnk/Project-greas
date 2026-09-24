@@ -7,7 +7,36 @@ on:
   workflow_dispatch:
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Project Grease
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Install ShellCheck
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
+          test -x ./actionlint
+          ./actionlint -version
+
+      - name: Run actionlint
+        run: ./actionlint
+
+      - name: Run ShellCheck
+        run: shellcheck -x .github/workflows/project-grease-wiring-diagnostics.yml
+
   build-android:
+    needs: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -20,7 +49,7 @@ jobs:
       # disk budget. Free disposable preinstalled software before checkout so
       # source, dependency prefixes, and C++ object files have maximum headroom.
       - name: Free runner disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           android: false
@@ -413,10 +442,21 @@ jobs:
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
           echo "ANDROID_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
 
+      # Check disk headroom immediately before exporting the dependency backup.
+      - name: Disk audit before dependency backup
+        run: |
+          set -euo pipefail
+          echo "[disk] before dependency backup"
+          df -h /
+          du -sh "$BUILD_BASE/lib/android_arm64"
+          command -v zstd
+          command -v gh
+
       # Export the exact compiled dependency prefix to the dedicated backup repository.
-      # This runs BEFORE disposable downloads are reclaimed and BEFORE Blender C++
-      # compilation, so a later APK failure cannot lose the expensive dependency build.
+      # Stream tar -> zstd -> split so the full archive is never materialized alongside
+      # its release chunks. This keeps peak disk usage close to the final chunk footprint.
       - name: Export Android dependency backup
+        if: steps.android-deps-cache.outputs.cache-hit != 'true'
         env:
           DEPENDENCIES_REPO_TOKEN: ${{ secrets.DEPENDENCIES_REPO_TOKEN }}
           DEPENDENCIES_REPO: smitnk/Dependencies-andi
@@ -438,39 +478,39 @@ jobs:
           command -v gh >/dev/null 2>&1 || { echo "::error::GitHub CLI is required for dependency backup"; exit 1; }
 
           BACKUP_ROOT="$RUNNER_TEMP/blender-android-dependency-backup"
-          ARCHIVE="$BACKUP_ROOT/lib-android_arm64.tar.zst"
           MANIFEST="$BACKUP_ROOT/manifest.json"
           CHECKSUMS="$BACKUP_ROOT/SHA256SUMS"
           TAG="blender-76dc70df-android-arm64-ndk-28.2.13676358-v1"
-          mkdir -p "$BACKUP_ROOT"
-
-          echo "[deps-backup] creating compressed archive"
-          tar -C "$BUILD_BASE/lib" -cf - android_arm64 | zstd -T0 -19 -o "$ARCHIVE"
-
-          # GitHub release assets must each be under 2 GiB. The dependency
-          # archive is about 3.56 GiB, so publish deterministic <2 GiB chunks.
           CHUNK_BYTES=$((1900 * 1024 * 1024))
           PART_PREFIX="$BACKUP_ROOT/lib-android_arm64.part-"
-          split -d -a 3 -b "$CHUNK_BYTES" "$ARCHIVE" "$PART_PREFIX"
+          mkdir -p "$BACKUP_ROOT"
+
+          echo "[deps-backup] streaming compressed dependency archive into release chunks"
+          tar -C "$BUILD_BASE/lib" -cf - android_arm64             | zstd -T0 -19             | split -d -a 3 -b "$CHUNK_BYTES" - "$PART_PREFIX"
+
           mapfile -t PARTS < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'lib-android_arm64.part-*' | sort)
-          test "\${#PARTS[@]}" -gt 0
-          for part in "\${PARTS[@]}"; do
+          test "${#PARTS[@]}" -gt 0
+
+          archive_bytes=0
+          for part in "${PARTS[@]}"; do
             size="$(stat -c '%s' "$part")"
             test "$size" -lt $((2 * 1024 * 1024 * 1024)) || {
               echo "::error::release chunk exceeds GitHub's 2 GiB asset limit: $part ($size bytes)"
               exit 1
             }
+            archive_bytes=$((archive_bytes + size))
           done
 
-          ARCHIVE_BYTES="$(stat -c '%s' "$ARCHIVE")"
-          python3 - "$MANIFEST" "$count" "$ARCHIVE_BYTES" "$CHUNK_BYTES" "\${PARTS[@]}" <<'PY'
+          python3 - "$MANIFEST" "$count" "$archive_bytes" "$CHUNK_BYTES" "${PARTS[@]}" <<'PY'
           import json, sys
           from pathlib import Path
-          out=Path(sys.argv[1])
-          count=int(sys.argv[2])
-          archive_bytes=int(sys.argv[3])
-          chunk_bytes=int(sys.argv[4])
-          parts=sys.argv[5:]
+
+          out = Path(sys.argv[1])
+          count = int(sys.argv[2])
+          archive_bytes = int(sys.argv[3])
+          chunk_bytes = int(sys.argv[4])
+          parts = sys.argv[5:]
+
           out.write_text(json.dumps({
               "repository": "smitnk/Project-greas",
               "dependency_repository": "smitnk/Dependencies-andi",
@@ -487,12 +527,10 @@ jobs:
               "chunks": [Path(p).name for p in parts],
               "restore": "cat lib-android_arm64.part-* > lib-android_arm64.tar.zst"
           }, indent=2) + "\n")
-          PY
 
-          sha256sum "\${PARTS[@]}" > "$CHECKSUMS"
+          sha256sum "${PARTS[@]}" > "$CHECKSUMS"
           sha256sum "$MANIFEST" >> "$CHECKSUMS"
-          ls -lh "\${PARTS[@]}" "$MANIFEST" "$CHECKSUMS"
-          rm -f "$ARCHIVE"
+          ls -lh "${PARTS[@]}" "$MANIFEST" "$CHECKSUMS"
 
           echo "$DEPENDENCIES_REPO_TOKEN" | gh auth login --with-token
           gh auth status
@@ -500,14 +538,10 @@ jobs:
           if gh release view "$TAG" --repo "$DEPENDENCIES_REPO" >/dev/null 2>&1; then
             echo "[deps-backup] release $TAG already exists; replacing its assets"
           else
-            gh release create "$TAG" \
-              --repo "$DEPENDENCIES_REPO" \
-              --title "Blender Android dependencies — 76dc70df / NDK 28.2" \
-              --notes "Compiled Android arm64 dependency prefix for Project Grease. Blender commit: 76dc70df95ae32dcd15f3f86abfd82f4c5691140. NDK: 28.2.13676358. ABI: arm64-v8a."
+            gh release create "$TAG"               --repo "$DEPENDENCIES_REPO"               --title "Blender Android dependencies — 76dc70df / NDK 28.2"               --notes "Compiled Android arm64 dependency prefix for Project Grease. Blender commit: 76dc70df95ae32dcd15f3f86abfd82f4c5691140. NDK: 28.2.13676358. ABI: arm64-v8a."
           fi
 
-          gh release upload "$TAG" "\${PARTS[@]}" "$MANIFEST" "$CHECKSUMS" \
-            --repo "$DEPENDENCIES_REPO" --clobber
+          gh release upload "$TAG" "${PARTS[@]}" "$MANIFEST" "$CHECKSUMS"             --repo "$DEPENDENCIES_REPO" --clobber
           echo "[deps-backup] permanent backup published to $DEPENDENCIES_REPO release $TAG"
 
       # Dependency compilation has already produced the Android prefix used by

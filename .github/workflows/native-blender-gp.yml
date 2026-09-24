@@ -35,6 +35,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_PYTHON=OFF \
             -DWITH_GHOST=OFF \
+            -DWITH_HEADLESS=ON \
+            -DWITH_X11=OFF \
             -DWITH_BLENDER_THUMBNAILER=OFF \
             -DWITH_IMAGE_TIFF=OFF \
             -DWITH_OPENIMAGEIO=OFF \

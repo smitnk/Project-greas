@@ -32,9 +32,6 @@ jobs:
       - name: Run actionlint
         run: ./actionlint
 
-      - name: Run ShellCheck
-        run: shellcheck -x .github/workflows/project-grease-wiring-diagnostics.yml
-
   build-android:
     needs: lint
     runs-on: ubuntu-24.04

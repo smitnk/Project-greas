@@ -34,6 +34,7 @@ target_include_directories(project_grease_blender_gp PUBLIC
   "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil"
   "${BLENDER_SOURCE_DIR}/source/blender/editors/include"
   "${BLENDER_SOURCE_DIR}/source/blender/depsgraph"
+  "${BLENDER_SOURCE_DIR}/source/blender/blentranslation"
   "${BLENDER_SOURCE_DIR}/source/blender/gpu"
   "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
   "${BLENDER_SOURCE_DIR}/intern/atomic"

@@ -12,6 +12,12 @@ endif()
 
 add_library(project_grease_blender_gp STATIC
   project_grease_gp_backend.cpp
+
+  # First real Blender GP rendering sources.
+  # These are the legacy Grease Pencil draw-cache and draw-engine layers;
+  # the full Blender application/editor is not included.
+  "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil_engine.c"
 )
 
 target_include_directories(project_grease_blender_gp PUBLIC
@@ -22,6 +28,11 @@ target_include_directories(project_grease_blender_gp PUBLIC
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
   "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
   "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw/intern"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/include"
+  "${BLENDER_SOURCE_DIR}/source/blender/depsgraph"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpu"
   "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
   "${BLENDER_SOURCE_DIR}/intern/atomic"
 )
@@ -32,6 +43,7 @@ target_compile_definitions(project_grease_blender_gp PRIVATE
   WITH_OPENGL
 )
 
-# The adapter is intentionally standalone at this gate.
-# Blender BLI/BKE/DNA/DEG/DRW/GPU objects are added only after the
-# dependency-minimization pass proves their exact required set.
+# This target intentionally adds only the legacy GP draw-cache and GP
+# engine translation units at this stage. Their dependent Blender modules
+# are added incrementally from compiler/linker evidence; the Blender
+# application, UI, workspace, and unrelated draw engines remain excluded.

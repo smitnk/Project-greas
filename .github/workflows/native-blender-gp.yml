@@ -23,6 +23,22 @@ jobs:
           test -f third_party/blender/source/blender/blenkernel/BKE_gpencil_legacy.h
           test -f third_party/blender/source/blender/makesdna/DNA_gpencil_legacy_types.h
 
+      - name: Configure minimal Blender core for GP GPU stack
+        run: |
+          cmake -S third_party/blender -B build/blender-core \
+            -C third_party/blender/build_files/cmake/config/blender_lite.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_PYTHON=OFF \
+            -DWITH_GHOST=OFF \
+            -DWITH_BLENDER_THUMBNAILER=OFF \
+            -DWITH_OPENGL_BACKEND=ON \
+            -DWITH_VULKAN_BACKEND=OFF \
+            -DWITH_GTESTS=OFF
+
+      - name: Build Blender GPU core
+        run: |
+          cmake --build build/blender-core --target bf_gpu --parallel 2
+
       - name: Configure Project Grease native boundary
         run: |
           cmake -S native/blender_gp -B build/native-gp

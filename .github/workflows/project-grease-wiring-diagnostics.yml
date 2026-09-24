@@ -177,6 +177,23 @@ jobs:
       - name: Verify Project Grease wiring early
         run: bash android/verify_project_grease_wiring.sh
 
+      - name: Diagnose ProjectGreaseOverlayView wiring
+        run: |
+          set -euo pipefail
+          APK_MODULE="vendor/blender_android_upstream/build_files/android/apk/app"
+          echo "--- searching whole checkout for the file ---"
+          find "$GITHUB_WORKSPACE" -iname "ProjectGreaseOverlayView.java" -print
+          echo "--- is it inside the actual compiled source set? ---"
+          find "$APK_MODULE/src/main/java" -iname "ProjectGreaseOverlayView.java" -print
+          echo "--- package declaration, if found anywhere ---"
+          find "$GITHUB_WORKSPACE" -iname "ProjectGreaseOverlayView.java" -exec grep -Hn "^package" {} \;
+          echo "--- BlenderActivity.java package + imports ---"
+          grep -n "^package\|^import" "$APK_MODULE/src/main/java/org/blender/blender/BlenderActivity.java"
+          echo "--- Java source count + overlay source count ---"
+          find "$APK_MODULE/src/main/java" -type f -name '*.java' | sort | tee /tmp/project-grease-java-sources.txt
+          echo "java_source_count=$(wc -l < /tmp/project-grease-java-sources.txt)"
+          grep -Fx "$APK_MODULE/src/main/java/org/blender/blender/ProjectGreaseOverlayView.java" /tmp/project-grease-java-sources.txt
+
       - name: Cache Blender host libraries
         uses: actions/cache@v6
         id: host-lib-cache

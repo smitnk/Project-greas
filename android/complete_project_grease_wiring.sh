@@ -4,8 +4,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UPSTREAM="$ROOT/vendor/blender_android_upstream"
 ACTIVITY="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blender/BlenderActivity.java"
 GHOST_MAIN="$UPSTREAM/intern/ghost/intern/GHOST_AndroidMain.cc"
+VIEW_SRC="$ROOT/android/projectgrease/ProjectGreaseOverlayView.java"
+VIEW_DST="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blender/ProjectGreaseOverlayView.java"
 test -f "$ACTIVITY"
 test -f "$GHOST_MAIN"
+test -f "$VIEW_SRC" || {
+  echo "::error::ProjectGreaseOverlayView.java source missing: $VIEW_SRC"
+  exit 1
+}
+mkdir -p "$(dirname "$VIEW_DST")"
+cp "$VIEW_SRC" "$VIEW_DST"
+test -f "$VIEW_DST" || {
+  echo "::error::ProjectGreaseOverlayView.java was not installed into Blender APK source set: $VIEW_DST"
+  exit 1
+}
 python3 - "$ACTIVITY" "$GHOST_MAIN" <<'PY'
 from pathlib import Path
 import sys
@@ -64,10 +76,10 @@ old = r'''"$JAVA_HOME/bin/javac" -classpath "$ANDROID_JAR" -source 17 -target 17
   -d "$STAGE/javac" \
   "$SCRIPT_DIR/app/src/main/java/org/blender/blender/BlenderActivity.java"'''
 new = r'''mapfile -d '' JAVA_SOURCES < <(find "$SCRIPT_DIR/app/src/main/java" -type f -name '*.java' -print0 | sort -z)
-test "\${#JAVA_SOURCES[@]}" -gt 0
+test "${#JAVA_SOURCES[@]}" -gt 0
 "$JAVA_HOME/bin/javac" -classpath "$ANDROID_JAR" -source 17 -target 17 \
   -d "$STAGE/javac" \
-  "\${JAVA_SOURCES[@]}"'''
+  "${JAVA_SOURCES[@]}"'''
 if old not in s:
     raise SystemExit("::error::expected single-file javac block not found in package.sh")
 package.write_text(s.replace(old, new, 1))

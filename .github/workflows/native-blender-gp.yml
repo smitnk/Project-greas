@@ -30,7 +30,7 @@ jobs:
 
       - name: Attach Project Grease backend to Blender build graph
         run: |
-          printf '\nadd_subdirectory("%s/native/blender_gp")\n' "$GITHUB_WORKSPACE" >> third_party/blender/CMakeLists.txt
+          printf '\nadd_subdirectory("%s/native/blender_gp" "%s/build/blender-core/project_grease_gp")\n' "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE" >> third_party/blender/CMakeLists.txt
 
       - name: Configure minimal Blender core for GP GPU stack
         run: |

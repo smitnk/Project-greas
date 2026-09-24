@@ -1,16 +1,23 @@
-# Project-greas
+# Project Grease
 
-Experimental MotionCanvas-compatible native drawing backend research project.
+Project Grease is being rebuilt around a native Blender Legacy Grease Pencil backend.
 
-## Blender source
+## Current baseline
 
-This repository uses the Android Blender port as the reference/build base:
-- https://github.com/Wanderson-Magalhaes/blender_for_android
+- Upstream Blender v3.6.23
+- Commit: e467db79ca8cc5c1c15e1a0e08bd52ca419f2eca
+- Native GP data: bGPdata / bGPDlayer / bGPDframe / bGPDstroke
+- Target renderer: Blender GP draw engine + DRW/GPU
+- Android graphics target: EGL/GLES
+- No GL4ES
+- No Android Blender application port is embedded
 
-The project does **not** embed Blender's desktop UI. The intended direction is a native drawing backend exposed to MotionCanvas through a small API, with Grease Pencil as the eventual drawing representation.
+## Development
 
-## Import policy
+The active native backend work is isolated on:
 
-Do not copy the entire Blender tree blindly. Grease Pencil depends on Blender's data, geometry, GPU and runtime systems. The import is therefore staged and source-driven.
+native/blender-gp-backend
 
-See docs/BLENDER_GP_IMPORT_MANIFEST.md.
+The old Android-port research/import manifest has been removed from the main branch so it is not used as the implementation baseline.
+
+The first real milestone is a native one-stroke Blender GP render. UI design is intentionally deferred until the backend is proven.

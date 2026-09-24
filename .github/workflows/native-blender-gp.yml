@@ -1,0 +1,32 @@
+name: Native Blender GP Backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - native/blender-gp-backend
+
+jobs:
+  native-backend-preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Project Grease
+        uses: actions/checkout@v4
+
+      - name: Import pinned upstream Blender source
+        run: |
+          bash tools/import_blender_gp.sh
+
+      - name: Verify required GP source
+        run: |
+          test -f third_party/blender/source/blender/draw/engines/gpencil/gpencil_engine.c
+          test -f third_party/blender/source/blender/blenkernel/BKE_gpencil_legacy.h
+          test -f third_party/blender/source/blender/makesdna/DNA_gpencil_legacy_types.h
+
+      - name: Configure Project Grease native boundary
+        run: |
+          cmake -S native/blender_gp -B build/native-gp
+
+      - name: Build adapter boundary
+        run: |
+          cmake --build build/native-gp

@@ -6,8 +6,11 @@ import bpy
 gp = next((obj for obj in bpy.data.objects if obj.type == 'GREASEPENCIL'), None)
 
 if gp is None:
-    bpy.ops.object.grease_pencil_add(type='STROKE', location=(0.0, 0.0, 0.0))
-    gp = bpy.context.object
+    try:
+        bpy.ops.object.grease_pencil_add(type='STROKE', location=(0.0, 0.0, 0.0))
+        gp = bpy.context.object
+    except Exception as e:
+        print(f"[project_grease] grease_pencil_add failed: {e}")
 
 if gp is not None:
     bpy.context.view_layer.objects.active = gp

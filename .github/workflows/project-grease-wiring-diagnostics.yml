@@ -630,7 +630,6 @@ jobs:
         with:
           name: project-grease-android-apk
           path: |
-            /home/runner/work/Project-greas/.build/blender_build_android/**/*.apk
-            /home/runner/work/Project-greas/.build/blender_build_android/**/*.aab
+            .build/blender_build_android/android_apk_stage_full/*.apk
             apk-files.txt
           if-no-files-found: error

@@ -19,6 +19,7 @@ target_include_directories(project_grease_blender_gp PUBLIC
   "${BLENDER_SOURCE_DIR}/source/blender"
   "${BLENDER_SOURCE_DIR}/source"
   "${BLENDER_SOURCE_DIR}/source/blender/blenkernel"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
   "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
   "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
   "${BLENDER_SOURCE_DIR}/intern/guardedalloc"

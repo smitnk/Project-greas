@@ -36,6 +36,8 @@ jobs:
             -DWITH_PYTHON=OFF \
             -DWITH_GHOST=OFF \
             -DWITH_BLENDER_THUMBNAILER=OFF \
+            -DWITH_IMAGE_TIFF=OFF \
+            -DWITH_OPENIMAGEIO=OFF \
             -DWITH_OPENGL_BACKEND=ON \
             -DWITH_VULKAN_BACKEND=OFF \
             -DWITH_GTESTS=OFF

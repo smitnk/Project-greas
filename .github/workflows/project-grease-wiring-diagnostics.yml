@@ -38,7 +38,7 @@ jobs:
           bash -n android/*.sh
           shellcheck -x android/*.sh
           python3 -m py_compile android/projectgrease/project_grease_startup.py
-          if grep -RFn "\${PARTS[@]}" .github/workflows; then
+          if grep -RFn '\${PARTS[@]}' .github/workflows; then
             echo "::error::escaped PARTS array expansion found in workflow"
             exit 1
           fi

@@ -23,6 +23,11 @@ jobs:
           test -f third_party/blender/source/blender/blenkernel/BKE_gpencil_legacy.h
           test -f third_party/blender/source/blender/makesdna/DNA_gpencil_legacy_types.h
 
+      - name: Install minimal Blender core build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev libpng-dev zlib1g-dev libfreetype6-dev
+
       - name: Configure minimal Blender core for GP GPU stack
         run: |
           cmake -S third_party/blender -B build/blender-core \

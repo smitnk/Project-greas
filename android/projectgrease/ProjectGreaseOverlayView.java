@@ -140,7 +140,8 @@ public final class ProjectGreaseOverlayView extends View {
 
   @Override public boolean onTouchEvent(MotionEvent e) {
     float x=e.getX(), y=e.getY(), h=getHeight(), w=getWidth();
-    int a=e.getActionMasked(), timelineTop=h-174;
+    int a=e.getActionMasked();
+    float timelineTop=h-174;
 
     if(home) {
       if(a==MotionEvent.ACTION_UP&&y>=125&&y<=255){home=false;invalidate();}

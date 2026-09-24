@@ -52,6 +52,10 @@ jobs:
         run: |
           cmake --build build/blender-core --target bf_gpu --parallel 2
 
+      - name: Verify Blender GP link target is in the CMake graph
+        run: |
+          cmake --build build/blender-core --target help | grep -E 'project_grease_gp_link_test|project_grease_blender_gp' || true
+
       - name: Link Project Grease against Blender GP stack
         run: |
           cmake --build build/blender-core --target project_grease_gp_link_test --parallel 2

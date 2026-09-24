@@ -92,7 +92,8 @@ if [ ! -f "$PACKAGE" ]; then
   exit 1
 fi
 require_text "$PACKAGE" 'find "$SCRIPT_DIR/app/src/main/java" -type f -name '\''*.java'\'' -print0' "compile all Java sources"
-require_text "$PACKAGE" '"\${JAVA_SOURCES[@]}"' "javac receives all Java sources"
+require_text "$PACKAGE" '"${JAVA_SOURCES[@]}"' "javac receives all Java sources"
+require_absent "$PACKAGE" '\${JAVA_SOURCES[@]}' "escaped Java source array"
 
 require_text "$ACTIVITY" "installProjectGreaseOverlay" "overlay installer"
 require_text "$ACTIVITY" "addContentView" "overlay addContentView"

@@ -32,6 +32,18 @@ jobs:
       - name: Run actionlint
         run: ./actionlint
 
+      - name: Run fast repository static checks
+        run: |
+          set -euo pipefail
+          bash -n android/*.sh
+          python3 -m py_compile android/projectgrease/project_grease_startup.py
+          if grep -RFn '\${PARTS[@]}' .github/workflows; then
+            echo "::error::escaped PARTS array expansion found in workflow"
+            exit 1
+          fi
+          grep -Fq 'tar -C "$BUILD_BASE/lib" -cf - android_arm64' .github/workflows/project-grease-wiring-diagnostics.yml
+          grep -Fq 'mapfile -t PARTS' .github/workflows/project-grease-wiring-diagnostics.yml
+
   build-android:
     needs: lint
     runs-on: ubuntu-24.04

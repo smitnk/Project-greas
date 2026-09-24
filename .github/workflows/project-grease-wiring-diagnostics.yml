@@ -625,6 +625,16 @@ jobs:
           find "$BUILD_BASE" -type f \( -name '*.apk' -o -name '*.aab' \) -print | tee apk-files.txt
           test -s apk-files.txt
 
+      - name: Verify APK outputs before upload
+        run: |
+          set -euo pipefail
+          APK_DIR="$BUILD_BASE/android_apk_stage_full"
+          test -d "$APK_DIR"
+          test -s "$APK_DIR/base.apk"
+          test -s "$APK_DIR/blender-full.apk"
+          ls -lh "$APK_DIR"/*.apk
+          echo "[apk-verify] base.apk and blender-full.apk are present and non-empty."
+
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v7
         with:

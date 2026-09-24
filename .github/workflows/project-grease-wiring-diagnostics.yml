@@ -635,11 +635,29 @@ jobs:
           ls -lh "$APK_DIR"/*.apk
           echo "[apk-verify] base.apk and blender-full.apk are present and non-empty."
 
-      - name: Upload APK artifacts
+      - name: Verify APK outputs before upload
+        run: |
+          set -euo pipefail
+          APK_DIR="$BUILD_BASE/android_apk_stage_full"
+          test -s "$APK_DIR/base.apk"
+          test -s "$APK_DIR/blender-full.apk"
+          sha256sum "$APK_DIR/base.apk" "$APK_DIR/blender-full.apk" | tee "$APK_DIR/APK_SHA256SUMS"
+          stat -c '%n %s bytes' "$APK_DIR/base.apk" "$APK_DIR/blender-full.apk"
+
+      - name: Upload base APK
         uses: actions/upload-artifact@v7
         with:
-          name: project-grease-android-apk
+          name: project-grease-base-apk
           path: |
-            .build/blender_build_android/android_apk_stage_full/*.apk
-            apk-files.txt
+            .build/blender_build_android/android_apk_stage_full/base.apk
+            .build/blender_build_android/android_apk_stage_full/APK_SHA256SUMS
+          if-no-files-found: error
+
+      - name: Upload full Blender APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: project-grease-blender-full-apk
+          path: |
+            .build/blender_build_android/android_apk_stage_full/blender-full.apk
+            .build/blender_build_android/android_apk_stage_full/APK_SHA256SUMS
           if-no-files-found: error

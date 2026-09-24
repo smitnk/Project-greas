@@ -37,10 +37,14 @@ jobs:
           set -euo pipefail
           bash -n android/*.sh
           python3 -m py_compile android/projectgrease/project_grease_startup.py
-          if grep -RFn '\${PARTS[@]}' .github/workflows; then
-            echo "::error::escaped PARTS array expansion found in workflow"
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          needle = "\\${" + "PARTS[@]}"
+          for path in Path(".github/workflows").glob("*.yml"):
+              for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                  if needle in line and "needle =" not in line:
+                      raise SystemExit(f"escaped PARTS array expansion found: {path}:{lineno}")
+          PY
           grep -Fq 'tar -C "$BUILD_BASE/lib" -cf - android_arm64' .github/workflows/project-grease-wiring-diagnostics.yml
           grep -Fq 'mapfile -t PARTS' .github/workflows/project-grease-wiring-diagnostics.yml
 

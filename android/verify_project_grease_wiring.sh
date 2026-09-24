@@ -86,6 +86,14 @@ require_absent() {
   fi
 }
 
+PACKAGE="$UPSTREAM/build_files/android/apk/package.sh"
+if [ ! -f "$PACKAGE" ]; then
+  echo "FAIL: missing $PACKAGE" >&2
+  exit 1
+fi
+require_text "$PACKAGE" 'find "$SCRIPT_DIR/app/src/main/java" -type f -name '\''*.java'\'' -print0' "compile all Java sources"
+require_text "$PACKAGE" '"\${JAVA_SOURCES[@]}"' "javac receives all Java sources"
+
 require_text "$ACTIVITY" "installProjectGreaseOverlay" "overlay installer"
 require_text "$ACTIVITY" "addContentView" "overlay addContentView"
 require_absent "$ACTIVITY" "nativeProjectGreaseTouch" "custom native touch bridge"

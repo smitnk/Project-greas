@@ -2,7 +2,18 @@
 
 #include <cstdio>
 
+#include "BKE_gpencil_legacy.h"
+
+extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *gpd);
+extern "C" void GPENCIL_engine_init(void *ved);
+
 int main() {
+  // Force the linker to pull the real GP draw-cache and GP engine objects.
+  volatile auto cache_fn = &DRW_gpencil_batch_cache_dirty_tag;
+  volatile auto engine_fn = &GPENCIL_engine_init;
+  (void)cache_fn;
+  (void)engine_fn;
+
   project_grease::gp::Backend backend;
   if (!backend.initialize()) {
     std::fprintf(stderr, "initialize failed: %s\n", backend.last_error());

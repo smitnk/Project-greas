@@ -9,6 +9,14 @@ VIEW_DST="$UPSTREAM/build_files/android/apk/app/src/main/java/org/blender/blende
 test -n "$ROOT" || { echo "::error::ROOT is not set before invoking wiring completion"; exit 1; }
 test -f "$ACTIVITY"
 test -f "$GHOST_MAIN"
+test "$UPSTREAM" != "$ROOT" || {
+  echo "::error::UPSTREAM unexpectedly resolves to Project Grease root: $UPSTREAM"
+  exit 1
+}
+test -f "$UPSTREAM/build_files/android/apk/package.sh" || {
+  echo "::error::upstream Android package.sh missing: $UPSTREAM/build_files/android/apk/package.sh"
+  exit 1
+}
 test -f "$VIEW_SRC" || {
   echo "::error::ProjectGreaseOverlayView.java source missing: $VIEW_SRC"
   exit 1

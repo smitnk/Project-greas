@@ -5,7 +5,7 @@
 
 #include "BKE_gpencil_legacy.h"
 #include "BKE_idtype.h"
-#include "BKE_main.hh"
+#include "BKE_main.h"
 
 #include "DNA_gpencil_legacy_types.h"
 
@@ -42,10 +42,6 @@ bool Backend::initialize() {
     return true;
   }
 
-  /*
-   * The legacy GP data API allocates real Blender IDs. Initialize the ID
-   * system before creating a standalone Main database.
-   */
   BKE_idtype_init();
   impl_->bmain = BKE_main_new();
 
@@ -177,10 +173,6 @@ bool Backend::end_stroke() {
                              ? 1.0f
                              : impl_->stroke_style.thickness);
 
-  /*
-   * This is the real legacy Blender GP stroke allocation. The points below
-   * become bGPDspoint data consumed by Blender's GP draw cache/renderer.
-   */
   impl_->stroke =
       BKE_gpencil_stroke_add(impl_->frame,
                              material_index,
@@ -209,10 +201,6 @@ bool Backend::end_stroke() {
   impl_->stroke_open = false;
   impl_->pending_points.clear();
 
-  /*
-   * Force Blender's legacy GP cache path to see the new stroke on the next
-   * renderer update.
-   */
   impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
   BKE_gpencil_tag(impl_->gpd);
 
@@ -225,11 +213,6 @@ bool Backend::render() {
     return false;
   }
 
-  /*
-   * Data creation is now real Blender Legacy GP. The next gate is the
-   * renderer context: object/depsgraph + GP draw cache + DRW + GPU/EGL.
-   * Do not substitute Android Canvas here.
-   */
   impl_->last_error =
       "native GP stroke created; GP draw-cache/DRW/GPU render target is next";
   return false;

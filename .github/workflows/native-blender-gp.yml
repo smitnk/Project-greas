@@ -28,6 +28,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libjpeg-dev libpng-dev zlib1g-dev libfreetype6-dev libepoxy-dev libopenimageio-dev libtiff-dev libjemalloc-dev
 
+      - name: Attach Project Grease backend to Blender build graph
+        run: |
+          printf '\nadd_subdirectory("%s/native/blender_gp")\n' "$GITHUB_WORKSPACE" >> third_party/blender/CMakeLists.txt
+
       - name: Configure minimal Blender core for GP GPU stack
         run: |
           cmake -S third_party/blender -B build/blender-core \
@@ -47,6 +51,10 @@ jobs:
       - name: Build Blender GPU core
         run: |
           cmake --build build/blender-core --target bf_gpu --parallel 2
+
+      - name: Link Project Grease against Blender GP stack
+        run: |
+          cmake --build build/blender-core --target project_grease_gp_link_test --parallel 2
 
       - name: Configure Project Grease native boundary
         run: |

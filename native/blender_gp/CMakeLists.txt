@@ -10,7 +10,7 @@ if(NOT EXISTS "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil
     "Blender source is not imported. Run tools/import_blender_gp.sh first.")
 endif()
 
-if(TARGET bf::draw)
+if(TARGET bf_draw)
   # When Project Grease is embedded in Blender's own CMake graph, reuse
   # Blender's real library targets. The GP draw engine and draw cache are
   # already part of bf::draw; we do not compile a second copy here.
@@ -44,20 +44,20 @@ if(TARGET bf::draw)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 
   target_link_libraries(project_grease_blender_gp PRIVATE
-    bf::blenkernel
-    bf::draw
-    bf::gpu
-    bf::bmesh
-    bf::depsgraph
-    bf::dna
-    bf::blenlib
-    bf::blentranslation
-    bf::imbuf
-    bf::nodes
-    bf::windowmanager
-    bf::intern::guardedalloc
-    bf::intern::atomic
-    bf::intern::clog
+    bf_blenkernel
+    bf_draw
+    bf_gpu
+    bf_bmesh
+    bf_depsgraph
+    bf_dna
+    bf_blenlib
+    bf_blentranslation
+    bf_imbuf
+    bf_nodes
+    bf_windowmanager
+    bf_intern_guardedalloc
+    bf_intern_atomic
+    bf_intern_clog
   )
 else()
   add_library(project_grease_blender_gp STATIC

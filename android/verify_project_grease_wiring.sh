@@ -92,8 +92,11 @@ if [ ! -f "$PACKAGE" ]; then
   echo "FAIL: missing $PACKAGE" >&2
   exit 1
 fi
+# shellcheck disable=SC2016
 require_text "$PACKAGE" 'find "$SCRIPT_DIR/app/src/main/java" -type f -name '\''*.java'\'' -print0' "compile all Java sources"
+# shellcheck disable=SC2016
 require_text "$PACKAGE" '"${JAVA_SOURCES[@]}"' "javac receives all Java sources"
+# shellcheck disable=SC2016
 require_absent "$PACKAGE" '\${JAVA_SOURCES[@]}' "escaped Java source array"
 
 require_text "$ACTIVITY" "installProjectGreaseOverlay" "overlay installer"

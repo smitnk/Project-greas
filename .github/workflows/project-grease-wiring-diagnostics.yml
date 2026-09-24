@@ -39,7 +39,7 @@ jobs:
           python3 -m py_compile android/projectgrease/project_grease_startup.py
           python3 - <<'PY'
           from pathlib import Path
-          needle = "\\${" + "PARTS[@]}"
+          needle = chr(92) + "$" + "{PARTS[@]}"
           for path in Path(".github/workflows").glob("*.yml"):
               for lineno, line in enumerate(path.read_text().splitlines(), 1):
                   if needle in line and "needle =" not in line:

@@ -58,10 +58,11 @@ GHOST_H="$UPSTREAM/intern/ghost/intern/GHOST_SystemAndroid.hh"
 GHOST_CC="$UPSTREAM/intern/ghost/intern/GHOST_SystemAndroid.cc"
 GHOST_MAIN="$UPSTREAM/intern/ghost/intern/GHOST_AndroidMain.cc"
 STARTUP="$UPSTREAM/build_files/android/apk/app/src/main/assets/project_grease_startup.py"
+OBJECT_ADD="$UPSTREAM/source/blender/editors/object/object_add.cc"
 
 required=(
   "$ACTIVITY" "$VIEW" "$MANIFEST" "$GHOST_H" "$GHOST_CC" "$GHOST_MAIN"
-  "$STARTUP" "$UPSTREAM/build_files/android/build.py"
+  "$STARTUP" "$OBJECT_ADD" "$UPSTREAM/build_files/android/build.py"
 )
 for f in "${required[@]}"; do
   if [ ! -f "$f" ]; then
@@ -109,10 +110,17 @@ require_absent "$GHOST_MAIN" "nativeProjectGreaseTouch" "custom native touch bri
 require_text "$GHOST_CC" "handleInputEvent" "native Android input handler"
 require_text "$GHOST_H" "GHOST_SystemAndroid" "Android GHOST class"
 require_text "$STARTUP" "grease_pencil_add" "real Grease Pencil creation"
+require_text "$STARTUP" "type='STROKE'" "Grease Pencil STROKE creation"
 require_text "$STARTUP" "PAINT_GREASE_PENCIL" "native Grease Pencil Draw Mode"
+
+# Verify the startup operator against the exact pinned Blender source rather than
+# assuming a newer/different Blender API.
+require_text "$OBJECT_ADD" "OBJECT_OT_grease_pencil_add" "pinned Grease Pencil add operator"
+require_text "$OBJECT_ADD" "ELEM(type, GP_EMPTY, GP_STROKE, GP_MONKEY)" "pinned STROKE enum"
 require_text "$GHOST_MAIN" "BLENDER_ANDROID_STARTUP_SCRIPT" "startup-script environment wiring"
 
 python3 -m py_compile "$UPSTREAM/build_files/android/build.py"
+python3 -m py_compile "$STARTUP"
 
 if ! git -C "$UPSTREAM" diff --check; then
   echo "FAIL: Blender submodule diff --check reported whitespace errors" >&2

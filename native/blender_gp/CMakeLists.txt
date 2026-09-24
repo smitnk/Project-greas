@@ -18,6 +18,9 @@ target_include_directories(project_grease_blender_gp PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${BLENDER_SOURCE_DIR}/source/blender"
   "${BLENDER_SOURCE_DIR}/source"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel"
+  "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
+  "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
   "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
   "${BLENDER_SOURCE_DIR}/intern/atomic"
 )

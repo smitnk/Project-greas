@@ -32,6 +32,11 @@ jobs:
       - name: Run actionlint
         run: ./actionlint -shellcheck=
 
+      - name: Set up Android SDK for Java preflight
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-35'
+
       - name: Fast Java preflight
         run: |
           set -euo pipefail

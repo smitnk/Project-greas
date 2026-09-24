@@ -52,3 +52,9 @@ target_compile_definitions(project_grease_blender_gp PRIVATE
 # engine translation units at this stage. Their dependent Blender modules
 # are added incrementally from compiler/linker evidence; the Blender
 # application, UI, workspace, and unrelated draw engines remain excluded.
+
+
+# Desktop link gate: proves the adapter plus actual GP draw translation units can
+# be linked into a native executable before the Android EGL/GLES layer is added.
+add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
+target_link_libraries(project_grease_gp_link_test PRIVATE project_grease_blender_gp)

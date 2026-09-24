@@ -32,6 +32,26 @@ jobs:
       - name: Run actionlint
         run: ./actionlint -shellcheck=
 
+      - name: Fast Java preflight
+        run: |
+          set -euo pipefail
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-35/android.jar"
+          test -f "$ANDROID_JAR"
+
+          OVERLAY="android/projectgrease/ProjectGreaseOverlayView.java"
+          test -f "$OVERLAY"
+
+          rm -rf /tmp/project-grease-java-preflight
+          mkdir -p /tmp/project-grease-java-preflight/classes
+
+          javac -Xlint:all             -classpath "$ANDROID_JAR"             -d /tmp/project-grease-java-preflight/classes             "$OVERLAY"
+
+          grep -Fq 'ProjectGreaseOverlayView overlay = new ProjectGreaseOverlayView(this);'             android/apply_project_grease_wiring.sh
+          grep -Fq 'cp "$SRC/ProjectGreaseOverlayView.java" "$JAVA_TARGET/"'             android/apply_project_grease_wiring.sh
+
+          echo "[java-preflight] ProjectGreaseOverlayView compiled successfully."
+          echo "[java-preflight] Overlay source wiring checks passed."
+
       - name: Run fast repository static checks
         run: |
           set -euo pipefail

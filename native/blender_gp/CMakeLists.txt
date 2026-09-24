@@ -56,7 +56,6 @@ if(TARGET bf_draw)
     bf_nodes
     bf_windowmanager
     bf_intern_guardedalloc
-    bf_intern_atomic
     bf_intern_clog
   )
 else()

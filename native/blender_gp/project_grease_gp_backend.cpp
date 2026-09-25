@@ -326,6 +326,25 @@ bool Backend::render() {
   std::fprintf(stderr, "[PG43] after BKE_id_free(object)\n");
   std::fflush(stderr);
 
+  // Blender's legacy GP ID free path calls BKE_gpencil_batch_cache_free(),
+  // which dispatches through this callback. In the full Blender draw module
+  // DRW_engines_register() installs it, but this extracted backend does not
+  // initialize the full draw-manager module.
+  BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
+
+  // Free the Main database while the GPU context is still alive. The legacy
+  // GP ID free callback is GPU-aware, so doing this after GPU_exit() is unsafe.
+  std::fprintf(stderr, "[PG45] before BKE_main_free while GPU context is active\n");
+  std::fflush(stderr);
+  BKE_main_free(impl_->bmain);
+  impl_->bmain = nullptr;
+  impl_->gpd = nullptr;
+  impl_->layer = nullptr;
+  impl_->frame = nullptr;
+  impl_->stroke = nullptr;
+  std::fprintf(stderr, "[PG45] after BKE_main_free while GPU context is active\n");
+  std::fflush(stderr);
+
   std::fprintf(stderr, "[PG43] before GPU_context_end_frame\n");
   std::fflush(stderr);
   GPU_context_end_frame(gpu_context);

@@ -39,7 +39,26 @@ struct Backend::Impl {
 };
 
 Backend::Backend() : impl_(new Impl()) {}
-Backend::~Backend() { shutdown(); delete impl_; }
+Backend::~Backend()
+{
+  std::fprintf(stderr, "[PG44] enter Backend::~Backend\\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG44] before shutdown\\n");
+  std::fflush(stderr);
+  shutdown();
+  std::fprintf(stderr, "[PG44] after shutdown\\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG44] before delete impl_\\n");
+  std::fflush(stderr);
+  delete impl_;
+  std::fprintf(stderr, "[PG44] after delete impl_\\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG44] exit Backend::~Backend\\n");
+  std::fflush(stderr);
+}
 
 bool Backend::initialize() {
   if (impl_->initialized) return true;
@@ -52,6 +71,9 @@ bool Backend::initialize() {
 
 void Backend::shutdown() {
   if (!impl_) return;
+
+  std::fprintf(stderr, "[PG44] shutdown: clearing backend pointers\\n");
+  std::fflush(stderr);
   impl_->stroke = nullptr;
   impl_->frame = nullptr;
   impl_->layer = nullptr;
@@ -61,11 +83,19 @@ void Backend::shutdown() {
   impl_->layer_created = false;
   impl_->document_created = false;
   impl_->pending_points.clear();
+
   if (impl_->bmain) {
+    std::fprintf(stderr, "[PG44] before BKE_main_free\\n");
+    std::fflush(stderr);
     BKE_main_free(impl_->bmain);
+    std::fprintf(stderr, "[PG44] after BKE_main_free\\n");
+    std::fflush(stderr);
     impl_->bmain = nullptr;
   }
+
   impl_->initialized = false;
+  std::fprintf(stderr, "[PG44] shutdown complete\\n");
+  std::fflush(stderr);
 }
 
 bool Backend::create_document() {

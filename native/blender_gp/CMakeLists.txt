@@ -43,21 +43,14 @@ if(TARGET bf_draw)
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 
+  # Let Blender's own targets carry their dependency graph. Do not manually
+  # enumerate bf_* static libraries here; that recreates Blender's graph and
+  # can introduce stale/non-built internal targets.
   target_link_libraries(project_grease_blender_gp PRIVATE
-    bf_blenkernel
     bf_draw
     bf_gpu
-    bf_bmesh
-    bf_depsgraph
-    bf_dna
-    bf_blenlib
-    bf_blentranslation
-    bf_imbuf
-    bf_nodes
-    bf_windowmanager
-    bf_intern_guardedalloc
-    bf_intern_clog
   )
+
 else()
   add_library(project_grease_blender_gp STATIC
     project_grease_gp_backend.cpp

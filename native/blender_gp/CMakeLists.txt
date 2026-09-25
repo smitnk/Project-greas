@@ -43,9 +43,22 @@ if(TARGET bf_draw)
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 
-  # Let Blender's own targets carry their dependency graph. Do not manually
-  # enumerate bf_* static libraries here; that recreates Blender's graph and
-  # can introduce stale/non-built internal targets.
+  # Blender 3.6.23 has a real static-library dependency cycle here:
+  #
+  #   bf_draw -> bf_realtime_compositor -> bf_gpu
+  #          ^                         |
+  #          |_________________________|
+  #
+  # The pinned 3.6.23 CMake files do not declare the bf_gpu -> bf_draw
+  # link edge, while newer Blender CMake does. Add only that missing
+  # dependency edge here so CMake can treat the real Blender graph as a
+  # cyclic static-library component. Do not enumerate individual bf_* libs.
+  if(TARGET bf_gpu AND TARGET bf_draw)
+    target_link_libraries(bf_gpu PUBLIC bf_draw)
+    set_property(TARGET bf_gpu APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
+    set_property(TARGET bf_draw APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
+  endif()
+
   target_link_libraries(project_grease_blender_gp PRIVATE
     bf_draw
     bf_gpu

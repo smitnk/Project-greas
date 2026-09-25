@@ -48,6 +48,35 @@ jobs:
             -DWITH_VULKAN_BACKEND=OFF \
             -DWITH_GTESTS=OFF
 
+      - name: Inspect generated Blender and Project Grease link recipes
+        run: |
+          echo "=== Generator ==="
+          grep '^CMAKE_GENERATOR:' build/blender-core/CMakeCache.txt || true
+
+          echo "=== Relevant targets ==="
+          cmake --build build/blender-core --target help | grep -E '(^|[[:space:]])blender($|[[:space:]])|project_grease_gp_link_test|project_grease_blender_gp' || true
+
+          echo "=== Generated link.txt files ==="
+          find build/blender-core -type f -name link.txt | sort
+
+          echo "=== Stock Blender link recipe ==="
+          BLENDER_LINK="$(find build/blender-core -type f -path '*/source/creator/CMakeFiles/blender.dir/link.txt' | head -n 1)"
+          if [ -n "$BLENDER_LINK" ]; then
+            echo "FOUND: $BLENDER_LINK"
+            cat "$BLENDER_LINK"
+          else
+            echo "NOT FOUND: stock blender target link.txt"
+          fi
+
+          echo "=== Project Grease link-test recipe ==="
+          GP_LINK="$(find build/blender-core -type f -path '*/CMakeFiles/project_grease_gp_link_test.dir/link.txt' | head -n 1)"
+          if [ -n "$GP_LINK" ]; then
+            echo "FOUND: $GP_LINK"
+            cat "$GP_LINK"
+          else
+            echo "NOT FOUND: project_grease_gp_link_test link.txt"
+          fi
+
       - name: Build Blender GPU core
         run: |
           cmake --build build/blender-core --target bf_gpu --parallel 2

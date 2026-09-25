@@ -62,6 +62,16 @@ if(TARGET bf_draw)
     bf_gpu
   )
 
+
+  # Authoritative symbol-resolution test: this executable is created only
+  # inside Blender's own CMake graph, where bf_draw and bf_gpu are real targets.
+  add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
+  target_link_libraries(project_grease_gp_link_test PRIVATE
+    project_grease_blender_gp
+    bf_draw
+    bf_gpu
+  )
+
 else()
   add_library(project_grease_blender_gp STATIC
     project_grease_gp_backend.cpp

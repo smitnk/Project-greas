@@ -1,5 +1,5 @@
 # Project Grease native backend
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.24)
 project(project_grease_blender_gp LANGUAGES C CXX)
 
 set(BLENDER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/blender"
@@ -116,5 +116,13 @@ endif()
 
 # Desktop link gate: proves the adapter plus actual GP draw translation units can
 # be linked into a native executable before the Android EGL/GLES layer is added.
+#
+# Blender's draw/GPU stack contains unavoidable circular static-library
+# dependencies. LINK_INTERFACE_MULTIPLICITY helps with some cycles, but the
+# GP engine still leaves DRW/GPU references unresolved when the archives are
+# searched in normal one-pass order. RESCAN makes the linker repeatedly scan
+# the Blender static closure until the circular references are resolved.
 add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
-target_link_libraries(project_grease_gp_link_test PRIVATE project_grease_blender_gp)
+target_link_libraries(project_grease_gp_link_test PRIVATE
+  "$<LINK_GROUP:RESCAN,project_grease_blender_gp,bf_draw,bf_gpu>"
+)

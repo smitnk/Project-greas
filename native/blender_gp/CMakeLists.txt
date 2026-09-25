@@ -43,22 +43,14 @@ if(TARGET bf_draw)
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 
-  # Blender 3.6.23 has a real static-library dependency cycle here:
-  #
-  #   bf_draw -> bf_realtime_compositor -> bf_gpu
-  #          ^                         |
-  #          |_________________________|
-  #
-  # The pinned 3.6.23 CMake files do not declare the bf_gpu -> bf_draw
-  # link edge, while newer Blender CMake does. Add only that missing
-  # dependency edge here so CMake can treat the real Blender graph as a
-  # cyclic static-library component. Do not enumerate individual bf_* libs.
+  # Keep Blender's 3.6.23 target graph unchanged here. The GP renderer
+  # needs both bf_draw and bf_gpu at final link time, but adding a new
+  # PUBLIC bf_draw <-> bf_gpu cycle changes Blender's global CMake graph.
+  # Run #34 showed that combining that cycle with LINK_GROUP:RESCAN makes
+  # CMake propagate the link group back into unrelated editor targets and
+  # fail during configuration. The final executable link group below is
+  # sufficient to rescan the two archives without mutating Blender's graph.
   if(TARGET bf_gpu AND TARGET bf_draw)
-    # Match Blender's newer dependency graph: bf_draw and bf_gpu have
-    # a mutual static dependency because the draw engines call GPU APIs
-    # while GPU code also uses draw infrastructure.
-    target_link_libraries(bf_draw PUBLIC bf_gpu)
-    target_link_libraries(bf_gpu PUBLIC bf_draw)
     set_property(TARGET bf_gpu APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
     set_property(TARGET bf_draw APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
   endif()
@@ -124,5 +116,6 @@ endif()
 # the Blender static closure until the circular references are resolved.
 add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
 target_link_libraries(project_grease_gp_link_test PRIVATE
-  "$<LINK_GROUP:RESCAN,project_grease_blender_gp,bf_draw,bf_gpu>"
+  project_grease_blender_gp
+  "$<LINK_GROUP:RESCAN,bf_draw,bf_gpu>"
 )

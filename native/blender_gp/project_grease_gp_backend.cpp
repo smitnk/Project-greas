@@ -13,6 +13,7 @@
 #include "DNA_object_types.h"
 
 #include "draw_cache.h"
+#include "draw_cache_impl.h"
 
 #include "GPU_context.h"
 #include "GPU_init_exit.h"

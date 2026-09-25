@@ -8,7 +8,6 @@ extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *gpd);
 extern "C" void GPENCIL_engine_init(void *ved);
 
 int main() {
-  // Force the linker to pull the real GP draw-cache and GP engine objects.
   volatile auto cache_fn = &DRW_gpencil_batch_cache_dirty_tag;
   volatile auto engine_fn = &GPENCIL_engine_init;
   (void)cache_fn;
@@ -36,6 +35,11 @@ int main() {
     return 3;
   }
 
-  std::puts("native legacy GP stroke creation/link test reached");
+  if (!backend.render()) {
+    std::fprintf(stderr, "GP cache/render preparation failed: %s\n", backend.last_error());
+    return 4;
+  }
+
+  std::puts("real Blender GP draw-cache GPU batch test passed");
   return 0;
 }

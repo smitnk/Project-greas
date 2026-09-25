@@ -11,12 +11,7 @@ if(NOT EXISTS "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil
 endif()
 
 if(TARGET bf_draw)
-  # When Project Grease is embedded in Blender's own CMake graph, reuse
-  # Blender's real library targets. The GP draw engine and draw cache are
-  # already part of bf::draw; we do not compile a second copy here.
-  add_library(project_grease_blender_gp STATIC
-    project_grease_gp_backend.cpp
-  )
+  add_library(project_grease_blender_gp STATIC project_grease_gp_backend.cpp)
 
   target_include_directories(project_grease_blender_gp PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -38,47 +33,28 @@ if(TARGET bf_draw)
     "${BLENDER_SOURCE_DIR}/source/blender/render"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
     "${BLENDER_SOURCE_DIR}/intern/atomic"
+    "${BLENDER_SOURCE_DIR}/intern/ghost"
   )
 
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 
-  # Do not modify Blender's global bf_draw/bf_gpu dependency graph here.
-  # Run #34/#35 showed that LINK_GROUP propagation and global link-cycle
-  # changes can make CMake generation fail before the actual link test.
-  # Run #36 intentionally uses only the normal final link ordering so the
-  # resulting linker error, if any, exposes the real remaining closure.
-
-  # Blender 3.6.23's gizmo library calls GPU_batch_* helpers but does not
-  # declare bf_gpu as a target dependency. In the stock Blender executable
-  # the global link ordering happens to satisfy this. Project Grease's
-  # out-of-tree executable exposes the missing dependency directly.
   if(TARGET bf_editor_gizmo_library AND TARGET bf_gpu)
     target_link_libraries(bf_editor_gizmo_library PUBLIC bf_gpu)
   endif()
 
-  target_link_libraries(project_grease_blender_gp PRIVATE
-    bf_draw
-    bf_gpu
-  )
+  target_link_libraries(project_grease_blender_gp PRIVATE bf_draw bf_gpu bf_intern_ghost)
 
-
-  # Authoritative symbol-resolution test: this executable is created only
-  # inside Blender's own CMake graph, where bf_draw and bf_gpu are real targets.
   add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
   target_link_libraries(project_grease_gp_link_test PRIVATE
     project_grease_blender_gp
     bf_draw
     bf_gpu
+    bf_intern_ghost
   )
-
 else()
   add_library(project_grease_blender_gp STATIC
     project_grease_gp_backend.cpp
-
-    # First real Blender GP rendering sources.
-    # These are the legacy Grease Pencil draw-cache and draw-engine layers;
-    # the full Blender application/editor is not included.
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil_engine.c"
   )
@@ -103,12 +79,12 @@ else()
     "${BLENDER_SOURCE_DIR}/source/blender/render"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
     "${BLENDER_SOURCE_DIR}/intern/atomic"
+    "${BLENDER_SOURCE_DIR}/intern/ghost"
   )
 
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 endif()
 
-
-# The real symbol-resolution/link test lives in Blender's own CMake graph.
+# The real symbol-resolution and GP cache test lives in Blender's own CMake graph.
 # The standalone configure intentionally ends at the static adapter archive.

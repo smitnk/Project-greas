@@ -43,17 +43,11 @@ if(TARGET bf_draw)
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 
-  # Keep Blender's 3.6.23 target graph unchanged here. The GP renderer
-  # needs both bf_draw and bf_gpu at final link time, but adding a new
-  # PUBLIC bf_draw <-> bf_gpu cycle changes Blender's global CMake graph.
-  # Run #34 showed that combining that cycle with LINK_GROUP:RESCAN makes
-  # CMake propagate the link group back into unrelated editor targets and
-  # fail during configuration. The final executable link group below is
-  # sufficient to rescan the two archives without mutating Blender's graph.
-  if(TARGET bf_gpu AND TARGET bf_draw)
-    set_property(TARGET bf_gpu APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
-    set_property(TARGET bf_draw APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
-  endif()
+  # Do not modify Blender's global bf_draw/bf_gpu dependency graph here.
+  # Run #34/#35 showed that LINK_GROUP propagation and global link-cycle
+  # changes can make CMake generation fail before the actual link test.
+  # Run #36 intentionally uses only the normal final link ordering so the
+  # resulting linker error, if any, exposes the real remaining closure.
 
   # Blender 3.6.23's gizmo library calls GPU_batch_* helpers but does not
   # declare bf_gpu as a target dependency. In the stock Blender executable
@@ -105,17 +99,14 @@ else()
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 endif()
 
-
 # Desktop link gate: proves the adapter plus actual GP draw translation units can
 # be linked into a native executable before the Android EGL/GLES layer is added.
 #
-# Blender's draw/GPU stack contains unavoidable circular static-library
-# dependencies. LINK_INTERFACE_MULTIPLICITY helps with some cycles, but the
-# GP engine still leaves DRW/GPU references unresolved when the archives are
-# searched in normal one-pass order. RESCAN makes the linker repeatedly scan
-# the Blender static closure until the circular references are resolved.
+# Run #36 deliberately avoids LINK_GROUP/RESCAN. The target is linked in normal
+# archive order so any remaining undefined symbols are the actual next blocker.
 add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
 target_link_libraries(project_grease_gp_link_test PRIVATE
   project_grease_blender_gp
-  "$<LINK_GROUP:RESCAN,bf_draw,bf_gpu>"
+  bf_draw
+  bf_gpu
 )

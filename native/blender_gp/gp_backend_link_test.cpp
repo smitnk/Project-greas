@@ -99,26 +99,27 @@ int main() {
 
   // Exercise editing on an existing Blender GP stroke after frame selection.
   if (!backend.select_stroke(0)) {
-    std::fprintf(stderr, "stroke selection failed: %s\\n", backend.last_error());
+    std::fprintf(stderr, "stroke selection failed: %s\n", backend.last_error());
     return 12;
   }
 
-  StrokePoint before{};
-  StrokePoint edited{0.75f, 0.9f, 0.0f, 0.65f, 0.8f, 0.25f};
+  project_grease::gp::StrokePoint before{};
+  project_grease::gp::StrokePoint edited{
+      0.75f, 0.9f, 0.0f, 0.65f, 0.8f, 0.25f};
   if (!backend.get_point(0, 0, &before) ||
       !backend.set_point(0, 0, edited) ||
       !backend.get_point(0, 0, &before) ||
       before.x != edited.x || before.y != edited.y ||
       before.pressure != edited.pressure || before.strength != edited.strength ||
       !backend.render()) {
-    std::fprintf(stderr, "stroke point edit/cache invalidation failed: %s\\n",
+    std::fprintf(stderr, "stroke point edit/cache invalidation failed: %s\n",
                  backend.last_error());
     return 13;
   }
 
   // Add a second stroke, then remove it through the native GP list.
   if (!backend.begin_stroke({0, 2.0f})) {
-    std::fprintf(stderr, "second stroke setup failed: %s\\n", backend.last_error());
+    std::fprintf(stderr, "second stroke setup failed: %s\n", backend.last_error());
     return 14;
   }
   backend.add_point({1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f});
@@ -126,7 +127,7 @@ int main() {
   if (!backend.end_stroke() || backend.stroke_count() != 2 ||
       !backend.delete_stroke(1) || backend.stroke_count() != 1 ||
       !backend.render()) {
-    std::fprintf(stderr, "stroke deletion/cache invalidation failed: %s\\n",
+    std::fprintf(stderr, "stroke deletion/cache invalidation failed: %s\n",
                  backend.last_error());
     return 15;
   }

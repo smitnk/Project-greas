@@ -333,10 +333,14 @@ bool Backend::end_stroke() {
 }
 
 bool Backend::render() {
-  if (!impl_->frame_created || !impl_->gpd || !impl_->stroke) {
-    impl_->last_error = "no native GP stroke is ready to render";
+  if (!impl_->frame_created || !impl_->gpd || !impl_->frame) {
+    impl_->last_error = "no native GP frame is ready to render";
     return false;
   }
+
+  // Rendering is frame-based, not "current stroke"-based. A selected frame
+  // can be rendered after switching layers/frames even when no new stroke
+  // has just been created on that frame.
 
   // The first render creates the persistent native GPU/GHOST session.
   // Subsequent renders reuse it, exactly as the Android app will.

@@ -51,7 +51,7 @@ jobs:
       - name: Link and run Project Grease GP cache test
         run: |
           cmake --build build/blender-core --target project_grease_gp_link_test --parallel 2
-          build/blender-core/project_grease_gp/project_grease_gp_link_test
+          build/blender-core/bin/project_grease_gp_link_test
 
       - name: Configure Project Grease native boundary
         run: |

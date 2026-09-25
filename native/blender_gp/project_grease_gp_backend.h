@@ -33,7 +33,14 @@ class Backend {
   // Creates the real Blender legacy GP data objects behind this adapter.
   bool create_document();
   bool create_layer(const char* name);
+  bool select_layer(int index);
+  int layer_count() const;
+
   bool create_frame(int frame_number);
+  bool select_frame(int frame_number);
+  int frame_count() const;
+  int stroke_count() const;
+  int point_count() const;
 
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);

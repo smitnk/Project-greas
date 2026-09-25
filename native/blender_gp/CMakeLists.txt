@@ -54,6 +54,10 @@ if(TARGET bf_draw)
   # dependency edge here so CMake can treat the real Blender graph as a
   # cyclic static-library component. Do not enumerate individual bf_* libs.
   if(TARGET bf_gpu AND TARGET bf_draw)
+    # Match Blender's newer dependency graph: bf_draw and bf_gpu have
+    # a mutual static dependency because the draw engines call GPU APIs
+    # while GPU code also uses draw infrastructure.
+    target_link_libraries(bf_draw PUBLIC bf_gpu)
     target_link_libraries(bf_gpu PUBLIC bf_draw)
     set_property(TARGET bf_gpu APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
     set_property(TARGET bf_draw APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)

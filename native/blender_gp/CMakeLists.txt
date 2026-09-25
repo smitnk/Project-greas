@@ -99,14 +99,6 @@ else()
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 endif()
 
-# Desktop link gate: proves the adapter plus actual GP draw translation units can
-# be linked into a native executable before the Android EGL/GLES layer is added.
-#
-# Run #36 deliberately avoids LINK_GROUP/RESCAN. The target is linked in normal
-# archive order so any remaining undefined symbols are the actual next blocker.
-add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
-target_link_libraries(project_grease_gp_link_test PRIVATE
-  project_grease_blender_gp
-  bf_draw
-  bf_gpu
-)
+
+# The real symbol-resolution/link test lives in Blender's own CMake graph.
+# The standalone configure intentionally ends at the static adapter archive.

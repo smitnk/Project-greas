@@ -36,10 +36,23 @@ int main() {
   }
 
   if (!backend.render()) {
-    std::fprintf(stderr, "GP cache/render preparation failed: %s\n", backend.last_error());
+    std::fprintf(stderr, "frame 1 GP render preparation failed: %s\n", backend.last_error());
     return 4;
   }
 
-  std::puts("real Blender GP draw-cache GPU batch test passed");
+  if (!backend.create_frame(2) || !backend.begin_stroke({0, 4.0f})) {
+    std::fprintf(stderr, "frame 2 setup failed: %s\n", backend.last_error());
+    return 5;
+  }
+
+  backend.add_point({-0.5f, -0.25f, 0.0f, 0.8f, 1.0f, 0.0f});
+  backend.add_point({0.5f, 0.25f, 0.0f, 0.9f, 1.0f, 0.1f});
+
+  if (!backend.end_stroke() || !backend.render()) {
+    std::fprintf(stderr, "frame 2 GP render preparation failed: %s\n", backend.last_error());
+    return 6;
+  }
+
+  std::puts("persistent Blender GP backend multi-frame test passed");
   return 0;
 }

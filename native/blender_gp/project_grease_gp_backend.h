@@ -41,6 +41,11 @@ class Backend {
   int frame_count() const;
   int stroke_count() const;
   int point_count() const;
+  bool select_stroke(int index);
+  bool get_point(int stroke_index, int point_index, StrokePoint* out) const;
+  bool set_point(int stroke_index, int point_index, const StrokePoint& point);
+  bool delete_stroke(int index);
+  bool delete_last_stroke();
 
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);

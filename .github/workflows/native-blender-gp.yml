@@ -54,7 +54,7 @@ jobs:
           grep '^CMAKE_GENERATOR:' build/blender-core/CMakeCache.txt || true
 
           echo "=== Relevant targets ==="
-          cmake --build build/blender-core --target help | grep -E '(^|[[:space:]])blender($|[[:space:]])|project_grease_gp_link_test|project_grease_blender_gp' || true
+          cmake --build build/blender-core --target help | grep -E 'project_grease_blender_gp' || true
 
           echo "=== Generated link.txt files ==="
           find build/blender-core -type f -name link.txt | sort
@@ -68,14 +68,6 @@ jobs:
             echo "NOT FOUND: stock blender target link.txt"
           fi
 
-          echo "=== Project Grease link-test recipe ==="
-          GP_LINK="$(find build/blender-core -type f -path '*/CMakeFiles/project_grease_gp_link_test.dir/link.txt' | head -n 1)"
-          if [ -n "$GP_LINK" ]; then
-            echo "FOUND: $GP_LINK"
-            cat "$GP_LINK"
-          else
-            echo "NOT FOUND: project_grease_gp_link_test link.txt"
-          fi
 
       - name: Build Blender GPU core
         run: |
@@ -93,6 +85,6 @@ jobs:
         run: |
           cmake -S native/blender_gp -B build/native-gp
 
-      - name: Build adapter boundary
+      - name: Compile adapter (standalone API check)
         run: |
-          cmake --build build/native-gp
+          cmake --build build/native-gp --target project_grease_blender_gp

@@ -175,10 +175,10 @@ bool Backend::render() {
     return false;
   }
 
-  std::fprintf(stderr, "[PG42] before GHOST_CreateSystemBackground\n");
+  std::fprintf(stderr, "[PG43] before GHOST_CreateSystemBackground\n");
   std::fflush(stderr);
   GHOST_SystemHandle ghost_system = GHOST_CreateSystemBackground();
-  std::fprintf(stderr, "[PG42] after GHOST_CreateSystemBackground: %p\n", ghost_system);
+  std::fprintf(stderr, "[PG43] after GHOST_CreateSystemBackground: %p\n", ghost_system);
   std::fflush(stderr);
   if (!ghost_system) {
     impl_->last_error = "GHOST_CreateSystemBackground() failed";
@@ -187,20 +187,20 @@ bool Backend::render() {
 
   // Blender v3.6 GPU tests select the backend before creating the
   // GHOST context. v3.6.23 does not provide GPU_backend_ghost_system_set().
-  std::fprintf(stderr, "[PG42] before GPU_backend_type_selection_set\n");
+  std::fprintf(stderr, "[PG43] before GPU_backend_type_selection_set\n");
   std::fflush(stderr);
   GPU_backend_type_selection_set(GPU_BACKEND_OPENGL);
-  std::fprintf(stderr, "[PG42] after GPU_backend_type_selection_set\n");
+  std::fprintf(stderr, "[PG43] after GPU_backend_type_selection_set\n");
   std::fflush(stderr);
 
   GHOST_GLSettings gl_settings = {};
   gl_settings.context_type = GHOST_kDrawingContextTypeOpenGL;
 
-  std::fprintf(stderr, "[PG42] before GHOST_CreateOpenGLContext\n");
+  std::fprintf(stderr, "[PG43] before GHOST_CreateOpenGLContext\n");
   std::fflush(stderr);
   GHOST_ContextHandle ghost_context =
       GHOST_CreateOpenGLContext(ghost_system, gl_settings);
-  std::fprintf(stderr, "[PG42] after GHOST_CreateOpenGLContext: %p\n", ghost_context);
+  std::fprintf(stderr, "[PG43] after GHOST_CreateOpenGLContext: %p\n", ghost_context);
   std::fflush(stderr);
   if (!ghost_context) {
     GHOST_DisposeSystem(ghost_system);
@@ -208,7 +208,7 @@ bool Backend::render() {
     return false;
   }
 
-  std::fprintf(stderr, "[PG42] before GHOST_ActivateOpenGLContext\n");
+  std::fprintf(stderr, "[PG43] before GHOST_ActivateOpenGLContext\n");
   std::fflush(stderr);
   if (GHOST_ActivateOpenGLContext(ghost_context) != GHOST_kSuccess) {
     GHOST_DisposeOpenGLContext(ghost_system, ghost_context);
@@ -216,13 +216,13 @@ bool Backend::render() {
     impl_->last_error = "GHOST_ActivateOpenGLContext() failed";
     return false;
   }
-  std::fprintf(stderr, "[PG42] after GHOST_ActivateOpenGLContext\n");
+  std::fprintf(stderr, "[PG43] after GHOST_ActivateOpenGLContext\n");
   std::fflush(stderr);
 
-  std::fprintf(stderr, "[PG42] before GPU_context_create\n");
+  std::fprintf(stderr, "[PG43] before GPU_context_create\n");
   std::fflush(stderr);
   GPUContext *gpu_context = GPU_context_create(nullptr, ghost_context);
-  std::fprintf(stderr, "[PG42] after GPU_context_create: %p\n", gpu_context);
+  std::fprintf(stderr, "[PG43] after GPU_context_create: %p\n", gpu_context);
   std::fflush(stderr);
   if (!gpu_context) {
     GHOST_ReleaseOpenGLContext(ghost_context);
@@ -232,23 +232,23 @@ bool Backend::render() {
     return false;
   }
 
-  std::fprintf(stderr, "[PG42] before GPU_init\n");
+  std::fprintf(stderr, "[PG43] before GPU_init\n");
   std::fflush(stderr);
   GPU_init();
-  std::fprintf(stderr, "[PG42] after GPU_init\n");
+  std::fprintf(stderr, "[PG43] after GPU_init\n");
   std::fflush(stderr);
 
-  std::fprintf(stderr, "[PG42] before GPU_context_begin_frame\n");
+  std::fprintf(stderr, "[PG43] before GPU_context_begin_frame\n");
   std::fflush(stderr);
   GPU_context_begin_frame(gpu_context);
-  std::fprintf(stderr, "[PG42] after GPU_context_begin_frame\n");
+  std::fprintf(stderr, "[PG43] after GPU_context_begin_frame\n");
   std::fflush(stderr);
 
-  std::fprintf(stderr, "[PG42] before BKE_object_add_only_object\n");
+  std::fprintf(stderr, "[PG43] before BKE_object_add_only_object\n");
   std::fflush(stderr);
   Object *ob = BKE_object_add_only_object(
       impl_->bmain, OB_GPENCIL_LEGACY, "Project Grease Render");
-  std::fprintf(stderr, "[PG42] after BKE_object_add_only_object: %p\n", ob);
+  std::fprintf(stderr, "[PG43] after BKE_object_add_only_object: %p\n", ob);
   std::fflush(stderr);
   if (!ob) {
     GPU_context_end_frame(gpu_context);
@@ -261,16 +261,16 @@ bool Backend::render() {
     return false;
   }
 
-  std::fprintf(stderr, "[PG42] before assigning ob->data\n");
+  std::fprintf(stderr, "[PG43] before assigning ob->data\n");
   std::fflush(stderr);
   ob->data = impl_->gpd;
-  std::fprintf(stderr, "[PG42] after assigning ob->data: %p\n", ob->data);
+  std::fprintf(stderr, "[PG43] after assigning ob->data: %p\n", ob->data);
   std::fflush(stderr);
 
-  std::fprintf(stderr, "[PG42] before DRW_cache_gpencil_get\n");
+  std::fprintf(stderr, "[PG43] before DRW_cache_gpencil_get\n");
   std::fflush(stderr);
   GPUBatch *batch = DRW_cache_gpencil_get(ob, 1);
-  std::fprintf(stderr, "[PG42] after DRW_cache_gpencil_get: %p\n", batch);
+  std::fprintf(stderr, "[PG43] after DRW_cache_gpencil_get: %p\n", batch);
   std::fflush(stderr);
 
   const bool cache_ready = batch != nullptr;
@@ -278,18 +278,59 @@ bool Backend::render() {
       ? "real Blender GP draw-cache GPU batch built from native bGPDstroke"
       : "DRW_cache_gpencil_get() returned null";
 
+  std::fprintf(stderr, "[PG43] before DRW_gpencil_batch_cache_free\n");
+  std::fflush(stderr);
   DRW_gpencil_batch_cache_free(impl_->gpd);
-  ob->data = nullptr;
-  BKE_id_free(impl_->bmain, &ob->id);
+  std::fprintf(stderr, "[PG43] after DRW_gpencil_batch_cache_free\n");
+  std::fflush(stderr);
 
-  std::fprintf(stderr, "[PG42] before teardown\n");
+  std::fprintf(stderr, "[PG43] before ob->data = nullptr\n");
+  std::fflush(stderr);
+  ob->data = nullptr;
+  std::fprintf(stderr, "[PG43] after ob->data = nullptr\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before BKE_id_free(object)\n");
+  std::fflush(stderr);
+  BKE_id_free(impl_->bmain, &ob->id);
+  std::fprintf(stderr, "[PG43] after BKE_id_free(object)\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before GPU_context_end_frame\n");
   std::fflush(stderr);
   GPU_context_end_frame(gpu_context);
+  std::fprintf(stderr, "[PG43] after GPU_context_end_frame\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before GPU_exit\n");
+  std::fflush(stderr);
   GPU_exit();
+  std::fprintf(stderr, "[PG43] after GPU_exit\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before GPU_context_discard\n");
+  std::fflush(stderr);
   GPU_context_discard(gpu_context);
+  std::fprintf(stderr, "[PG43] after GPU_context_discard\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before GHOST_ReleaseOpenGLContext\n");
+  std::fflush(stderr);
   GHOST_ReleaseOpenGLContext(ghost_context);
+  std::fprintf(stderr, "[PG43] after GHOST_ReleaseOpenGLContext\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before GHOST_DisposeOpenGLContext\n");
+  std::fflush(stderr);
   GHOST_DisposeOpenGLContext(ghost_system, ghost_context);
+  std::fprintf(stderr, "[PG43] after GHOST_DisposeOpenGLContext\n");
+  std::fflush(stderr);
+
+  std::fprintf(stderr, "[PG43] before GHOST_DisposeSystem\n");
+  std::fflush(stderr);
   GHOST_DisposeSystem(ghost_system);
+  std::fprintf(stderr, "[PG43] after GHOST_DisposeSystem\n");
+  std::fflush(stderr);
 
   return cache_ready;
 }

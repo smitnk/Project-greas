@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "BLI_listbase.h"
+
 #include "BKE_gpencil_legacy.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
@@ -266,6 +268,139 @@ int Backend::point_count() const {
     count += stroke->totpoints;
   }
   return count;
+}
+
+bool Backend::select_stroke(int index) {
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke selection";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current == index) {
+      impl_->stroke = stroke;
+      impl_->last_error.clear();
+      return true;
+    }
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
+bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) const {
+  if (!out || !impl_->frame || stroke_index < 0 || point_index < 0) {
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != stroke_index) {
+      continue;
+    }
+    if (point_index >= stroke->totpoints || !stroke->points) {
+      return false;
+    }
+
+    const bGPDspoint &src = stroke->points[point_index];
+    out->x = src.x;
+    out->y = src.y;
+    out->z = src.z;
+    out->pressure = src.pressure;
+    out->strength = src.strength;
+    out->time = src.time;
+    return true;
+  }
+  return false;
+}
+
+bool Backend::set_point(int stroke_index,
+                        int point_index,
+                        const StrokePoint &point) {
+  if (!impl_->frame || stroke_index < 0 || point_index < 0) {
+    impl_->last_error = "invalid stroke point";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != stroke_index) {
+      continue;
+    }
+    if (point_index >= stroke->totpoints || !stroke->points) {
+      impl_->last_error = "point index out of range";
+      return false;
+    }
+
+    bGPDspoint &dst = stroke->points[point_index];
+    dst.x = point.x;
+    dst.y = point.y;
+    dst.z = point.z;
+    dst.pressure = point.pressure;
+    dst.strength = point.strength;
+    dst.time = point.time;
+
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->stroke = stroke;
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
+bool Backend::delete_stroke(int index) {
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke deletion";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+
+    BLI_remlink(&impl_->frame->strokes, stroke);
+    BKE_gpencil_free_stroke(stroke);
+    impl_->stroke = nullptr;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
+bool Backend::delete_last_stroke() {
+  if (!impl_->frame || !impl_->frame->strokes.last) {
+    impl_->last_error = "frame has no strokes";
+    return false;
+  }
+
+  BKE_gpencil_frame_delete_laststroke(impl_->layer, impl_->frame);
+  impl_->stroke = nullptr;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  BKE_gpencil_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
 }
 
 bool Backend::begin_stroke(const StrokeStyle &style) {

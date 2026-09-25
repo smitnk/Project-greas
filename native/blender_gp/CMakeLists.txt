@@ -59,6 +59,14 @@ if(TARGET bf_draw)
     set_property(TARGET bf_draw APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
   endif()
 
+  # Blender 3.6.23's gizmo library calls GPU_batch_* helpers but does not
+  # declare bf_gpu as a target dependency. In the stock Blender executable
+  # the global link ordering happens to satisfy this. Project Grease's
+  # out-of-tree executable exposes the missing dependency directly.
+  if(TARGET bf_editor_gizmo_library AND TARGET bf_gpu)
+    target_link_libraries(bf_editor_gizmo_library PUBLIC bf_gpu)
+  endif()
+
   target_link_libraries(project_grease_blender_gp PRIVATE
     bf_draw
     bf_gpu

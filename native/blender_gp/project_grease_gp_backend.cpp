@@ -291,7 +291,7 @@ bool Backend::render() {
   }
 
   ob->data = impl_->gpd;
-  GPUBatch *batch = DRW_cache_gpencil_get(ob, 1);
+  GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
   const bool cache_ready = batch != nullptr;
 
   // Free only the temporary render object/cache. The document itself stays

@@ -161,6 +161,113 @@ bool Backend::create_frame(int frame_number) {
   return true;
 }
 
+bool Backend::select_layer(int index) {
+  if (!impl_->document_created || !impl_->gpd || index < 0) {
+    impl_->last_error = "invalid layer selection";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+       layer != nullptr;
+       layer = layer->next, ++current) {
+    if (current == index) {
+      impl_->layer = layer;
+      impl_->frame = nullptr;
+      impl_->stroke = nullptr;
+      impl_->layer_created = true;
+      impl_->frame_created = false;
+      impl_->last_error.clear();
+      return true;
+    }
+  }
+
+  impl_->last_error = "layer index out of range";
+  return false;
+}
+
+int Backend::layer_count() const {
+  if (!impl_->gpd) {
+    return 0;
+  }
+
+  int count = 0;
+  for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+       layer != nullptr;
+       layer = layer->next) {
+    ++count;
+  }
+  return count;
+}
+
+bool Backend::select_frame(int frame_number) {
+  if (!impl_->layer) {
+    impl_->last_error = "layer is not selected";
+    return false;
+  }
+
+  for (bGPDframe *frame =
+           static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame != nullptr;
+       frame = frame->next) {
+    if (frame->framenum == frame_number) {
+      impl_->frame = frame;
+      impl_->stroke = nullptr;
+      impl_->frame_created = true;
+      impl_->last_error.clear();
+      return true;
+    }
+  }
+
+  impl_->last_error = "frame number not found on selected layer";
+  return false;
+}
+
+int Backend::frame_count() const {
+  if (!impl_->layer) {
+    return 0;
+  }
+
+  int count = 0;
+  for (bGPDframe *frame =
+           static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame != nullptr;
+       frame = frame->next) {
+    ++count;
+  }
+  return count;
+}
+
+int Backend::stroke_count() const {
+  if (!impl_->frame) {
+    return 0;
+  }
+
+  int count = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    ++count;
+  }
+  return count;
+}
+
+int Backend::point_count() const {
+  if (!impl_->frame) {
+    return 0;
+  }
+
+  int count = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    count += stroke->totpoints;
+  }
+  return count;
+}
+
 bool Backend::begin_stroke(const StrokeStyle &style) {
   if (!impl_->frame_created || !impl_->frame) {
     impl_->last_error = "frame is not created"; return false;

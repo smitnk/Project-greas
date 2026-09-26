@@ -479,6 +479,39 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
   return false;
 }
 
+bool Backend::flip_stroke(int index)
+{
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke flip";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+
+    if (stroke->totpoints <= 0 || !stroke->points) {
+      impl_->last_error = "stroke has no points";
+      return false;
+    }
+
+    BKE_gpencil_stroke_flip(stroke);
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::trim_stroke_points(int index,
                                  int index_from,
                                  int index_to,

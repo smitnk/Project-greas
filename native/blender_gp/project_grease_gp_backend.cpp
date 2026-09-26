@@ -566,7 +566,28 @@ bool Backend::close_stroke(int index)
       return false;
     }
 
-    if (!BKE_gpencil_stroke_close(stroke)) {
+    const int points_before_close = stroke->totpoints;
+    const int flags_before_close = stroke->flag;
+    const void *close_symbol = reinterpret_cast<const void *>(
+        reinterpret_cast<uintptr_t>(&BKE_gpencil_stroke_close));
+    std::fprintf(stderr,
+                 "[CLOSE] before call stroke=%p points=%d flags=0x%x close_symbol=%p\\n",
+                 static_cast<void *>(stroke),
+                 points_before_close,
+                 flags_before_close,
+                 close_symbol);
+
+    const bool close_result = BKE_gpencil_stroke_close(stroke);
+
+    std::fprintf(stderr,
+                 "[CLOSE] after call result=%d stroke=%p points=%d flags=0x%x cyclic=%d\\n",
+                 close_result ? 1 : 0,
+                 static_cast<void *>(stroke),
+                 stroke->totpoints,
+                 stroke->flag,
+                 (stroke->flag & GP_STROKE_CYCLIC) != 0);
+
+    if (!close_result) {
       impl_->last_error = "BKE_gpencil_stroke_close() failed";
       return false;
     }

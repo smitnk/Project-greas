@@ -7,7 +7,7 @@
 #include "BLI_listbase.h"
 
 #include "BKE_gpencil_legacy.h"
-#include "BKE_gpencil_geom.h"
+#include "BKE_gpencil_geom_legacy.h"
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"

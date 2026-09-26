@@ -65,11 +65,17 @@ bool Backend::initialize()
 
   BKE_idtype_init();
 
-  // The full Blender draw module installs this callback from
-  // DRW_engines_register(). Project Grease intentionally does not start the
-  // Blender application, so install only the callback required by the real
-  // legacy GP ID-free path.
+  // The full Blender draw module installs these BKE -> DRW bridges from
+  // DRW_engines_register(). This minimal embedding does not run that startup
+  // path, so both legacy GP cache callbacks must be installed together.
+  BKE_gpencil_batch_cache_dirty_tag_cb = DRW_gpencil_batch_cache_dirty_tag;
   BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
+
+  if (!BKE_gpencil_batch_cache_dirty_tag_cb ||
+      !BKE_gpencil_batch_cache_free_cb) {
+    impl_->last_error = "legacy GP draw callbacks were not installed";
+    return false;
+  }
 
   impl_->bmain = BKE_main_new();
   if (!impl_->bmain) {

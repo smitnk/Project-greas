@@ -84,6 +84,12 @@ jobs:
           echo "=== Running GP cache test ==="
           "$TEST_BIN"
 
+      - name: Run external Blender GPU context integration test
+        run: |
+          cmake --build build/blender-core --target project_grease_gp_external_context_test --parallel 2
+          echo "=== Running external Blender GPU context integration test ==="
+          "$GITHUB_WORKSPACE/build/blender-core/bin/project_grease_gp_external_context_test"
+
       - name: Configure Project Grease native boundary
         run: |
           cmake -S native/blender_gp -B build/native-gp

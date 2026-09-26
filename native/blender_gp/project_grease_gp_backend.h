@@ -74,6 +74,7 @@ class Backend {
   const char* last_error() const;
 
  private:
+  bool render_with_gpu_context();
   struct Impl;
   Impl* impl_;
 };

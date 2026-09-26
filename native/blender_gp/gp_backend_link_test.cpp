@@ -301,7 +301,7 @@ int main() {
   }
   std::fprintf(stderr, "[SPLIT] setup counts: strokes=%d points=%d\\n",
                backend.stroke_count(), backend.point_count());
-  if (backend.stroke_count() != 2 || backend.point_count() != 6) {
+  if (backend.stroke_count() != 2 || backend.point_count() != 7) {
     std::fprintf(stderr,
                  "split setup count mismatch: strokes=%d points=%d\\n",
                  backend.stroke_count(), backend.point_count());
@@ -315,7 +315,7 @@ int main() {
   std::fprintf(stderr, "[SPLIT] split at shared middle point\\n");
   if (!backend.split_stroke(1, 2) ||
       backend.stroke_count() != 3 ||
-      backend.point_count() != 6 ||
+      backend.point_count() != 8 ||
       !backend.render()) {
     std::fprintf(stderr, "stroke split failed: %s\\n", backend.last_error());
     return 31;
@@ -323,13 +323,14 @@ int main() {
 
   project_grease::gp::StrokePoint split_left{};
   project_grease::gp::StrokePoint split_right{};
-  if (!backend.get_point(1, 2, &split_left) ||
+  // Blender splits before index 2: left keeps P0,P1; right receives P2,P3,P4.
+  if (!backend.get_point(1, 1, &split_left) ||
       !backend.get_point(2, 0, &split_right) ||
-      split_left.x != 3.0f || split_left.y != 0.0f ||
-      split_left.pressure != 0.8f || split_left.time != 0.2f ||
+      split_left.x != 2.5f || split_left.y != 0.5f ||
+      split_left.pressure != 0.9f || split_left.time != 0.1f ||
       split_right.x != 3.0f || split_right.y != 0.0f ||
       split_right.pressure != 0.8f || split_right.time != 0.2f) {
-    std::fprintf(stderr, "split point continuity failed: %s\\n", backend.last_error());
+    std::fprintf(stderr, "split point partition failed: %s\\n", backend.last_error());
     return 32;
   }
 

@@ -1,5 +1,6 @@
 package com.smitnk.projectgrease.nativebridge
 
+import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.runtime.Composable
@@ -8,8 +9,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 /**
  * Android surface bridge for the Blender-compatible rendering path.
  *
- * This layer deliberately stops at EGL/GLES transport. Blender GP data is
- * connected after this surface/context proof succeeds.
+ * Native code creates EGL/GLES, makes that context current, then attaches
+ * the Blender GP backend to the externally-owned current context when the
+ * Android-compatible backend is linked into the JNI library.
  */
 @Composable
 fun ProjectGreaseEglViewport(
@@ -27,6 +29,12 @@ fun ProjectGreaseEglViewport(
                         if (rendererHandle != 0L &&
                             GPNative.nativeAttachSurface(rendererHandle, holder.surface)
                         ) {
+                            Log.i(
+                                "ProjectGrease",
+                                "EGL/GLES " + GPNative.nativeGlesVersion(rendererHandle) +
+                                    " surface connected; Blender GP backend=" +
+                                    GPNative.nativeBlenderGpConnected(rendererHandle)
+                            )
                             GPNative.nativeRenderEgl(rendererHandle)
                         }
                     }

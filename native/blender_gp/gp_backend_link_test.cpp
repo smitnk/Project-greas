@@ -111,10 +111,13 @@ int main() {
   project_grease::gp::StrokePoint edited{
       0.75f, 0.9f, 0.0f, 0.65f, 0.8f, 0.25f};
   if (!backend.get_point(0, 0, &before) ||
+      before.x != 0.0f || before.y != 0.5f ||
+      before.pressure != 1.0f || before.strength != 1.0f ||
       !backend.set_point(0, 0, edited) ||
       !backend.get_point(0, 0, &before) ||
       before.x != edited.x || before.y != edited.y ||
-      before.pressure != edited.pressure || before.strength != edited.strength ||
+      before.z != edited.z || before.pressure != edited.pressure ||
+      before.strength != edited.strength || before.time != edited.time ||
       !backend.render()) {
     std::fprintf(stderr, "stroke point edit/cache invalidation failed: %s\n",
                  backend.last_error());

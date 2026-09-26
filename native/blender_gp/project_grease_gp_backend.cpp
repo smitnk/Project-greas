@@ -644,6 +644,46 @@ bool Backend::trim_stroke_points(int index,
   return false;
 }
 
+bool Backend::split_stroke(int index, int before_index)
+{
+  if (!impl_->frame || !impl_->gpd || index < 0 || before_index <= 0) {
+    impl_->last_error = "invalid stroke split";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+
+    if (before_index >= stroke->totpoints) {
+      impl_->last_error = "stroke split index out of range";
+      return false;
+    }
+
+    bGPDstroke *remaining = nullptr;
+    if (!BKE_gpencil_stroke_split(
+            impl_->gpd, impl_->frame, stroke, before_index, &remaining) ||
+        !remaining) {
+      impl_->last_error = "BKE_gpencil_stroke_split() failed";
+      return false;
+    }
+
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::delete_last_stroke() {
   if (!impl_->frame || !impl_->frame->strokes.last) {
     impl_->last_error = "frame has no strokes";

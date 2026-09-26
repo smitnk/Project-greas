@@ -45,7 +45,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBeginStroke(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease.nativebridge_GPNative_nativeAddPoint(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPoint(
     JNIEnv *,
     jobject,
     jlong handle,
@@ -62,7 +62,7 @@ Java_com_smitnk_projectgrease.nativebridge_GPNative_nativeAddPoint(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease.nativebridge_GPNative_nativeEndStroke(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEndStroke(
     JNIEnv *, jobject, jlong handle)
 {
   return project_grease_gp_end_stroke(from_handle(handle)) != 0;

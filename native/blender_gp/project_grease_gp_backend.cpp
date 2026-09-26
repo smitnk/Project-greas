@@ -41,6 +41,7 @@ struct Backend::Impl {
   GHOST_ContextHandle ghost_context = nullptr;
   GPUContext *gpu_context = nullptr;
   bool gpu_initialized = false;
+  bool gpu_external_context = false;
   bool gpu_frame_active = false;
 
   bool initialized = false;
@@ -121,12 +122,15 @@ void Backend::shutdown()
     GPU_context_discard(impl_->gpu_context);
     impl_->gpu_context = nullptr;
 
-    GHOST_ReleaseOpenGLContext(impl_->ghost_context);
-    GHOST_DisposeOpenGLContext(impl_->ghost_system, impl_->ghost_context);
-    GHOST_DisposeSystem(impl_->ghost_system);
+    if (!impl_->gpu_external_context) {
+      GHOST_ReleaseOpenGLContext(impl_->ghost_context);
+      GHOST_DisposeOpenGLContext(impl_->ghost_system, impl_->ghost_context);
+      GHOST_DisposeSystem(impl_->ghost_system);
+    }
 
     impl_->ghost_context = nullptr;
     impl_->ghost_system = nullptr;
+    impl_->gpu_external_context = false;
     impl_->gpu_initialized = false;
   }
 
@@ -762,18 +766,103 @@ bool Backend::end_stroke() {
   return true;
 }
 
+bool Backend::initialize_external_gpu_context()
+{
+  if (!impl_->initialized) {
+    impl_->last_error = "backend is not initialized";
+    return false;
+  }
+
+  if (impl_->gpu_initialized) {
+    if (impl_->gpu_external_context) {
+      return true;
+    }
+    impl_->last_error = "backend already owns a desktop GPU context";
+    return false;
+  }
+
+  // The caller has already made its OpenGL/EGL context current on this
+  // thread. Blender's OpenGL GPU backend does not require GHOST to allocate
+  // the GPU context; it only needs the current GL context.
+  GPU_backend_type_selection_set(GPU_BACKEND_OPENGL);
+  impl_->gpu_context = GPU_context_create(nullptr, nullptr);
+  if (!impl_->gpu_context) {
+    impl_->last_error = "GPU_context_create() failed for external GL context";
+    return false;
+  }
+
+  GPU_init();
+  impl_->gpu_external_context = true;
+  impl_->gpu_initialized = true;
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::render_with_gpu_context()
+{
+  if (!impl_->gpu_initialized || !impl_->gpu_context) {
+    impl_->last_error = "Blender GPU context is not initialized";
+    return false;
+  }
+
+  GPU_context_begin_frame(impl_->gpu_context);
+  impl_->gpu_frame_active = true;
+
+  Object *ob = BKE_object_add_only_object(
+      impl_->bmain, OB_GPENCIL_LEGACY, "Project Grease Render");
+  if (!ob) {
+    GPU_context_end_frame(impl_->gpu_context);
+    impl_->gpu_frame_active = false;
+    impl_->last_error = "BKE_object_add_only_object() failed";
+    return false;
+  }
+
+  ob->data = impl_->gpd;
+  GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+  const bool cache_ready = batch != nullptr;
+
+  DRW_gpencil_batch_cache_free(impl_->gpd);
+  ob->data = nullptr;
+  BKE_id_free(impl_->bmain, &ob->id);
+
+  GPU_context_end_frame(impl_->gpu_context);
+  impl_->gpu_frame_active = false;
+
+  impl_->last_error = cache_ready
+      ? "real Blender GP draw-cache GPU batch built from external GL context"
+      : "DRW_cache_gpencil_get() returned null";
+  return cache_ready;
+}
+
+bool Backend::render_external_context()
+{
+  if (!impl_->frame_created || !impl_->gpd || !impl_->frame) {
+    impl_->last_error = "no native GP frame is ready to render";
+    return false;
+  }
+
+  if (!impl_->gpu_initialized) {
+    impl_->last_error = "external Blender GPU context is not initialized";
+    return false;
+  }
+
+  if (!impl_->gpu_external_context) {
+    impl_->last_error = "GPU context is not externally owned";
+    return false;
+  }
+
+  return render_with_gpu_context();
+}
+
 bool Backend::render() {
   if (!impl_->frame_created || !impl_->gpd || !impl_->frame) {
     impl_->last_error = "no native GP frame is ready to render";
     return false;
   }
 
-  // Rendering is frame-based, not "current stroke"-based. A selected frame
-  // can be rendered after switching layers/frames even when no new stroke
-  // has just been created on that frame.
-
-  // The first render creates the persistent native GPU/GHOST session.
-  // Subsequent renders reuse it, exactly as the Android app will.
+  // Desktop/native proof path. This creates a temporary GHOST context so the
+  // existing CI can continue to validate Blender's GP cache independently of
+  // Android. Android will use initialize_external_gpu_context() instead.
   if (!impl_->gpu_initialized) {
     impl_->ghost_system = GHOST_CreateSystemBackground();
     if (!impl_->ghost_system) {
@@ -803,8 +892,7 @@ bool Backend::render() {
       return false;
     }
 
-    impl_->gpu_context =
-        GPU_context_create(nullptr, impl_->ghost_context);
+    impl_->gpu_context = GPU_context_create(nullptr, impl_->ghost_context);
     if (!impl_->gpu_context) {
       GHOST_ReleaseOpenGLContext(impl_->ghost_context);
       GHOST_DisposeOpenGLContext(impl_->ghost_system, impl_->ghost_context);
@@ -816,38 +904,11 @@ bool Backend::render() {
     }
 
     GPU_init();
+    impl_->gpu_external_context = false;
     impl_->gpu_initialized = true;
   }
 
-  GPU_context_begin_frame(impl_->gpu_context);
-  impl_->gpu_frame_active = true;
-
-  Object *ob = BKE_object_add_only_object(
-      impl_->bmain, OB_GPENCIL_LEGACY, "Project Grease Render");
-  if (!ob) {
-    GPU_context_end_frame(impl_->gpu_context);
-    impl_->gpu_frame_active = false;
-    impl_->last_error = "BKE_object_add_only_object() failed";
-    return false;
-  }
-
-  ob->data = impl_->gpd;
-  GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
-  const bool cache_ready = batch != nullptr;
-
-  // Free only the temporary render object/cache. The document itself stays
-  // alive so later strokes and animation frames can reuse the same backend.
-  DRW_gpencil_batch_cache_free(impl_->gpd);
-  ob->data = nullptr;
-  BKE_id_free(impl_->bmain, &ob->id);
-
-  GPU_context_end_frame(impl_->gpu_context);
-  impl_->gpu_frame_active = false;
-
-  impl_->last_error = cache_ready
-      ? "real Blender GP draw-cache GPU batch built from native bGPDstroke"
-      : "DRW_cache_gpencil_get() returned null";
-  return cache_ready;
+  return render_with_gpu_context();
 }
 
 const char *Backend::last_error() const { return impl_->last_error.c_str(); }

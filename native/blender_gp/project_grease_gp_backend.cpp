@@ -440,6 +440,44 @@ bool Backend::duplicate_stroke(int index) {
   return false;
 }
 
+bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke translation";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+
+    if (stroke->totpoints <= 0 || !stroke->points) {
+      impl_->last_error = "stroke has no points";
+      return false;
+    }
+
+    for (int point_index = 0; point_index < stroke->totpoints; ++point_index) {
+      bGPDspoint &point = stroke->points[point_index];
+      point.x += dx;
+      point.y += dy;
+      point.z += dz;
+    }
+
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::delete_last_stroke() {
   if (!impl_->frame || !impl_->frame->strokes.last) {
     impl_->last_error = "frame has no strokes";

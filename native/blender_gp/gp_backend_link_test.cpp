@@ -283,6 +283,47 @@ int main() {
     return 18;
   }
 
+  // Create a fresh five-point stroke and split it at the shared middle point.
+  std::fprintf(stderr, "[SPLIT] create five-point stroke\n");
+  if (!backend.begin_stroke({0, 5.0f})) {
+    std::fprintf(stderr, "split setup failed: %s\\n", backend.last_error());
+    return 30;
+  }
+  backend.add_point({2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({2.5f, 0.5f, 0.0f, 0.9f, 0.9f, 0.1f});
+  backend.add_point({3.0f, 0.0f, 0.0f, 0.8f, 0.8f, 0.2f});
+  backend.add_point({3.5f, -0.5f, 0.0f, 0.7f, 0.7f, 0.3f});
+  backend.add_point({4.0f, 0.0f, 0.0f, 0.6f, 0.6f, 0.4f});
+
+  if (!backend.end_stroke() || backend.stroke_count() != 2 ||
+      backend.point_count() != 6 || !backend.render()) {
+    std::fprintf(stderr, "split setup/render failed: %s\\n", backend.last_error());
+    return 30;
+  }
+
+  std::fprintf(stderr, "[SPLIT] split at shared middle point\\n");
+  if (!backend.split_stroke(1, 2) ||
+      backend.stroke_count() != 3 ||
+      backend.point_count() != 6 ||
+      !backend.render()) {
+    std::fprintf(stderr, "stroke split failed: %s\\n", backend.last_error());
+    return 31;
+  }
+
+  project_grease::gp::StrokePoint split_left{};
+  project_grease::gp::StrokePoint split_right{};
+  if (!backend.get_point(1, 2, &split_left) ||
+      !backend.get_point(2, 0, &split_right) ||
+      split_left.x != 3.0f || split_left.y != 0.0f ||
+      split_left.pressure != 0.8f || split_left.time != 0.2f ||
+      split_right.x != 3.0f || split_right.y != 0.0f ||
+      split_right.pressure != 0.8f || split_right.time != 0.2f) {
+    std::fprintf(stderr, "split point continuity failed: %s\\n", backend.last_error());
+    return 32;
+  }
+
+  std::fprintf(stderr, "[SPLIT] stroke split/render passed\\n");
+
   std::fprintf(stderr, "[DONE] edit/duplicate/translate/delete operations passed\n");
   std::puts("Blender legacy GP stroke edit/duplicate/translate/delete test passed");
   std::fflush(stdout);

@@ -128,30 +128,37 @@ int main() {
   std::fprintf(stderr, "[EDIT] point edit render passed\
 ");
 
-  // Add a second stroke, then remove it through the native GP list.
-  std::fprintf(stderr, "[DELETE] begin second stroke\
-");
-  if (!backend.begin_stroke({0, 2.0f})) {
-    std::fprintf(stderr, "second stroke setup failed: %s\n", backend.last_error());
+  // Duplicate the edited stroke through Blender's native GP API.
+  std::fprintf(stderr, "[DUPLICATE] duplicate edited stroke\n");
+  if (!backend.duplicate_stroke(0) || backend.stroke_count() != 2) {
+    std::fprintf(stderr, "stroke duplication failed: %s\n", backend.last_error());
     return 14;
   }
-  backend.add_point({1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f});
-  backend.add_point({1.5f, 1.5f, 0.0f, 1.0f, 1.0f, 0.1f});
-  std::fprintf(stderr, "[DELETE] second stroke points added\
-");
-  std::fprintf(stderr, "[DELETE] end second stroke\
-");
-  if (!backend.end_stroke() || backend.stroke_count() != 2 ||
-      !backend.delete_stroke(1) || backend.stroke_count() != 1 ||
+
+  project_grease::gp::StrokePoint duplicate_point{};
+  if (!backend.get_point(1, 0, &duplicate_point) ||
+      duplicate_point.x != edited.x ||
+      duplicate_point.y != edited.y ||
+      duplicate_point.z != edited.z ||
+      duplicate_point.pressure != edited.pressure ||
+      duplicate_point.strength != edited.strength ||
+      duplicate_point.time != edited.time ||
       !backend.render()) {
-    std::fprintf(stderr, "stroke deletion/cache invalidation failed: %s\n",
+    std::fprintf(stderr, "duplicated stroke data/cache invalidation failed: %s\n",
                  backend.last_error());
     return 15;
   }
 
-  std::fprintf(stderr, "[DONE] all edit/delete operations passed\
-");
-  std::puts("Blender legacy GP stroke editing and cache invalidation test passed");
+  std::fprintf(stderr, "[DELETE] delete duplicated stroke\n");
+  if (!backend.delete_stroke(1) || backend.stroke_count() != 1 ||
+      !backend.render()) {
+    std::fprintf(stderr, "stroke deletion/cache invalidation failed: %s\n",
+                 backend.last_error());
+    return 16;
+  }
+
+  std::fprintf(stderr, "[DONE] edit/duplicate/delete operations passed\n");
+  std::puts("Blender legacy GP stroke edit/duplicate/delete test passed");
   std::fflush(stdout);
   return 0;
 }

@@ -478,6 +478,47 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
   return false;
 }
 
+bool Backend::trim_stroke_points(int index,
+                                 int index_from,
+                                 int index_to,
+                                 bool keep_single_point) {
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke point trim";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+
+    if (index_from < 0 || index_to < index_from ||
+        index_to >= stroke->totpoints) {
+      impl_->last_error = "invalid stroke point trim range";
+      return false;
+    }
+
+    if (!BKE_gpencil_stroke_trim_points(
+            stroke, index_from, index_to, keep_single_point)) {
+      impl_->last_error = "BKE_gpencil_stroke_trim_points() failed";
+      return false;
+    }
+
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::delete_last_stroke() {
   if (!impl_->frame || !impl_->frame->strokes.last) {
     impl_->last_error = "frame has no strokes";

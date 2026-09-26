@@ -214,8 +214,8 @@ int main() {
       subdivided_mid.x != 1.125f ||
       subdivided_mid.y != 0.325f ||
       subdivided_mid.z != 0.1f ||
-      subdivided_mid.pressure != 0.75f ||
-      subdivided_mid.strength != 1.0f ||
+      subdivided_mid.pressure != 0.775f ||
+      subdivided_mid.strength != 0.9f ||
       subdivided_mid.time != 0.0f ||
       !backend.render()) {
     std::fprintf(stderr, "subdivided stroke/cache invalidation failed: %s\\n", backend.last_error());

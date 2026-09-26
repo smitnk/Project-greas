@@ -41,6 +41,12 @@ bool initialize_egl(Renderer &renderer)
     return false;
   }
 
+  if (eglBindAPI(EGL_OPENGL_ES_API) != EGL_TRUE) {
+    eglTerminate(renderer.display);
+    renderer.display = EGL_NO_DISPLAY;
+    return false;
+  }
+
   const EGLint config_attributes[] = {
       EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
       EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,

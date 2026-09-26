@@ -49,6 +49,7 @@ class Backend {
   bool duplicate_stroke(int index);
   bool translate_stroke(int index, float dx, float dy, float dz);
   bool flip_stroke(int index);
+  bool subdivide_stroke(int index, int level);
   bool trim_stroke_points(int index, int index_from, int index_to, bool keep_single_point);
 
   // Writes native GP stroke points. No Android Canvas rendering is used.

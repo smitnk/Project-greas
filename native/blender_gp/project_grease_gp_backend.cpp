@@ -297,19 +297,27 @@ bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) con
     return false;
   }
 
+  std::fprintf(stderr, "[GET] frame=%p first=%p selected=%p index=%d point=%d\\n",
+               static_cast<void *>(impl_->frame),
+               impl_->frame ? impl_->frame->strokes.first : nullptr,
+               static_cast<void *>(impl_->stroke), stroke_index, point_index);
   int current = 0;
   for (bGPDstroke *stroke =
            static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;
        stroke = stroke->next, ++current) {
+    std::fprintf(stderr, "[GET] stroke=%p current=%d\\n", static_cast<void *>(stroke), current);
     if (current != stroke_index) {
       continue;
     }
+    std::fprintf(stderr, "[GET] totpoints=%d points=%p\\n", stroke->totpoints, static_cast<void *>(stroke->points));
     if (point_index >= stroke->totpoints || !stroke->points) {
       return false;
     }
 
+    std::fprintf(stderr, "[GET] reading point\\n");
     const bGPDspoint &src = stroke->points[point_index];
+    std::fprintf(stderr, "[GET] point read ok\\n");
     out->x = src.x;
     out->y = src.y;
     out->z = src.z;

@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-#include "GHOST-c-api.h"
+#include "GHOST_C-api.h"
 #include "GPU_init_exit.h"
 
 int main()

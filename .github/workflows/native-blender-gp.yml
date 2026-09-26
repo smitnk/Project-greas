@@ -51,7 +51,32 @@ jobs:
       - name: Link and run Project Grease GP cache test
         run: |
           cmake --build build/blender-core --target project_grease_gp_link_test --parallel 2
-          build/blender-core/bin/project_grease_gp_link_test
+
+          TEST_BIN="$GITHUB_WORKSPACE/build/blender-core/bin/project_grease_gp_link_test"
+
+          echo "=== Final executable ==="
+          file "$TEST_BIN"
+
+          echo "=== BKE_gpencil_stroke_close symbol in final executable ==="
+          nm -C "$TEST_BIN" | grep -w 'BKE_gpencil_stroke_close' || true
+
+          echo "=== BKE_gpencil_stroke_close disassembly ==="
+          objdump -d --disassemble=BKE_gpencil_stroke_close "$TEST_BIN" || true
+
+          echo "=== Archives containing BKE_gpencil_stroke_close ==="
+          find "$GITHUB_WORKSPACE/build/blender-core" -name '*.a' -print0 |
+            while IFS= read -r -d '' lib; do
+              if nm -C "$lib" 2>/dev/null | grep -q 'BKE_gpencil_stroke_close'; then
+                echo "FOUND IN: $lib"
+                nm -C "$lib" | grep 'BKE_gpencil_stroke_close'
+                echo "--- archive index ---"
+                nm --print-armap "$lib" 2>/dev/null |
+                  grep -B3 -A3 'BKE_gpencil_stroke_close' || true
+              fi
+            done
+
+          echo "=== Running GP cache test ==="
+          "$TEST_BIN"
 
       - name: Configure Project Grease native boundary
         run: |

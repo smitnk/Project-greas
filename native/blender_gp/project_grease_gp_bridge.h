@@ -33,6 +33,8 @@ int project_grease_gp_add_point(
     ProjectGreaseGPPoint point);
 
 int project_grease_gp_end_stroke(ProjectGreaseGPHandle *handle);
+int project_grease_gp_initialize_external_gpu(ProjectGreaseGPHandle *handle);
+int project_grease_gp_render_external_context(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render(ProjectGreaseGPHandle *handle);
 
 int project_grease_gp_stroke_count(const ProjectGreaseGPHandle *handle);

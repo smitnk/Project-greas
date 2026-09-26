@@ -59,8 +59,16 @@ class Backend {
   bool add_point(const StrokePoint& point);
   bool end_stroke();
 
-  // Rendering will be connected to the Blender GP draw/DRW path after
-  // the minimal dependency target is linked.
+  // Creates the Blender GPU context on an already-current external OpenGL
+  // context. The caller owns the GL/EGL context; Blender does not create or
+  // destroy GHOST here. This is the Android integration seam.
+  bool initialize_external_gpu_context();
+
+  // Builds the Blender GP draw cache using the externally-owned current GL
+  // context. The caller must keep that context current on this thread.
+  bool render_external_context();
+
+  // Desktop/native proof path. This owns a temporary GHOST context.
   bool render();
 
   const char* last_error() const;

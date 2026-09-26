@@ -237,7 +237,9 @@ int main() {
   }
 
   project_grease::gp::StrokePoint close_point{};
-  if (!backend.get_point(1, 3, &close_point) ||
+  // BKE_gpencil_stroke_close() inserts two points here. Point 3 is the
+  // halfway interpolation; point 4 is the final near-start point.
+  if (!backend.get_point(1, 4, &close_point) ||
       close_point.x <= 1.0f || close_point.x >= 1.01f ||
       close_point.y <= 0.0f || close_point.y >= 0.01f ||
       close_point.z != 0.1f ||

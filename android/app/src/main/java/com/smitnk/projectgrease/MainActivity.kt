@@ -9,6 +9,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.smitnk.projectgrease.nativebridge.GPNative
+import com.smitnk.projectgrease.nativebridge.ProjectGreaseEglViewport
 import com.smitnk.projectgrease.ui.ProjectGreaseEditor
 import com.smitnk.projectgrease.ui.GreaseUiState
 
@@ -30,7 +31,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onStateChange = { state = it },
                         blenderViewport = {
-                            // Native Blender GP viewport is connected in the next layer.
+                            ProjectGreaseEglViewport(modifier = Modifier.fillMaxSize())
                         }
                     )
                 }

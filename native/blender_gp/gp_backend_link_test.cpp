@@ -149,16 +149,39 @@ int main() {
     return 15;
   }
 
+
+  std::fprintf(stderr, "[TRANSFORM] translate duplicated stroke\\n");
+  if (!backend.translate_stroke(1, 0.5f, -0.25f, 0.1f)) {
+    std::fprintf(stderr, "stroke translation failed: %s\\n", backend.last_error());
+    return 16;
+  }
+
+  project_grease::gp::StrokePoint translated_point{};
+  if (!backend.get_point(1, 0, &translated_point) ||
+      translated_point.x != 1.25f ||
+      translated_point.y != 0.65f ||
+      translated_point.z != 0.1f ||
+      translated_point.pressure != edited.pressure ||
+      translated_point.strength != edited.strength ||
+      translated_point.time != edited.time ||
+      !backend.render()) {
+    std::fprintf(stderr, "translated stroke/cache invalidation failed: %s\\n",
+                 backend.last_error());
+    return 17;
+  }
+
+  std::fprintf(stderr, "[TRANSFORM] stroke translation/render passed\\n");
+
   std::fprintf(stderr, "[DELETE] delete duplicated stroke\n");
   if (!backend.delete_stroke(1) || backend.stroke_count() != 1 ||
       !backend.render()) {
     std::fprintf(stderr, "stroke deletion/cache invalidation failed: %s\n",
                  backend.last_error());
-    return 16;
+    return 18;
   }
 
-  std::fprintf(stderr, "[DONE] edit/duplicate/delete operations passed\n");
-  std::puts("Blender legacy GP stroke edit/duplicate/delete test passed");
+  std::fprintf(stderr, "[DONE] edit/duplicate/translate/delete operations passed\n");
+  std::puts("Blender legacy GP stroke edit/duplicate/translate/delete test passed");
   std::fflush(stdout);
   return 0;
 }

@@ -48,6 +48,12 @@ jobs:
         run: |
           cmake --build build/blender-core --target bf_gpu bf_intern_ghost --parallel 2
 
+      - name: Link and run Project Grease GP bridge simulation
+        run: |
+          cmake --build build/blender-core --target project_grease_gp_bridge_simulation --parallel 2
+          echo "=== Running native bridge simulation ==="
+          "$GITHUB_WORKSPACE/build/blender-core/bin/project_grease_gp_bridge_simulation"
+
       - name: Link and run Project Grease GP cache test
         run: |
           cmake --build build/blender-core --target project_grease_gp_link_test --parallel 2

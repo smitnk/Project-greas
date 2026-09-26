@@ -224,7 +224,25 @@ int main() {
 
   std::fprintf(stderr, "[SUBDIVIDE] stroke subdivision/render passed\\n");
 
-  std::fprintf(stderr, "[POINTS] trim subdivided duplicate to first point\\n");
+  std::fprintf(stderr, "[CLOSE] close subdivided duplicated stroke\\n");
+  if (!backend.close_stroke(1) || backend.point_count() != 6) {
+    std::fprintf(stderr, "stroke close failed: %s\\n", backend.last_error());
+    return 25;
+  }
+
+  project_grease::gp::StrokePoint close_point{};
+  if (!backend.get_point(1, 3, &close_point) ||
+      close_point.x <= 1.0f || close_point.x >= 1.01f ||
+      close_point.y <= 0.0f || close_point.y >= 0.01f ||
+      close_point.z != 0.1f ||
+      !backend.render()) {
+    std::fprintf(stderr, "closed stroke/cache invalidation failed: %s\\n", backend.last_error());
+    return 26;
+  }
+
+  std::fprintf(stderr, "[CLOSE] stroke close/render passed\\n");
+
+  std::fprintf(stderr, "[POINTS] trim closed duplicated stroke to first point\\n");
   if (!backend.trim_stroke_points(1, 0, 0, true) ||
       backend.point_count() != 3) {
     std::fprintf(stderr, "stroke point trim failed: %s\n", backend.last_error());

@@ -202,7 +202,29 @@ int main() {
 
   std::fprintf(stderr, "[TRANSFORM] stroke flip/render passed\n");
 
-  std::fprintf(stderr, "[POINTS] trim flipped duplicated stroke to first point\n");
+  std::fprintf(stderr, "[SUBDIVIDE] subdivide flipped duplicated stroke\n");
+  if (!backend.subdivide_stroke(1, 1) ||
+      backend.point_count() != 5) {
+    std::fprintf(stderr, "stroke subdivision failed: %s\\n", backend.last_error());
+    return 23;
+  }
+
+  project_grease::gp::StrokePoint subdivided_mid{};
+  if (!backend.get_point(1, 1, &subdivided_mid) ||
+      subdivided_mid.x != 1.125f ||
+      subdivided_mid.y != 0.325f ||
+      subdivided_mid.z != 0.1f ||
+      subdivided_mid.pressure != 0.75f ||
+      subdivided_mid.strength != 1.0f ||
+      subdivided_mid.time != 0.0f ||
+      !backend.render()) {
+    std::fprintf(stderr, "subdivided stroke/cache invalidation failed: %s\\n", backend.last_error());
+    return 24;
+  }
+
+  std::fprintf(stderr, "[SUBDIVIDE] stroke subdivision/render passed\\n");
+
+  std::fprintf(stderr, "[POINTS] trim subdivided duplicate to first point\\n");
   if (!backend.trim_stroke_points(1, 0, 0, true) ||
       backend.point_count() != 3) {
     std::fprintf(stderr, "stroke point trim failed: %s\n", backend.last_error());

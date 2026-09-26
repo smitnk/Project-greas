@@ -13,6 +13,13 @@ object GPNative {
 
     external fun nativePing(): Boolean
 
+    external fun nativeCreateEglRenderer(): Long
+    external fun nativeDestroyEglRenderer(handle: Long)
+    external fun nativeAttachSurface(handle: Long, surface: android.view.Surface): Boolean
+    external fun nativeDetachSurface(handle: Long)
+    external fun nativeRenderEgl(handle: Long): Boolean
+    external fun nativeEglReady(handle: Long): Boolean
+
     external fun nativeCreate(): Long
     external fun nativeDestroy(handle: Long)
     external fun nativeBeginStroke(handle: Long, materialIndex: Int, thickness: Float): Boolean

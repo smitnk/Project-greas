@@ -172,8 +172,37 @@ int main() {
 
   std::fprintf(stderr, "[TRANSFORM] stroke translation/render passed\n");
 
+  std::fprintf(stderr, "[TRANSFORM] flip duplicated stroke\n");
+  if (!backend.flip_stroke(1)) {
+    std::fprintf(stderr, "stroke flip failed: %s\n", backend.last_error());
+    return 21;
+  }
 
-  std::fprintf(stderr, "[POINTS] trim duplicated stroke to first point\n");
+  project_grease::gp::StrokePoint flipped_first{};
+  project_grease::gp::StrokePoint flipped_last{};
+  if (!backend.get_point(1, 0, &flipped_first) ||
+      !backend.get_point(1, 1, &flipped_last) ||
+      flipped_first.x != 1.0f ||
+      flipped_first.y != 0.0f ||
+      flipped_first.z != 0.1f ||
+      flipped_first.pressure != 0.9f ||
+      flipped_first.strength != 1.0f ||
+      flipped_first.time != 0.1f ||
+      flipped_last.x != 1.25f ||
+      flipped_last.y != 0.65f ||
+      flipped_last.z != 0.1f ||
+      flipped_last.pressure != edited.pressure ||
+      flipped_last.strength != edited.strength ||
+      flipped_last.time != edited.time ||
+      !backend.render()) {
+    std::fprintf(stderr, "flipped stroke/cache invalidation failed: %s\n",
+                 backend.last_error());
+    return 22;
+  }
+
+  std::fprintf(stderr, "[TRANSFORM] stroke flip/render passed\n");
+
+  std::fprintf(stderr, "[POINTS] trim flipped duplicated stroke to first point\n");
   if (!backend.trim_stroke_points(1, 0, 0, true) ||
       backend.point_count() != 3) {
     std::fprintf(stderr, "stroke point trim failed: %s\n", backend.last_error());
@@ -184,12 +213,12 @@ int main() {
   project_grease::gp::StrokePoint unexpected_point{};
   if (!backend.get_point(1, 0, &trimmed_point) ||
       backend.get_point(1, 1, &unexpected_point) ||
-      trimmed_point.x != 1.25f ||
-      trimmed_point.y != 0.65f ||
+      trimmed_point.x != 1.0f ||
+      trimmed_point.y != 0.0f ||
       trimmed_point.z != 0.1f ||
-      trimmed_point.pressure != edited.pressure ||
-      trimmed_point.strength != edited.strength ||
-      trimmed_point.time != edited.time ||
+      trimmed_point.pressure != 0.9f ||
+      trimmed_point.strength != 1.0f ||
+      trimmed_point.time != 0.1f ||
       !backend.render()) {
     std::fprintf(stderr, "trimmed stroke/cache invalidation failed: %s\n",
                  backend.last_error());

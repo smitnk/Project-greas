@@ -150,9 +150,9 @@ int main() {
   }
 
 
-  std::fprintf(stderr, "[TRANSFORM] translate duplicated stroke\\n");
+  std::fprintf(stderr, "[TRANSFORM] translate duplicated stroke\n");
   if (!backend.translate_stroke(1, 0.5f, -0.25f, 0.1f)) {
-    std::fprintf(stderr, "stroke translation failed: %s\\n", backend.last_error());
+    std::fprintf(stderr, "stroke translation failed: %s\n", backend.last_error());
     return 16;
   }
 
@@ -165,12 +165,12 @@ int main() {
       translated_point.strength != edited.strength ||
       translated_point.time != edited.time ||
       !backend.render()) {
-    std::fprintf(stderr, "translated stroke/cache invalidation failed: %s\\n",
+    std::fprintf(stderr, "translated stroke/cache invalidation failed: %s\n",
                  backend.last_error());
     return 17;
   }
 
-  std::fprintf(stderr, "[TRANSFORM] stroke translation/render passed\\n");
+  std::fprintf(stderr, "[TRANSFORM] stroke translation/render passed\n");
 
   std::fprintf(stderr, "[DELETE] delete duplicated stroke\n");
   if (!backend.delete_stroke(1) || backend.stroke_count() != 1 ||

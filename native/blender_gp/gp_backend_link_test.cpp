@@ -295,9 +295,20 @@ int main() {
   backend.add_point({3.5f, -0.5f, 0.0f, 0.7f, 0.7f, 0.3f});
   backend.add_point({4.0f, 0.0f, 0.0f, 0.6f, 0.6f, 0.4f});
 
-  if (!backend.end_stroke() || backend.stroke_count() != 2 ||
-      backend.point_count() != 6 || !backend.render()) {
-    std::fprintf(stderr, "split setup/render failed: %s\\n", backend.last_error());
+  if (!backend.end_stroke()) {
+    std::fprintf(stderr, "split setup end_stroke failed: %s\\n", backend.last_error());
+    return 30;
+  }
+  std::fprintf(stderr, "[SPLIT] setup counts: strokes=%d points=%d\\n",
+               backend.stroke_count(), backend.point_count());
+  if (backend.stroke_count() != 2 || backend.point_count() != 6) {
+    std::fprintf(stderr,
+                 "split setup count mismatch: strokes=%d points=%d\\n",
+                 backend.stroke_count(), backend.point_count());
+    return 30;
+  }
+  if (!backend.render()) {
+    std::fprintf(stderr, "split setup render failed: %s\\n", backend.last_error());
     return 30;
   }
 

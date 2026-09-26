@@ -15,6 +15,7 @@ find_library(log-lib log)
 find_library(android-lib android)
 find_library(egl-lib EGL)
 find_library(glesv2-lib GLESv2)
+find_library(glesv3-lib GLESv3)
 
 target_link_libraries(projectgrease_jni
     PRIVATE
@@ -22,4 +23,5 @@ target_link_libraries(projectgrease_jni
     ${android-lib}
     ${egl-lib}
     ${glesv2-lib}
+    ${glesv3-lib}
 )

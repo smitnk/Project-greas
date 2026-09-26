@@ -45,6 +45,11 @@ if(TARGET bf_draw)
 
   target_link_libraries(project_grease_blender_gp PRIVATE bf_draw bf_gpu bf_intern_ghost)
 
+  # Temporary symbol-resolution diagnostic for native legacy GP close testing.
+  target_link_options(project_grease_gp_link_test PRIVATE
+    "-Wl,--trace-symbol=BKE_gpencil_stroke_close"
+  )
+
   add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
   target_link_libraries(project_grease_gp_link_test PRIVATE
     project_grease_blender_gp

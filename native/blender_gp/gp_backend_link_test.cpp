@@ -225,9 +225,15 @@ int main() {
   std::fprintf(stderr, "[SUBDIVIDE] stroke subdivision/render passed\\n");
 
   std::fprintf(stderr, "[CLOSE] close subdivided duplicated stroke\\n");
-  if (!backend.close_stroke(1) || backend.point_count() != 4) {
-    std::fprintf(stderr, "stroke close failed: %s\\n", backend.last_error());
+  if (!backend.close_stroke(1)) {
+    std::fprintf(stderr, "stroke close operation failed: %s\\n", backend.last_error());
     return 25;
+  }
+  if (backend.point_count() != 7) {
+    std::fprintf(stderr,
+                 "stroke close point count mismatch: got %d expected 7\\n",
+                 backend.point_count());
+    return 26;
   }
 
   project_grease::gp::StrokePoint close_point{};
@@ -237,7 +243,7 @@ int main() {
       close_point.z != 0.1f ||
       !backend.render()) {
     std::fprintf(stderr, "closed stroke/cache invalidation failed: %s\\n", backend.last_error());
-    return 26;
+    return 27;
   }
 
   std::fprintf(stderr, "[CLOSE] stroke close/render passed\\n");
@@ -246,7 +252,7 @@ int main() {
   if (!backend.trim_stroke_points(1, 0, 0, true) ||
       backend.point_count() != 3) {
     std::fprintf(stderr, "stroke point trim failed: %s\n", backend.last_error());
-    return 19;
+    return 28;
   }
 
   project_grease::gp::StrokePoint trimmed_point{};

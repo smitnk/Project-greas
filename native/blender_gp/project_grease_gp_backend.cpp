@@ -567,7 +567,7 @@ bool Backend::close_stroke(int index)
     }
 
     const int points_before_close = stroke->totpoints;
-    const int flags_before_close = stroke->flag;
+    const unsigned int flags_before_close = static_cast<unsigned int>(stroke->flag);
     const void *close_symbol = reinterpret_cast<const void *>(
         reinterpret_cast<uintptr_t>(&BKE_gpencil_stroke_close));
     std::fprintf(stderr,

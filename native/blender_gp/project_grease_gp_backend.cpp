@@ -584,7 +584,7 @@ bool Backend::close_stroke(int index)
                  close_result ? 1 : 0,
                  static_cast<void *>(stroke),
                  stroke->totpoints,
-                 stroke->flag,
+                 static_cast<unsigned int>(stroke->flag),
                  (stroke->flag & GP_STROKE_CYCLIC) != 0);
 
     if (!close_result) {

@@ -407,6 +407,39 @@ bool Backend::delete_stroke(int index) {
   return false;
 }
 
+bool Backend::duplicate_stroke(int index) {
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke duplication";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+
+    bGPDstroke *duplicate = BKE_gpencil_stroke_duplicate(stroke, true, true);
+    if (!duplicate) {
+      impl_->last_error = "BKE_gpencil_stroke_duplicate() failed";
+      return false;
+    }
+
+    BLI_addtail(&impl_->frame->strokes, duplicate);
+    impl_->stroke = duplicate;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    BKE_gpencil_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::delete_last_stroke() {
   if (!impl_->frame || !impl_->frame->strokes.last) {
     impl_->last_error = "frame has no strokes";

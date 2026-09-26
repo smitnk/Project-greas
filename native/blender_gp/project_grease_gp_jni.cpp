@@ -69,21 +69,21 @@ Java_com_smitnk_projectgrease.nativebridge_GPNative_nativeEndStroke(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease.nativebridge.GPNative_nativeRender(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRender(
     JNIEnv *, jobject, jlong handle)
 {
   return project_grease_gp_render(from_handle(handle)) != 0;
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_smitnk_projectgrease.nativebridge.GPNative_nativeStrokeCount(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeStrokeCount(
     JNIEnv *, jobject, jlong handle)
 {
   return project_grease_gp_stroke_count(from_handle(handle));
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_smitnk_projectgrease.nativebridge.GPNative_nativePointCount(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativePointCount(
     JNIEnv *, jobject, jlong handle)
 {
   return project_grease_gp_point_count(from_handle(handle));

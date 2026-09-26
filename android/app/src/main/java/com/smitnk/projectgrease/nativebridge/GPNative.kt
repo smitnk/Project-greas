@@ -3,8 +3,9 @@ package com.smitnk.projectgrease.nativebridge
 /**
  * Android-facing JNI contract for the Project Grease native engine.
  *
- * The current Android build exposes nativePing() first. The GP operations
- * already defined by the native adapter are kept as the next connection step.
+ * The EGL renderer owns the Android surface/context. When the Android
+ * compatible Blender GP native library is linked into this target, the
+ * renderer attaches the current EGL/GLES context to the GP backend.
  */
 object GPNative {
     init {
@@ -19,6 +20,8 @@ object GPNative {
     external fun nativeDetachSurface(handle: Long)
     external fun nativeRenderEgl(handle: Long): Boolean
     external fun nativeEglReady(handle: Long): Boolean
+    external fun nativeGlesVersion(handle: Long): Int
+    external fun nativeBlenderGpConnected(handle: Long): Boolean
 
     external fun nativeCreate(): Long
     external fun nativeDestroy(handle: Long)

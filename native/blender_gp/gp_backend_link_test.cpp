@@ -172,6 +172,30 @@ int main() {
 
   std::fprintf(stderr, "[TRANSFORM] stroke translation/render passed\n");
 
+
+  std::fprintf(stderr, "[POINTS] trim duplicated stroke to first point\n");
+  if (!backend.trim_stroke_points(1, 0, 0, true) ||
+      backend.point_count() != 1) {
+    std::fprintf(stderr, "stroke point trim failed: %s\n", backend.last_error());
+    return 19;
+  }
+
+  project_grease::gp::StrokePoint trimmed_point{};
+  if (!backend.get_point(1, 0, &trimmed_point) ||
+      trimmed_point.x != 1.25f ||
+      trimmed_point.y != 0.65f ||
+      trimmed_point.z != 0.1f ||
+      trimmed_point.pressure != edited.pressure ||
+      trimmed_point.strength != edited.strength ||
+      trimmed_point.time != edited.time ||
+      !backend.render()) {
+    std::fprintf(stderr, "trimmed stroke/cache invalidation failed: %s\n",
+                 backend.last_error());
+    return 20;
+  }
+
+  std::fprintf(stderr, "[POINTS] stroke point trim/render passed\n");
+
   std::fprintf(stderr, "[DELETE] delete duplicated stroke\n");
   if (!backend.delete_stroke(1) || backend.stroke_count() != 1 ||
       !backend.render()) {

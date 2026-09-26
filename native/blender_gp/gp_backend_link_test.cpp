@@ -175,13 +175,15 @@ int main() {
 
   std::fprintf(stderr, "[POINTS] trim duplicated stroke to first point\n");
   if (!backend.trim_stroke_points(1, 0, 0, true) ||
-      backend.point_count() != 1) {
+      backend.point_count() != 3) {
     std::fprintf(stderr, "stroke point trim failed: %s\n", backend.last_error());
     return 19;
   }
 
   project_grease::gp::StrokePoint trimmed_point{};
+  project_grease::gp::StrokePoint unexpected_point{};
   if (!backend.get_point(1, 0, &trimmed_point) ||
+      backend.get_point(1, 1, &unexpected_point) ||
       trimmed_point.x != 1.25f ||
       trimmed_point.y != 0.65f ||
       trimmed_point.z != 0.1f ||

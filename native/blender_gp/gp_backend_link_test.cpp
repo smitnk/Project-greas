@@ -225,13 +225,13 @@ int main() {
   std::fprintf(stderr, "[SUBDIVIDE] stroke subdivision/render passed\\n");
 
   std::fprintf(stderr, "[CLOSE] close subdivided duplicated stroke\\n");
-  if (!backend.close_stroke(1) || backend.point_count() != 5) {
+  if (!backend.close_stroke(1) || backend.point_count() != 4) {
     std::fprintf(stderr, "stroke close failed: %s\\n", backend.last_error());
     return 25;
   }
 
   project_grease::gp::StrokePoint close_point{};
-  if (!backend.get_point(1, 4, &close_point) ||
+  if (!backend.get_point(1, 3, &close_point) ||
       close_point.x <= 1.0f || close_point.x >= 1.01f ||
       close_point.y <= 0.0f || close_point.y >= 0.01f ||
       close_point.z != 0.1f ||

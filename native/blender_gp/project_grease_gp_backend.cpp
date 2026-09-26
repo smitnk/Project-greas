@@ -357,9 +357,13 @@ bool Backend::set_point(int stroke_index,
     dst.pressure = point.pressure;
     dst.strength = point.strength;
     dst.time = point.time;
+    std::fprintf(stderr, "[SET] point fields written\\n");
 
+    std::fprintf(stderr, "[SET] before batch cache dirty\\n");
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    std::fprintf(stderr, "[SET] after batch cache dirty\\n");
     BKE_gpencil_tag(impl_->gpd);
+    std::fprintf(stderr, "[SET] after gp tag\\n");
     impl_->stroke = stroke;
     impl_->last_error.clear();
     return true;

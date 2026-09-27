@@ -76,6 +76,7 @@ CXX_SOURCES=(
   "$BLENDER/source/blender/gpu/intern/gpu_index_buffer.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_batch.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_vertex_format.cc"
+  "$BLENDER/source/blender/gpu/intern/gpu_capabilities.cc"
   "$ROOT/native/blender_gp/android_gpu_backend.cpp"
   "$BLENDER/source/blender/blenlib/intern/listbase.cc"
 )
@@ -85,6 +86,8 @@ C_SOURCES=(
   "$BLENDER/intern/guardedalloc/intern/mallocn.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn_guarded_impl.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
+  "$BLENDER/intern/guardedalloc/intern/leak_detector.cc"
+  "$BLENDER/intern/guardedalloc/intern/memory_usage.cc"
 )
 
 OBJECTS=()

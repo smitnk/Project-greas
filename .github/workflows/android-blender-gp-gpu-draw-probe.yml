@@ -2,14 +2,6 @@ name: Android Blender GP GPU DRW Closure Probe
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - native/blender-gp-phase40-cache
-    paths:
-      - "tools/android_blender_gp_gpu_drw_probe.sh"
-      - "native/blender_gp/android_compat/**"
-      - ".github/workflows/android-blender-gp-gpu-draw-probe.yml"
-      - "native/blender_gp/**"
 
 jobs:
   android-gp-gpu-draw-probe:

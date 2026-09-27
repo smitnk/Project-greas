@@ -31,14 +31,14 @@ fi
 {
   echo '/* Generated from Blender 3.6.23 source/blender/CMakeLists.txt. */'
   for header in "${DNA_HEADERS[@]}"; do
-    printf '#include "%s"\\n' "$BLENDER/source/blender${header}"
+    printf '#include "%s"\n' "$BLENDER/source/blender/makesdna/${header}"
   done
 } > "$GEN/dna_includes_all.h"
 
 {
   echo '/* Generated from Blender 3.6.23 source/blender/CMakeLists.txt. */'
   for header in "${DNA_HEADERS[@]}"; do
-    printf '  "%s",\\n' "${header##*/}"
+    printf '  "%s",\n' "$header"
   done
 } > "$GEN/dna_includes_as_strings.h"
 

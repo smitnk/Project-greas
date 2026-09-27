@@ -32,7 +32,7 @@ jobs:
       - name: Install host dependency for Blender DNA generator
         run: |
           sudo apt-get update
-          sudo apt-get install -y libjpeg-dev libpng-dev libepoxy-dev
+          sudo apt-get install -y libjpeg-dev libpng-dev libepoxy-dev libtiff-dev libfreetype6-dev
 
       - name: Generate Blender DNA metadata
         run: |

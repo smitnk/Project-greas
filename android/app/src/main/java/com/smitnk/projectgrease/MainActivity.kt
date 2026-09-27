@@ -32,7 +32,12 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onStateChange = { state = it },
                         blenderViewport = {
-                            ProjectGreaseEglViewport(modifier = Modifier.fillMaxSize())
+                            ProjectGreaseEglViewport(
+                                modifier = Modifier.fillMaxSize(),
+                                drawingEnabled = state.viewportMode == com.smitnk.projectgrease.ui.ViewportMode.DRAW_2D && state.activeTool == com.smitnk.projectgrease.ui.GreaseTool.DRAW,
+                                strokeWidth = state.strokeWidth,
+                                materialIndex = state.activeMaterial
+                            )
                         }
                     )
                 }

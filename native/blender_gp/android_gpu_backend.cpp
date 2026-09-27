@@ -245,18 +245,18 @@ class AndroidBatch final : public Batch {
     glBindVertexArray(vao_id_);
 
     const GLenum primitive = prim_type == GPU_PRIM_TRIS ? GL_TRIANGLES : GL_POINTS;
-    const uint index_offset = ibo->index_start_get() + static_cast<uint>(v_first);
+    const uint index_offset = ibo->index_start_get() + static_cast<uint>(i_first);
     const void *index_offset_ptr = reinterpret_cast<const void *>(
         static_cast<uintptr_t>(index_offset) *
         (ibo->gl_index_type() == GL_UNSIGNED_SHORT ? sizeof(uint16_t) : sizeof(uint32_t)));
 
     glDrawElements(primitive,
-                   static_cast<GLsizei>(v_count),
+                   static_cast<GLsizei>(i_count),
                    ibo->gl_index_type(),
                    index_offset_ptr);
 
-    (void)i_first;
-    (void)i_count;
+    (void)v_first;
+    (void)v_count;
   }
 
   void draw_indirect(GPUStorageBuf *, intptr_t) override {}
@@ -311,7 +311,7 @@ extern "C" int project_grease_android_gpu_draw_batch(GPUBatch *batch)
   if (count <= 0) {
     return 0;
   }
-  android_batch->draw(0, count, 0, 1);
+  android_batch->draw(0, 0, 0, count);
   return glGetError() == GL_NO_ERROR ? 1 : 0;
 }
 

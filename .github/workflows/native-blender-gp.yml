@@ -6,6 +6,13 @@ on:
     branches:
       - native/blender-gp-backend
       - native/blender-gp-phase40-cache
+    paths:
+      - "native/blender_gp/**"
+      - "tools/import_blender_gp.sh"
+      - "tools/android_blender_gp_generate_dna.sh"
+      - "tools/android_blender_gp_native_link_probe.sh"
+      - "tools/android_blender_gp_gpu_drw_probe.sh"
+      - ".github/workflows/native-blender-gp.yml"
 
 jobs:
   native-backend-preflight:

@@ -63,6 +63,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_bridge.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_jni.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_presentation.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_index_buffer.cc"

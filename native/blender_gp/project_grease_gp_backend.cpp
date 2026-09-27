@@ -1,17 +1,22 @@
 #include "project_grease_gp_backend.h"
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
+
+#include "MEM_guardedalloc.h"
 
 #include "BLI_listbase.h"
 
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
+#ifndef __ANDROID__
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_object.h"
+#endif
 
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_object_types.h"
@@ -29,7 +34,9 @@ namespace project_grease::gp {
 
 struct Backend::Impl {
   std::string last_error;
+#ifndef __ANDROID__
   Main *bmain = nullptr;
+#endif
   bGPdata *gpd = nullptr;
   bGPDlayer *layer = nullptr;
   bGPDframe *frame = nullptr;
@@ -70,11 +77,10 @@ bool Backend::initialize()
     return true;
   }
 
-  BKE_idtype_init();
-
-  // The full Blender draw module installs these BKE -> DRW bridges from
-  // DRW_engines_register(). This minimal embedding does not run that startup
-  // path, so both legacy GP cache callbacks must be installed together.
+  // The full Blender draw module normally installs these callbacks during
+  // startup. Project Grease embeds only the legacy GP closure, so install
+  // the two callbacks directly and keep Android independent of Blender Main/ID
+  // ownership.
   BKE_gpencil_batch_cache_dirty_tag_cb = DRW_gpencil_batch_cache_dirty_tag;
   BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
 
@@ -84,11 +90,14 @@ bool Backend::initialize()
     return false;
   }
 
+#ifndef __ANDROID__
+  BKE_idtype_init();
   impl_->bmain = BKE_main_new();
   if (!impl_->bmain) {
     impl_->last_error = "BKE_main_new() failed";
     return false;
   }
+#endif
 
   impl_->initialized = true;
   return true;
@@ -100,12 +109,46 @@ void Backend::shutdown()
     return;
   }
 
+  // Android does not create a Blender Main/ID database. Free the minimal
+  // legacy GP containers directly after releasing their GPU cache.
+#ifdef __ANDROID__
+  if (impl_->gpd) {
+    if (impl_->gpu_initialized) {
+      DRW_gpencil_batch_cache_free(impl_->gpd);
+    }
+    for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+         layer != nullptr;) {
+      bGPDlayer *next_layer = layer->next;
+      for (bGPDframe *frame = static_cast<bGPDframe *>(layer->frames.first);
+           frame != nullptr;) {
+        bGPDframe *next_frame = frame->next;
+        for (bGPDstroke *stroke = static_cast<bGPDstroke *>(frame->strokes.first);
+             stroke != nullptr;) {
+          bGPDstroke *next_stroke = stroke->next;
+          MEM_SAFE_FREE(stroke->points);
+          MEM_SAFE_FREE(stroke->triangles);
+          MEM_SAFE_FREE(stroke->dvert);
+          MEM_SAFE_FREE(stroke->editcurve);
+          MEM_freeN(stroke);
+          stroke = next_stroke;
+        }
+        MEM_freeN(frame);
+        frame = next_frame;
+      }
+      MEM_freeN(layer);
+      layer = next_layer;
+    }
+    MEM_freeN(impl_->gpd);
+    impl_->gpd = nullptr;
+  }
+#else
   // Legacy GP ID destruction can release GPU batches, so free Main while the
-  // caller-owned Android EGL/GLES context is still current.
+  // desktop proof context is still available.
   if (impl_->bmain) {
     BKE_main_free(impl_->bmain);
     impl_->bmain = nullptr;
   }
+#endif
 
   impl_->stroke = nullptr;
   impl_->frame = nullptr;
@@ -148,12 +191,42 @@ void Backend::shutdown()
 }
 
 bool Backend::create_document() {
-  if (!impl_->initialized || !impl_->bmain) {
-    impl_->last_error = "backend is not initialized"; return false;
+  if (!impl_->initialized) {
+    impl_->last_error = "backend is not initialized";
+    return false;
+  }
+#ifdef __ANDROID__
+  // Android deliberately avoids BKE_lib_id/BKE_main. This is still the real
+  // Blender legacy bGPdata layout; only the ownership wrapper is minimal.
+  impl_->gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "Project Grease Android GP"));
+  if (!impl_->gpd) {
+    impl_->last_error = "Android bGPdata allocation failed";
+    return false;
+  }
+  impl_->gpd->flag = GP_DATA_DISPINFO | GP_DATA_EXPAND | GP_DATA_VIEWALIGN |
+                     GP_DATA_SHOW_ONIONSKINS | GP_DATA_CURVE_ADAPTIVE_RESOLUTION;
+  impl_->gpd->line_color[0] = 0.6f;
+  impl_->gpd->line_color[1] = 0.6f;
+  impl_->gpd->line_color[2] = 0.6f;
+  impl_->gpd->line_color[3] = 0.5f;
+  impl_->gpd->pixfactor = GP_DEFAULT_PIX_FACTOR;
+  impl_->gpd->onion_keytype = -1;
+  impl_->gpd->onion_flag = GP_ONION_GHOST_PREVCOL | GP_ONION_GHOST_NEXTCOL |
+                           GP_ONION_FADE;
+  impl_->gpd->onion_mode = GP_ONION_MODE_RELATIVE;
+  impl_->gpd->onion_factor = 0.5f;
+  impl_->gpd->gstep = 1;
+  impl_->gpd->gstep_next = 1;
+#else
+  if (!impl_->bmain) {
+    impl_->last_error = "backend is not initialized";
+    return false;
   }
   impl_->gpd = BKE_gpencil_data_addnew(impl_->bmain, "Project Grease");
+#endif
   if (!impl_->gpd) {
-    impl_->last_error = "BKE_gpencil_data_addnew() failed"; return false;
+    impl_->last_error = "BKE_gpencil_data_addnew() failed";
+    return false;
   }
   impl_->document_created = true;
   return true;
@@ -164,7 +237,23 @@ bool Backend::create_layer(const char *name) {
     impl_->last_error = "document is not created"; return false;
   }
   const char *layer_name = (name && name[0]) ? name : "GP_Layer";
+#ifdef __ANDROID__
+  impl_->layer = static_cast<bGPDlayer *>(MEM_callocN(sizeof(bGPDlayer), "Project Grease Android GP layer"));
+  if (impl_->layer) {
+    std::strncpy(impl_->layer->info, layer_name, sizeof(impl_->layer->info) - 1);
+    impl_->layer->info[sizeof(impl_->layer->info) - 1] = '\0';
+    impl_->layer->opacity = 1.0f;
+    impl_->layer->vertex_paint_opacity = 1.0f;
+    impl_->layer->onion_flag |= GP_LAYER_ONIONSKIN;
+    impl_->layer->scale[0] = 1.0f;
+    impl_->layer->scale[1] = 1.0f;
+    impl_->layer->scale[2] = 1.0f;
+    BLI_addtail(&impl_->gpd->layers, impl_->layer);
+    impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+  }
+#else
   impl_->layer = BKE_gpencil_layer_addnew(impl_->gpd, layer_name, true, false);
+#endif
   if (!impl_->layer) {
     impl_->last_error = "BKE_gpencil_layer_addnew() failed"; return false;
   }
@@ -176,7 +265,16 @@ bool Backend::create_frame(int frame_number) {
   if (!impl_->layer_created || !impl_->layer) {
     impl_->last_error = "layer is not created"; return false;
   }
+#ifdef __ANDROID__
+  impl_->frame = static_cast<bGPDframe *>(MEM_callocN(sizeof(bGPDframe), "Project Grease Android GP frame"));
+  if (impl_->frame) {
+    impl_->frame->framenum = frame_number;
+    BLI_addtail(&impl_->layer->frames, impl_->frame);
+    impl_->layer->actframe = impl_->frame;
+  }
+#else
   impl_->frame = BKE_gpencil_frame_addnew(impl_->layer, frame_number);
+#endif
   if (!impl_->frame) {
     impl_->last_error = "BKE_gpencil_frame_addnew() failed"; return false;
   }
@@ -413,7 +511,9 @@ bool Backend::delete_stroke(int index) {
     BKE_gpencil_free_stroke(stroke);
     impl_->stroke = nullptr;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -446,7 +546,9 @@ bool Backend::duplicate_stroke(int index) {
     BLI_addtail(&impl_->frame->strokes, duplicate);
     impl_->stroke = duplicate;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -484,7 +586,9 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
 
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -517,7 +621,9 @@ bool Backend::flip_stroke(int index)
     BKE_gpencil_stroke_flip(stroke);
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -550,7 +656,9 @@ bool Backend::subdivide_stroke(int index, int level)
     BKE_gpencil_stroke_subdivide(impl_->gpd, stroke, level, 0);
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -608,7 +716,9 @@ bool Backend::close_stroke(int index)
 
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -649,7 +759,9 @@ bool Backend::trim_stroke_points(int index,
 
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -689,7 +801,9 @@ bool Backend::split_stroke(int index, int before_index)
 
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
     BKE_gpencil_tag(impl_->gpd);
+#endif
     impl_->last_error.clear();
     return true;
   }
@@ -750,8 +864,29 @@ bool Backend::end_stroke() {
   const short thickness = static_cast<short>(
       impl_->stroke_style.thickness < 1.0f ? 1.0f : impl_->stroke_style.thickness);
 
+#ifdef __ANDROID__
+  impl_->stroke = static_cast<bGPDstroke *>(
+      MEM_callocN(sizeof(bGPDstroke), "Project Grease Android GP stroke"));
+  if (impl_->stroke) {
+    impl_->stroke->thickness = thickness;
+    impl_->stroke->fill_opacity_fac = 1.0f;
+    impl_->stroke->hardeness = 1.0f;
+    impl_->stroke->aspect_ratio[0] = 1.0f;
+    impl_->stroke->aspect_ratio[1] = 1.0f;
+    impl_->stroke->uv_scale = 1.0f;
+    impl_->stroke->flag = GP_STROKE_3DSPACE;
+    impl_->stroke->totpoints = point_count;
+    impl_->stroke->points = static_cast<bGPDspoint *>(
+        MEM_callocN(sizeof(bGPDspoint) * point_count, "Project Grease Android GP points"));
+    impl_->stroke->mat_nr = material_index;
+    if (impl_->stroke->points) {
+      BLI_addtail(&impl_->frame->strokes, impl_->stroke);
+    }
+  }
+#else
   impl_->stroke = BKE_gpencil_stroke_add(
       impl_->frame, material_index, point_count, thickness, false);
+#endif
   if (!impl_->stroke) {
     impl_->last_error = "BKE_gpencil_stroke_add() failed";
     impl_->stroke_open = false;
@@ -822,20 +957,30 @@ bool Backend::render_with_gpu_context()
     return false;
   }
 
-  Object *ob = BKE_object_add_only_object(
+  Object *ob = nullptr;
+#ifdef __ANDROID__
+  Object android_ob = {};
+  android_ob.type = OB_GPENCIL_LEGACY;
+  android_ob.data = impl_->gpd;
+  ob = &android_ob;
+#else
+  ob = BKE_object_add_only_object(
       impl_->bmain, OB_GPENCIL_LEGACY, "Project Grease Render");
   if (!ob) {
     impl_->last_error = "BKE_object_add_only_object() failed";
     return false;
   }
-
   ob->data = impl_->gpd;
+#endif
+
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
   const bool cache_ready = batch != nullptr;
 
   DRW_gpencil_batch_cache_free(impl_->gpd);
+#ifndef __ANDROID__
   ob->data = nullptr;
   BKE_id_free(impl_->bmain, &ob->id);
+#endif
 
   impl_->last_error = cache_ready
       ? "real Blender GP draw-cache GPU batch built from current external GL context"

@@ -61,6 +61,7 @@ SOURCES=(
   "$BLENDER/source/blender/gpu/intern/gpu_index_buffer.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_batch.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_vertex_format.cc"
+  "$BLENDER/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
   "$ROOT/native/blender_gp/android_gpu_backend.cpp"
   "$ROOT/native/blender_gp/android_gpu_buffer_backend_test.cpp"
 )

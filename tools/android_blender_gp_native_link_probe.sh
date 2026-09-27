@@ -56,6 +56,7 @@ COMMON_FLAGS=(
   -fPIC
   -ffunction-sections
   -fdata-sections
+  -fvisibility=hidden
 )
 
 CXXFLAGS=("${COMMON_FLAGS[@]}" -std=gnu++17)
@@ -76,11 +77,14 @@ CXX_SOURCES=(
   "$BLENDER/source/blender/gpu/intern/gpu_batch.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_vertex_format.cc"
   "$ROOT/native/blender_gp/android_gpu_backend.cpp"
-  "$BLENDER/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
 )
 
 C_SOURCES=(
   "$BLENDER/source/blender/blenkernel/intern/gpencil_legacy.c"
+  "$BLENDER/source/blender/blenlib/intern/BLI_listbase.c"
+  "$BLENDER/intern/guardedalloc/intern/mallocn.c"
+  "$BLENDER/intern/guardedalloc/intern/mallocn_guarded_impl.c"
+  "$BLENDER/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
 )
 
 OBJECTS=()

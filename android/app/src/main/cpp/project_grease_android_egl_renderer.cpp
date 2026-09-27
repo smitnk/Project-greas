@@ -13,13 +13,13 @@ namespace {
 using GPHandle = void *;
 struct ProjectGreaseGPPoint { float x; float y; float z; float pressure; float strength; float time; };
 
-extern "C" GPHandle project_grease_gp_create(void) __attribute__((weak));
-extern "C" void project_grease_gp_destroy(GPHandle) __attribute__((weak));
-extern "C" int project_grease_gp_initialize_external_gpu(GPHandle) __attribute__((weak));
-extern "C" int project_grease_gp_render_external_context(GPHandle) __attribute__((weak));
-extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float) __attribute__((weak));
-extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint) __attribute__((weak));
-extern "C" int project_grease_gp_end_stroke(GPHandle) __attribute__((weak));
+extern "C" GPHandle project_grease_gp_create(void);
+extern "C" void project_grease_gp_destroy(GPHandle);
+extern "C" int project_grease_gp_initialize_external_gpu(GPHandle);
+extern "C" int project_grease_gp_render_external_context(GPHandle);
+extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float);
+extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint);
+extern "C" int project_grease_gp_end_stroke(GPHandle);
 
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
@@ -125,9 +125,7 @@ void disconnect_blender_gp(Renderer &renderer)
     return;
   }
 
-  if (project_grease_gp_destroy) {
-    project_grease_gp_destroy(renderer.gp_handle);
-  }
+  project_grease_gp_destroy(renderer.gp_handle);
 
   renderer.gp_handle = nullptr;
   renderer.gp_connected = false;
@@ -137,21 +135,13 @@ bool connect_blender_gp(Renderer &renderer)
 {
   disconnect_blender_gp(renderer);
 
-  if (!project_grease_gp_create ||
-      !project_grease_gp_initialize_external_gpu ||
-      !project_grease_gp_render_external_context) {
-    return false;
-  }
-
   GPHandle handle = project_grease_gp_create();
   if (!handle) {
     return false;
   }
 
   if (!project_grease_gp_initialize_external_gpu(handle)) {
-    if (project_grease_gp_destroy) {
-      project_grease_gp_destroy(handle);
-    }
+    project_grease_gp_destroy(handle);
     return false;
   }
 
@@ -344,7 +334,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBeginStrokeEglRenderer
     JNIEnv *, jobject, jlong handle, jint material_index, jfloat thickness)
 {
   Renderer *renderer = from_handle(handle);
-  if (!renderer || !renderer->gp_connected || !project_grease_gp_begin_stroke) {
+  if (!renderer || !renderer->gp_connected) {
     return JNI_FALSE;
   }
   return project_grease_gp_begin_stroke(
@@ -364,7 +354,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPointEglRenderer(
     jfloat time)
 {
   Renderer *renderer = from_handle(handle);
-  if (!renderer || !renderer->gp_connected || !project_grease_gp_add_point) {
+  if (!renderer || !renderer->gp_connected) {
     return JNI_FALSE;
   }
   ProjectGreaseGPPoint point{x, y, z, pressure, strength, time};
@@ -376,7 +366,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEndStrokeEglRenderer(
     JNIEnv *, jobject, jlong handle)
 {
   Renderer *renderer = from_handle(handle);
-  if (!renderer || !renderer->gp_connected || !project_grease_gp_end_stroke) {
+  if (!renderer || !renderer->gp_connected) {
     return JNI_FALSE;
   }
   return project_grease_gp_end_stroke(renderer->gp_handle) ? JNI_TRUE : JNI_FALSE;

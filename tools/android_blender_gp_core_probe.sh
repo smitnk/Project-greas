@@ -24,6 +24,15 @@ typedef jpeg_compress_struct *j_compress_ptr;
 typedef jpeg_decompress_struct *j_decompress_ptr;
 #endif
 EOF
+cat > "$STUB/include/png.h" <<'EOF'
+#ifndef PNG_H
+#define PNG_H
+#define PNG_LIBPNG_VER_STRING "1.6.0"
+#define PNG_VERSION_INFO_ONLY
+typedef struct png_struct_def *png_structp;
+typedef struct png_info_def *png_infop;
+#endif
+EOF
 cat > "$STUB/empty.c" <<'EOF'
 void project_grease_android_jpeg_probe_stub(void) {}
 EOF
@@ -66,7 +75,9 @@ cmake -S "$BLENDER" -B "$BUILD" \
   -DWITH_SYSTEM_FREETYPE=OFF \
   -DWITH_GTESTS=OFF \
   -DJPEG_LIBRARY="$STUB/lib/libjpeg.a" \
-  -DJPEG_INCLUDE_DIR="$STUB/include"
+  -DJPEG_INCLUDE_DIR="$STUB/include" \
+  -DPNG_LIBRARY="$STUB/lib/libpng.a" \
+  -DPNG_PNG_INCLUDE_DIR="$STUB/include"
 
 echo "=== Verify Android target configuration ==="
 grep -E 'CMAKE_SYSTEM_NAME:|CMAKE_ANDROID_ARCH_ABI:|CMAKE_ANDROID_API:|CMAKE_CXX_COMPILER:' \

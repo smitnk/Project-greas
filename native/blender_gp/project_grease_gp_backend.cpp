@@ -864,6 +864,11 @@ bool Backend::render_external_context()
 }
 
 bool Backend::render() {
+#ifdef __ANDROID__
+  // Android production owns the EGL/GLES context and never enters Blender's
+  // desktop GHOST rendering path.
+  return render_external_context();
+#else
   if (!impl_->frame_created || !impl_->gpd || !impl_->frame) {
     impl_->last_error = "no native GP frame is ready to render";
     return false;
@@ -918,6 +923,7 @@ bool Backend::render() {
   }
 
   return render_with_gpu_context();
+#endif
 }
 
 const char *Backend::last_error() const { return impl_->last_error.c_str(); }

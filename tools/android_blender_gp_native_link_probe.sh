@@ -81,7 +81,7 @@ CXX_SOURCES=(
 
 C_SOURCES=(
   "$BLENDER/source/blender/blenkernel/intern/gpencil_legacy.c"
-  "$BLENDER/source/blender/blenlib/intern/BLI_listbase.c"
+  "$BLENDER/source/blender/blenlib/intern/listbase.cc"
   "$BLENDER/intern/guardedalloc/intern/mallocn.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn_guarded_impl.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn_lockfree_impl.c"

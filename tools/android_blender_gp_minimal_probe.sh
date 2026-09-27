@@ -38,10 +38,10 @@ echo "This intentionally bypasses Blender's desktop platform dependency discover
 echo "Target: arm64-v8a / API 26"
 
 set +e
-"$CXX" -std=c++17 "${COMMON[@]}" -c   "$BLENDER/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"   -o "$BUILD/gpencil_geom_legacy.o"   2>"$BUILD/gpencil_geom_legacy.err"
+"$CXX" -std=gnu++17 "${COMMON[@]}" -c   "$BLENDER/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"   -o "$BUILD/gpencil_geom_legacy.o"   2>"$BUILD/gpencil_geom_legacy.err"
 GEOM_RC=$?
 
-"$CC" -std=c11 "${COMMON[@]}" -c   "$BLENDER/source/blender/blenkernel/intern/gpencil_legacy.c"   -o "$BUILD/gpencil_legacy.o"   2>"$BUILD/gpencil_legacy.err"
+"$CC" -std=gnu11 "${COMMON[@]}" -c   "$BLENDER/source/blender/blenkernel/intern/gpencil_legacy.c"   -o "$BUILD/gpencil_legacy.o"   2>"$BUILD/gpencil_legacy.err"
 LEGACY_RC=$?
 set -e
 

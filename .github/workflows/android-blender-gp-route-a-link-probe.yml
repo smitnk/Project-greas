@@ -2,16 +2,6 @@ name: Android Blender GP Route-A Link Probe
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - native/blender-gp-phase40-cache
-    paths:
-      - "native/blender_gp/android_gpu_backend.*"
-      - "native/blender_gp/android_gpu_buffer_backend_test.cpp"
-      - "native/blender_gp/android_compat/**"
-      - "tools/android_blender_gp_route_a_link_probe.sh"
-      - "tools/android_blender_gp_generate_dna.sh"
-      - ".github/workflows/android-blender-gp-route-a-link-probe.yml"
 
 jobs:
   android-gp-route-a-link-probe:

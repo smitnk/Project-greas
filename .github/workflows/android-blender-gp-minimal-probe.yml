@@ -37,6 +37,11 @@ jobs:
         run: |
           cmake -S third_party/blender -B build/blender-dna             -C third_party/blender/build_files/cmake/config/blender_lite.cmake             -DCMAKE_BUILD_TYPE=Release             -DWITH_PYTHON=OFF             -DWITH_GHOST=OFF             -DWITH_X11=OFF             -DWITH_X11_XFIXES=OFF             -DWITH_BLENDER_THUMBNAILER=OFF             -DWITH_IMAGE_TIFF=OFF             -DWITH_OPENIMAGEIO=OFF             -DWITH_OPENGL_BACKEND=OFF             -DWITH_VULKAN_BACKEND=OFF             -DWITH_GTESTS=OFF
           cmake --build build/blender-dna --target makesdna --parallel 2
+          build/blender-dna/bin/makesdna \
+            build/blender-dna/source/blender/makesdna/intern/dna.c \
+            build/blender-dna/source/blender/makesdna/intern/dna_type_offsets.h \
+            build/blender-dna/source/blender/makesdna/intern/dna_verify.c \
+            third_party/blender/source/blender/makesdna/
           test -f build/blender-dna/source/blender/makesdna/intern/dna_type_offsets.h
 
       - name: Compile minimal Blender legacy GP sources for Android ARM64

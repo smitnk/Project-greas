@@ -33,6 +33,7 @@ COMMON=(
   -I"$BLENDER/intern/clog"
   -I"$BLENDER/source/blender/blentranslation"
   -I"$BLENDER/source/blender/blentranslation/intern"
+  -I"$BLENDER/source/blender/imbuf"
 )
 
 echo "=== Minimal Android legacy GP source compile probe ==="

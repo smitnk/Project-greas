@@ -34,6 +34,7 @@ COMMON=(
   -I"$BLENDER/source/blender/blentranslation"
   -I"$BLENDER/source/blender/blentranslation/intern"
   -I"$BLENDER/source/blender/imbuf"
+  -I"$BLENDER/source/blender/blenloader"
 )
 
 echo "=== Minimal Android legacy GP source compile probe ==="

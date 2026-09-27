@@ -19,9 +19,11 @@
 #include "draw_cache.h"
 #include "draw_cache_impl.h"
 
+#ifndef __ANDROID__
 #include "GPU_context.h"
 #include "GPU_init_exit.h"
 #include "GHOST_C-api.h"
+#endif
 
 namespace project_grease::gp {
 
@@ -35,14 +37,17 @@ struct Backend::Impl {
   StrokeStyle stroke_style{};
   std::vector<StrokePoint> pending_points;
 
-  // Project Grease owns this native GPU/GHOST session. It is deliberately
-  // independent of Blender's UI/application lifecycle.
+#ifndef __ANDROID__
+  // Desktop proof path owns its temporary GHOST/GPU session.
   GHOST_SystemHandle ghost_system = nullptr;
   GHOST_ContextHandle ghost_context = nullptr;
   GPUContext *gpu_context = nullptr;
+  bool gpu_frame_active = false;
+#endif
+  // Android uses the caller-owned EGL/GLES context directly. No Blender
+  // GHOST or full GPU context is created for the legacy GP cache path.
   bool gpu_initialized = false;
   bool gpu_external_context = false;
-  bool gpu_frame_active = false;
 
   bool initialized = false;
   bool document_created = false;
@@ -95,8 +100,8 @@ void Backend::shutdown()
     return;
   }
 
-  // Legacy GP ID destruction can release GPU batches. Therefore Main must be
-  // freed BEFORE GPU/GHOST teardown whenever a GPU session exists.
+  // Legacy GP ID destruction can release GPU batches, so free Main while the
+  // caller-owned Android EGL/GLES context is still current.
   if (impl_->bmain) {
     BKE_main_free(impl_->bmain);
     impl_->bmain = nullptr;
@@ -112,6 +117,7 @@ void Backend::shutdown()
   impl_->document_created = false;
   impl_->pending_points.clear();
 
+#ifndef __ANDROID__
   if (impl_->gpu_initialized) {
     if (impl_->gpu_frame_active) {
       GPU_context_end_frame(impl_->gpu_context);
@@ -133,6 +139,10 @@ void Backend::shutdown()
     impl_->gpu_external_context = false;
     impl_->gpu_initialized = false;
   }
+#else
+  impl_->gpu_initialized = false;
+  impl_->gpu_external_context = false;
+#endif
 
   impl_->initialized = false;
 }
@@ -781,9 +791,15 @@ bool Backend::initialize_external_gpu_context()
     return false;
   }
 
-  // The caller has already made its OpenGL/EGL context current on this
-  // thread. Blender's OpenGL GPU backend does not require GHOST to allocate
-  // the GPU context; it only needs the current GL context.
+#ifdef __ANDROID__
+  // Android owns the EGL/GLES context. The legacy GP cache producer only
+  // needs our Android GPU backend to be installed; creating Blender's generic
+  // GPUContext would pull in the desktop backend/context dependency graph.
+  impl_->gpu_external_context = true;
+  impl_->gpu_initialized = true;
+  impl_->last_error.clear();
+  return true;
+#else
   GPU_backend_type_selection_set(GPU_BACKEND_OPENGL);
   impl_->gpu_context = GPU_context_create(nullptr, nullptr);
   if (!impl_->gpu_context) {
@@ -796,23 +812,19 @@ bool Backend::initialize_external_gpu_context()
   impl_->gpu_initialized = true;
   impl_->last_error.clear();
   return true;
+#endif
 }
 
 bool Backend::render_with_gpu_context()
 {
-  if (!impl_->gpu_initialized || !impl_->gpu_context) {
-    impl_->last_error = "Blender GPU context is not initialized";
+  if (!impl_->gpu_initialized) {
+    impl_->last_error = "Blender GP GPU backend is not initialized";
     return false;
   }
-
-  GPU_context_begin_frame(impl_->gpu_context);
-  impl_->gpu_frame_active = true;
 
   Object *ob = BKE_object_add_only_object(
       impl_->bmain, OB_GPENCIL_LEGACY, "Project Grease Render");
   if (!ob) {
-    GPU_context_end_frame(impl_->gpu_context);
-    impl_->gpu_frame_active = false;
     impl_->last_error = "BKE_object_add_only_object() failed";
     return false;
   }
@@ -825,11 +837,8 @@ bool Backend::render_with_gpu_context()
   ob->data = nullptr;
   BKE_id_free(impl_->bmain, &ob->id);
 
-  GPU_context_end_frame(impl_->gpu_context);
-  impl_->gpu_frame_active = false;
-
   impl_->last_error = cache_ready
-      ? "real Blender GP draw-cache GPU batch built from external GL context"
+      ? "real Blender GP draw-cache GPU batch built from current external GL context"
       : "DRW_cache_gpencil_get() returned null";
   return cache_ready;
 }

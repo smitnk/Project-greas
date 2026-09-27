@@ -46,7 +46,7 @@ INCLUDES=(
   "$BLENDER/intern/guardedalloc"
   "$BLENDER/intern/atomic"
   "$BLENDER/intern/clog"
-  "$ROOT/build/blender-dna/source/blender/makesdna/intern"
+  "$ROOT/build/blender-dna"
 )
 
 COMMON_FLAGS=(

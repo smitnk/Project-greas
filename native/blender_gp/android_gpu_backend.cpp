@@ -189,8 +189,8 @@ class AndroidBatch final : public Batch {
     BLI_assert(verts[0] != nullptr);
     BLI_assert(elem != nullptr);
 
-    auto *vbo = static_cast<AndroidVertBuf *>(verts[0]);
-    auto *ibo = static_cast<AndroidIndexBuf *>(elem);
+    auto *vbo = static_cast<AndroidVertBuf *>(unwrap(verts[0]));
+    auto *ibo = static_cast<AndroidIndexBuf *>(unwrap(elem));
 
     vbo->bind();
     ibo->bind();
@@ -245,12 +245,12 @@ class AndroidBatch final : public Batch {
     glBindVertexArray(vao_id_);
 
     const GLenum primitive = prim_type == GPU_PRIM_TRIS ? GL_TRIANGLES : GL_POINTS;
-    const void *index_offset = ibo->offset_ptr(static_cast<uint>(v_first));
+    const uint index_offset = ibo->index_start_get() + static_cast<uint>(v_first);\n    const void *index_offset_ptr = reinterpret_cast<const void *>(\n        static_cast<uintptr_t>(index_offset) *\n        (ibo->gl_index_type() == GL_UNSIGNED_SHORT ? sizeof(uint16_t) : sizeof(uint32_t)));
 
     glDrawElements(primitive,
                    static_cast<GLsizei>(v_count),
                    ibo->gl_index_type(),
-                   index_offset);
+                   index_offset_ptr);
 
     (void)i_first;
     (void)i_count;

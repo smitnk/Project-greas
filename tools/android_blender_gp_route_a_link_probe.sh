@@ -30,6 +30,7 @@ INCLUDES=(
   "$BLENDER/source/blender/draw/engines/gpencil"
   "$BLENDER/source/blender/blenkernel"
   "$BLENDER/source/blender/makesdna"
+  "$BLENDER/source/blender/makesrna"
   "$BLENDER/source/blender/depsgraph"
   "$BLENDER/source/blender/windowmanager"
   "$BLENDER/source/blender/blentranslation"

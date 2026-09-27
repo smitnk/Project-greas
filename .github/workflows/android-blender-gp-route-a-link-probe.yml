@@ -29,6 +29,11 @@ jobs:
       - name: Import pinned Blender source
         run: bash tools/import_blender_gp.sh
 
+      - name: Install host dependency for Blender DNA generator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev
+
       - name: Generate Blender DNA metadata
         run: |
           cmake -S third_party/blender -B build/blender-dna \
@@ -40,7 +45,6 @@ jobs:
             -DWITH_X11_XFIXES=OFF \
             -DWITH_BLENDER_THUMBNAILER=OFF \
             -DWITH_IMAGE_TIFF=OFF \
-            -DWITH_JPEG=OFF \
             -DWITH_OPENIMAGEIO=OFF \
             -DWITH_OPENGL_BACKEND=OFF \
             -DWITH_VULKAN_BACKEND=OFF \

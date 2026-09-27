@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 BLENDER="$ROOT/third_party/blender"
 BUILD="$ROOT/build/android-gp-minimal"
+DNA_BUILD="$ROOT/build/blender-dna/source/blender/makesdna/intern"
 NDK="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT must be set}"
 CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++"
 CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
 
 test -x "$CXX"
+test -f "$DNA_BUILD/dna_type_offsets.h"
 test -f "$BLENDER/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
 
 rm -rf "$BUILD"
@@ -35,6 +37,7 @@ COMMON=(
   -I"$BLENDER/source/blender/blentranslation/intern"
   -I"$BLENDER/source/blender/imbuf"
   -I"$BLENDER/source/blender/blenloader"
+  -I"$DNA_BUILD"
 )
 
 echo "=== Minimal Android legacy GP source compile probe ==="

@@ -340,6 +340,49 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBeginStrokeEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint material_index, jfloat thickness)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected || !project_grease_gp_begin_stroke) {
+    return JNI_FALSE;
+  }
+  return project_grease_gp_begin_stroke(
+             renderer->gp_handle, material_index, thickness) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPointEglRenderer(
+    JNIEnv *,
+    jobject,
+    jlong handle,
+    jfloat x,
+    jfloat y,
+    jfloat z,
+    jfloat pressure,
+    jfloat strength,
+    jfloat time)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected || !project_grease_gp_add_point) {
+    return JNI_FALSE;
+  }
+  ProjectGreaseGPPoint point{x, y, z, pressure, strength, time};
+  return project_grease_gp_add_point(renderer->gp_handle, point) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEndStrokeEglRenderer(
+    JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected || !project_grease_gp_end_stroke) {
+    return JNI_FALSE;
+  }
+  return project_grease_gp_end_stroke(renderer->gp_handle) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEglReady(
     JNIEnv *, jobject, jlong handle)
 {

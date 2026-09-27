@@ -16,6 +16,9 @@ extern "C" GPHandle project_grease_gp_create(void) __attribute__((weak));
 extern "C" void project_grease_gp_destroy(GPHandle) __attribute__((weak));
 extern "C" int project_grease_gp_initialize_external_gpu(GPHandle) __attribute__((weak));
 extern "C" int project_grease_gp_render_external_context(GPHandle) __attribute__((weak));
+extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float) __attribute__((weak));
+extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint) __attribute__((weak));
+extern "C" int project_grease_gp_end_stroke(GPHandle) __attribute__((weak));
 
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;

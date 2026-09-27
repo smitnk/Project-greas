@@ -1,0 +1,55 @@
+name: Android Blender GP Route-A Link Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - native/blender-gp-phase40-cache
+    paths:
+      - "native/blender_gp/android_gpu_backend.*"
+      - "native/blender_gp/android_gpu_buffer_backend_test.cpp"
+      - "native/blender_gp/android_compat/**"
+      - "tools/android_blender_gp_route_a_link_probe.sh"
+      - ".github/workflows/android-blender-gp-route-a-link-probe.yml"
+
+jobs:
+  android-gp-route-a-link-probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Project Grease
+        uses: actions/checkout@v4
+
+      - name: Install Android NDK 27
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Import pinned Blender source
+        run: bash tools/import_blender_gp.sh
+
+      - name: Generate Blender DNA metadata
+        run: |
+          cmake -S third_party/blender -B build/blender-dna \
+            -C third_party/blender/build_files/cmake/config/blender_lite.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_PYTHON=OFF \
+            -DWITH_GHOST=OFF \
+            -DWITH_X11=OFF \
+            -DWITH_X11_XFIXES=OFF \
+            -DWITH_BLENDER_THUMBNAILER=OFF \
+            -DWITH_IMAGE_TIFF=OFF \
+            -DWITH_OPENIMAGEIO=OFF \
+            -DWITH_OPENGL_BACKEND=OFF \
+            -DWITH_VULKAN_BACKEND=OFF \
+            -DWITH_GTESTS=OFF
+          cmake --build build/blender-dna --target makesdna --parallel 2
+          build/blender-dna/bin/makesdna \
+            build/blender-dna/source/blender/makesdna/intern/dna.c \
+            build/blender-dna/source/blender/makesdna/intern/dna_type_offsets.h \
+            build/blender-dna/source/blender/makesdna/intern/dna_verify.c \
+            third_party/blender/source/blender/makesdna/
+
+      - name: Link focused Route-A Android backend
+        run: bash tools/android_blender_gp_route_a_link_probe.sh

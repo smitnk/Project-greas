@@ -25,7 +25,6 @@
 #include "draw_cache_impl.h"
 
 #ifdef __ANDROID__
-extern "C" int project_grease_android_gpu_configure_batch(GPUBatch *batch);
 extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame);
 #endif
 
@@ -992,25 +991,14 @@ bool Backend::render_with_gpu_context()
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
   const bool cache_ready = batch != nullptr;
 #ifdef __ANDROID__
-  // Phase 40 cache handoff gate: verify that the Project Grease GLES adapter
-  // can consume the real Blender Legacy GP batch while the caller-owned EGL
-  // context is current. This intentionally stops before draw submission;
-  // the presentation shader/coordinate stage is the next layer.
-  const bool android_batch_ready = cache_ready &&
-      project_grease_android_gpu_configure_batch(batch) != 0;
-#else
-  const bool android_batch_ready = cache_ready;
-#endif
-
-#ifdef __ANDROID__
-  // The Legacy GP cache is the data/geometry proof layer. Android currently
-  // presents the same real bGPDframe through a small GLES adapter because the
-  // desktop GP shader stack depends on buffer-texture/material infrastructure
-  // that is intentionally outside Project Grease scope.
-  const bool presented = android_batch_ready &&
+  // The Legacy GP cache is the Blender geometry/data proof layer. Android
+  // presents the same real bGPDframe through a focused GLES adapter because
+  // the desktop GP shader stack depends on buffer-texture/material
+  // infrastructure that is intentionally outside Project Grease scope.
+  const bool presented = cache_ready &&
       project_grease_android_present_gp_frame(impl_->frame) != 0;
 #else
-  const bool presented = android_batch_ready;
+  const bool presented = cache_ready;
 #endif
 
   DRW_gpencil_batch_cache_free(impl_->gpd);
@@ -1021,11 +1009,9 @@ bool Backend::render_with_gpu_context()
 
   impl_->last_error = !cache_ready
       ? "DRW_cache_gpencil_get() returned null"
-      : !android_batch_ready
-          ? "Blender GP draw-cache built, but Android GPU adapter rejected the batch"
-          : !presented
-              ? "Blender GP cache batch accepted, but Android presentation failed"
-              : "Blender Legacy GP data/cache accepted and presented through Android GLES";
+      : !presented
+          ? "Blender Legacy GP cache built, but Android presentation failed"
+          : "Blender Legacy GP data/cache accepted and presented through Android GLES";
   return presented;
 }
 

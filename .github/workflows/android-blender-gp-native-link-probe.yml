@@ -2,15 +2,6 @@ name: Android Blender GP Native Link Probe
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - native/blender-gp-phase40-cache
-    paths:
-      - "native/blender_gp/**"
-      - "tools/android_blender_gp_native_link_probe.sh"
-      - "tools/android_blender_gp_generate_dna.sh"
-      - "tools/import_blender_gp.sh"
-      - ".github/workflows/android-blender-gp-native-link-probe.yml"
 
 jobs:
   android-gp-native-link:

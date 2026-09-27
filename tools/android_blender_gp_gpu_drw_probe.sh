@@ -45,6 +45,7 @@ INCLUDES=(
   "$BLENDER/source/blender/draw/intern"
   "$BLENDER/source/blender/gpu"
   "$BLENDER/source/blender/gpu/intern"
+  "$BLENDER/source/blender/gpu/opengl"
   "$BLENDER/source/blender/render"
   "$BLENDER/source/blender/nodes"
   "$BLENDER/intern/atomic"

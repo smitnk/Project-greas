@@ -30,6 +30,7 @@ COMMON=(
   -I"$BLENDER/source/blender/windowmanager"
   -I"$BLENDER/intern/guardedalloc"
   -I"$BLENDER/intern/atomic"
+  -I"$BLENDER/intern/clog"
 )
 
 echo "=== Minimal Android legacy GP source compile probe ==="

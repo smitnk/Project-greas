@@ -26,6 +26,7 @@
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_gpu_configure_batch(GPUBatch *batch);
+extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame);
 #endif
 
 #ifndef __ANDROID__
@@ -1001,6 +1002,17 @@ bool Backend::render_with_gpu_context()
   const bool android_batch_ready = cache_ready;
 #endif
 
+#ifdef __ANDROID__
+  // The Legacy GP cache is the data/geometry proof layer. Android currently
+  // presents the same real bGPDframe through a small GLES adapter because the
+  // desktop GP shader stack depends on buffer-texture/material infrastructure
+  // that is intentionally outside Project Grease scope.
+  const bool presented = android_batch_ready &&
+      project_grease_android_present_gp_frame(impl_->frame) != 0;
+#else
+  const bool presented = android_batch_ready;
+#endif
+
   DRW_gpencil_batch_cache_free(impl_->gpd);
 #ifndef __ANDROID__
   ob->data = nullptr;
@@ -1009,10 +1021,12 @@ bool Backend::render_with_gpu_context()
 
   impl_->last_error = !cache_ready
       ? "DRW_cache_gpencil_get() returned null"
-      : android_batch_ready
-          ? "real Blender GP draw-cache batch built and accepted by Android GPU adapter"
-          : "Blender GP draw-cache built, but Android GPU adapter rejected the batch";
-  return android_batch_ready;
+      : !android_batch_ready
+          ? "Blender GP draw-cache built, but Android GPU adapter rejected the batch"
+          : !presented
+              ? "Blender GP cache batch accepted, but Android presentation failed"
+              : "Blender Legacy GP data/cache accepted and presented through Android GLES";
+  return presented;
 }
 
 bool Backend::render_external_context()

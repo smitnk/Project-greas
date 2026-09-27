@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BLENDER="$ROOT/third_party/blender"
 OUT="$ROOT/build/blender-dna"
 GEN="$OUT/codegen"
@@ -23,22 +23,22 @@ mapfile -t DNA_HEADERS < <(
     sed -n 's#.*\(/DNA_[A-Za-z0-9_]*\.h\).*#\1#p'
 )
 
-if (( \${#DNA_HEADERS[@]} == 0 )); then
+if (( ${#DNA_HEADERS[@]} == 0 )); then
   echo "Could not recover SRC_DNA_INC from pinned Blender source." >&2
   exit 2
 fi
 
 {
   echo '/* Generated from Blender 3.6.23 source/blender/CMakeLists.txt. */'
-  for header in "\${DNA_HEADERS[@]}"; do
-    printf '#include "%s"\\n' "$BLENDER/source/blender\${header}"
+  for header in "${DNA_HEADERS[@]}"; do
+    printf '#include "%s"\\n' "$BLENDER/source/blender${header}"
   done
 } > "$GEN/dna_includes_all.h"
 
 {
   echo '/* Generated from Blender 3.6.23 source/blender/CMakeLists.txt. */'
-  for header in "\${DNA_HEADERS[@]}"; do
-    printf '  "%s",\\n' "\${header##*/}"
+  for header in "${DNA_HEADERS[@]}"; do
+    printf '  "%s",\\n' "${header##*/}"
   done
 } > "$GEN/dna_includes_as_strings.h"
 
@@ -70,8 +70,8 @@ CXXFLAGS=(
   -I"$BLENDER/intern/guardedalloc"
 )
 
-CC="\${CC:-cc}"
-CXX="\${CXX:-c++}"
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 
 C_SOURCES=(
   "$BLENDER/source/blender/makesdna/intern/makesdna.c"
@@ -94,22 +94,22 @@ CXX_SOURCES=(
 
 OBJECTS=()
 
-for src in "\${C_SOURCES[@]}"; do
+for src in "${C_SOURCES[@]}"; do
   obj="$OBJ/$(basename "$src").o"
   echo "=== host C compile: $src ==="
-  "$CC" "\${CFLAGS[@]}" -c "$src" -o "$obj"
+  "$CC" "${CFLAGS[@]}" -c "$src" -o "$obj"
   OBJECTS+=("$obj")
 done
 
-for src in "\${CXX_SOURCES[@]}"; do
+for src in "${CXX_SOURCES[@]}"; do
   obj="$OBJ/$(basename "$src").o"
   echo "=== host C++ compile: $src ==="
-  "$CXX" "\${CXXFLAGS[@]}" -c "$src" -o "$obj"
+  "$CXX" "${CXXFLAGS[@]}" -c "$src" -o "$obj"
   OBJECTS+=("$obj")
 done
 
 echo "=== host link: minimal makesdna ==="
-"$CXX" -Wl,--gc-sections "\${OBJECTS[@]}" -ldl -lpthread -lm -o "$OUT/makesdna"
+"$CXX" -Wl,--gc-sections "${OBJECTS[@]}" -ldl -lpthread -lm -o "$OUT/makesdna"
 
 echo "=== generate Blender DNA metadata ==="
 "$OUT/makesdna" \

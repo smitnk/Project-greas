@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Project Grease
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Android NDK 27
         run: |

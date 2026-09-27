@@ -22,6 +22,9 @@ object GPNative {
     external fun nativeEglReady(handle: Long): Boolean
     external fun nativeGlesVersion(handle: Long): Int
     external fun nativeBlenderGpConnected(handle: Long): Boolean
+    external fun nativeBeginStrokeEglRenderer(handle: Long, materialIndex: Int, thickness: Float): Boolean
+    external fun nativeAddPointEglRenderer(handle: Long, x: Float, y: Float, z: Float, pressure: Float, strength: Float, time: Float): Boolean
+    external fun nativeEndStrokeEglRenderer(handle: Long): Boolean
 
     external fun nativeCreate(): Long
     external fun nativeDestroy(handle: Long)

@@ -16,12 +16,12 @@ CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-c
 
 [[ -x "$CXX" ]] || { echo "Missing Android ARM64 C++ compiler: $CXX" >&2; exit 2; }
 [[ -x "$CC" ]] || { echo "Missing Android ARM64 C compiler: $CC" >&2; exit 2; }
-[[ -f "$BLENDER/source/blender/gpu/opengl/gl_backend.cc" ]] || {
-  echo "Pinned Blender source is missing" >&2
+[[ -f "$BLENDER/source/blender/draw/intern/draw_cache_impl_gpencil.cc" ]] || {
+  echo "Pinned Blender GP cache source is missing" >&2
   exit 2
 }
 
-OUT="$ROOT/build/android-blender-gp-gpu-draw-probe"
+OUT="$ROOT/build/android-blender-gp-route-a-probe"
 COMPAT="$ROOT/native/blender_gp/android_compat"
 mkdir -p "$OUT"
 
@@ -43,11 +43,10 @@ INCLUDES=(
   "$BLENDER/source/blender/blenloader"
   "$BLENDER/source/blender/draw"
   "$BLENDER/source/blender/draw/intern"
+  "$BLENDER/source/blender/draw/engines/gpencil"
   "$BLENDER/source/blender/gpu"
   "$BLENDER/source/blender/gpu/intern"
-  "$BLENDER/source/blender/gpu/opengl"
   "$BLENDER/source/blender/render"
-  "$BLENDER/source/blender/nodes"
   "$BLENDER/intern/atomic"
   "$BLENDER/intern/clog"
   "$BLENDER/intern/guardedalloc"
@@ -59,8 +58,6 @@ FLAGS=(
   -D__ANDROID__
   -DNDEBUG
   -DWITH_OPENGL
-  -DWITH_OPENGL_BACKEND
-  -DGPU_OPENGL
   -fPIC
   -fsyntax-only
   -Wno-unused-command-line-argument
@@ -70,55 +67,20 @@ for inc in "${INCLUDES[@]}"; do
   FLAGS+=("-I$inc")
 done
 
+# Route A intentionally excludes Blender's desktop GPU backend.
+# Do not add gpu_context.cc, gl_backend.cc, gl_context.cc, gl_texture.cc,
+# GLFramebuffer, GLShader, GLStorageBuf, GLQuery, or full DRW engine sources.
 GPU_SOURCES=(
   "$BLENDER/source/blender/gpu/intern/gpu_batch.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_capabilities.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_context.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_framebuffer.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_index_buffer.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_init_exit.c"
-  "$BLENDER/source/blender/gpu/intern/gpu_matrix.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_platform.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_shader.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_shader_dependency.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_shader_interface.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_shader_log.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_state.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_texture.cc"
-  "$BLENDER/source/blender/gpu/intern/gpu_uniform_buffer.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_vertex_buffer.cc"
   "$BLENDER/source/blender/gpu/intern/gpu_vertex_format.cc"
 )
 
-OPENGL_SOURCES=(
-  "$BLENDER/source/blender/gpu/opengl/gl_backend.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_batch.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_context.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_framebuffer.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_index_buffer.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_shader.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_shader_interface.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_state.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_texture.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_uniform_buffer.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_vertex_array.cc"
-  "$BLENDER/source/blender/gpu/opengl/gl_vertex_buffer.cc"
-)
-
-DRW_SOURCES=(
-  "$BLENDER/source/blender/draw/intern/draw_cache.c"
-  "$BLENDER/source/blender/draw/intern/draw_manager.c"
-  "$BLENDER/source/blender/draw/intern/draw_manager_exec.c"
-  "$BLENDER/source/blender/draw/intern/draw_manager_shader.c"
-  "$BLENDER/source/blender/draw/intern/draw_manager_texture.c"
-  "$BLENDER/source/blender/draw/intern/draw_view.c"
-  "$BLENDER/source/blender/draw/intern/draw_view_data.cc"
+# This is the actual legacy GP cache producer used by Project Grease.
+# It creates GPUVertBuf/GPUIndexBuf/GPUBatch and packs the GP stroke data.
+GP_CACHE_SOURCES=(
   "$BLENDER/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
-  "$BLENDER/source/blender/draw/engines/gpencil/gpencil_cache_utils.c"
-  "$BLENDER/source/blender/draw/engines/gpencil/gpencil_draw_data.c"
-  "$BLENDER/source/blender/draw/engines/gpencil/gpencil_engine.c"
-  "$BLENDER/source/blender/draw/engines/gpencil/gpencil_render.c"
-  "$BLENDER/source/blender/draw/engines/gpencil/gpencil_shader.c"
 )
 
 compile_one() {
@@ -126,7 +88,7 @@ compile_one() {
   local base
   base="$(basename "$src")"
   local err="$OUT/$base.err"
-  echo "=== Android syntax probe: $src ==="
+  echo "=== Android Route-A syntax probe: $src ==="
   if [[ "$src" == *.c ]]; then
     "$CC" "${FLAGS[@]}" -std=gnu11 "$src" 2>"$err"
   else
@@ -142,24 +104,24 @@ run_group() {
       echo "PASS $src"
     else
       echo "FAIL $src"
-      sed -n '1,120p' "$OUT/$(basename "$src").err"
+      sed -n '1,160p' "$OUT/$(basename "$src").err"
       failed=1
       break
     fi
   done
   if (( failed )); then
-    echo "$name closure is not yet Android/GLES-compatible."
+    echo "$name Route-A closure is not yet Android/GLES-compatible."
     return 1
   fi
-  echo "$name syntax closure passed."
+  echo "$name Route-A syntax closure passed."
 }
 
-echo "Pinned Blender Android GPU/DRW closure probe"
+echo "Pinned Blender 3.6.23 Android Route-A GP closure probe"
 echo "NDK=$NDK API=$API"
-echo "This is a compile-closure probe only; it does not link or replace the Project Grease renderer."
+echo "This probe intentionally does NOT compile Blender's stock desktop GL backend."
+echo "Target: legacy GP cache -> GPUVertBuf/GPUIndexBuf/GPUBatch -> Project Grease Android backend."
 
-run_group "GPU core" "${GPU_SOURCES[@]}"
-run_group "OpenGL backend" "${OPENGL_SOURCES[@]}"
-run_group "DRW + legacy GP" "${DRW_SOURCES[@]}"
+run_group "GPU buffer API" "${GPU_SOURCES[@]}"
+run_group "Legacy GP cache" "${GP_CACHE_SOURCES[@]}"
 
-echo "Android GPU/DRW source closure probe passed."
+echo "Android Route-A GP source closure probe passed."

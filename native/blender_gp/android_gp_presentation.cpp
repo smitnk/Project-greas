@@ -174,6 +174,9 @@ extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame)
     return 0;
   }
 
+  glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
   std::vector<Vertex> vertices;
   vertices.reserve(1024);
 
@@ -213,8 +216,6 @@ extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame)
   }
 
   if (vertices.empty()) {
-    glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
     return 1;
   }
 
@@ -241,4 +242,18 @@ extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame)
   glUseProgram(0);
 
   return glGetError() == GL_NO_ERROR ? 1 : 0;
+}
+
+extern "C" void project_grease_android_present_reset()
+{
+  if (g_vbo != 0) {
+    glDeleteBuffers(1, &g_vbo);
+    g_vbo = 0;
+  }
+  if (g_program != 0) {
+    glDeleteProgram(g_program);
+    g_program = 0;
+  }
+  g_position = -1;
+  g_color = -1;
 }

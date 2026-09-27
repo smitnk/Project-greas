@@ -11,6 +11,7 @@
 namespace {
 
 using GPHandle = void *;
+struct ProjectGreaseGPPoint { float x; float y; float z; float pressure; float strength; float time; };
 
 extern "C" GPHandle project_grease_gp_create(void) __attribute__((weak));
 extern "C" void project_grease_gp_destroy(GPHandle) __attribute__((weak));

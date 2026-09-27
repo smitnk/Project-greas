@@ -20,6 +20,7 @@ extern "C" int project_grease_gp_render_external_context(GPHandle);
 extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float);
 extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint);
 extern "C" int project_grease_gp_end_stroke(GPHandle);
+extern "C" void project_grease_android_present_reset(void);
 
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
@@ -196,8 +197,9 @@ void detach_window(Renderer &renderer)
     return;
   }
 
-  // Destroy the GP backend while its external GL context is still current.
+  // Destroy GP and presentation resources while the external GL context is still current.
   disconnect_blender_gp(renderer);
+  project_grease_android_present_reset();
 
   eglMakeCurrent(
       renderer.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);

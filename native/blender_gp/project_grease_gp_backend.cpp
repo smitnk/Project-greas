@@ -32,6 +32,17 @@
 
 namespace project_grease::gp {
 
+static void project_grease_gp_tag(bGPdata *gpd)
+{
+#ifdef __ANDROID__
+  if (gpd) {
+    gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+  }
+#else
+  BKE_gpencil_tag(gpd);
+#endif
+}
+
 struct Backend::Impl {
   std::string last_error;
 #ifndef __ANDROID__
@@ -481,7 +492,7 @@ bool Backend::set_point(int stroke_index,
     std::fprintf(stderr, "[SET] before batch cache dirty\\n");
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
     std::fprintf(stderr, "[SET] after batch cache dirty\\n");
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
     std::fprintf(stderr, "[SET] after gp tag\\n");
     impl_->stroke = stroke;
     impl_->last_error.clear();
@@ -512,7 +523,7 @@ bool Backend::delete_stroke(int index) {
     impl_->stroke = nullptr;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -547,7 +558,7 @@ bool Backend::duplicate_stroke(int index) {
     impl_->stroke = duplicate;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -587,7 +598,7 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -622,7 +633,7 @@ bool Backend::flip_stroke(int index)
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -657,7 +668,7 @@ bool Backend::subdivide_stroke(int index, int level)
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -717,7 +728,7 @@ bool Backend::close_stroke(int index)
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -760,7 +771,7 @@ bool Backend::trim_stroke_points(int index,
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -802,7 +813,7 @@ bool Backend::split_stroke(int index, int before_index)
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
-    BKE_gpencil_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
 #endif
     impl_->last_error.clear();
     return true;
@@ -821,7 +832,7 @@ bool Backend::delete_last_stroke() {
   BKE_gpencil_frame_delete_laststroke(impl_->layer, impl_->frame);
   impl_->stroke = nullptr;
   BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-  BKE_gpencil_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;
 }
@@ -907,7 +918,7 @@ bool Backend::end_stroke() {
   impl_->stroke_open = false;
   impl_->pending_points.clear();
   impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
-  BKE_gpencil_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
   return true;
 }
 

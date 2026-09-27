@@ -24,6 +24,10 @@
 #include "draw_cache.h"
 #include "draw_cache_impl.h"
 
+#ifdef __ANDROID__
+extern "C" int project_grease_android_gpu_configure_batch(GPUBatch *batch);
+#endif
+
 #ifndef __ANDROID__
 #include "GPU_context.h"
 #include "GPU_init_exit.h"
@@ -986,6 +990,16 @@ bool Backend::render_with_gpu_context()
 
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
   const bool cache_ready = batch != nullptr;
+#ifdef __ANDROID__
+  // Phase 40 cache handoff gate: verify that the Project Grease GLES adapter
+  // can consume the real Blender Legacy GP batch while the caller-owned EGL
+  // context is current. This intentionally stops before draw submission;
+  // the presentation shader/coordinate stage is the next layer.
+  const bool android_batch_ready = cache_ready &&
+      project_grease_android_gpu_configure_batch(batch) != 0;
+#else
+  const bool android_batch_ready = cache_ready;
+#endif
 
   DRW_gpencil_batch_cache_free(impl_->gpd);
 #ifndef __ANDROID__
@@ -993,10 +1007,12 @@ bool Backend::render_with_gpu_context()
   BKE_id_free(impl_->bmain, &ob->id);
 #endif
 
-  impl_->last_error = cache_ready
-      ? "real Blender GP draw-cache GPU batch built from current external GL context"
-      : "DRW_cache_gpencil_get() returned null";
-  return cache_ready;
+  impl_->last_error = !cache_ready
+      ? "DRW_cache_gpencil_get() returned null"
+      : android_batch_ready
+          ? "real Blender GP draw-cache batch built and accepted by Android GPU adapter"
+          : "Blender GP draw-cache built, but Android GPU adapter rejected the batch";
+  return android_batch_ready;
 }
 
 bool Backend::render_external_context()

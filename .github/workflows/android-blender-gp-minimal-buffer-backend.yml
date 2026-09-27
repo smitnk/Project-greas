@@ -2,16 +2,6 @@ name: Android Blender GP Minimal Buffer Backend
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - native/blender-gp-phase40-cache
-    paths:
-      - "native/blender_gp/android_gpu_backend.*"
-      - "native/blender_gp/android_gpu_buffer_backend_test.cpp"
-      - "native/blender_gp/android_gpu_backend_runtime_probe.cpp"
-      - "native/blender_gp/android_compat/**"
-      - "tools/android_blender_gp_minimal_buffer_backend_probe.sh"
-      - ".github/workflows/android-blender-gp-minimal-buffer-backend.yml"
 
 jobs:
   android-gp-minimal-buffer-backend:

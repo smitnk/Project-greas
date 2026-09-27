@@ -7,6 +7,9 @@ on:
       - native/blender-gp-phase40-cache
     paths:
       - "android/**"
+      - "native/blender_gp/**"
+      - "tools/import_blender_gp.sh"
+      - "tools/android_blender_gp_generate_dna.sh"
       - ".github/workflows/android-shell.yml"
 
 jobs:
@@ -25,7 +28,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Android shell
+      - name: Import pinned Blender source
+        run: bash tools/import_blender_gp.sh
+
+      - name: Generate minimal Blender DNA metadata
+        run: bash tools/android_blender_gp_generate_dna.sh
+
+      - name: Build Android GP application
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
 

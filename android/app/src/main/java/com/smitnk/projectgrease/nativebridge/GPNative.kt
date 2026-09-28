@@ -73,5 +73,10 @@ object GPNative {
     external fun nativeCloseStroke(handle: Long, index: Int): Boolean
     external fun nativeTrimStroke(handle: Long, index: Int, from: Int, to: Int, keepSinglePoint: Boolean): Boolean
     external fun nativeSplitStroke(handle: Long, index: Int, beforeIndex: Int): Boolean
+    external fun nativeCreatePrimitive(handle: Long, type: Int, x0: Float, y0: Float, x1: Float, y1: Float, startAngle: Float, endAngle: Float, segments: Int, materialIndex: Int, thickness: Float): Boolean
+    external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
+    external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
+    external fun nativeClearSelection(handle: Long)
+    external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
 }

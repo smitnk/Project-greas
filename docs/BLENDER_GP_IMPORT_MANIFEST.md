@@ -1,42 +1,53 @@
 # Blender / Grease Pencil import manifest
 
-Reference source: Wanderson-Magalhaes/blender_for_android
+Project Grease uses Blender 3.6.23 Legacy Grease Pencil as a focused native 2D drawing/data foundation.
 
-## Initial source groups to study/import
+## Selected baseline
 
-### Android port/build
-- ANDROID_AI_GUIDE.md
-- build_files/android/
-- Android-specific source changes under source/ identified by the port guide
+- Blender v3.6.23
+- Pinned commit: e467db79ca8cc5c1c15e1a0e08bd52ca419f2eca
+- Legacy GP data: bGPdata / bGPDlayer / bGPDframe / bGPDstroke / bGPDspoint
+- Android owns Activity, Surface, input, EGL and GLES.
 
-### Grease Pencil data/runtime
-- source/blender/blenkernel/ — Grease Pencil data/runtime implementation and public BKE headers
-- source/blender/geometry/ — geometry/curves support used by drawings
-- source/blender/makesdna/ — DNA types required by Blender data structures
-- source/blender/makesrna/ — only where generated/runtime RNA is actually required
-- source/blender/blenlib/ — required utility/math/container support
+## Selected source families
 
-### Grease Pencil drawing/rendering
-- source/blender/draw/engines/gpencil/
-- relevant source/blender/draw/ shared drawing infrastructure
-- source/blender/gpu/ and Vulkan backend used by the Android port
-- Grease Pencil shader sources under the relevant draw/GPU shader directories
+### Legacy Grease Pencil data
+- source/blender/blenkernel/BKE_gpencil_legacy.h
+- source/blender/blenkernel/intern/gpencil*.c
+- source/blender/makesdna/DNA_gpencil_legacy_types.h
 
-### Input/editing — later, not part of the first native proof
-- source/blender/editors/grease_pencil/
-- relevant source/blender/editors/sculpt_paint/ Grease Pencil draw/erase code
-- transform support for Grease Pencil
+### GP cache / draw closure
+- source/blender/draw/intern/draw_cache_impl_gpencil.cc
+- only the draw/cache/GPU support proven necessary by the Project Grease native CI
 
-## Deliberately excluded from the first import
+### GPU closure
+- focused GPU vertex/index/batch infrastructure
+- Project Grease Android GPU buffer/presentation boundary
 
-- Blender desktop UI/editors unrelated to drawing
-- Outliner, Properties, 3D View UI
+## Excluded
+
+- Blender desktop UI/editors
+- Blender Python
+- GHOST on Android
+- Blender window manager
+- full Blender scene/Main/ID application architecture on Android
+- full 3D viewport
 - unrelated render engines
-- Cycles, simulation, compositor, video editor, etc.
-- legacy Grease Pencil unless a dependency audit proves it is required
+- full Blender CMake dependency graph
+- Android Canvas as the native drawing backend
+- OpenToonz and GL4ES
 
-## Important
+## Dependency rule
 
-The exact file-level dependency graph must be generated from the selected Blender revision. Directory names alone are not sufficient because Grease Pencil code includes many shared Blender libraries.
+A new Blender source dependency is admitted only when compiler/linker/runtime evidence shows that it is required by the selected Legacy GP drawing path. Do not import a large Blender subsystem because it happens to contain a similar feature.
 
-The first runtime milestone is: Android Surface -> native input -> one Grease Pencil drawing/stroke -> visible rendering.
+## Runtime boundary
+
+Android input
+-> Project Grease controllers
+-> Project Grease JNI/native adapter
+-> Legacy GP data
+-> focused GP cache/geometry
+-> Project Grease Android GLES presentation
+
+The target remains a 2D animation/drawing application, not Blender running on Android.

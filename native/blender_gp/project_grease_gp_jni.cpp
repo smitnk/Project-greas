@@ -128,6 +128,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectStroke(JNIEnv *,
 {
   return project_grease_gp_select_stroke(from_handle(handle), index) != 0;
 }
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHitTestStroke(
+    JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius)
+{
+  return project_grease_gp_hit_test_stroke(
+      from_handle(handle), x, y, radius);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDeleteStroke(JNIEnv *, jobject, jlong handle, jint index)
 {

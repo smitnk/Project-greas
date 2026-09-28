@@ -6,38 +6,82 @@
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
 
-static bGPDspoint interpolate_point(const bGPDspoint &a, const bGPDspoint &b)
+static void copy_point(bGPDspoint *dst, const bGPDspoint *src)
 {
-  bGPDspoint p{};
-  std::memcpy(&p, &a, sizeof(p));
-  p.x = (a.x + b.x) * 0.5f;
-  p.y = (a.y + b.y) * 0.5f;
-  p.z = (a.z + b.z) * 0.5f;
-  p.pressure = (a.pressure + b.pressure) * 0.5f;
-  p.strength = (a.strength + b.strength) * 0.5f;
-  p.time = (a.time + b.time) * 0.5f;
-  p.flag = a.flag & b.flag;
-  p.runtime.pt_orig = nullptr;
-  p.runtime.idx_orig = -1;
-  return p;
+  std::memcpy(static_cast<void *>(dst), static_cast<const void *>(src), sizeof(bGPDspoint));
+  std::memset(static_cast<void *>(&dst->runtime), 0, sizeof(dst->runtime));
+}
+
+static void interpolate_point(
+    bGPDspoint *out, const bGPDspoint *a, const bGPDspoint *b)
+{
+  copy_point(out, a);
+  out->x = (a->x + b->x) * 0.5f;
+  out->y = (a->y + b->y) * 0.5f;
+  out->z = (a->z + b->z) * 0.5f;
+  out->pressure = (a->pressure + b->pressure) * 0.5f;
+  out->strength = (a->strength + b->strength) * 0.5f;
+  out->time = (a->time + b->time) * 0.5f;
+  out->uv_fac = (a->uv_fac + b->uv_fac) * 0.5f;
+  out->uv_rot = (a->uv_rot + b->uv_rot) * 0.5f;
+  for (int i = 0; i < 2; ++i) {
+    out->uv_fill[i] = (a->uv_fill[i] + b->uv_fill[i]) * 0.5f;
+  }
+  for (int i = 0; i < 4; ++i) {
+    out->vert_color[i] = (a->vert_color[i] + b->vert_color[i]) * 0.5f;
+  }
+  out->flag = a->flag & b->flag;
+  std::memset(static_cast<void *>(&out->runtime), 0, sizeof(out->runtime));
+}
+
+static void invalidate_geometry(bGPDstroke *stroke)
+{
+  if (!stroke) {
+    return;
+  }
+  MEM_SAFE_FREE(stroke->triangles);
+  stroke->tot_triangles = 0;
+  std::memset(static_cast<void *>(&stroke->runtime), 0, sizeof(stroke->runtime));
+  stroke->_pad5 = nullptr;
+  stroke->flag |= GP_STROKE_RECALC_GEOMETRY;
+}
+
+static bool supported_edit_stroke(const bGPDstroke *stroke)
+{
+  /* Project Grease Android currently has no native vertex-weight or Bezier
+   * edit-curve ownership path. Refuse destructive point-array edits until
+   * those owned substructures are implemented rather than corrupting them. */
+  return stroke && stroke->dvert == nullptr && stroke->editcurve == nullptr;
 }
 
 extern "C" void project_grease_android_stroke_flip(bGPDstroke *stroke)
 {
-  if (!stroke || stroke->totpoints < 2 || !stroke->points) {
+  if (!supported_edit_stroke(stroke) || stroke->totpoints < 2 || !stroke->points) {
     return;
   }
+
   for (int i = 0, j = stroke->totpoints - 1; i < j; ++i, --j) {
-    bGPDspoint tmp{};
-    std::memcpy(&tmp, &stroke->points[i], sizeof(tmp));
-    std::memcpy(&stroke->points[i], &stroke->points[j], sizeof(tmp));
-    std::memcpy(&stroke->points[j], &tmp, sizeof(tmp));
+    unsigned char tmp[sizeof(bGPDspoint)];
+    std::memcpy(tmp, static_cast<const void *>(&stroke->points[i]), sizeof(tmp));
+    std::memcpy(static_cast<void *>(&stroke->points[i]),
+                static_cast<const void *>(&stroke->points[j]),
+                sizeof(tmp));
+    std::memcpy(static_cast<void *>(&stroke->points[j]), tmp, sizeof(tmp));
   }
+
+  for (int i = 0; i < stroke->totpoints; ++i) {
+    std::memset(static_cast<void *>(&stroke->points[i].runtime),
+                0,
+                sizeof(stroke->points[i].runtime));
+  }
+
+  invalidate_geometry(stroke);
 }
 
 extern "C" bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int level)
 {
-  if (!stroke || !stroke->points || stroke->totpoints < 2 || level <= 0) {
+  if (!supported_edit_stroke(stroke) || !stroke->points ||
+      stroke->totpoints < 2 || level <= 0) {
     return false;
   }
 
@@ -46,17 +90,20 @@ extern "C" bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int 
     const bool cyclic = (stroke->flag & GP_STROKE_CYCLIC) != 0;
     const int segment_count = cyclic ? old_count : old_count - 1;
     const int new_count = old_count + segment_count;
+
     bGPDspoint *new_points = static_cast<bGPDspoint *>(
         MEM_mallocN(sizeof(bGPDspoint) * new_count, "Project Grease subdivide"));
+    if (!new_points) {
+      return false;
+    }
 
     int dst = 0;
     for (int i = 0; i < old_count; ++i) {
-      std::memcpy(&new_points[dst++], &stroke->points[i], sizeof(bGPDspoint));
+      copy_point(&new_points[dst++], &stroke->points[i]);
       if (i < old_count - 1 || cyclic) {
         const int next = (i + 1) % old_count;
-        const bGPDspoint midpoint =
-            interpolate_point(stroke->points[i], stroke->points[next]);
-        std::memcpy(&new_points[dst++], &midpoint, sizeof(midpoint));
+        interpolate_point(
+            &new_points[dst++], &stroke->points[i], &stroke->points[next]);
       }
     }
 
@@ -64,22 +111,26 @@ extern "C" bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int 
     stroke->points = new_points;
     stroke->totpoints = new_count;
   }
+
+  invalidate_geometry(stroke);
   return true;
 }
 
 extern "C" bool project_grease_android_stroke_close(bGPDstroke *stroke)
 {
-  if (!stroke || !stroke->points || stroke->totpoints < 3) {
+  if (!supported_edit_stroke(stroke) || !stroke->points || stroke->totpoints < 3) {
     return false;
   }
+
   stroke->flag |= GP_STROKE_CYCLIC;
+  invalidate_geometry(stroke);
   return true;
 }
 
 extern "C" bool project_grease_android_stroke_trim_points(
     bGPDstroke *stroke, int index_from, int index_to, bool keep_single_point)
 {
-  if (!stroke || !stroke->points || index_from < 0 ||
+  if (!supported_edit_stroke(stroke) || !stroke->points || index_from < 0 ||
       index_to < index_from || index_to >= stroke->totpoints) {
     return false;
   }
@@ -91,20 +142,26 @@ extern "C" bool project_grease_android_stroke_trim_points(
 
   bGPDspoint *new_points = static_cast<bGPDspoint *>(
       MEM_mallocN(sizeof(bGPDspoint) * new_count, "Project Grease trim"));
-  std::memcpy(new_points,
-              stroke->points + index_from,
-              sizeof(bGPDspoint) * new_count);
+  if (!new_points) {
+    return false;
+  }
+
+  for (int i = 0; i < new_count; ++i) {
+    copy_point(&new_points[i], &stroke->points[index_from + i]);
+  }
+
   MEM_freeN(stroke->points);
   stroke->points = new_points;
   stroke->totpoints = new_count;
   stroke->flag &= ~GP_STROKE_CYCLIC;
+  invalidate_geometry(stroke);
   return true;
 }
 
 extern "C" bool project_grease_android_stroke_split(
     bGPDframe *frame, bGPDstroke *stroke, int before_index, bGPDstroke **remaining)
 {
-  if (!frame || !stroke || !stroke->points || !remaining ||
+  if (!frame || !supported_edit_stroke(stroke) || !stroke->points || !remaining ||
       before_index <= 0 || before_index >= stroke->totpoints) {
     return false;
   }
@@ -118,14 +175,17 @@ extern "C" bool project_grease_android_stroke_split(
     return false;
   }
 
-  std::memcpy(tail, stroke, sizeof(bGPDstroke));
+  std::memcpy(static_cast<void *>(tail),
+              static_cast<const void *>(stroke),
+              sizeof(bGPDstroke));
   tail->next = nullptr;
   tail->prev = nullptr;
   tail->points = nullptr;
   tail->triangles = nullptr;
+  tail->tot_triangles = 0;
   tail->dvert = nullptr;
   tail->editcurve = nullptr;
-  tail->runtime.gps_orig = nullptr;
+  std::memset(static_cast<void *>(&tail->runtime), 0, sizeof(tail->runtime));
   tail->_pad5 = nullptr;
   tail->totpoints = second_count;
   tail->points = static_cast<bGPDspoint *>(
@@ -135,9 +195,9 @@ extern "C" bool project_grease_android_stroke_split(
     return false;
   }
 
-  std::memcpy(tail->points,
-              stroke->points + before_index,
-              sizeof(bGPDspoint) * second_count);
+  for (int i = 0; i < second_count; ++i) {
+    copy_point(&tail->points[i], &stroke->points[before_index + i]);
+  }
 
   bGPDspoint *head_points = static_cast<bGPDspoint *>(
       MEM_mallocN(sizeof(bGPDspoint) * first_count, "Project Grease split head"));
@@ -146,13 +206,19 @@ extern "C" bool project_grease_android_stroke_split(
     MEM_freeN(tail);
     return false;
   }
-  std::memcpy(head_points, stroke->points, sizeof(bGPDspoint) * first_count);
+
+  for (int i = 0; i < first_count; ++i) {
+    copy_point(&head_points[i], &stroke->points[i]);
+  }
 
   MEM_freeN(stroke->points);
   stroke->points = head_points;
   stroke->totpoints = first_count;
   stroke->flag &= ~GP_STROKE_CYCLIC;
+  invalidate_geometry(stroke);
+
   tail->flag &= ~GP_STROKE_CYCLIC;
+  invalidate_geometry(tail);
 
   BLI_insertlinkafter(&frame->strokes, stroke, tail);
   *remaining = tail;

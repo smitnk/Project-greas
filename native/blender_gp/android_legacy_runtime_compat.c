@@ -42,3 +42,9 @@ void CLG_logf(CLG_LogType *lg,
   (void)lg; (void)severity; (void)file_line; (void)fn; (void)format;
 }
 
+
+/* Android has no Blender UI icon registry; Legacy GP layer deletion only needs the registry release hook. */
+void BKE_icon_delete(void *id)
+{
+  (void)id;
+}

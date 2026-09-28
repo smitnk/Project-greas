@@ -31,16 +31,18 @@ data class FeatureCapability(
 object FeatureRegistry {
     private val available = setOf(FeatureId.FREEHAND, FeatureId.PRESSURE)
     private val inProgress = setOf(
-        FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE,
-        FeatureId.TRIM, FeatureId.CLOSE, FeatureId.MOVE, FeatureId.MIRROR,
+        FeatureId.SELECT, FeatureId.MOVE, FeatureId.MIRROR, FeatureId.DUPLICATE, FeatureId.DELETE,
+        FeatureId.SPLIT, FeatureId.SUBDIVIDE, FeatureId.TRIM, FeatureId.CLOSE,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
         FeatureId.LAYER_RENAME, FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME,
         FeatureId.INSERT_FRAME, FeatureId.DUPLICATE_FRAME, FeatureId.DELETE_FRAME,
         FeatureId.FRAME_HOLDS, FeatureId.PLAYBACK, FeatureId.PAUSE, FeatureId.LOOP,
-        FeatureId.FPS, FeatureId.FRAME_NAVIGATION, FeatureId.MATERIALS,
-        FeatureId.SELECT_MATERIAL, FeatureId.THICKNESS, FeatureId.OPACITY,
-        FeatureId.ONION_SKIN, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
+        FeatureId.FPS, FeatureId.FRAME_NAVIGATION, FeatureId.KEYFRAME,
+        FeatureId.ONION_SKIN, FeatureId.ONION_RANGE, FeatureId.ONION_OPACITY, FeatureId.ONION_FADE,
+        FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
+        FeatureId.THICKNESS, FeatureId.OPACITY, FeatureId.NEW_PROJECT, FeatureId.PROJECT_SETTINGS,
+        FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
     )
 
     fun capability(id: FeatureId): FeatureCapability {

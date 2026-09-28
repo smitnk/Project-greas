@@ -701,7 +701,10 @@ bool Backend::flip_stroke(int index)
     }
 
     #ifdef __ANDROID__
-    project_grease_android_stroke_flip(stroke);
+    if (!project_grease_android_stroke_flip(stroke)) {
+      impl_->last_error = "Android GP stroke flip does not support owned stroke substructures";
+      return false;
+    }
     #else
     BKE_gpencil_stroke_flip(stroke);
     #endif

@@ -111,7 +111,6 @@ class AnimationController(private val native: NativeEditorBridge) {
 
 class MaterialController {
     var fillEnabled=true; private set
-    fun setFillEnabled(value:Boolean){fillEnabled=value}
     var activeMaterial=0; private set
     var thickness=8f; private set
     var opacity=1f; private set
@@ -245,6 +244,47 @@ class EditorController {
                 }
                 GPNative.nativeSetPreviewStrokeEglRenderer(rendererHandle, packed, materials.thickness)
             }
+        }
+    }
+
+    private fun generatedShapePoints(): List<PendingPoint> {
+        val p = pendingShapePoints
+        if (p.isEmpty()) return emptyList()
+        val first = p.first()
+        val last = p.last()
+        return when (pendingShapeTool) {
+            GreaseTool.LINE -> listOf(first, last)
+            GreaseTool.POLYLINE -> p
+            GreaseTool.RECTANGLE -> {
+                val left=minOf(first.x,last.x); val right=maxOf(first.x,last.x)
+                val top=minOf(first.y,last.y); val bottom=maxOf(first.y,last.y)
+                listOf(first.copy(x=left,y=top),last.copy(x=right,y=top),
+                    last.copy(x=right,y=bottom),first.copy(x=left,y=bottom),
+                    first.copy(x=left,y=top))
+            }
+            GreaseTool.CIRCLE -> {
+                val cx=(first.x+last.x)*0.5f; val cy=(first.y+last.y)*0.5f
+                val rx=maxOf(1f,kotlin.math.abs(last.x-first.x)*0.5f)
+                val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
+                (0..48).map { n ->
+                    val a=(2.0*Math.PI*n/48.0)
+                    first.copy(x=cx+rx*kotlin.math.cos(a).toFloat(),y=cy+ry*kotlin.math.sin(a).toFloat())
+                }
+            }
+            GreaseTool.ARC -> {
+                val cx=(first.x+last.x)*0.5; val cy=(first.y+last.y)*0.5
+                val rx=maxOf(1.0,kotlin.math.abs(last.x-first.x)*0.5)
+                val ry=maxOf(1.0,kotlin.math.abs(last.y-first.y)*0.5)
+                val start=kotlin.math.atan2((first.y-cy)/ry,(first.x-cx)/rx)
+                val end=kotlin.math.atan2((last.y-cy)/ry,(last.x-cx)/rx)
+                var sweep=end-start
+                if(sweep<=0.0)sweep+=2.0*Math.PI
+                (0..32).map { n ->
+                    val a=start+sweep*n/32.0
+                    first.copy(x=(cx+rx*kotlin.math.cos(a)).toFloat(),y=(cy+ry*kotlin.math.sin(a)).toFloat())
+                }
+            }
+            else -> emptyList()
         }
     }
 

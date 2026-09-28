@@ -30,6 +30,8 @@
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame);
+extern "C" int project_grease_android_present_pending_stroke(
+    const project_grease::gp::StrokePoint *points, int count, float thickness);
 #endif
 
 #ifndef __ANDROID__
@@ -1149,8 +1151,14 @@ bool Backend::render_with_gpu_context()
   // presents the same real bGPDframe through a focused GLES adapter because
   // the desktop GP shader stack depends on buffer-texture/material
   // infrastructure that is intentionally outside Project Grease scope.
-  const bool presented = cache_ready &&
+  bool presented = cache_ready &&
       project_grease_android_present_gp_frame(impl_->frame) != 0;
+  if (presented && impl_->stroke_open && !impl_->pending_points.empty()) {
+    presented = project_grease_android_present_pending_stroke(
+        impl_->pending_points.data(),
+        static_cast<int>(impl_->pending_points.size()),
+        impl_->stroke_style.thickness) != 0;
+  }
 #else
   const bool presented = cache_ready;
 #endif

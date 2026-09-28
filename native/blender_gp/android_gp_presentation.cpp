@@ -6,6 +6,7 @@
 #include <GLES2/gl2.h>
 
 #include "DNA_gpencil_legacy_types.h"
+#include "project_grease_gp_backend.h"
 
 namespace {
 
@@ -241,6 +242,60 @@ extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame)
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glUseProgram(0);
 
+  return glGetError() == GL_NO_ERROR ? 1 : 0;
+}
+
+
+extern "C" int project_grease_android_present_pending_stroke(
+    const project_grease::gp::StrokePoint *points,
+    int count,
+    float thickness)
+{
+  if (!points || count <= 0 || !ensure_program()) return 0;
+  GLint viewport[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  const int width = viewport[2], height = viewport[3];
+  if (width <= 0 || height <= 0) return 0;
+
+  std::vector<Vertex> vertices;
+  vertices.reserve(static_cast<size_t>(count > 1 ? (count - 1) * 6 : 6));
+  if (count == 1) {
+    bGPDspoint point = {};
+    point.x = points[0].x;
+    point.y = points[0].y;
+    point.pressure = std::max(points[0].pressure, 0.01f);
+    append_dot(vertices, point, thickness * point.pressure, width, height);
+  }
+  else {
+    for (int i = 0; i + 1 < count; ++i) {
+      bGPDspoint a = {}, b = {};
+      a.x = points[i].x; a.y = points[i].y;
+      a.pressure = std::max(points[i].pressure, 0.01f);
+      b.x = points[i + 1].x; b.y = points[i + 1].y;
+      b.pressure = std::max(points[i + 1].pressure, 0.01f);
+      append_segment(vertices, a, b,
+                     thickness * 0.5f * (a.pressure + b.pressure),
+                     width, height);
+    }
+  }
+  if (vertices.empty()) return 1;
+
+  glUseProgram(g_program);
+  glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+  glBufferData(GL_ARRAY_BUFFER,
+               static_cast<GLsizeiptr>(vertices.size() * sizeof(Vertex)),
+               vertices.data(), GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(static_cast<GLuint>(g_position));
+  glVertexAttribPointer(static_cast<GLuint>(g_position), 2, GL_FLOAT, GL_FALSE,
+                        sizeof(Vertex), nullptr);
+  glUniform4f(g_color, 1.0f, 1.0f, 1.0f, 1.0f);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
+  glDisable(GL_BLEND);
+  glDisableVertexAttribArray(static_cast<GLuint>(g_position));
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glUseProgram(0);
   return glGetError() == GL_NO_ERROR ? 1 : 0;
 }
 

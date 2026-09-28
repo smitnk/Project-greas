@@ -150,6 +150,14 @@ int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.frame_count();
 }
+int project_grease_gp_duplicate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame)
+{
+  return ensure_ready(handle) && handle->backend.duplicate_frame(source_frame, target_frame) ? 1 : 0;
+}
+int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_number)
+{
+  return ensure_ready(handle) && handle->backend.delete_frame(frame_number) ? 1 : 0;
+}
 int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index)
 {
   return ensure_ready(handle) && handle->backend.select_stroke(index) ? 1 : 0;

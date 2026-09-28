@@ -204,7 +204,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var thickness by remember{mutableFloatStateOf(controller.materials.thickness)};var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     Column(Modifier.width(210.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(10.dp)){
         Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+thickness.toInt());Slider(thickness, {thickness=it;controller.materials.setThickness(it);redraw()}, valueRange = .5f..100f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity, {opacity=it;controller.materials.setOpacity(it);redraw()}, valueRange = 0f..1f)
+        Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity, {opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()}, valueRange = 0f..1f)
         CapabilityRow("Grid",FeatureId.GRID);CapabilityRow("Snapping",FeatureId.SNAPPING);CapabilityRow("Onion skin",FeatureId.ONION_SKIN)
     }
 }

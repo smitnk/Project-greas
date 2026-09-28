@@ -553,6 +553,17 @@ int Backend::frame_count() const {
   return count;
 }
 
+int Backend::frame_end() const
+{
+  if (!impl_->layer) return 1;
+  int end_frame = 1;
+  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame; frame = frame->next) {
+    end_frame = std::max(end_frame, frame->framenum);
+  }
+  return end_frame;
+}
+
 bool Backend::duplicate_frame(int source_frame, int target_frame)
 {
   if (!impl_->layer || source_frame < 1 || target_frame < 1) {

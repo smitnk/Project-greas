@@ -324,3 +324,9 @@ int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int 
 {
   return ensure_ready(handle) && handle->backend.set_multiframe_editing(enabled != 0) ? 1 : 0;
 }
+
+int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 1;
+  return handle->backend.frame_end();
+}

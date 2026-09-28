@@ -17,6 +17,9 @@ class NativeEditorBridge {
     fun createLayer(name: String) = handle != 0L && GPNative.nativeCreateLayer(handle, name)
     fun selectLayer(index: Int) = handle != 0L && GPNative.nativeSelectLayer(handle, index)
     fun frameCount() = if (handle != 0L) GPNative.nativeFrameCount(handle) else 0
+    fun frameEnd() = if (handle != 0L) GPNative.nativeFrameEnd(handle) else 1
+    fun selectFrameOrHold(frame:Int) = handle != 0L && GPNative.nativeSelectFrameOrHold(handle,frame)
+    fun render() = handle != 0L && GPNative.nativeRender(handle)
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int)=handle != 0L && GPNative.nativeDuplicateFrame(handle,sourceFrame,targetFrame)
     fun deleteFrame(frameNumber:Int)=handle != 0L && GPNative.nativeDeleteFrame(handle,frameNumber)
     fun createFrame(frame: Int) = handle != 0L && GPNative.nativeCreateFrame(handle, frame)
@@ -70,13 +73,44 @@ class AnimationController(private val native: NativeEditorBridge) {
     var playing = false; private set
     var loop = true; private set
     var frameCount = 1; private set
-    fun initialize() { if (native.handle != 0L) { native.selectFrame(1); frameCount = native.frameCount().coerceAtLeast(1) } }
+    var timelineEnd = 1; private set
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!playing || native.handle == 0L) return
+            val end = native.frameEnd().coerceAtLeast(1)
+            timelineEnd = end
+            var next = currentFrame + 1
+            if (next > end) {
+                if (loop) next = 1 else {
+                    playing = false
+                    return
+                }
+            }
+            if (native.selectFrameOrHold(next)) {
+                currentFrame = next
+                frameCount = native.frameCount().coerceAtLeast(1)
+                native.render()
+            }
+            if (playing) handler.postDelayed(this, (1000L / fps.coerceIn(1,120)).coerceAtLeast(1L))
+        }
+    }
+
+    fun initialize() {
+        if (native.handle != 0L) {
+            native.selectFrameOrHold(1)
+            currentFrame = 1
+            frameCount = native.frameCount().coerceAtLeast(1)
+            timelineEnd = native.frameEnd().coerceAtLeast(1)
+        }
+    }
     fun setFrame(value: Int): Boolean {
         val target = value.coerceAtLeast(1)
         if (native.handle == 0L) return false
-        if (!native.selectFrame(target)) return false
+        if (!native.selectFrameOrHold(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
+        timelineEnd = native.frameEnd().coerceAtLeast(1)
         return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
@@ -85,28 +119,38 @@ class AnimationController(private val native: NativeEditorBridge) {
         if (native.selectFrame(target)) {
             currentFrame = target
             frameCount = native.frameCount().coerceAtLeast(1)
+            timelineEnd = native.frameEnd().coerceAtLeast(1)
             return true
         }
         if (!native.createFrame(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
+        timelineEnd = native.frameEnd().coerceAtLeast(1)
         return true
     }
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int):Boolean {
         if (native.handle == 0L || targetFrame < 1) return false
         if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
-        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); return true
+        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {
         if (native.handle == 0L) return false
         if (!native.deleteFrame(frameNumber)) return false
-        currentFrame=native.frameCount().let { if(it>0) minOf(currentFrame,it) else 1 }
-        frameCount=native.frameCount().coerceAtLeast(1); return true
+        currentFrame=native.frameEnd().let { if(it>0) minOf(currentFrame,it) else 1 }
+        frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
     }
 
-    fun setFps(value:Int){fps=value.coerceIn(1,120)}
-    fun togglePlayback(){playing=!playing}
+    fun setFps(value:Int){
+        fps=value.coerceIn(1,120)
+        if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))}
+    }
+    fun togglePlayback(){
+        playing=!playing
+        handler.removeCallbacks(tick)
+        if(playing) handler.post(tick)
+    }
     fun toggleLoop(){loop=!loop}
+    fun stop(){playing=false;handler.removeCallbacks(tick)}
 }
 
 class MaterialController {
@@ -198,7 +242,7 @@ class EditorController {
         animation.initialize()
         selectedLayer = 0
     }
-    fun detachRenderer(){rendererHandle=0L;native.detach()}
+    fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
     fun selectTool(tool:GreaseTool)=tools.select(tool)
     private data class PendingPoint(val x:Float,val y:Float,val pressure:Float,val time:Float)
     private val pendingShapePoints = mutableListOf<PendingPoint>()

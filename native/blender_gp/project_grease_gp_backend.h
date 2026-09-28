@@ -46,6 +46,7 @@ class Backend {
   bool select_frame(int frame_number);
   bool select_frame_or_hold(int frame_number);
   int frame_count() const;
+  int frame_end() const;
   bool duplicate_frame(int source_frame, int target_frame);
   bool delete_frame(int frame_number);
   int stroke_count() const;

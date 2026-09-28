@@ -208,6 +208,16 @@ class EditorController {
             )
         } else if (pendingShapeTool != null) {
             pendingShapePoints += PendingPoint(x, y, pressure.coerceAtLeast(0.01f), timeSeconds)
+            val preview = generatedShapePoints()
+            if (preview.isNotEmpty()) {
+                val packed = FloatArray(preview.size * 3)
+                preview.forEachIndexed { index, point ->
+                    packed[index * 3] = point.x
+                    packed[index * 3 + 1] = point.y
+                    packed[index * 3 + 2] = point.pressure
+                }
+                GPNative.nativeSetPreviewStrokeEglRenderer(rendererHandle, packed, materials.thickness)
+            }
         }
     }
 
@@ -272,6 +282,7 @@ class EditorController {
         }
         val shape = generatedShapePoints()
         val shapeTool = pendingShapeTool
+        GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
         pendingShapePoints.clear()
         pendingShapeTool = null
         if (shapeTool == null || shape.size < 2) return
@@ -291,7 +302,12 @@ class EditorController {
     }
 
     fun cancelStroke(){
-        if(rendererHandle!=0L && tools.activeTool==GreaseTool.DRAW) GPNative.nativeEndStrokeEglRenderer(rendererHandle)
+        if(rendererHandle!=0L) {
+            if (tools.activeTool==GreaseTool.DRAW) {
+                GPNative.nativeEndStrokeEglRenderer(rendererHandle)
+            }
+            GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
+        }
         pendingShapePoints.clear()
         pendingShapeTool=null
     }

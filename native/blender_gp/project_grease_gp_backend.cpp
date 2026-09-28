@@ -378,6 +378,68 @@ int Backend::frame_count() const {
   return count;
 }
 
+bool Backend::duplicate_frame(int source_frame, int target_frame)
+{
+  if (!impl_->layer || target_frame < 1) {
+    impl_->last_error = "invalid frame duplication";
+    return false;
+  }
+  bGPDframe *source = nullptr;
+  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame != nullptr; frame = frame->next) {
+    if (frame->framenum == source_frame) { source = frame; break; }
+  }
+  if (!source) { impl_->last_error = "source frame not found"; return false; }
+  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame != nullptr; frame = frame->next) {
+    if (frame->framenum == target_frame) { impl_->last_error = "target frame already exists"; return false; }
+  }
+  bGPDframe *copy = static_cast<bGPDframe *>(MEM_callocN(sizeof(bGPDframe), "Project Grease frame duplicate"));
+  if (!copy) { impl_->last_error = "frame allocation failed"; return false; }
+  copy->framenum = target_frame;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(source->strokes.first);
+       stroke != nullptr; stroke = stroke->next) {
+    bGPDstroke *dup = BKE_gpencil_stroke_duplicate(stroke, true, true);
+    if (!dup) {
+      for (bGPDstroke *owned = static_cast<bGPDstroke *>(copy->strokes.first), *next = nullptr;
+           owned != nullptr; owned = next) {
+        next = owned->next; BKE_gpencil_free_stroke(owned);
+      }
+      MEM_freeN(copy);
+      impl_->last_error = "stroke duplication failed";
+      return false;
+    }
+    BLI_addtail(&copy->strokes, dup);
+  }
+  BLI_addtail(&impl_->layer->frames, copy);
+  impl_->frame = copy;
+  impl_->frame_created = true;
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::delete_frame(int frame_number)
+{
+  if (!impl_->layer) { impl_->last_error = "layer is not selected"; return false; }
+  bGPDframe *target = nullptr;
+  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame != nullptr; frame = frame->next) {
+    if (frame->framenum == frame_number) { target = frame; break; }
+  }
+  if (!target) { impl_->last_error = "frame number not found"; return false; }
+  BLI_remlink(&impl_->layer->frames, target);
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(target->strokes.first), *next = nullptr;
+       stroke != nullptr; stroke = next) {
+    next = stroke->next; BKE_gpencil_free_stroke(stroke);
+  }
+  MEM_freeN(target);
+  impl_->frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+  impl_->frame_created = impl_->frame != nullptr;
+  impl_->stroke = nullptr;
+  impl_->last_error.clear();
+  return true;
+}
+
 int Backend::stroke_count() const {
   if (!impl_->frame) {
     return 0;

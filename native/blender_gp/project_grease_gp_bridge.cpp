@@ -1,5 +1,7 @@
 #include "project_grease_gp_bridge.h"
 
+#include <vector>
+
 #include "project_grease_gp_backend.h"
 
 struct ProjectGreaseGPHandle {

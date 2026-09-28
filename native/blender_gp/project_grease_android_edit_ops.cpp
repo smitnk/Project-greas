@@ -39,11 +39,17 @@ static void invalidate_geometry(bGPDstroke *stroke)
   if (!stroke) {
     return;
   }
+
+  /*
+   * The Android GP closure deliberately does not depend on Blender's full
+   * legacy BKE geometry-update API. The focused presentation path rebuilds
+   * its geometry from the point array, so invalidate the owned per-stroke
+   * geometry directly and clear runtime state.
+   */
   MEM_SAFE_FREE(stroke->triangles);
   stroke->tot_triangles = 0;
   std::memset(static_cast<void *>(&stroke->runtime), 0, sizeof(stroke->runtime));
   stroke->_pad5 = nullptr;
-  stroke->flag |= GP_STROKE_RECALC_GEOMETRY;
 }
 
 static bool supported_edit_stroke(const bGPDstroke *stroke)

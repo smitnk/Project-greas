@@ -15,6 +15,7 @@
 
 #include "MEM_guardedalloc.h"
 #include "BLI_string.h"
+#include "BLI_listbase.h"
 #include "BLI_string_utf8.h"
 #include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
@@ -77,10 +78,10 @@ size_t BLI_snprintf_rlen(char *__restrict dst,
   return n;
 }
 
-int BLI_snprintf(char *__restrict dst,
-                 size_t dst_maxncpy,
-                 const char *__restrict format,
-                 ...)
+size_t BLI_snprintf(char *__restrict dst,
+                    size_t dst_maxncpy,
+                    const char *__restrict format,
+                    ...)
 {
   va_list arg;
   va_start(arg, format);
@@ -170,7 +171,7 @@ size_t BLI_strncpy_utf8_rlen(char *__restrict dst,
   return (size_t)(dst - r_dst);
 }
 
-static bool uniquename_find_dupe(ListBase *list,
+static bool uniquename_find_dupe(struct ListBase *list,
                                  void *vlink,
                                  const char *name,
                                  int name_offset)
@@ -189,7 +190,7 @@ static bool uniquename_find_dupe(ListBase *list,
 static bool uniquename_unique_check(void *arg, const char *name)
 {
   struct {
-    ListBase *lb;
+    struct ListBase *lb;
     void *vlink;
     int name_offset;
   } *data = arg;

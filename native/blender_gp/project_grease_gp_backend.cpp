@@ -1,5 +1,6 @@
 #include "project_grease_gp_backend.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -662,7 +663,7 @@ bool Backend::create_primitive(int type,
     const float rx = std::fabs(x1 - x0) * 0.5f;
     const float ry = (type == 2) ? rx : std::fabs(y1 - y0) * 0.5f;
     const float a0 = (type == 2) ? 0.0f : start_angle;
-    const float a1 = (type == 2) ? (2.0f * static_cast<float>(M_PI)) : end_angle;
+    const float a1 = (type == 2) ? (6.28318530717958647692f) : end_angle;
     const int n = std::max(8, segments);
     for (int i = 0; i < n; ++i) {
       const float t = (n == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(n - 1);

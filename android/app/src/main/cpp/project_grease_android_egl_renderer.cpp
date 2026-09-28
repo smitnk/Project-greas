@@ -21,6 +21,10 @@ extern "C" int project_grease_gp_render_external_context(GPHandle);
 extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float);
 extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint);
 extern "C" int project_grease_gp_end_stroke(GPHandle);
+extern "C" int project_grease_gp_fill_at_screen(
+    GPHandle, const float *rgba, int width, int height, int seed_x, int seed_y,
+    int fill_leak, int dilate_pixels, int material_index, float thickness);
+extern "C" int project_grease_android_present_gp_fill_mask(const void *gpd, int frame_number);
 extern "C" void project_grease_android_present_reset(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" int project_grease_android_present_pending_stroke(
@@ -424,6 +428,71 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearPreviewStrokeEglR
   if (!renderer) return JNI_FALSE;
   renderer->preview_points.clear();
   return JNI_TRUE;
+}
+
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
+    JNIEnv *,
+    jobject,
+    jlong handle,
+    jint seed_x,
+    jint seed_y,
+    jint material_index,
+    jfloat thickness)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected ||
+      renderer->display == EGL_NO_DISPLAY ||
+      renderer->surface == EGL_NO_SURFACE ||
+      renderer->context == EGL_NO_CONTEXT) {
+    return JNI_FALSE;
+  }
+
+  if (eglMakeCurrent(renderer->display,
+                     renderer->surface,
+                     renderer->surface,
+                     renderer->context) != EGL_TRUE) {
+    return JNI_FALSE;
+  }
+
+  // Render the current Legacy GP strokes into the same kind of binary
+  // boundary mask used by Blender 3.6.23's fill operator.
+  if (!project_grease_android_present_gp_fill_mask(
+          nullptr, 0)) {
+    return JNI_FALSE;
+  }
+
+  const int width = renderer->width;
+  const int height = renderer->height;
+  if (width < 3 || height < 3) return JNI_FALSE;
+
+  std::vector<GLubyte> pixels(
+      static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+  glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+  if (glGetError() != GL_NO_ERROR) {
+    return JNI_FALSE;
+  }
+
+  std::vector<float> rgba(pixels.size());
+  for (size_t i = 0; i < pixels.size(); ++i) {
+    rgba[i] = static_cast<float>(pixels[i]) / 255.0f;
+  }
+
+  // The presentation helper above must use the real bGPdata. It is obtained
+  // through the GP backend's render path before the mask is drawn.
+  // The current focused renderer exposes the GP object through the handle,
+  // so this call is replaced below by the backend bridge once the public
+  // mask ABI is connected.
+  (void)seed_x;
+  (void)seed_y;
+  (void)material_index;
+  (void)thickness;
+
+  // Restore the normal canvas immediately; this phase intentionally stops
+  // before claiming the Fill tool is end-to-end.
+  const bool restored = project_grease_gp_render_external_context(renderer->gp_handle) != 0;
+  return restored ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

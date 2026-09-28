@@ -164,25 +164,117 @@ class EditorController {
     }
     fun detachRenderer(){rendererHandle=0L;native.detach()}
     fun selectTool(tool:GreaseTool)=tools.select(tool)
+    private data class PendingPoint(val x:Float,val y:Float,val pressure:Float,val time:Float)
+    private val pendingShapePoints = mutableListOf<PendingPoint>()
+    private var pendingShapeTool: GreaseTool? = null
+
     fun beginStroke():Boolean {
-        if(rendererHandle==0L||tools.activeTool!=GreaseTool.DRAW)return false
-        return GPNative.nativeBeginStrokeEglRenderer(rendererHandle,materials.activeMaterial,materials.thickness)
-    }
-    fun addStrokePoint(x:Float,y:Float,pressure:Float,timeSeconds:Float){
-        if(rendererHandle!=0L) {
-            GPNative.nativeAddPointEglRenderer(
-                rendererHandle,
-                x,
-                y,
-                0f,
-                pressure.coerceAtLeast(0.01f),
-                materials.opacity,
-                timeSeconds
-            )
+        if (rendererHandle == 0L) return false
+        return when (tools.activeTool) {
+            GreaseTool.DRAW -> {
+                pendingShapePoints.clear()
+                pendingShapeTool = null
+                GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)
+            }
+            GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC, GreaseTool.POLYLINE -> {
+                pendingShapePoints.clear()
+                pendingShapeTool = tools.activeTool
+                true
+            }
+            else -> false
         }
     }
-    fun endStroke(){if(rendererHandle!=0L&&GPNative.nativeEndStrokeEglRenderer(rendererHandle)){history.markEdit();document.markDirty()}}
-    fun cancelStroke(){if(rendererHandle!=0L)GPNative.nativeEndStrokeEglRenderer(rendererHandle)}
+    fun addStrokePoint(x:Float,y:Float,pressure:Float,timeSeconds:Float){
+        if (rendererHandle == 0L) return
+        if (tools.activeTool == GreaseTool.DRAW) {
+            GPNative.nativeAddPointEglRenderer(
+                rendererHandle, x, y, 0f,
+                pressure.coerceAtLeast(0.01f),
+                materials.opacity, timeSeconds
+            )
+        } else if (pendingShapeTool != null) {
+            pendingShapePoints += PendingPoint(x, y, pressure.coerceAtLeast(0.01f), timeSeconds)
+        }
+    }
+
+    private fun generatedShapePoints(): List<PendingPoint> {
+        val p = pendingShapePoints
+        if (p.isEmpty()) return emptyList()
+        val first = p.first()
+        val last = p.last()
+        return when (pendingShapeTool) {
+            GreaseTool.LINE -> listOf(first, last)
+            GreaseTool.POLYLINE -> p.distinctBy { (it.x * 10f).toInt() to (it.y * 10f).toInt() }
+            GreaseTool.RECTANGLE -> {
+                val left=minOf(first.x,last.x); val right=maxOf(first.x,last.x)
+                val top=minOf(first.y,last.y); val bottom=maxOf(first.y,last.y)
+                listOf(
+                    PendingPoint(left,top,first.pressure,first.time),
+                    PendingPoint(right,top,last.pressure,last.time),
+                    PendingPoint(right,bottom,last.pressure,last.time),
+                    PendingPoint(left,bottom,first.pressure,first.time),
+                    PendingPoint(left,top,first.pressure,first.time)
+                )
+            }
+            GreaseTool.CIRCLE -> {
+                val cx=(first.x+last.x)*0.5f; val cy=(first.y+last.y)*0.5f
+                val rx=maxOf(1f,kotlin.math.abs(last.x-first.x)*0.5f)
+                val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
+                (0..48).map { i ->
+                    val a=(2.0*Math.PI*i/48.0).toFloat()
+                    PendingPoint(cx+rx*kotlin.math.cos(a),cy+ry*kotlin.math.sin(a),last.pressure,last.time)
+                }
+            }
+            GreaseTool.ARC -> {
+                val cx=(first.x+last.x)*0.5f; val cy=(first.y+last.y)*0.5f
+                val rx=maxOf(1f,kotlin.math.abs(last.x-first.x)*0.5f)
+                val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
+                val start=kotlin.math.atan2((first.y-cy)/ry,(first.x-cx)/rx)
+                val end=kotlin.math.atan2((last.y-cy)/ry,(last.x-cx)/rx)
+                var sweep=end-start
+                if (sweep <= 0.0) sweep += 2.0*Math.PI
+                (0..32).map { i ->
+                    val a=(start+sweep*i/32.0).toFloat()
+                    PendingPoint(cx+rx*kotlin.math.cos(a),cy+ry*kotlin.math.sin(a),last.pressure,last.time)
+                }
+            }
+            else -> emptyList()
+        }
+    }
+
+    fun endStroke(){
+        if (rendererHandle == 0L) return
+        if (tools.activeTool == GreaseTool.DRAW) {
+            if (GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
+                history.markEdit(); document.markDirty()
+            }
+            return
+        }
+        val shape = generatedShapePoints()
+        val shapeTool = pendingShapeTool
+        pendingShapePoints.clear()
+        pendingShapeTool = null
+        if (shapeTool == null || shape.size < 2) return
+        if (!GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)) return
+        var ok = true
+        for (point in shape) {
+            ok = ok && GPNative.nativeAddPointEglRenderer(
+                rendererHandle, point.x, point.y, 0f,
+                point.pressure, materials.opacity, point.time
+            )
+        }
+        if (ok && GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
+            history.markEdit(); document.markDirty()
+        } else {
+            GPNative.nativeEndStrokeEglRenderer(rendererHandle)
+        }
+    }
+
+    fun cancelStroke(){
+        if(rendererHandle!=0L && tools.activeTool==GreaseTool.DRAW) GPNative.nativeEndStrokeEglRenderer(rendererHandle)
+        pendingShapePoints.clear()
+        pendingShapeTool=null
+    }
     fun render(){if(rendererHandle!=0L)GPNative.nativeRenderEgl(rendererHandle)}
     fun layerCount() = native.layerCount()
     fun createLayer(name:String):Boolean {
@@ -225,6 +317,13 @@ class EditorController {
     }
     fun strokeCount() = native.strokeCount()
     fun selectStroke(index:Int)=selection.selectStroke(index)
+    fun moveSelectedStroke(dx:Float,dy:Float):Boolean {
+        val i=selection.selectedStroke
+        if(i<0) return false
+        val ok=native.translateStroke(i,dx,dy,0f)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
     fun hitTestAndSelectStroke(x:Float, y:Float, radius:Float = 24f):Boolean {
         val index = native.hitTestStroke(x, y, radius)
         return index >= 0 && selection.selectStroke(index)

@@ -24,7 +24,10 @@ extern "C" int project_grease_gp_end_stroke(GPHandle);
 extern "C" int project_grease_gp_fill_at_screen(
     GPHandle, const float *rgba, int width, int height, int seed_x, int seed_y,
     int fill_leak, int dilate_pixels, int material_index, float thickness);
-extern "C" int project_grease_android_present_gp_fill_mask(const void *gpd, int frame_number);
+extern "C" int project_grease_gp_render_fill_mask(GPHandle);
+extern "C" int project_grease_gp_fill_at_screen(
+    GPHandle, const float *rgba, int width, int height, int seed_x, int seed_y,
+    int fill_leak, int dilate_pixels, int material_index, float thickness);
 extern "C" void project_grease_android_present_reset(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" int project_grease_android_present_pending_stroke(
@@ -456,10 +459,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
     return JNI_FALSE;
   }
 
-  // Render the current Legacy GP strokes into the same kind of binary
-  // boundary mask used by Blender 3.6.23's fill operator.
-  if (!project_grease_android_present_gp_fill_mask(
-          nullptr, 0)) {
+  if (!project_grease_gp_render_fill_mask(renderer->gp_handle)) {
     return JNI_FALSE;
   }
 
@@ -479,20 +479,20 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
     rgba[i] = static_cast<float>(pixels[i]) / 255.0f;
   }
 
-  // The presentation helper above must use the real bGPdata. It is obtained
-  // through the GP backend's render path before the mask is drawn.
-  // The current focused renderer exposes the GP object through the handle,
-  // so this call is replaced below by the backend bridge once the public
-  // mask ABI is connected.
-  (void)seed_x;
-  (void)seed_y;
-  (void)material_index;
-  (void)thickness;
+  const bool filled = project_grease_gp_fill_at_screen(
+      renderer->gp_handle,
+      rgba.data(),
+      width,
+      height,
+      seed_x,
+      seed_y,
+      3,
+      0,
+      material_index,
+      thickness) != 0;
 
-  // Restore the normal canvas immediately; this phase intentionally stops
-  // before claiming the Fill tool is end-to-end.
   const bool restored = project_grease_gp_render_external_context(renderer->gp_handle) != 0;
-  return restored ? JNI_TRUE : JNI_FALSE;
+  return (filled && restored) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

@@ -38,13 +38,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
+          export ANDROID_SDK_ROOT
+
+          if [ -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties" ]; then
+            echo "NDK 27.0.12077973 already installed and verified."
+            exit 0
+          fi
+
+          SDKMANAGER=""
+          for candidate in             "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"             "${ANDROID_SDK_ROOT}/cmdline-tools/bin/sdkmanager"             "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found in the preinstalled Android SDK."
+            echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
+            find "${ANDROID_SDK_ROOT}" -maxdepth 5 -type f -name sdkmanager -print 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+
           for attempt in 1 2 3; do
             echo "Installing NDK 27.0.12077973 (attempt $attempt/3)"
             rm -rf "${ANDROID_SDK_ROOT}/ndk/27.0.12077973"
-            if yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.0.12077973"; then
+            if yes | "$SDKMANAGER" --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.0.12077973"; then
               test -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties"
               echo "NDK 27.0.12077973 installed and verified."
-              break
+              exit 0
             fi
             if [ "$attempt" -eq 3 ]; then
               echo "NDK installation failed after 3 attempts."

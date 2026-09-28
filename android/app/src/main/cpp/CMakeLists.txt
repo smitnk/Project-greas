@@ -83,11 +83,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
-    "${BLENDER_SOURCE_DIR}/extern/wcwidth/wcwidth.c"
     # math_matrix.c pulls the optional Eigen C API into the Android target.
     # The selected Legacy GP/cache closure does not require it.
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"

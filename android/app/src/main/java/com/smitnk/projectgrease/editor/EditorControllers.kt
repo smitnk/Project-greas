@@ -432,7 +432,7 @@ class EditorController {
 
     fun setOnionSkin(enabled:Boolean,before:Int=2,after:Int=2,opacity:Float=0.35f):Boolean {
         val ok = native.setOnionSkin(enabled,before,after,opacity)
-        if (ok) { onion.enabled=enabled; onion.setBefore(before); onion.setAfter(after); onion.setOpacity(opacity); render() }
+        if (ok) { if (enabled != onion.enabled) onion.toggle(); onion.setBefore(before); onion.setAfter(after); onion.setOpacity(opacity); render() }
         return ok
     }
     fun setMultiframeEditing(enabled:Boolean):Boolean {

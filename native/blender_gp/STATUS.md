@@ -1,30 +1,30 @@
 # Native backend status
 
-## Done
+## Verified
 
-- Created a dedicated native backend branch.
-- Pinned upstream Blender v3.6.23 source by exact commit.
-- Added an import script for the upstream Blender source.
-- Added the GP source/dependency manifest from the investigation.
-- Added a Project Grease adapter boundary carrying X/Y/Z, pressure, strength and time.
-- Explicitly excluded the previously investigated Blender Android application port from the implementation.
+- Blender v3.6.23 source is pinned by exact commit.
+- Real Legacy GP data structures are used: bGPdata, bGPDlayer, bGPDframe, bGPDstroke, bGPDspoint.
+- Stroke point fields include X/Y/Z, pressure, strength and time.
+- Native stroke editing primitives exist behind the Project Grease adapter.
+- Legacy GP batch-cache dirty/free callbacks are installed.
+- The focused Android GPU/presentation boundary is compiled.
+- Android owns EGL/GLES and the native backend attaches to the externally-owned context.
+- Android shell CI run 42 on 2026-09-27 passed APK build and APK verification.
+- Native Blender GP backend CI run 245 on 2026-09-27 passed the native backend test workflow.
 
-## Not claimed as complete
+## Current application status
 
-The current adapter is scaffolding only. It does not yet render a Blender stroke.
+- Freehand drawing is the only end-to-end editor tool currently marked AVAILABLE.
+- Pressure capture is available through Android MotionEvent input.
+- UI/controller architecture has now been separated from the native bridge.
+- FeatureRegistry is the single capability source for UI availability.
+- Timeline, layers, materials, selection and advanced tools have UI/controller boundaries but are not all connected end-to-end.
+- Persistence, export and full playback are not implemented.
 
-## Next build gate
+## Important limitation
 
-1. Import the pinned upstream Blender tree.
-2. Build the smallest desktop dependency set.
-3. Replace the adapter's placeholder data state with:
-   - BKE_gpencil_data_addnew
-   - BKE_gpencil_layer_addnew
-   - BKE_gpencil_frame_addnew
-   - BKE_gpencil_stroke_add
-4. Connect the real GP draw cache.
-5. Initialize the real Blender GPU/DRW context.
-6. Render one stroke.
-7. Only after desktop proof, add the Android EGL/GLES surface adapter.
+A successful APK build proves compilation/package correctness; it does not prove that every editor feature works on a physical device. Runtime drawing and advanced editing still require device-level validation.
 
-This order prevents the Android port from hiding native dependency/linking problems.
+## Architecture constraint
+
+This project remains a focused 2D application using Blender Legacy Grease Pencil as its native foundation. It is not a full Blender Android port.

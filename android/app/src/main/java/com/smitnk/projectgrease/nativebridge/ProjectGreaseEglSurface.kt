@@ -87,6 +87,11 @@ private class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
                         controller.eraseAt(event.x, event.y)
                     }
+                    com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
+                        if (controller.hitTestAndSelectStroke(event.x, event.y)) {
+                            controller.fillSelectedStroke()
+                        }
+                    }
                     else -> {
                         strokeOpen = controller.beginStroke()
                         if (strokeOpen) {

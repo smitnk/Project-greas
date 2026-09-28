@@ -1911,6 +1911,47 @@ bool Backend::set_onion_skin(bool enabled, int before, int after, float opacity)
   return true;
 }
 
+bool Backend::fill_stroke(int index)
+{
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid fill stroke";
+    return false;
+  }
+
+  int current = 0;
+  bGPDstroke *stroke = nullptr;
+  for (bGPDstroke *candidate = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       candidate != nullptr;
+       candidate = candidate->next, ++current) {
+    if (current == index) {
+      stroke = candidate;
+      break;
+    }
+  }
+
+  if (!stroke || !stroke->points || stroke->totpoints < 3) {
+    impl_->last_error = "fill requires a stroke with at least three points";
+    return false;
+  }
+
+  if ((stroke->flag & GP_STROKE_CYCLIC) == 0) {
+    impl_->last_error = "fill requires a closed Legacy GP stroke";
+    return false;
+  }
+
+  // This is Blender 3.6.23 Legacy GP's real fill-geometry operation.
+  // Do not replace this with a Project Grease triangulation algorithm.
+  BKE_gpencil_stroke_fill_triangulate(stroke);
+  if (!stroke->triangles || stroke->tot_triangles <= 0) {
+    impl_->last_error = "Legacy GP fill triangulation produced no triangles";
+    return false;
+  }
+
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::set_multiframe_editing(bool enabled)
 {
   if (!impl_->gpd) {

@@ -1,10 +1,6 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_legacy_fill.h"
 
-#ifdef __ANDROID__
-extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata*, int);
-#endif
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

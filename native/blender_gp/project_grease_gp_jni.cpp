@@ -124,6 +124,17 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameCount(JNIEnv *, j
   return project_grease_gp_frame_count(from_handle(handle));
 }
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDuplicateFrame(JNIEnv *, jobject, jlong handle, jint source_frame, jint target_frame)
+{
+  return project_grease_gp_duplicate_frame(from_handle(handle), source_frame, target_frame) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDeleteFrame(JNIEnv *, jobject, jlong handle, jint frame_number)
+{
+  return project_grease_gp_delete_frame(from_handle(handle), frame_number) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectStroke(JNIEnv *, jobject, jlong handle, jint index)
 {
   return project_grease_gp_select_stroke(from_handle(handle), index) != 0;

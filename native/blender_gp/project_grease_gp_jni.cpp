@@ -197,6 +197,28 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFlipStroke(JNIEnv *, j
   return project_grease_gp_flip_stroke(from_handle(handle), index) != 0;
 }
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRotateStroke(
+    JNIEnv *, jobject, jlong handle, jint index, jfloat radians)
+{
+  return project_grease_gp_rotate_stroke(from_handle(handle), index, radians) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeScaleStroke(
+    JNIEnv *, jobject, jlong handle, jint index, jfloat scale_x, jfloat scale_y)
+{
+  return project_grease_gp_scale_stroke(from_handle(handle), index, scale_x, scale_y) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMirrorStroke(
+    JNIEnv *, jobject, jlong handle, jint index, jboolean mirror_x, jboolean mirror_y)
+{
+  return project_grease_gp_mirror_stroke(
+             from_handle(handle), index, mirror_x ? 1 : 0, mirror_y ? 1 : 0) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSubdivideStroke(JNIEnv *, jobject, jlong handle, jint index, jint level)
 {
   return project_grease_gp_subdivide_stroke(from_handle(handle), index, level) != 0;

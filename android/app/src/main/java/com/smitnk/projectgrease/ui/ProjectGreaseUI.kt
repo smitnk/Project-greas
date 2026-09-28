@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -12,324 +13,317 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, SHAPE, PAN }
-enum class ViewportMode { DRAW_2D, VIEW_3D }
+import com.smitnk.projectgrease.editor.EditorController
+import com.smitnk.projectgrease.editor.FeatureId
+import com.smitnk.projectgrease.editor.FeatureRegistry
+import com.smitnk.projectgrease.editor.FeatureState
+import com.smitnk.projectgrease.editor.GreaseTool
 
 data class GreaseUiState(
     val projectName: String = "Project Grease",
-    val activeTool: GreaseTool = GreaseTool.DRAW,
-    val viewportMode: ViewportMode = ViewportMode.DRAW_2D,
     val frame: Int = 1,
-    val fps: Int = 12,
-    val zoom: Float = 1f,
-    val onionSkin: Boolean = false,
-    val playing: Boolean = false,
-    val loop: Boolean = true,
-    val activeLayer: Int = 0,
-    val activeMaterial: Int = 0,
-    val strokeWidth: Float = 8f,
-    val opacity: Float = 1f,
-    val showLeftTools: Boolean = true,
-    val showRightPanel: Boolean = true,
+    val showTools: Boolean = true,
+    val showProperties: Boolean = false,
     val showTimeline: Boolean = true,
-    val showTopBar: Boolean = true
+    val canvasFocus: Boolean = false,
+    val showProjectMenu: Boolean = false,
+    val showToolMenu: Boolean = false
 )
 
 @Composable
 fun ProjectGreaseEditor(
+    controller: EditorController,
     state: GreaseUiState,
     onStateChange: (GreaseUiState) -> Unit,
     blenderViewport: @Composable BoxScope.() -> Unit
 ) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF151515))) {
-        if (state.showTopBar) {
-            ProjectGreaseTopBar(state, onStateChange)
-        }
-
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (!state.canvasFocus) ProjectGreaseTopBar(controller, state, onStateChange)
         Row(Modifier.fillMaxWidth().weight(1f)) {
-            if (state.showLeftTools) {
-                GreaseToolPanel(state, onStateChange)
-            }
-
+            if (!state.canvasFocus && state.showTools) GreaseToolRail(controller)
             Box(
-                Modifier.weight(1f).fillMaxHeight().background(Color(0xFF202020)),
+                Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
                 content = blenderViewport
             )
-
-            if (state.showRightPanel) {
-                GreasePropertiesPanel(state, onStateChange)
+            if (!state.canvasFocus && state.showProperties) {
+                GreasePropertiesPanel(controller, state, onStateChange)
             }
         }
-
-        if (state.showTimeline) {
-            ProjectGreaseTimeline(state, onStateChange)
+        if (!state.canvasFocus && state.showTimeline) ProjectGreaseTimeline(controller, state, onStateChange)
+        if (state.canvasFocus) {
+            IconButton(
+                onClick = { onStateChange(state.copy(canvasFocus = false)) },
+                modifier = Modifier.padding(8.dp)
+            ) { Icon(Icons.Default.CloseFullscreen, "Exit canvas focus") }
         }
     }
 }
 
 @Composable
 private fun ProjectGreaseTopBar(
+    controller: EditorController,
     state: GreaseUiState,
     onStateChange: (GreaseUiState) -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).background(Color(0xFF252525)),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            "Project Grease",
-            Modifier.padding(horizontal = 14.dp),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Spacer(Modifier.weight(1f))
-
-        IconButton({ onStateChange(state.copy(zoom = (state.zoom - .1f).coerceAtLeast(.1f))) }) {
-            Icon(Icons.Default.ZoomOut, "Zoom out")
+    Surface(tonalElevation = 2.dp) {
+        Row(
+            Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton({ onStateChange(state.copy(showProjectMenu = true)) }) {
+                Icon(Icons.Default.Menu, "Project")
+            }
+            Text(state.projectName, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            IconButton(enabled = controller.history.canUndo, onClick = { controller.undo(); onStateChange(state) }) {
+                Icon(Icons.Default.Undo, "Undo")
+            }
+            IconButton(enabled = controller.history.canRedo, onClick = { controller.redo(); onStateChange(state) }) {
+                Icon(Icons.Default.Redo, "Redo")
+            }
+            IconButton({ controller.view.zoomBy(-0.1f); onStateChange(state) }) {
+                Icon(Icons.Default.ZoomOut, "Zoom out")
+            }
+            Text((controller.view.zoom * 100).toInt().toString() + "%")
+            IconButton({ controller.view.zoomBy(0.1f); onStateChange(state) }) {
+                Icon(Icons.Default.ZoomIn, "Zoom in")
+            }
+            IconButton({ onStateChange(state.copy(showTools = !state.showTools)) }) {
+                Icon(Icons.Default.MenuOpen, "Tools")
+            }
+            IconButton({ onStateChange(state.copy(showProperties = !state.showProperties)) }) {
+                Icon(Icons.Default.Tune, "Properties")
+            }
+            IconButton({ onStateChange(state.copy(showTimeline = !state.showTimeline)) }) {
+                Icon(Icons.Default.ViewTimeline, "Timeline")
+            }
+            IconButton({ onStateChange(state.copy(canvasFocus = true)) }) {
+                Icon(Icons.Default.Fullscreen, "Canvas focus")
+            }
+            IconButton({ onStateChange(state.copy(showToolMenu = true)) }) {
+                Icon(Icons.Default.MoreVert, "More")
+            }
         }
-        Text((state.zoom * 100).toInt().toString() + "%")
-        IconButton({ onStateChange(state.copy(zoom = (state.zoom + .1f).coerceAtMost(8f))) }) {
-            Icon(Icons.Default.ZoomIn, "Zoom in")
+    }
+
+    if (state.showProjectMenu) {
+        ModalBottomSheet(onDismissRequest = { onStateChange(state.copy(showProjectMenu = false)) }) {
+            Text("Project", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
+            listOf(
+                FeatureId.NEW_PROJECT to "New project",
+                FeatureId.OPEN_PROJECT to "Open project",
+                FeatureId.SAVE to "Save",
+                FeatureId.SAVE_AS to "Save as",
+                FeatureId.EXPORT to "Export",
+                FeatureId.PROJECT_SETTINGS to "Project settings"
+            ).forEach { pair ->
+                CapabilityRow(pair.first)
+                ListItem(
+                    headlineContent = { Text(pair.second) },
+                    modifier = Modifier.clickable { onStateChange(state.copy(showProjectMenu = false)) }
+                )
+            }
+            Spacer(Modifier.height(24.dp))
         }
+    }
 
-        IconButton({ onStateChange(state.copy(onionSkin = !state.onionSkin)) }) {
-            Icon(Icons.Default.Layers, "Onion skin")
+    if (state.showToolMenu) {
+        ModalBottomSheet(onDismissRequest = { onStateChange(state.copy(showToolMenu = false)) }) {
+            Text("Tool settings", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
+            Text("Current: " + controller.tools.activeTool.name, modifier = Modifier.padding(horizontal = 20.dp))
+            CapabilityRow(FeatureId.SMOOTHING)
+            CapabilityRow(FeatureId.STABILIZATION)
+            CapabilityRow(FeatureId.SPACING)
+            CapabilityRow(FeatureId.PRESSURE_CURVE)
+            Spacer(Modifier.height(24.dp))
         }
-        IconButton({}) { Icon(Icons.Default.Undo, "Undo") }
-        IconButton({}) { Icon(Icons.Default.Redo, "Redo") }
-
-        IconButton({
-            val next = if (state.viewportMode == ViewportMode.DRAW_2D)
-                ViewportMode.VIEW_3D else ViewportMode.DRAW_2D
-            onStateChange(state.copy(viewportMode = next))
-        }) {
-            Icon(Icons.Default.ViewInAr, "2D Draw / 3D Viewport")
-        }
-
-        IconButton({
-            onStateChange(state.copy(showLeftTools = !state.showLeftTools))
-        }) { Icon(Icons.Default.MenuOpen, "Hide/show tools") }
-
-        IconButton({
-            onStateChange(state.copy(showRightPanel = !state.showRightPanel))
-        }) { Icon(Icons.Default.Tune, "Hide/show properties") }
-
-        IconButton({
-            onStateChange(state.copy(showTimeline = !state.showTimeline))
-        }) { Icon(Icons.Default.ViewTimeline, "Hide/show timeline") }
     }
 }
 
-@Composable
-private fun GreaseToolPanel(
-    state: GreaseUiState,
-    onStateChange: (GreaseUiState) -> Unit
-) {
-    Column(
-        Modifier.width(86.dp).fillMaxHeight().verticalScroll(rememberScrollState())
-            .background(Color(0xFF242424)).padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        ToolButton(state, onStateChange, GreaseTool.DRAW, Icons.Default.Edit, "Draw")
-        ToolButton(state, onStateChange, GreaseTool.ERASE, Icons.Default.Clear, "Erase")
-        ToolButton(state, onStateChange, GreaseTool.SELECT, Icons.Default.TouchApp, "Select")
-        ToolButton(state, onStateChange, GreaseTool.LASSO, Icons.Default.Gesture, "Lasso")
-        ToolButton(state, onStateChange, GreaseTool.FILL, Icons.Default.FormatColorFill, "Fill")
-        ToolButton(state, onStateChange, GreaseTool.EYEDROPPER, Icons.Default.Colorize, "Eyedropper")
-        ToolButton(state, onStateChange, GreaseTool.SHAPE, Icons.Default.Category, "Shape")
-        ToolButton(state, onStateChange, GreaseTool.PAN, Icons.Default.PanTool, "Pan")
-        HorizontalDivider(Modifier.padding(6.dp))
-        IconButton({}) { Icon(Icons.Default.Undo, "Undo") }
-        IconButton({}) { Icon(Icons.Default.Redo, "Redo") }
-        Text("Tools", style = MaterialTheme.typography.labelSmall)
-    }
-}
+private data class ToolEntry(val tool: GreaseTool, val icon: ImageVector, val label: String, val feature: FeatureId)
 
 @Composable
-private fun ToolButton(
-    state: GreaseUiState,
-    onStateChange: (GreaseUiState) -> Unit,
-    tool: GreaseTool,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String
-) {
-    NavigationRailItem(
-        selected = state.activeTool == tool,
-        onClick = { onStateChange(state.copy(activeTool = tool)) },
-        icon = { Icon(icon, label) },
-        label = { Text(label) }
+private fun GreaseToolRail(controller: EditorController) {
+    val entries = listOf(
+        ToolEntry(GreaseTool.DRAW, Icons.Default.Edit, "Draw", FeatureId.FREEHAND),
+        ToolEntry(GreaseTool.ERASE, Icons.Default.Clear, "Erase", FeatureId.ERASER),
+        ToolEntry(GreaseTool.SELECT, Icons.Default.TouchApp, "Select", FeatureId.SELECT),
+        ToolEntry(GreaseTool.LASSO, Icons.Default.Gesture, "Lasso", FeatureId.LASSO),
+        ToolEntry(GreaseTool.FILL, Icons.Default.FormatColorFill, "Fill", FeatureId.ADVANCED_FILL),
+        ToolEntry(GreaseTool.EYEDROPPER, Icons.Default.Colorize, "Pick", FeatureId.STROKE_COLOR),
+        ToolEntry(GreaseTool.LINE, Icons.Default.Remove, "Line", FeatureId.LINE),
+        ToolEntry(GreaseTool.RECTANGLE, Icons.Default.CropSquare, "Rect", FeatureId.RECTANGLE),
+        ToolEntry(GreaseTool.CIRCLE, Icons.Default.Circle, "Circle", FeatureId.CIRCLE),
+        ToolEntry(GreaseTool.ARC, Icons.Default.Timeline, "Arc", FeatureId.ARC),
+        ToolEntry(GreaseTool.POLYLINE, Icons.Default.Timeline, "Polyline", FeatureId.POLYLINE),
+        ToolEntry(GreaseTool.PAN, Icons.Default.PanTool, "Pan", FeatureId.PAN),
+        ToolEntry(GreaseTool.SCULPT, Icons.Default.AutoFixHigh, "Sculpt", FeatureId.SCULPT)
     )
+    Surface(Modifier.width(72.dp).fillMaxHeight(), tonalElevation = 1.dp) {
+        Column(
+            Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            entries.forEach { entry ->
+                val capability = FeatureRegistry.capability(entry.feature)
+                NavigationRailItem(
+                    selected = controller.tools.activeTool == entry.tool,
+                    enabled = capability.state != FeatureState.NOT_IMPLEMENTED,
+                    onClick = { controller.selectTool(entry.tool) },
+                    icon = { Icon(entry.icon, entry.label) },
+                    label = { Text(entry.label, maxLines = 1) }
+                )
+            }
+        }
+    }
 }
 
 @Composable
 private fun GreasePropertiesPanel(
+    controller: EditorController,
     state: GreaseUiState,
     onStateChange: (GreaseUiState) -> Unit
 ) {
-    Column(
-        Modifier.width(270.dp).fillMaxHeight()
-            .verticalScroll(rememberScrollState())
-            .background(Color(0xFF242424)).padding(12.dp)
-    ) {
-        Text("Project Grease", style = MaterialTheme.typography.titleMedium)
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-        Text("Grease Pencil", style = MaterialTheme.typography.titleSmall)
-        Text("Tool: " + state.activeTool.name)
-        Text("Viewport: " + state.viewportMode.name)
-
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text("Stroke", style = MaterialTheme.typography.titleSmall)
-        Text("Width: " + state.strokeWidth.toInt() + " px")
-        Slider(
-            value = state.strokeWidth,
-            onValueChange = { onStateChange(state.copy(strokeWidth = it)) },
-            valueRange = 1f..100f
-        )
-        Text("Opacity: " + (state.opacity * 100).toInt() + "%")
-        Slider(
-            value = state.opacity,
-            onValueChange = { onStateChange(state.copy(opacity = it)) },
-            valueRange = 0f..1f
-        )
-
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text("Grease Pencil Layers", style = MaterialTheme.typography.titleSmall)
-        PropertyButton("GP Layer 1", state.activeLayer == 0) {
-            onStateChange(state.copy(activeLayer = 0))
-        }
-        PropertyButton("GP Layer 2", state.activeLayer == 1) {
-            onStateChange(state.copy(activeLayer = 1))
-        }
-        TextButton({}) { Text("+ Add GP Layer") }
-
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text("Grease Pencil Materials", style = MaterialTheme.typography.titleSmall)
-        PropertyButton("Grease Pencil Material", state.activeMaterial == 0) {
-            onStateChange(state.copy(activeMaterial = 0))
-        }
-        TextButton({}) { Text("+ Add Material") }
-
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text("Blender Viewport", style = MaterialTheme.typography.titleSmall)
-        TextButton({}) { Text("Frame Selected") }
-        TextButton({}) { Text("Reset View") }
-        TextButton({}) { Text("Orthographic / Perspective") }
-        TextButton({}) { Text("Viewport Navigation") }
-
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text("Animation", style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(state.onionSkin, { onStateChange(state.copy(onionSkin = it)) })
-            Text("Onion Skin")
+    Surface(Modifier.widthIn(min = 230.dp, max = 300.dp).fillMaxHeight(), tonalElevation = 2.dp) {
+        Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Properties", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                IconButton({ onStateChange(state.copy(showProperties = false)) }) {
+                    Icon(Icons.Default.Close, "Close")
+                }
+            }
+            Text("Brush", style = MaterialTheme.typography.titleSmall)
+            Text("Thickness " + controller.materials.thickness.toInt() + " px")
+            Slider(
+                value = controller.materials.thickness,
+                onValueChange = { controller.materials.setThickness(it); onStateChange(state) },
+                valueRange = 1f..100f
+            )
+            Text("Opacity " + (controller.materials.opacity * 100).toInt() + "%")
+            Slider(
+                value = controller.materials.opacity,
+                onValueChange = { controller.materials.setOpacity(it); onStateChange(state) },
+                valueRange = 0f..1f
+            )
+            HorizontalDivider(Modifier.padding(vertical = 10.dp))
+            Text("Onion Skin", style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = controller.onion.enabled,
+                    onCheckedChange = { controller.onion.toggle(); onStateChange(state) }
+                )
+                Text("Enabled")
+            }
+            if (controller.onion.enabled) {
+                Text("Before " + controller.onion.beforeFrames + "  •  After " + controller.onion.afterFrames)
+                Slider(
+                    value = controller.onion.beforeFrames.toFloat(),
+                    onValueChange = { controller.onion.setBefore(it.toInt()); onStateChange(state) },
+                    valueRange = 0f..12f
+                )
+                Slider(
+                    value = controller.onion.afterFrames.toFloat(),
+                    onValueChange = { controller.onion.setAfter(it.toInt()); onStateChange(state) },
+                    valueRange = 0f..12f
+                )
+                Slider(
+                    value = controller.onion.opacity,
+                    onValueChange = { controller.onion.setOpacity(it); onStateChange(state) },
+                    valueRange = 0f..1f
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 10.dp))
+            Text("Layers", style = MaterialTheme.typography.titleSmall)
+            LayerRow("Character", true, false)
+            LayerRow("Ink", true, false)
+            LayerRow("Color", true, true)
+            TextButton({}) { Text("+ Add layer") }
+            HorizontalDivider(Modifier.padding(vertical = 10.dp))
+            Text("Capability status", style = MaterialTheme.typography.titleSmall)
+            CapabilityRow(FeatureId.STABILIZATION)
+            CapabilityRow(FeatureId.ADVANCED_FILL)
+            CapabilityRow(FeatureId.STROKE_TEXTURES)
+            CapabilityRow(FeatureId.MODIFIERS)
+            CapabilityRow(FeatureId.SCULPT)
         }
     }
 }
 
 @Composable
-private fun PropertyButton(title: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected, onClick)
-        Text(title)
+private fun LayerRow(name: String, visible: Boolean, locked: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (visible) Icons.Default.Visibility else Icons.Default.VisibilityOff, "Visibility")
+        Spacer(Modifier.width(6.dp))
+        Text(name, Modifier.weight(1f))
+        Icon(if (locked) Icons.Default.Lock else Icons.Default.LockOpen, "Lock")
+    }
+}
+
+@Composable
+private fun CapabilityRow(id: FeatureId) {
+    val c = FeatureRegistry.capability(id)
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(c.label, Modifier.weight(1f))
+        AssistChip(onClick = {}, label = { Text(c.state.name.replace('_', ' ')) })
     }
 }
 
 @Composable
 private fun ProjectGreaseTimeline(
+    controller: EditorController,
     state: GreaseUiState,
     onStateChange: (GreaseUiState) -> Unit
 ) {
-    Column(
-        Modifier.fillMaxWidth().height(180.dp).background(Color(0xFF252525))
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Timeline", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.width(12.dp))
-            Text("Frame " + state.frame)
-            Spacer(Modifier.width(12.dp))
-            Text("FPS " + state.fps)
-            Spacer(Modifier.weight(1f))
-
-            IconButton({ onStateChange(state.copy(playing = !state.playing)) }) {
-                Icon(
-                    if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    "Play"
+    Surface(tonalElevation = 3.dp) {
+        Column(Modifier.fillMaxWidth().heightIn(min = 126.dp, max = 205.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton({
+                    controller.animation.setFrame(controller.animation.currentFrame - 1)
+                    onStateChange(state.copy(frame = controller.animation.currentFrame))
+                }) { Icon(Icons.Default.SkipPrevious, "Previous frame") }
+                IconButton({
+                    controller.animation.togglePlayback()
+                    onStateChange(state)
+                }) {
+                    Icon(
+                        if (controller.animation.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        "Play"
+                    )
+                }
+                IconButton({
+                    controller.animation.setFrame(controller.animation.currentFrame + 1)
+                    onStateChange(state.copy(frame = controller.animation.currentFrame))
+                }) { Icon(Icons.Default.SkipNext, "Next frame") }
+                Text("Frame " + controller.animation.currentFrame)
+                Spacer(Modifier.width(10.dp))
+                Text(controller.animation.fps.toString() + " FPS")
+                Spacer(Modifier.weight(1f))
+                FilterChip(
+                    selected = controller.animation.loop,
+                    onClick = { controller.animation.toggleLoop(); onStateChange(state) },
+                    label = { Text("Loop") }
                 )
+                TextButton({}) { Text("+ Frame") }
             }
-            IconButton({ onStateChange(state.copy(loop = !state.loop)) }) {
-                Icon(Icons.Default.Loop, "Loop")
-            }
-            TextButton({}) { Text("+ Frame") }
-            TextButton({}) { Text("Insert") }
-            TextButton({}) { Text("Duplicate") }
-            TextButton({}) { Text("Delete") }
-        }
-
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp)
-        ) {
-            for (frame in 1..60) {
-                val selected = frame == state.frame
-                Surface(
-                    Modifier.width(72.dp).height(70.dp).padding(2.dp).clickable {
-                        onStateChange(state.copy(frame = frame))
-                    },
-                    tonalElevation = if (selected) 4.dp else 0.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) { Text(frame.toString()) }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp)) {
+                for (frame in 1..60) {
+                    val selected = frame == controller.animation.currentFrame
+                    Surface(
+                        modifier = Modifier.width(58.dp).height(58.dp).padding(2.dp).clickable {
+                            controller.animation.setFrame(frame)
+                            onStateChange(state.copy(frame = frame))
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        tonalElevation = if (selected) 4.dp else 0.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) { Text(frame.toString()) }
+                    }
                 }
             }
         }
     }
 }
-
-@Composable
-fun ProjectGreaseNewProject(
-    onCreate: (GreaseUiState) -> Unit
-) {
-    var name by remember { mutableStateOf("Project Grease") }
-    var fps by remember { mutableIntStateOf(12) }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("New Project", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(18.dp))
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Project name") }
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("FPS: $fps")
-        Slider(
-            value = fps.toFloat(),
-            onValueChange = { fps = it.toInt().coerceIn(1, 60) },
-            valueRange = 1f..60f
-        )
-        Spacer(Modifier.height(18.dp))
-        Button({
-            onCreate(
-                GreaseUiState(
-                    projectName = name.ifBlank { "Project Grease" },
-                    fps = fps
-                )
-            )
-        }) {
-            Text("Create Project")
-        }
-    }
-}
-
-typealias BlenderViewportSurface = @Composable BoxScope.() -> Unit

@@ -205,6 +205,13 @@ int project_grease_gp_flip_stroke(ProjectGreaseGPHandle *handle, int index)
 {
   return ensure_ready(handle) && handle->backend.flip_stroke(index) ? 1 : 0;
 }
+int project_grease_gp_rotate_stroke(ProjectGreaseGPHandle *handle, int index, float radians)
+{ return ensure_ready(handle) && handle->backend.rotate_stroke(index, radians) ? 1 : 0; }
+int project_grease_gp_scale_stroke(ProjectGreaseGPHandle *handle, int index, float scale_x, float scale_y)
+{ return ensure_ready(handle) && handle->backend.scale_stroke(index, scale_x, scale_y) ? 1 : 0; }
+int project_grease_gp_mirror_stroke(ProjectGreaseGPHandle *handle, int index, int mirror_x, int mirror_y)
+{ return ensure_ready(handle) && handle->backend.mirror_stroke(index, mirror_x != 0, mirror_y != 0) ? 1 : 0; }
+
 int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index, int level)
 {
   return ensure_ready(handle) && handle->backend.subdivide_stroke(index, level) ? 1 : 0;

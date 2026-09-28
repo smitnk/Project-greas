@@ -42,6 +42,7 @@ class Backend {
   int stroke_count() const;
   int point_count() const;
   bool select_stroke(int index);
+  int hit_test_stroke(float x, float y, float radius) const;
   bool get_point(int stroke_index, int point_index, StrokePoint* out) const;
   bool set_point(int stroke_index, int point_index, const StrokePoint& point);
   bool delete_stroke(int index);

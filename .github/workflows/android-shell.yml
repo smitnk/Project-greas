@@ -6,6 +6,7 @@ on:
     branches:
       - native/blender-gp-phase40-cache
       - "feature/project-grease-ui-real-integration"
+      - "feature/project-grease-full-feature-work"
     paths:
       - "android/**"
       - "native/blender_gp/**"

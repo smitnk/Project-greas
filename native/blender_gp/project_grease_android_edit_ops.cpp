@@ -1,6 +1,9 @@
 #include "project_grease_android_edit_ops.h"
 
-#include <cstdint>
+ #include <stdint.h>
+
+/* Blender 3.6.23 keeps the Legacy GP DNA behind its deprecation gate. */
+#define DNA_DEPRECATED_ALLOW
 
 #include "DNA_gpencil_legacy_types.h"
 #include "BKE_gpencil_geom_legacy.h"

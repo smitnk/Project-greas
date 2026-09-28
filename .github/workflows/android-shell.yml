@@ -3,6 +3,9 @@ name: Project Grease Android Shell
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - "feature/project-grease-ui-real-integration"
   push:
     branches:
       - native/blender-gp-phase40-cache

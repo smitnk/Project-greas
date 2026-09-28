@@ -719,14 +719,11 @@ bool Backend::close_stroke(int index)
 
     const int points_before_close = stroke->totpoints;
     const unsigned int flags_before_close = static_cast<unsigned int>(stroke->flag);
-    const void *close_symbol = reinterpret_cast<const void *>(
-        reinterpret_cast<uintptr_t>(&BKE_gpencil_stroke_close));
     std::fprintf(stderr,
-                 "[CLOSE] before call stroke=%p points=%d flags=0x%x close_symbol=%p\\n",
+                 "[CLOSE] before call stroke=%p points=%d flags=0x%x\\n",
                  static_cast<void *>(stroke),
                  points_before_close,
-                 flags_before_close,
-                 close_symbol);
+                 flags_before_close);
 
     #ifdef __ANDROID__
     const bool close_result = project_grease_android_stroke_close(stroke);

@@ -1,5 +1,6 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_legacy_fill.h"
+#include "project_grease_legacy_primitive.h"
 
 #include <algorithm>
 #include <cmath>
@@ -766,43 +767,57 @@ bool Backend::create_primitive(int type,
     return false;
   }
 
-  const int count = (type == 0) ? 2 :
-                    (type == 1) ? 4 :
-                    std::max(8, segments);
-  std::vector<StrokePoint> points;
-  points.reserve(count);
+  const legacy_gp_primitive::Point start{x0, y0};
+  const legacy_gp_primitive::Point end{x1, y1};
 
-  if (type == 0) {
-    points.push_back({x0, y0, 0.0f, 1.0f, 1.0f, 0.0f});
-    points.push_back({x1, y1, 0.0f, 1.0f, 1.0f, 1.0f});
-  }
-  else if (type == 1) {
-    points.push_back({x0, y0, 0.0f, 1.0f, 1.0f, 0.0f});
-    points.push_back({x1, y0, 0.0f, 1.0f, 1.0f, 1.0f});
-    points.push_back({x1, y1, 0.0f, 1.0f, 1.0f, 2.0f});
-    points.push_back({x0, y1, 0.0f, 1.0f, 1.0f, 3.0f});
-  }
-  else {
-    const float cx = (x0 + x1) * 0.5f;
-    const float cy = (y0 + y1) * 0.5f;
-    const float rx = std::fabs(x1 - x0) * 0.5f;
-    const float ry = (type == 2) ? rx : std::fabs(y1 - y0) * 0.5f;
-    const float a0 = (type == 2) ? 0.0f : start_angle;
-    const float a1 = (type == 2) ? (6.28318530717958647692f) : end_angle;
-    const int n = std::max(8, segments);
-    for (int i = 0; i < n; ++i) {
-      const float t = (n == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(n - 1);
-      const float a = a0 + (a1 - a0) * t;
-      points.push_back({cx + rx * std::cos(a),
-                        cy + ry * std::sin(a),
-                        0.0f,
-                        1.0f,
-                        1.0f,
-                        static_cast<float>(i)});
+  std::vector<legacy_gp_primitive::Point> geometry;
+  bool cyclic = false;
+
+  // Geometry follows Blender 3.6.23 source helpers. The Android adapter
+  // intentionally keeps only the geometry core; Blender's modal operator,
+  // brush, depth and context handling remain outside this focused backend.
+  switch (type) {
+    case 0: // GP_STROKE_LINE
+      geometry = legacy_gp_primitive::line(start, end, segments);
+      break;
+    case 1: // GP_STROKE_BOX
+      geometry = legacy_gp_primitive::rectangle(start, end, segments == 64 ? 1 : segments);
+      cyclic = true;
+      break;
+    case 2: // GP_STROKE_CIRCLE
+      geometry = legacy_gp_primitive::circle(start, end, segments);
+      cyclic = true;
+      break;
+    case 3: { // GP_STROKE_ARC
+      // Blender 3.6.23's default Arc is a quarter-turn from start to end.
+      // The original operator derives its control point from the endpoints;
+      // a reversed angle range is retained as the adapter's flip signal.
+      const bool flip = end_angle < start_angle;
+      geometry = legacy_gp_primitive::arc(start, end, segments, flip);
+      break;
     }
+    default:
+      impl_->last_error = "invalid primitive type";
+      return false;
   }
 
-  return create_polyline(points.data(), static_cast<int>(points.size()), style, type == 1 || type == 2);
+  if (geometry.size() < 2) {
+    impl_->last_error = "primitive geometry contains too few points";
+    return false;
+  }
+
+  std::vector<StrokePoint> points;
+  points.reserve(geometry.size());
+  for (size_t i = 0; i < geometry.size(); ++i) {
+    points.push_back({geometry[i].x,
+                      geometry[i].y,
+                      0.0f,
+                      1.0f,
+                      1.0f,
+                      static_cast<float>(i)});
+  }
+
+  return create_polyline(points.data(), static_cast<int>(points.size()), style, cyclic);
 }
 
 bool Backend::create_polyline(const StrokePoint *points,

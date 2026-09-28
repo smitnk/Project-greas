@@ -89,4 +89,5 @@ object GPNative {
     external fun nativeSmoothStroke(handle: Long, index: Int, influence: Float, iterations: Int): Boolean
     external fun nativeSetOnionSkin(handle: Long, enabled: Boolean, before: Int, after: Int, opacity: Float): Boolean
     external fun nativeSetMultiframeEditing(handle: Long, enabled: Boolean): Boolean
+    external fun nativeFillStroke(handle: Long, index: Int): Boolean
 }

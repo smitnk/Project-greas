@@ -58,6 +58,9 @@ class Backend {
   bool duplicate_stroke(int index);
   bool translate_stroke(int index, float dx, float dy, float dz);
   bool flip_stroke(int index);
+  bool rotate_stroke(int index, float radians);
+  bool scale_stroke(int index, float scale_x, float scale_y);
+  bool mirror_stroke(int index, bool mirror_x, bool mirror_y);
   bool subdivide_stroke(int index, int level);
   bool close_stroke(int index);
   bool trim_stroke_points(int index, int index_from, int index_to, bool keep_single_point);

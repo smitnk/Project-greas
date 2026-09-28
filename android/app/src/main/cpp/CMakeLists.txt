@@ -61,7 +61,6 @@ set(PROJECT_GREASE_CXX_SOURCES
     project_grease_android_jni_smoke.cpp
     project_grease_android_egl_renderer.cpp
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_backend.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_android_edit_ops.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_bridge.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_jni.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"

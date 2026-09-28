@@ -1,6 +1,7 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <vector>
 
 #include "project_grease_gp_bridge.h"
 
@@ -238,6 +239,57 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSplitStroke(JNIEnv *, 
 {
   return project_grease_gp_split_stroke(from_handle(handle), index, before_index) != 0;
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreatePrimitive(
+    JNIEnv *, jobject, jlong handle, jint type, jfloat x0, jfloat y0, jfloat x1, jfloat y1,
+    jfloat startAngle, jfloat endAngle, jint segments, jint materialIndex, jfloat thickness)
+{
+  return project_grease_gp_create_primitive(from_handle(handle), type, x0, y0, x1, y1,
+                                             startAngle, endAngle, segments,
+                                             materialIndex, thickness) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreatePolyline(
+    JNIEnv *env, jobject, jlong handle, jfloatArray values, jint count,
+    jint materialIndex, jfloat thickness, jboolean cyclic)
+{
+  if (!values || count < 2 || env->GetArrayLength(values) < count * 2) return JNI_FALSE;
+  std::vector<jfloat> raw(static_cast<size_t>(count) * 2u);
+  env->GetFloatArrayRegion(values, 0, count * 2, raw.data());
+  std::vector<ProjectGreaseGPPoint> points(static_cast<size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    points[i] = {raw[i * 2], raw[i * 2 + 1], 0.0f, 1.0f, 1.0f, static_cast<float>(i)};
+  }
+  return project_grease_gp_create_polyline(from_handle(handle), points.data(), count,
+                                            materialIndex, thickness, cyclic ? 1 : 0) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseAt(
+    JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius)
+{
+  return project_grease_gp_erase_at(from_handle(handle), x, y, radius) != 0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearSelection(
+    JNIEnv *, jobject, jlong handle)
+{
+  project_grease_gp_clear_selection(from_handle(handle));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLassoSelect(
+    JNIEnv *env, jobject, jlong handle, jfloatArray values, jint count, jboolean additive)
+{
+  if (!values || count < 3 || env->GetArrayLength(values) < count * 2) return 0;
+  std::vector<jfloat> raw(static_cast<size_t>(count) * 2u);
+  env->GetFloatArrayRegion(values, 0, count * 2, raw.data());
+  return project_grease_gp_lasso_select(from_handle(handle), raw.data(), count, additive ? 1 : 0);
+}
+
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(JNIEnv *env, jobject, jlong handle, jint stroke_index, jint point_index)
 {

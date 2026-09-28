@@ -368,10 +368,14 @@ class EditorController {
         }
         val params = shapeParameters()
         val shapeTool = pendingShapeTool
+        // Preserve the captured polyline points before clearing the preview state.
+        // Previously pendingShapePoints was cleared before the POLYLINE branch read it,
+        // making every polyline finish with zero points.
+        val polylinePoints = pendingShapePoints.toList()
         GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
         pendingShapePoints.clear()
         pendingShapeTool = null
-        if (shapeTool == null || params.size < 4) return
+        if (shapeTool == null || (shapeTool != GreaseTool.POLYLINE && params.size < 4)) return
         val type = when (shapeTool) {
             GreaseTool.LINE -> 0
             GreaseTool.RECTANGLE -> 1
@@ -390,7 +394,7 @@ class EditorController {
                 history.markEdit(); document.markDirty(); render()
             }
         } else if (shapeTool == GreaseTool.POLYLINE) {
-            val points = pendingShapePoints
+            val points = polylinePoints
             if (points.size >= 2) {
                 val packed = FloatArray(points.size * 2)
                 points.forEachIndexed { i, p ->

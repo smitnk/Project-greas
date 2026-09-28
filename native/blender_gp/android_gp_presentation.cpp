@@ -137,6 +137,85 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   return glGetError()==GL_NO_ERROR?1:0;
 }
 
+
+extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, int frame_number)
+{
+  if (!gpd || !ensure_program()) return 0;
+  GLint vp[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_VIEWPORT, vp);
+  const int w = vp[2], h = vp[3];
+  if (w <= 0 || h <= 0) return 0;
+
+  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  const float mask_color[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+  for (const bGPDlayer* layer =
+           static_cast<const bGPDlayer*>(gpd->layers.first);
+       layer;
+       layer = layer->next) {
+    if (layer->flag & GP_LAYER_HIDE) continue;
+
+    bGPDframe* current = BKE_gpencil_layer_frame_get(
+        const_cast<bGPDlayer*>(layer), frame_number, GP_GETFRAME_USE_PREV);
+    if (!current) continue;
+
+    std::vector<Vertex> strokes;
+    for (const bGPDstroke* stroke =
+             static_cast<const bGPDstroke*>(current->strokes.first);
+         stroke;
+         stroke = stroke->next) {
+      if (!stroke->points || stroke->totpoints <= 0) continue;
+
+      const Material* ma =
+          (stroke->mat_nr >= 0 && stroke->mat_nr < gpd->totcol && gpd->mat)
+              ? gpd->mat[stroke->mat_nr]
+              : nullptr;
+      const MaterialGPencilStyle* style = ma ? ma->gp_style : nullptr;
+      if (style && (style->flag & GP_MATERIAL_HIDE)) continue;
+
+      if (stroke->totpoints == 1) {
+        append_dot(strokes,
+                   stroke->points[0],
+                   float(stroke->thickness) *
+                       std::max(stroke->points[0].pressure, 0.01f),
+                   w,
+                   h);
+      }
+      else {
+        for (int i = 0; i + 1 < stroke->totpoints; ++i) {
+          const float pressure =
+              0.5f * (std::max(stroke->points[i].pressure, 0.01f) +
+                      std::max(stroke->points[i + 1].pressure, 0.01f));
+          append_segment(strokes,
+                         stroke->points[i],
+                         stroke->points[i + 1],
+                         float(stroke->thickness) * pressure,
+                         w,
+                         h,
+                         1.0f);
+        }
+        if (stroke->flag & GP_STROKE_CYCLIC) {
+          const float pressure =
+              0.5f *
+              (std::max(stroke->points[stroke->totpoints - 1].pressure, 0.01f) +
+               std::max(stroke->points[0].pressure, 0.01f));
+          append_segment(strokes,
+                         stroke->points[stroke->totpoints - 1],
+                         stroke->points[0],
+                         float(stroke->thickness) * pressure,
+                         w,
+                         h,
+                         1.0f);
+        }
+      }
+    }
+    draw_vertices(strokes, mask_color, false);
+  }
+
+  return glGetError() == GL_NO_ERROR ? 1 : 0;
+}
+
 extern "C" int project_grease_android_present_gp_frame(const bGPDframe*frame){
   (void)frame;
   return 0;

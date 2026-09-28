@@ -403,6 +403,29 @@ class EditorController {
         if(ok){history.markEdit();document.markDirty();render()}
         return ok
     }
+    fun setMaterialColor(argb:Int):Boolean {
+        materials.setColor(argb)
+        if (rendererHandle == 0L) return false
+        val c=colorToFloats(argb)
+        val alpha=c[3]*materials.opacity
+        val stroke=floatArrayOf(c[0],c[1],c[2],alpha)
+        val fill=floatArrayOf(c[0],c[1],c[2],alpha)
+        val ok=native.setMaterialColors(materials.activeMaterial,stroke,fill)
+        if(ok) pushMaterialColor()
+        return ok
+    }
+    fun selectMaterial(index:Int):Boolean {
+        if(index<0 || rendererHandle==0L) return false
+        while(native.materialCount() <= index) {
+            if(!native.createMaterial()) return false
+        }
+        materials.select(index)
+        return true
+    }
+    fun setMaterialFillEnabled(enabled:Boolean):Boolean {
+        materials.setFillEnabled(enabled)
+        return native.setMaterialFillEnabled(materials.activeMaterial,enabled)
+    }
     fun pushMaterialColor(){
         if(rendererHandle==0L) return
         val c=colorToFloats(materials.colorArgb)

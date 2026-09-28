@@ -309,7 +309,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     Box(
                         Modifier.size(38.dp).background(color,CircleShape)
                             .border(2.dp,if(controller.materials.colorArgb==color.toArgb())Accent else Color.Transparent,CircleShape)
-                            .clickable{controller.materials.setColor(color.toArgb());controller.pushMaterialColor();redraw()}
+                            .clickable{controller.setMaterialColor(color.toArgb());redraw()}
                     )
                 }
             }
@@ -318,7 +318,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
             Slider(opacity,{opacity=it;controller.materials.setOpacity(it);redraw()},valueRange=0f..1f)
             Text("Active material: "+controller.materials.activeMaterial,Modifier.padding(horizontal=20.dp))
-            TextButton(onClick={controller.materials.select(controller.materials.activeMaterial+1);redraw()},Modifier.padding(horizontal=20.dp)){Text("Next brush/material")}
+            TextButton(onClick={controller.selectMaterial(controller.materials.activeMaterial+1);redraw()},Modifier.padding(horizontal=20.dp)){Text("Next brush/material")}
         }
     }
 }

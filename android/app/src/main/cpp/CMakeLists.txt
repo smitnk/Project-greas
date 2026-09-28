@@ -18,13 +18,10 @@ set(GENERATED_DNA_DIR "${PROJECT_GREASE_ROOT}/build/blender-dna")
 set(BLENDER_SOURCE_DIR_BLEN "${BLENDER_SOURCE_DIR}/source/blender")
 
 if(NOT EXISTS "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc")
-    message(FATAL_ERROR
-        "Pinned Blender source is missing. Run tools/import_blender_gp.sh before the Android build.")
+    message(FATAL_ERROR "Pinned Blender source is missing. Run tools/import_blender_gp.sh before the Android build.")
 endif()
-
 if(NOT EXISTS "${GENERATED_DNA_DIR}/dna_type_offsets.h")
-    message(FATAL_ERROR
-        "Generated Blender DNA is missing. Run tools/android_blender_gp_generate_dna.sh before the Android build.")
+    message(FATAL_ERROR "Generated Blender DNA is missing. Run tools/android_blender_gp_generate_dna.sh before the Android build.")
 endif()
 
 set(BLENDER_INCLUDE_DIRS
@@ -66,6 +63,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_jni.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_presentation.cpp"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_fill.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
@@ -84,8 +82,6 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
-    # math_matrix.c pulls the optional Eigen C API into the Android target.
-    # The selected Legacy GP/cache closure does not require it.
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/memory_usage.cc"
@@ -119,15 +115,8 @@ target_compile_definitions(projectgrease_jni PRIVATE
 )
 
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
-
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
-# Blender 3.6.23's string.c intentionally uses size_t-returning C library
-# functions in int destinations. Android Clang promotes sign-conversion to an
-# error in this target, so suppress the error for this upstream file only.
-set_source_files_properties(
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
-    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion"
-)
+set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c" PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion")
 
 target_compile_options(projectgrease_jni PRIVATE
     -fPIC

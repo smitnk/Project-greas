@@ -269,25 +269,26 @@ bool Backend::create_layer(const char *name) {
 }
 
 bool Backend::create_frame(int frame_number) {
-  if (!impl_->layer_created || !impl_->layer) {
-    impl_->last_error = "layer is not created"; return false;
+  if (!impl_->layer_created || !impl_->layer || frame_number < 1) {
+    impl_->last_error = "invalid layer/frame";
+    return false;
   }
-#ifdef __ANDROID__
-  impl_->frame = static_cast<bGPDframe *>(MEM_callocN(sizeof(bGPDframe), "Project Grease Android GP frame"));
-  if (impl_->frame) {
-    impl_->frame->framenum = frame_number;
-    BLI_addtail(&impl_->layer->frames, impl_->frame);
-    impl_->layer->actframe = impl_->frame;
+  if (BKE_gpencil_layer_frame_find(impl_->layer, frame_number)) {
+    impl_->last_error = "frame already exists";
+    return false;
   }
-#else
   impl_->frame = BKE_gpencil_frame_addnew(impl_->layer, frame_number);
-#endif
   if (!impl_->frame) {
-    impl_->last_error = "BKE_gpencil_frame_addnew() failed"; return false;
+    impl_->last_error = "BKE_gpencil_frame_addnew() failed";
+    return false;
   }
+  impl_->layer->actframe = impl_->frame;
   impl_->frame_created = true;
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
   return true;
 }
+
 
 bool Backend::select_layer(int index) {
   if (!impl_->document_created || !impl_->gpd || index < 0) {
@@ -368,65 +369,61 @@ int Backend::frame_count() const {
 
 bool Backend::duplicate_frame(int source_frame, int target_frame)
 {
-  if (!impl_->layer || target_frame < 1) {
+  if (!impl_->layer || source_frame < 1 || target_frame < 1) {
     impl_->last_error = "invalid frame duplication";
     return false;
   }
-  bGPDframe *source = nullptr;
-  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
-       frame != nullptr; frame = frame->next) {
-    if (frame->framenum == source_frame) { source = frame; break; }
+  bGPDframe *source = BKE_gpencil_layer_frame_find(impl_->layer, source_frame);
+  if (!source) {
+    impl_->last_error = "source frame not found";
+    return false;
   }
-  if (!source) { impl_->last_error = "source frame not found"; return false; }
-  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
-       frame != nullptr; frame = frame->next) {
-    if (frame->framenum == target_frame) { impl_->last_error = "target frame already exists"; return false; }
+  if (BKE_gpencil_layer_frame_find(impl_->layer, target_frame)) {
+    impl_->last_error = "target frame already exists";
+    return false;
   }
-  bGPDframe *copy = static_cast<bGPDframe *>(MEM_callocN(sizeof(bGPDframe), "Project Grease frame duplicate"));
-  if (!copy) { impl_->last_error = "frame allocation failed"; return false; }
+  bGPDframe *copy = BKE_gpencil_frame_duplicate(source, true);
+  if (!copy) {
+    impl_->last_error = "BKE_gpencil_frame_duplicate() failed";
+    return false;
+  }
   copy->framenum = target_frame;
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(source->strokes.first);
-       stroke != nullptr; stroke = stroke->next) {
-    bGPDstroke *dup = BKE_gpencil_stroke_duplicate(stroke, true, true);
-    if (!dup) {
-      for (bGPDstroke *owned = static_cast<bGPDstroke *>(copy->strokes.first), *next = nullptr;
-           owned != nullptr; owned = next) {
-        next = owned->next; BKE_gpencil_free_stroke(owned);
-      }
-      MEM_freeN(copy);
-      impl_->last_error = "stroke duplication failed";
-      return false;
-    }
-    BLI_addtail(&copy->strokes, dup);
-  }
   BLI_addtail(&impl_->layer->frames, copy);
+  BKE_gpencil_layer_frames_sort(impl_->layer, nullptr);
+  impl_->layer->actframe = copy;
   impl_->frame = copy;
   impl_->frame_created = true;
+  impl_->stroke = nullptr;
+  project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;
 }
 
+
 bool Backend::delete_frame(int frame_number)
 {
-  if (!impl_->layer) { impl_->last_error = "layer is not selected"; return false; }
-  bGPDframe *target = nullptr;
-  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
-       frame != nullptr; frame = frame->next) {
-    if (frame->framenum == frame_number) { target = frame; break; }
+  if (!impl_->layer) {
+    impl_->last_error = "layer is not selected";
+    return false;
   }
-  if (!target) { impl_->last_error = "frame number not found"; return false; }
-  BLI_remlink(&impl_->layer->frames, target);
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(target->strokes.first), *next = nullptr;
-       stroke != nullptr; stroke = next) {
-    next = stroke->next; BKE_gpencil_free_stroke(stroke);
+  bGPDframe *target = BKE_gpencil_layer_frame_find(impl_->layer, frame_number);
+  if (!target) {
+    impl_->last_error = "frame number not found";
+    return false;
   }
-  MEM_freeN(target);
+  if (!BKE_gpencil_layer_frame_delete(impl_->layer, target)) {
+    impl_->last_error = "BKE_gpencil_layer_frame_delete() failed";
+    return false;
+  }
   impl_->frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+  impl_->layer->actframe = impl_->frame;
   impl_->frame_created = impl_->frame != nullptr;
   impl_->stroke = nullptr;
+  project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;
 }
+
 
 int Backend::stroke_count() const {
   if (!impl_->frame) {
@@ -608,9 +605,6 @@ bool Backend::set_point(int stroke_index,
     dst.pressure = point.pressure;
     dst.strength = point.strength;
     dst.time = point.time;
-    std::fprintf(stderr, "[SET] point fields written\\n");
-
-    std::fprintf(stderr, "[SET] before batch cache dirty\\n");
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
     std::fprintf(stderr, "[SET] after batch cache dirty\\n");
     project_grease_gp_tag(impl_->gpd);

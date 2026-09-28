@@ -31,6 +31,7 @@
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
+extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 #endif

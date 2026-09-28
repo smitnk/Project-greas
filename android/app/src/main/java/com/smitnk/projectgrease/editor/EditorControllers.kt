@@ -11,6 +11,8 @@ class NativeEditorBridge {
     fun createLayer(name: String) = handle != 0L && GPNative.nativeCreateLayer(handle, name)
     fun selectLayer(index: Int) = handle != 0L && GPNative.nativeSelectLayer(handle, index)
     fun frameCount() = if (handle != 0L) GPNative.nativeFrameCount(handle) else 0
+    fun duplicateFrame(sourceFrame:Int,targetFrame:Int)=handle != 0L && GPNative.nativeDuplicateFrame(handle,sourceFrame,targetFrame)
+    fun deleteFrame(frameNumber:Int)=handle != 0L && GPNative.nativeDeleteFrame(handle,frameNumber)
     fun createFrame(frame: Int) = handle != 0L && GPNative.nativeCreateFrame(handle, frame)
     fun selectFrame(frame: Int) = handle != 0L && GPNative.nativeSelectFrame(handle, frame)
     fun strokeCount() = if (handle != 0L) GPNative.nativeStrokeCount(handle) else 0
@@ -73,6 +75,18 @@ class AnimationController(private val native: NativeEditorBridge) {
         frameCount = native.frameCount().coerceAtLeast(1)
         return true
     }
+    fun duplicateFrame(sourceFrame:Int,targetFrame:Int):Boolean {
+        if (native.handle == 0L || targetFrame < 1) return false
+        if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
+        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); return true
+    }
+    fun deleteFrame(frameNumber:Int):Boolean {
+        if (native.handle == 0L) return false
+        if (!native.deleteFrame(frameNumber)) return false
+        currentFrame=native.frameCount().let { if(it>0) minOf(currentFrame,it) else 1 }
+        frameCount=native.frameCount().coerceAtLeast(1); return true
+    }
+
     fun setFps(value:Int){fps=value.coerceIn(1,120)}
     fun togglePlayback(){playing=!playing}
     fun toggleLoop(){loop=!loop}

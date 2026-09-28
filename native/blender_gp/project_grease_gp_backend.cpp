@@ -838,6 +838,147 @@ bool Backend::flip_stroke(int index)
   return false;
 }
 
+
+bool Backend::rotate_stroke(int index, float radians)
+{
+  if (!impl_->frame || index < 0) {
+    impl_->last_error = "invalid stroke rotation";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) continue;
+    if (stroke->totpoints <= 0 || !stroke->points) {
+      impl_->last_error = "stroke has no points";
+      return false;
+    }
+
+    float min_x = stroke->points[0].x, max_x = stroke->points[0].x;
+    float min_y = stroke->points[0].y, max_y = stroke->points[0].y;
+    for (int i = 1; i < stroke->totpoints; ++i) {
+      min_x = std::fmin(min_x, stroke->points[i].x);
+      max_x = std::fmax(max_x, stroke->points[i].x);
+      min_y = std::fmin(min_y, stroke->points[i].y);
+      max_y = std::fmax(max_y, stroke->points[i].y);
+    }
+
+    const float cx = (min_x + max_x) * 0.5f;
+    const float cy = (min_y + max_y) * 0.5f;
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      bGPDspoint &p = stroke->points[i];
+      const float x = p.x - cx;
+      const float y = p.y - cy;
+      p.x = cx + x * c - y * s;
+      p.y = cy + x * s + y * c;
+    }
+
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
+bool Backend::scale_stroke(int index, float scale_x, float scale_y)
+{
+  if (!impl_->frame || index < 0 || !std::isfinite(scale_x) || !std::isfinite(scale_y) ||
+      scale_x == 0.0f || scale_y == 0.0f) {
+    impl_->last_error = "invalid stroke scale";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) continue;
+    if (stroke->totpoints <= 0 || !stroke->points) {
+      impl_->last_error = "stroke has no points";
+      return false;
+    }
+
+    float min_x = stroke->points[0].x, max_x = stroke->points[0].x;
+    float min_y = stroke->points[0].y, max_y = stroke->points[0].y;
+    for (int i = 1; i < stroke->totpoints; ++i) {
+      min_x = std::fmin(min_x, stroke->points[i].x);
+      max_x = std::fmax(max_x, stroke->points[i].x);
+      min_y = std::fmin(min_y, stroke->points[i].y);
+      max_y = std::fmax(max_y, stroke->points[i].y);
+    }
+
+    const float cx = (min_x + max_x) * 0.5f;
+    const float cy = (min_y + max_y) * 0.5f;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      bGPDspoint &p = stroke->points[i];
+      p.x = cx + (p.x - cx) * scale_x;
+      p.y = cy + (p.y - cy) * scale_y;
+    }
+
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
+bool Backend::mirror_stroke(int index, bool mirror_x, bool mirror_y)
+{
+  if (!impl_->frame || index < 0 || (!mirror_x && !mirror_y)) {
+    impl_->last_error = "invalid stroke mirror";
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) continue;
+    if (stroke->totpoints <= 0 || !stroke->points) {
+      impl_->last_error = "stroke has no points";
+      return false;
+    }
+
+    float min_x = stroke->points[0].x, max_x = stroke->points[0].x;
+    float min_y = stroke->points[0].y, max_y = stroke->points[0].y;
+    for (int i = 1; i < stroke->totpoints; ++i) {
+      min_x = std::fmin(min_x, stroke->points[i].x);
+      max_x = std::fmax(max_x, stroke->points[i].x);
+      min_y = std::fmin(min_y, stroke->points[i].y);
+      max_y = std::fmax(max_y, stroke->points[i].y);
+    }
+
+    const float cx = (min_x + max_x) * 0.5f;
+    const float cy = (min_y + max_y) * 0.5f;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      bGPDspoint &p = stroke->points[i];
+      if (mirror_x) p.x = 2.0f * cx - p.x;
+      if (mirror_y) p.y = 2.0f * cy - p.y;
+    }
+
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::subdivide_stroke(int index, int level)
 {
   if (!impl_->frame || index < 0 || level <= 0) {

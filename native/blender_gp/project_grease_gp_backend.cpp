@@ -913,6 +913,94 @@ bool Backend::erase_at(float x, float y, float radius)
   return false;
 }
 
+void Backend::clear_selection()
+{
+  if (!impl_->frame) {
+    return;
+  }
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    stroke->flag &= ~GP_STROKE_SELECT;
+    if (stroke->points) {
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        stroke->points[i].flag &= ~GP_SPOINT_SELECT;
+      }
+    }
+  }
+  impl_->stroke = nullptr;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+}
+
+static bool project_grease_point_in_polygon(float x, float y, const float *xy, int count)
+{
+  bool inside = false;
+  for (int i = 0, j = count - 1; i < count; j = i++) {
+    const float xi = xy[i * 2];
+    const float yi = xy[i * 2 + 1];
+    const float xj = xy[j * 2];
+    const float yj = xy[j * 2 + 1];
+    const bool crosses = ((yi > y) != (yj > y)) &&
+                         (x < (xj - xi) * (y - yi) / ((yj - yi) + 1.0e-20f) + xi);
+    if (crosses) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+int Backend::lasso_select(const float *xy, int count, bool additive)
+{
+  if (!impl_->frame || !xy || count < 3) {
+    impl_->last_error = "invalid lasso";
+    return 0;
+  }
+  if (!additive) {
+    clear_selection();
+  }
+
+  int selected = 0;
+  int stroke_index = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++stroke_index) {
+    bool hit = false;
+    if (stroke->points) {
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        if (project_grease_point_in_polygon(stroke->points[i].x,
+                                            stroke->points[i].y,
+                                            xy,
+                                            count)) {
+          hit = true;
+          break;
+        }
+      }
+    }
+    if (hit) {
+      stroke->flag |= GP_STROKE_SELECT;
+      if (stroke->points) {
+        for (int i = 0; i < stroke->totpoints; ++i) {
+          if (project_grease_point_in_polygon(stroke->points[i].x,
+                                              stroke->points[i].y,
+                                              xy,
+                                              count)) {
+            stroke->points[i].flag |= GP_SPOINT_SELECT;
+          }
+        }
+      }
+      impl_->stroke = stroke;
+      ++selected;
+    }
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return selected;
+}
+
+
 bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) const {
   if (!out || !impl_->frame || stroke_index < 0 || point_index < 0) {
     return false;

@@ -34,6 +34,25 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Install Android NDK 27 with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "Installing NDK 27.0.12077973 (attempt $attempt/3)"
+            rm -rf "${ANDROID_SDK_ROOT}/ndk/27.0.12077973"
+            if yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.0.12077973"; then
+              test -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties"
+              echo "NDK 27.0.12077973 installed and verified."
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "NDK installation failed after 3 attempts."
+              exit 1
+            fi
+            sleep 10
+          done
+
       - name: Import pinned Blender source
         run: bash tools/import_blender_gp.sh
 

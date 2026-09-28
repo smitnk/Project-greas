@@ -54,10 +54,10 @@ static bool supported_edit_stroke(const bGPDstroke *stroke)
   return stroke && stroke->dvert == nullptr && stroke->editcurve == nullptr;
 }
 
-extern "C" void project_grease_android_stroke_flip(bGPDstroke *stroke)
+extern "C" bool project_grease_android_stroke_flip(bGPDstroke *stroke)
 {
   if (!supported_edit_stroke(stroke) || stroke->totpoints < 2 || !stroke->points) {
-    return;
+    return false;
   }
 
   for (int i = 0, j = stroke->totpoints - 1; i < j; ++i, --j) {
@@ -76,6 +76,7 @@ extern "C" void project_grease_android_stroke_flip(bGPDstroke *stroke)
   }
 
   invalidate_geometry(stroke);
+  return true;
 }
 
 extern "C" bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int level)

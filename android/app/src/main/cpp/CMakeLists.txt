@@ -123,7 +123,13 @@ target_compile_definitions(projectgrease_jni PRIVATE
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
 
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
-set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c" PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion")
+# Blender 3.6.23's string.c intentionally uses size_t-returning C library
+# functions in int destinations. Android Clang promotes sign-conversion to an
+# error in this target, so suppress the error for this upstream file only.
+set_source_files_properties(
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion"
+)
 
 target_compile_options(projectgrease_jni PRIVATE
     -fPIC

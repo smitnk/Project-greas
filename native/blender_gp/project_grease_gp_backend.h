@@ -106,6 +106,7 @@ class Backend {
   // Builds the Blender GP draw cache using the externally-owned current GL
   // context. The caller must keep that context current on this thread.
   bool render_external_context();
+  bool render_fill_mask();
 
   // Desktop/native proof path. This owns a temporary GHOST context.
   bool render();

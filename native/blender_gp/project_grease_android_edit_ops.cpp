@@ -85,7 +85,7 @@ extern "C" bool project_grease_android_stroke_flip(bGPDstroke *stroke)
   return true;
 }
 
-extern "C" bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int level)
+extern "C" bool project_grease_android_stroke_subdivide(bGPdata *gpd, bGPDstroke *stroke, int level)
 {
   if (!supported_edit_stroke(stroke) || !stroke->points ||
       stroke->totpoints < 2 || level <= 0) {
@@ -166,7 +166,7 @@ extern "C" bool project_grease_android_stroke_trim_points(
 }
 
 extern "C" bool project_grease_android_stroke_split(
-    bGPDframe *frame, bGPDstroke *stroke, int before_index, bGPDstroke **remaining)
+    bGPdata *gpd, bGPDframe *frame, bGPDstroke *stroke, int before_index, bGPDstroke **remaining)
 {
   if (!frame || !supported_edit_stroke(stroke) || !stroke->points || !remaining ||
       before_index <= 0 || before_index >= stroke->totpoints) {

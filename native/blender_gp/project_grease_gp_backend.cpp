@@ -807,7 +807,7 @@ bool Backend::subdivide_stroke(int index, int level)
     }
 
     #ifdef __ANDROID__
-    if (!project_grease_android_stroke_subdivide(stroke, level)) {
+    if (!project_grease_android_stroke_subdivide(impl_->gpd, stroke, level)) {
       impl_->last_error = "Android GP stroke subdivision failed";
       return false;
     }
@@ -960,7 +960,7 @@ bool Backend::split_stroke(int index, int before_index)
     bGPDstroke *remaining = nullptr;
     #ifdef __ANDROID__
     const bool split_result = project_grease_android_stroke_split(
-        impl_->frame, stroke, before_index, &remaining);
+        impl_->gpd, impl_->frame, stroke, before_index, &remaining);
     #else
     const bool split_result = BKE_gpencil_stroke_split(
         impl_->gpd, impl_->frame, stroke, before_index, &remaining);

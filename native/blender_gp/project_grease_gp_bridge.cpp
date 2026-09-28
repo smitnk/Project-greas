@@ -159,6 +159,11 @@ int project_grease_gp_select_frame(ProjectGreaseGPHandle *handle, int frame_numb
 {
   return ensure_ready(handle) && handle->backend.select_frame(frame_number) ? 1 : 0;
 }
+int project_grease_gp_select_frame_or_hold(ProjectGreaseGPHandle *handle, int frame_number)
+{
+  return ensure_ready(handle) && handle->backend.select_frame_or_hold(frame_number) ? 1 : 0;
+}
+
 int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;

@@ -79,6 +79,7 @@ object FeatureRegistry {
         FeatureId.ONION_OPACITY
     )
     private val inProgress = setOf(
+        FeatureId.FILL,
         FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE,
         FeatureId.TRIM, FeatureId.CLOSE, FeatureId.MOVE, FeatureId.MIRROR,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
@@ -93,8 +94,8 @@ object FeatureRegistry {
 
     fun capability(id: FeatureId): FeatureCapability {
         val state = when {
-            id in available -> FeatureState.AVAILABLE
             id in inProgress -> FeatureState.IN_PROGRESS
+            id in available -> FeatureState.AVAILABLE
             else -> FeatureState.NOT_IMPLEMENTED
         }
         val reason = when (state) {

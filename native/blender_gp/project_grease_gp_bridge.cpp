@@ -228,6 +228,39 @@ int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int
 {
   return ensure_ready(handle) && handle->backend.split_stroke(index, before_index) ? 1 : 0;
 }
+int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, int material_index, float thickness)
+{
+  if (!ensure_ready(handle)) return 0;
+  return handle->backend.create_primitive(type, x0, y0, x1, y1, start_angle, end_angle, segments, {material_index, thickness}) ? 1 : 0;
+}
+
+int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic)
+{
+  if (!ensure_ready(handle) || !points || count < 2) return 0;
+  std::vector<project_grease::gp::StrokePoint> native_points;
+  native_points.reserve(count);
+  for (int i = 0; i < count; ++i) {
+    native_points.push_back({points[i].x, points[i].y, points[i].z, points[i].pressure, points[i].strength, points[i].time});
+  }
+  return handle->backend.create_polyline(native_points.data(), count, {material_index, thickness}, cyclic != 0) ? 1 : 0;
+}
+
+int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius)
+{
+  return ensure_ready(handle) && handle->backend.erase_at(x, y, radius) ? 1 : 0;
+}
+
+void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle)
+{
+  if (ensure_ready(handle)) handle->backend.clear_selection();
+}
+
+int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive)
+{
+  if (!ensure_ready(handle) || !xy) return 0;
+  return handle->backend.lasso_select(xy, count, additive != 0);
+}
+
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
                                   int stroke_index,
                                   int point_index,

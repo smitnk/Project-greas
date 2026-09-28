@@ -62,6 +62,7 @@ fun ProjectGreaseEditor(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProjectGreaseTopBar(
     controller: EditorController,

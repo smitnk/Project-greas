@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - native/blender-gp-phase40-cache
+      - "feature/project-grease-ui-real-integration"
     paths:
       - "android/**"
       - "native/blender_gp/**"

@@ -42,4 +42,21 @@ object GPNative {
     external fun nativeRender(handle: Long): Boolean
     external fun nativeStrokeCount(handle: Long): Int
     external fun nativePointCount(handle: Long): Int
+    external fun nativeCreateLayer(handle: Long, name: String): Boolean
+    external fun nativeSelectLayer(handle: Long, index: Int): Boolean
+    external fun nativeLayerCount(handle: Long): Int
+    external fun nativeCreateFrame(handle: Long, frameNumber: Int): Boolean
+    external fun nativeSelectFrame(handle: Long, frameNumber: Int): Boolean
+    external fun nativeFrameCount(handle: Long): Int
+    external fun nativeSelectStroke(handle: Long, index: Int): Boolean
+    external fun nativeDeleteStroke(handle: Long, index: Int): Boolean
+    external fun nativeDeleteLastStroke(handle: Long): Boolean
+    external fun nativeDuplicateStroke(handle: Long, index: Int): Boolean
+    external fun nativeTranslateStroke(handle: Long, index: Int, dx: Float, dy: Float, dz: Float): Boolean
+    external fun nativeFlipStroke(handle: Long, index: Int): Boolean
+    external fun nativeSubdivideStroke(handle: Long, index: Int, level: Int): Boolean
+    external fun nativeCloseStroke(handle: Long, index: Int): Boolean
+    external fun nativeTrimStroke(handle: Long, index: Int, from: Int, to: Int, keepSinglePoint: Boolean): Boolean
+    external fun nativeSplitStroke(handle: Long, index: Int, beforeIndex: Int): Boolean
+    external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
 }

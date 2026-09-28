@@ -88,3 +88,99 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativePointCount(
 {
   return project_grease_gp_point_count(from_handle(handle));
 }
+
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateLayer(JNIEnv *env, jobject, jlong handle, jstring name)
+{
+  const char *chars = env->GetStringUTFChars(name, nullptr);
+  const int result = project_grease_gp_create_layer(from_handle(handle), chars);
+  env->ReleaseStringUTFChars(name, chars);
+  return result != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectLayer(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_select_layer(from_handle(handle), index) != 0;
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLayerCount(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_layer_count(from_handle(handle));
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateFrame(JNIEnv *, jobject, jlong handle, jint frame_number)
+{
+  return project_grease_gp_create_frame(from_handle(handle), frame_number) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectFrame(JNIEnv *, jobject, jlong handle, jint frame_number)
+{
+  return project_grease_gp_select_frame(from_handle(handle), frame_number) != 0;
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameCount(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_frame_count(from_handle(handle));
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectStroke(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_select_stroke(from_handle(handle), index) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDeleteStroke(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_delete_stroke(from_handle(handle), index) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDeleteLastStroke(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_delete_last_stroke(from_handle(handle)) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDuplicateStroke(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_duplicate_stroke(from_handle(handle), index) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTranslateStroke(JNIEnv *, jobject, jlong handle, jint index, jfloat dx, jfloat dy, jfloat dz)
+{
+  return project_grease_gp_translate_stroke(from_handle(handle), index, dx, dy, dz) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFlipStroke(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_flip_stroke(from_handle(handle), index) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSubdivideStroke(JNIEnv *, jobject, jlong handle, jint index, jint level)
+{
+  return project_grease_gp_subdivide_stroke(from_handle(handle), index, level) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeCloseStroke(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_close_stroke(from_handle(handle), index) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeTrimStroke(JNIEnv *, jobject, jlong handle, jint index, jint from, jint to, jboolean keep_single_point)
+{
+  return project_grease_gp_trim_stroke(from_handle(handle), index, from, to, keep_single_point ? 1 : 0) != 0;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeSplitStroke(JNIEnv *, jobject, jlong handle, jint index, jint before_index)
+{
+  return project_grease_gp_split_stroke(from_handle(handle), index, before_index) != 0;
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeGetPoint(JNIEnv *env, jobject, jlong handle, jint stroke_index, jint point_index)
+{
+  ProjectGreaseGPPoint point{};
+  if (!project_grease_gp_get_point(from_handle(handle), stroke_index, point_index, &point)) return nullptr;
+  const jfloat values[] = {point.x, point.y, point.z, point.pressure, point.strength, point.time};
+  jfloatArray result = env->NewFloatArray(6);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, 6, values);
+  return result;
+}

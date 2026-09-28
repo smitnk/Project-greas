@@ -122,3 +122,76 @@ const char *project_grease_gp_last_error(
   }
   return handle->backend.last_error();
 }
+
+
+int project_grease_gp_create_layer(ProjectGreaseGPHandle *handle, const char *name)
+{
+  return ensure_ready(handle) && handle->backend.create_layer(name) ? 1 : 0;
+}
+int project_grease_gp_select_layer(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.select_layer(index) ? 1 : 0;
+}
+int project_grease_gp_layer_count(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.layer_count();
+}
+int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number)
+{
+  return ensure_ready(handle) && handle->backend.create_frame(frame_number) ? 1 : 0;
+}
+int project_grease_gp_select_frame(ProjectGreaseGPHandle *handle, int frame_number)
+{
+  return ensure_ready(handle) && handle->backend.select_frame(frame_number) ? 1 : 0;
+}
+int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.frame_count();
+}
+int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.select_stroke(index) ? 1 : 0;
+}
+int project_grease_gp_delete_stroke(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.delete_stroke(index) ? 1 : 0;
+}
+int project_grease_gp_delete_last_stroke(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.delete_last_stroke() ? 1 : 0;
+}
+int project_grease_gp_duplicate_stroke(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.duplicate_stroke(index) ? 1 : 0;
+}
+int project_grease_gp_translate_stroke(ProjectGreaseGPHandle *handle, int index, float dx, float dy, float dz)
+{
+  return ensure_ready(handle) && handle->backend.translate_stroke(index, dx, dy, dz) ? 1 : 0;
+}
+int project_grease_gp_flip_stroke(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.flip_stroke(index) ? 1 : 0;
+}
+int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index, int level)
+{
+  return ensure_ready(handle) && handle->backend.subdivide_stroke(index, level) ? 1 : 0;
+}
+int project_grease_gp_close_stroke(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.close_stroke(index) ? 1 : 0;
+}
+int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int from, int to, int keep_single_point)
+{
+  return ensure_ready(handle) && handle->backend.trim_stroke_points(index, from, to, keep_single_point != 0) ? 1 : 0;
+}
+int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int before_index)
+{
+  return ensure_ready(handle) && handle->backend.split_stroke(index, before_index) ? 1 : 0;
+}
+int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) return 0;
+  return handle->backend.get_point(stroke_index, point_index, out) ? 1 : 0;
+}

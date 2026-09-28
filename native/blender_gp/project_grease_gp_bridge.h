@@ -40,6 +40,24 @@ int project_grease_gp_render(ProjectGreaseGPHandle *handle);
 int project_grease_gp_stroke_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_point_count(const ProjectGreaseGPHandle *handle);
 
+int project_grease_gp_create_layer(ProjectGreaseGPHandle *handle, const char *name);
+int project_grease_gp_select_layer(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_layer_count(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number);
+int project_grease_gp_select_frame(ProjectGreaseGPHandle *handle, int frame_number);
+int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_delete_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_delete_last_stroke(ProjectGreaseGPHandle *handle);
+int project_grease_gp_duplicate_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_translate_stroke(ProjectGreaseGPHandle *handle, int index, float dx, float dy, float dz);
+int project_grease_gp_flip_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index, int level);
+int project_grease_gp_close_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int from, int to, int keep_single_point);
+int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int before_index);
+int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
+
 const char *project_grease_gp_last_error(
     const ProjectGreaseGPHandle *handle);
 

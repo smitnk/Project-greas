@@ -433,6 +433,26 @@ bool Backend::select_frame(int frame_number) {
   return false;
 }
 
+bool Backend::select_frame_or_hold(int frame_number)
+{
+  if (!impl_->layer || frame_number < 1) {
+    impl_->last_error = "invalid playback frame";
+    return false;
+  }
+  bGPDframe *frame = BKE_gpencil_layer_frame_get(
+      impl_->layer, frame_number, GP_GETFRAME_USE_PREV);
+  if (!frame) {
+    impl_->last_error = "no preceding frame";
+    return false;
+  }
+  impl_->frame = frame;
+  impl_->layer->actframe = frame;
+  impl_->stroke = nullptr;
+  impl_->frame_created = true;
+  impl_->last_error.clear();
+  return true;
+}
+
 int Backend::frame_count() const {
   if (!impl_->layer) {
     return 0;

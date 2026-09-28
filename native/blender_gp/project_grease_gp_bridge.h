@@ -87,6 +87,7 @@ int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, i
 int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, float influence, int iterations);
 int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity);
 int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled);
+int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 
 const char *project_grease_gp_last_error(

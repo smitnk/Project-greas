@@ -548,6 +548,13 @@ bool Backend::select_stroke(int index) {
        stroke != nullptr;
        stroke = stroke->next, ++current) {
     if (current == index) {
+      clear_selection();
+      stroke->flag |= GP_STROKE_SELECT;
+      if (stroke->points) {
+        for (int i = 0; i < stroke->totpoints; ++i) {
+          stroke->points[i].flag |= GP_SPOINT_SELECT;
+        }
+      }
       impl_->stroke = stroke;
       impl_->last_error.clear();
       return true;

@@ -620,6 +620,260 @@ int Backend::hit_test_stroke(float x, float y, float radius) const
   return best_index;
 }
 
+
+bool Backend::create_primitive(int type,
+                               float x0,
+                               float y0,
+                               float x1,
+                               float y1,
+                               float start_angle,
+                               float end_angle,
+                               int segments,
+                               const StrokeStyle &style)
+{
+  if (!impl_->frame || !impl_->frame_created) {
+    impl_->last_error = "frame is not created";
+    return false;
+  }
+  if (type < 0 || type > 3) {
+    impl_->last_error = "invalid primitive type";
+    return false;
+  }
+
+  const int count = (type == 0) ? 2 :
+                    (type == 1) ? 4 :
+                    std::max(8, segments);
+  std::vector<StrokePoint> points;
+  points.reserve(count);
+
+  if (type == 0) {
+    points.push_back({x0, y0, 0.0f, 1.0f, 1.0f, 0.0f});
+    points.push_back({x1, y1, 0.0f, 1.0f, 1.0f, 1.0f});
+  }
+  else if (type == 1) {
+    points.push_back({x0, y0, 0.0f, 1.0f, 1.0f, 0.0f});
+    points.push_back({x1, y0, 0.0f, 1.0f, 1.0f, 1.0f});
+    points.push_back({x1, y1, 0.0f, 1.0f, 1.0f, 2.0f});
+    points.push_back({x0, y1, 0.0f, 1.0f, 1.0f, 3.0f});
+  }
+  else {
+    const float cx = (x0 + x1) * 0.5f;
+    const float cy = (y0 + y1) * 0.5f;
+    const float rx = std::fabs(x1 - x0) * 0.5f;
+    const float ry = (type == 2) ? rx : std::fabs(y1 - y0) * 0.5f;
+    const float a0 = (type == 2) ? 0.0f : start_angle;
+    const float a1 = (type == 2) ? (2.0f * static_cast<float>(M_PI)) : end_angle;
+    const int n = std::max(8, segments);
+    for (int i = 0; i < n; ++i) {
+      const float t = (n == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(n - 1);
+      const float a = a0 + (a1 - a0) * t;
+      points.push_back({cx + rx * std::cos(a),
+                        cy + ry * std::sin(a),
+                        0.0f,
+                        1.0f,
+                        1.0f,
+                        static_cast<float>(i)});
+    }
+  }
+
+  return create_polyline(points.data(), static_cast<int>(points.size()), style, type == 1 || type == 2);
+}
+
+bool Backend::create_polyline(const StrokePoint *points,
+                              int count,
+                              const StrokeStyle &style,
+                              bool cyclic)
+{
+  if (!impl_->frame || !impl_->frame_created) {
+    impl_->last_error = "frame is not created";
+    return false;
+  }
+  if (!points || count < 2) {
+    impl_->last_error = "polyline needs at least two points";
+    return false;
+  }
+
+  const short thickness = static_cast<short>(
+      std::max(1.0f, std::min(style.thickness, 32767.0f)));
+  bGPDstroke *stroke = BKE_gpencil_stroke_add(
+      impl_->frame, style.material_index, count, thickness, false);
+  if (!stroke) {
+    impl_->last_error = "BKE_gpencil_stroke_add() failed";
+    return false;
+  }
+
+  for (int i = 0; i < count; ++i) {
+    const StrokePoint &src = points[i];
+    bGPDspoint &dst = stroke->points[i];
+    dst.x = src.x;
+    dst.y = src.y;
+    dst.z = src.z;
+    dst.pressure = std::max(0.0f, src.pressure);
+    dst.strength = std::max(0.0f, std::min(src.strength, 1.0f));
+    dst.time = src.time;
+  }
+
+  if (cyclic) {
+    stroke->flag |= GP_STROKE_CYCLIC;
+  }
+
+  impl_->stroke = stroke;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::erase_at(float x, float y, float radius)
+{
+  if (!impl_->frame || radius < 0.0f) {
+    impl_->last_error = "invalid eraser";
+    return false;
+  }
+
+  const float radius_sq = radius * radius;
+  bool removed = false;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;) {
+    bGPDstroke *next = stroke->next;
+    bool hit = false;
+    if (stroke->points && stroke->totpoints > 0) {
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        const float dx = stroke->points[i].x - x;
+        const float dy = stroke->points[i].y - y;
+        if (dx * dx + dy * dy <= radius_sq) {
+          hit = true;
+          break;
+        }
+      }
+    }
+    if (!hit && stroke->totpoints >= 2 && stroke->points) {
+      const bool cyclic = (stroke->flag & GP_STROKE_CYCLIC) != 0;
+      const int segments = cyclic ? stroke->totpoints : stroke->totpoints - 1;
+      for (int i = 0; i < segments && !hit; ++i) {
+        const bGPDspoint &a = stroke->points[i];
+        const bGPDspoint &b = stroke->points[(i + 1) % stroke->totpoints];
+        const float vx = b.x - a.x;
+        const float vy = b.y - a.y;
+        const float len_sq = vx * vx + vy * vy;
+        float t = len_sq > 1.0e-12f
+                      ? ((x - a.x) * vx + (y - a.y) * vy) / len_sq
+                      : 0.0f;
+        t = std::fmax(0.0f, std::fmin(1.0f, t));
+        const float cx = a.x + t * vx;
+        const float cy = a.y + t * vy;
+        const float dx = x - cx;
+        const float dy = y - cy;
+        hit = dx * dx + dy * dy <= radius_sq;
+      }
+    }
+    if (hit) {
+      BLI_remlink(&impl_->frame->strokes, stroke);
+      BKE_gpencil_free_stroke(stroke);
+      removed = true;
+    }
+    stroke = next;
+  }
+
+  if (removed) {
+    impl_->stroke = nullptr;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
+  impl_->last_error = "eraser did not hit a stroke";
+  return false;
+}
+
+void Backend::clear_selection()
+{
+  if (!impl_->frame) {
+    return;
+  }
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    stroke->flag &= ~GP_STROKE_SELECT;
+    if (stroke->points) {
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        stroke->points[i].flag &= ~GP_SPOINT_SELECT;
+      }
+    }
+  }
+  impl_->stroke = nullptr;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+}
+
+static bool project_grease_point_in_polygon(float x, float y, const float *xy, int count)
+{
+  bool inside = false;
+  for (int i = 0, j = count - 1; i < count; j = i++) {
+    const float xi = xy[i * 2];
+    const float yi = xy[i * 2 + 1];
+    const float xj = xy[j * 2];
+    const float yj = xy[j * 2 + 1];
+    const bool crosses = ((yi > y) != (yj > y)) &&
+                         (x < (xj - xi) * (y - yi) / ((yj - yi) + 1.0e-20f) + xi);
+    if (crosses) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+int Backend::lasso_select(const float *xy, int count, bool additive)
+{
+  if (!impl_->frame || !xy || count < 3) {
+    impl_->last_error = "invalid lasso";
+    return 0;
+  }
+  if (!additive) {
+    clear_selection();
+  }
+
+  int selected = 0;
+  int stroke_index = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++stroke_index) {
+    bool hit = false;
+    if (stroke->points) {
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        if (project_grease_point_in_polygon(stroke->points[i].x,
+                                            stroke->points[i].y,
+                                            xy,
+                                            count)) {
+          hit = true;
+          break;
+        }
+      }
+    }
+    if (hit) {
+      stroke->flag |= GP_STROKE_SELECT;
+      if (stroke->points) {
+        for (int i = 0; i < stroke->totpoints; ++i) {
+          if (project_grease_point_in_polygon(stroke->points[i].x,
+                                              stroke->points[i].y,
+                                              xy,
+                                              count)) {
+            stroke->points[i].flag |= GP_SPOINT_SELECT;
+          }
+        }
+      }
+      impl_->stroke = stroke;
+      ++selected;
+    }
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return selected;
+}
+
 bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) const {
   if (!out || !impl_->frame || stroke_index < 0 || point_index < 0) {
     return false;

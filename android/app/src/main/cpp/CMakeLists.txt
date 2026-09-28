@@ -33,6 +33,7 @@ set(BLENDER_INCLUDE_DIRS
     "${BLENDER_SOURCE_DIR}/source/blender"
     "${BLENDER_SOURCE_DIR}/source"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
+    "${BLENDER_SOURCE_DIR}/extern/wcwidth"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern"
@@ -80,12 +81,20 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
+    "${BLENDER_SOURCE_DIR}/extern/wcwidth/wcwidth.c"
     # math_matrix.c pulls the optional Eigen C API into the Android target.
     # The selected Legacy GP/cache closure does not require it.
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/memory_usage.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_curve_legacy_extract.cc"
 )
 
 set(PROJECT_GREASE_C_SOURCES
@@ -109,6 +118,10 @@ target_compile_definitions(projectgrease_jni PRIVATE
     NDEBUG
     WITH_OPENGL
 )
+
+set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
+
+set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
 
 target_compile_options(projectgrease_jni PRIVATE
     -fPIC

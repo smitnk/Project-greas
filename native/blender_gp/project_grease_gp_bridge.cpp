@@ -154,6 +154,17 @@ int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index)
 {
   return ensure_ready(handle) && handle->backend.select_stroke(index) ? 1 : 0;
 }
+int project_grease_gp_hit_test_stroke(
+    const ProjectGreaseGPHandle *handle,
+    float x,
+    float y,
+    float radius)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) {
+    return -1;
+  }
+  return handle->backend.hit_test_stroke(x, y, radius);
+}
 int project_grease_gp_delete_stroke(ProjectGreaseGPHandle *handle, int index)
 {
   return ensure_ready(handle) && handle->backend.delete_stroke(index) ? 1 : 0;

@@ -187,6 +187,11 @@ class EditorController {
         val ok = native.createLayer(name)
         if (ok) {
             selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)
+            val frameReady = native.createFrame(animation.currentFrame)
+            animation.initialize()
+            if (!frameReady && native.frameCount() == 0) {
+                return false
+            }
             history.markEdit()
             document.markDirty()
             render()

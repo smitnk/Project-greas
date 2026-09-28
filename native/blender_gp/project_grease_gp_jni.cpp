@@ -352,6 +352,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMultiframeEditing(
     JNIEnv *, jobject, jlong handle, jboolean enabled)
 { return project_grease_gp_set_multiframe_editing(from_handle(handle), enabled ? 1 : 0) != 0; }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillStroke(
+    JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_fill_stroke(from_handle(handle), index) != 0;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameEnd(JNIEnv *, jobject, jlong handle)
 { return project_grease_gp_frame_end(from_handle(handle)); }

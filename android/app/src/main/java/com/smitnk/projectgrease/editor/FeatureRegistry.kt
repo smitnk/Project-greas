@@ -1,4 +1,3 @@
-
 package com.smitnk.projectgrease.editor
 
 enum class FeatureState { AVAILABLE, IN_PROGRESS, NOT_IMPLEMENTED }
@@ -55,7 +54,7 @@ object FeatureRegistry {
             FeatureState.IN_PROGRESS -> "Native or UI groundwork exists, but the complete controller-to-engine path is not complete."
             FeatureState.NOT_IMPLEMENTED -> "No Project Grease engine operation is connected yet."
         }
-        val label = id.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+        val label = id.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercaseChar() }
         return FeatureCapability(id, state, label, reason)
     }
 

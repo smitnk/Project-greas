@@ -39,31 +39,31 @@ fun ProjectGreaseEditor(
     onStateChange: (GreaseUiState) -> Unit,
     blenderViewport: @Composable BoxScope.() -> Unit
 ) {
+    if (state.canvasFocus) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
+            blenderViewport()
+            IconButton(
+                onClick = { onStateChange(state.copy(canvasFocus = false)) },
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+            ) { Icon(Icons.Default.CloseFullscreen, "Exit canvas focus") }
+        }
+        return
+    }
+
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (!state.canvasFocus) ProjectGreaseTopBar(controller, state, onStateChange)
+        ProjectGreaseTopBar(controller, state, onStateChange)
         Row(Modifier.fillMaxWidth().weight(1f)) {
-            if (!state.canvasFocus && state.showTools) GreaseToolRail(controller)
+            if (state.showTools) GreaseToolRail(controller)
             Box(
                 Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
                 content = blenderViewport
             )
-            if (!state.canvasFocus && state.showProperties) {
-                GreasePropertiesPanel(controller, state, onStateChange)
-            }
+            if (state.showProperties) GreasePropertiesPanel(controller, state, onStateChange)
         }
-        if (!state.canvasFocus && state.showTimeline) ProjectGreaseTimeline(controller, state, onStateChange)
-        if (state.canvasFocus) {
-            Box(Modifier.fillMaxSize()) {
-                IconButton(
-                    onClick = { onStateChange(state.copy(canvasFocus = false)) },
-                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
-                ) { Icon(Icons.Default.CloseFullscreen, "Exit canvas focus") }
-            }
-        }
+        if (state.showTimeline) ProjectGreaseTimeline(controller, state, onStateChange)
     }
 }
-
 @Composable
 private fun ProjectGreaseTopBar(
     controller: EditorController,

@@ -72,6 +72,11 @@ int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index,
 int project_grease_gp_close_stroke(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int from, int to, int keep_single_point);
 int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int before_index);
+int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, int material_index, float thickness);
+int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic);
+int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius);
+void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);
+int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 
 const char *project_grease_gp_last_error(

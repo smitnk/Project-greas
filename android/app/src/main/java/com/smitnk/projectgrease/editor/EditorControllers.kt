@@ -450,6 +450,13 @@ class EditorController {
         if(ok) render()
         return ok
     }
+    fun fillAt(x: Float, y: Float): Boolean {
+        if (rendererHandle == 0L) return false
+        val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
+        if (ok) { history.markEdit(); document.markDirty() }
+        return ok
+    }
+
     fun smoothSelectedStroke(influence:Float=0.5f,iterations:Int=2):Boolean {
         val i=selection.selectedStroke
         if(i<0) return false

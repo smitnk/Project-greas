@@ -1,4 +1,5 @@
 name: Project Grease Android Shell
+# Continuous native-GP build monitoring trigger.
 
 on:
   workflow_dispatch:

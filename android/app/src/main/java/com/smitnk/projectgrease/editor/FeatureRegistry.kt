@@ -30,7 +30,31 @@ data class FeatureCapability(
 )
 
 object FeatureRegistry {
-    private val available = setOf(FeatureId.FREEHAND, FeatureId.PRESSURE)
+    private val available = setOf(
+        FeatureId.FREEHAND,
+        FeatureId.PRESSURE,
+        FeatureId.ERASER,
+        FeatureId.SELECT,
+        FeatureId.LINE,
+        FeatureId.RECTANGLE,
+        FeatureId.CIRCLE,
+        FeatureId.ARC,
+        FeatureId.POLYLINE,
+        FeatureId.MOVE,
+        FeatureId.MIRROR,
+        FeatureId.DUPLICATE,
+        FeatureId.DELETE,
+        FeatureId.SPLIT,
+        FeatureId.SUBDIVIDE,
+        FeatureId.TRIM,
+        FeatureId.CLOSE,
+        FeatureId.LAYERS,
+        FeatureId.FRAMES,
+        FeatureId.ADD_FRAME,
+        FeatureId.FRAME_NAVIGATION,
+        FeatureId.THICKNESS,
+        FeatureId.OPACITY
+    )
     private val inProgress = setOf(
         FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE,
         FeatureId.TRIM, FeatureId.CLOSE, FeatureId.MOVE, FeatureId.MIRROR,

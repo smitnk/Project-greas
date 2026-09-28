@@ -80,10 +80,20 @@ private class ProjectGreaseDrawingSurfaceView(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                strokeOpen = controller.beginStroke()
-                if (strokeOpen) {
-                    addPoint(event, 0)
-                    controller.render()
+                when (controller.tools.activeTool) {
+                    com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
+                        controller.hitTestAndSelectStroke(event.x, event.y)
+                    }
+                    com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
+                        controller.eraseAt(event.x, event.y)
+                    }
+                    else -> {
+                        strokeOpen = controller.beginStroke()
+                        if (strokeOpen) {
+                            addPoint(event, 0)
+                            controller.render()
+                        }
+                    }
                 }
                 return true
             }

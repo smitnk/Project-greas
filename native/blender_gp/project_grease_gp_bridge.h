@@ -78,6 +78,14 @@ int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const Proje
 int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius);
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);
 int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive);
+int project_grease_gp_material_count(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_create_material(ProjectGreaseGPHandle *handle);
+int project_grease_gp_set_material_colors(ProjectGreaseGPHandle *handle, int index, const float stroke_rgba[4], const float fill_rgba[4]);
+int project_grease_gp_set_material_visibility(ProjectGreaseGPHandle *handle, int index, int visible);
+int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, int index, int enabled);
+int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, float influence, int iterations);
+int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity);
+int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 
 const char *project_grease_gp_last_error(

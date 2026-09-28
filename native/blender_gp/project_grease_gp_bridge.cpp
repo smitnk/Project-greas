@@ -290,3 +290,37 @@ int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
   out->time = native_point.time;
   return 1;
 }
+
+int project_grease_gp_material_count(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.material_count();
+}
+int project_grease_gp_create_material(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.create_material() ? 1 : 0;
+}
+int project_grease_gp_set_material_colors(ProjectGreaseGPHandle *handle, int index, const float stroke_rgba[4], const float fill_rgba[4])
+{
+  return ensure_ready(handle) && handle->backend.set_material_colors(index, stroke_rgba, fill_rgba) ? 1 : 0;
+}
+int project_grease_gp_set_material_visibility(ProjectGreaseGPHandle *handle, int index, int visible)
+{
+  return ensure_ready(handle) && handle->backend.set_material_visibility(index, visible != 0) ? 1 : 0;
+}
+int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, int index, int enabled)
+{
+  return ensure_ready(handle) && handle->backend.set_material_fill_enabled(index, enabled != 0) ? 1 : 0;
+}
+int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, float influence, int iterations)
+{
+  return ensure_ready(handle) && handle->backend.smooth_stroke(index, influence, iterations) ? 1 : 0;
+}
+int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity)
+{
+  return ensure_ready(handle) && handle->backend.set_onion_skin(enabled != 0, before, after, opacity) ? 1 : 0;
+}
+int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled)
+{
+  return ensure_ready(handle) && handle->backend.set_multiframe_editing(enabled != 0) ? 1 : 0;
+}

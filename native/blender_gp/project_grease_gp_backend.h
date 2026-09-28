@@ -71,6 +71,14 @@ class Backend {
   bool erase_at(float x, float y, float radius);
   void clear_selection();
   int lasso_select(const float* xy, int count, bool additive);
+  int material_count() const;
+  bool create_material();
+  bool set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4]);
+  bool set_material_visibility(int index, bool visible);
+  bool set_material_fill_enabled(int index, bool enabled);
+  bool smooth_stroke(int index, float influence, int iterations);
+  bool set_onion_skin(bool enabled, int before, int after, float opacity);
+  bool set_multiframe_editing(bool enabled);
 
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);

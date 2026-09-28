@@ -39,6 +39,14 @@ class NativeEditorBridge {
     fun trimStroke(index: Int, from: Int, to: Int, keepSinglePoint: Boolean) = handle != 0L && GPNative.nativeTrimStroke(handle, index, from, to, keepSinglePoint)
     fun splitStroke(index: Int, beforeIndex: Int) = handle != 0L && GPNative.nativeSplitStroke(handle, index, beforeIndex)
     fun getPoint(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPoint(handle, stroke, point) else null
+    fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
+    fun createMaterial() = handle != 0L && GPNative.nativeCreateMaterial(handle)
+    fun setMaterialColors(index:Int, stroke:FloatArray, fill:FloatArray) = handle != 0L && GPNative.nativeSetMaterialColors(handle,index,stroke,fill)
+    fun setMaterialVisibility(index:Int, visible:Boolean) = handle != 0L && GPNative.nativeSetMaterialVisibility(handle,index,visible)
+    fun setMaterialFillEnabled(index:Int, enabled:Boolean) = handle != 0L && GPNative.nativeSetMaterialFillEnabled(handle,index,enabled)
+    fun smoothStroke(index:Int,influence:Float=0.5f,iterations:Int=2) = handle != 0L && GPNative.nativeSmoothStroke(handle,index,influence,iterations)
+    fun setOnionSkin(enabled:Boolean,before:Int,after:Int,opacity:Float) = handle != 0L && GPNative.nativeSetOnionSkin(handle,enabled,before,after,opacity)
+    fun setMultiframeEditing(enabled:Boolean) = handle != 0L && GPNative.nativeSetMultiframeEditing(handle,enabled)
 }
 
 class HistoryController {
@@ -102,12 +110,15 @@ class AnimationController(private val native: NativeEditorBridge) {
 }
 
 class MaterialController {
+    var fillEnabled=true; private set
+    fun setFillEnabled(value:Boolean){fillEnabled=value}
     var activeMaterial=0; private set
     var thickness=8f; private set
     var opacity=1f; private set
     var colorArgb:Int=0xFFFFFFFF.toInt(); private set
     fun select(index:Int){activeMaterial=index.coerceAtLeast(0)}
     fun setColor(value:Int){colorArgb=value}
+    fun setFillEnabled(value:Boolean){fillEnabled=value}
     fun setThickness(value:Float){thickness=value.coerceIn(0.5f,100f)}
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
@@ -237,61 +248,28 @@ class EditorController {
         }
     }
 
-    private fun generatedShapePoints(): List<PendingPoint> {
-        val p = pendingShapePoints
-        if (p.isEmpty()) return emptyList()
-        val first = p.first()
-        val last = p.last()
-        return when (pendingShapeTool) {
-            GreaseTool.LINE -> listOf(first, last)
-            GreaseTool.POLYLINE -> p.distinctBy { (it.x * 10f).toInt() to (it.y * 10f).toInt() }
-            GreaseTool.RECTANGLE -> {
-                val left=minOf(first.x,last.x); val right=maxOf(first.x,last.x)
-                val top=minOf(first.y,last.y); val bottom=maxOf(first.y,last.y)
-                listOf(
-                    PendingPoint(left,top,first.pressure,first.time),
-                    PendingPoint(right,top,last.pressure,last.time),
-                    PendingPoint(right,bottom,last.pressure,last.time),
-                    PendingPoint(left,bottom,first.pressure,first.time),
-                    PendingPoint(left,top,first.pressure,first.time)
-                )
-            }
-            GreaseTool.CIRCLE -> {
-                val cx=(first.x+last.x)*0.5f; val cy=(first.y+last.y)*0.5f
-                val rx=maxOf(1f,kotlin.math.abs(last.x-first.x)*0.5f)
-                val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
-                (0..48).map { i ->
-                    val a=(2.0*Math.PI*i/48.0).toFloat()
-                    PendingPoint(cx+rx*kotlin.math.cos(a.toDouble()).toFloat(),cy+ry*kotlin.math.sin(a.toDouble()).toFloat(),last.pressure,last.time)
-                }
-            }
-            GreaseTool.ARC -> {
-                val cx=(first.x+last.x)*0.5
-                val cy=(first.y+last.y)*0.5
-                val rx=maxOf(1.0,kotlin.math.abs(last.x-first.x)*0.5)
-                val ry=maxOf(1.0,kotlin.math.abs(last.y-first.y)*0.5)
-                val start=kotlin.math.atan2((first.y-cy)/ry,(first.x-cx)/rx)
-                val end=kotlin.math.atan2((last.y-cy)/ry,(last.x-cx)/rx)
-                var sweep=end-start
-                if (sweep <= 0.0) sweep += 2.0*Math.PI
-                (0..32).map { i ->
-                    val a=start+sweep*i/32.0
-                    PendingPoint(
-                        (cx+rx*kotlin.math.cos(a)).toFloat(),
-                        (cy+ry*kotlin.math.sin(a)).toFloat(),
-                        last.pressure,
-                        last.time
-                    )
-                }
-            }
-            else -> emptyList()
-        }
+    private fun shapeParameters(): FloatArray {
+        if (pendingShapePoints.isEmpty()) return FloatArray(0)
+        val first = pendingShapePoints.first()
+        val last = pendingShapePoints.last()
+        return floatArrayOf(first.x, first.y, last.x, last.y)
     }
 
     fun endStroke(){
         if (rendererHandle == 0L) return
         if (tools.activeTool == GreaseTool.LASSO) {
-            selectStrokeInLasso(pendingLassoPoints)
+            if (pendingLassoPoints.size >= 3) {
+                val packed = FloatArray(pendingLassoPoints.size * 2)
+                pendingLassoPoints.forEachIndexed { i, p ->
+                    packed[i * 2] = p.first
+                    packed[i * 2 + 1] = p.second
+                }
+                val selected = GPNative.nativeLassoSelect(rendererHandle, packed, pendingLassoPoints.size, false)
+                if (selected > 0) {
+                    history.markEdit()
+                    document.markDirty()
+                }
+            }
             pendingLassoPoints.clear()
             return
         }
@@ -301,24 +279,43 @@ class EditorController {
             }
             return
         }
-        val shape = generatedShapePoints()
+        val params = shapeParameters()
         val shapeTool = pendingShapeTool
         GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
         pendingShapePoints.clear()
         pendingShapeTool = null
-        if (shapeTool == null || shape.size < 2) return
-        if (!GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)) return
-        var ok = true
-        for (point in shape) {
-            ok = ok && GPNative.nativeAddPointEglRenderer(
-                rendererHandle, point.x, point.y, 0f,
-                point.pressure, materials.opacity, point.time
-            )
+        if (shapeTool == null || params.size < 4) return
+        val type = when (shapeTool) {
+            GreaseTool.LINE -> 0
+            GreaseTool.RECTANGLE -> 1
+            GreaseTool.CIRCLE -> 2
+            GreaseTool.ARC -> 3
+            else -> -1
         }
-        if (ok && GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
-            history.markEdit(); document.markDirty()
-        } else {
-            GPNative.nativeEndStrokeEglRenderer(rendererHandle)
+        if (type >= 0) {
+            val ok = GPNative.nativeCreatePrimitive(
+                rendererHandle, type,
+                params[0], params[1], params[2], params[3],
+                0f, 6.2831855f, 64,
+                materials.activeMaterial, materials.thickness
+            )
+            if (ok) {
+                history.markEdit(); document.markDirty(); render()
+            }
+        } else if (shapeTool == GreaseTool.POLYLINE) {
+            // Polyline input remains a sequence of real GP points; the native bridge owns creation.
+            val points = pendingShapePoints
+            if (points.size >= 2) {
+                val packed = FloatArray(points.size * 2)
+                points.forEachIndexed { i, p ->
+                    packed[i * 2] = p.x
+                    packed[i * 2 + 1] = p.y
+                }
+                if (GPNative.nativeCreatePolyline(rendererHandle, packed, points.size,
+                        materials.activeMaterial, materials.thickness, false)) {
+                    history.markEdit(); document.markDirty(); render()
+                }
+            }
         }
     }
 
@@ -334,25 +331,37 @@ class EditorController {
         pendingLassoPoints.clear()
     }
     fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean {
-        if(points.size<3) return false
-        fun inside(x:Float,y:Float):Boolean {
-            var hit=false
-            var j=points.lastIndex
-            for(i in points.indices){
-                val xi=points[i].first; val yi=points[i].second
-                val xj=points[j].first; val yj=points[j].second
-                if(((yi>y)!=(yj>y)) && x < (xj-xi)*(y-yi)/(yj-yi+0.000001f)+xi) hit=!hit
-                j=i
-            }
-            return hit
+        if (rendererHandle == 0L || points.size < 3) return false
+        val packed = FloatArray(points.size * 2)
+        points.forEachIndexed { i, p ->
+            packed[i * 2] = p.first
+            packed[i * 2 + 1] = p.second
         }
-        for(stroke in 0 until native.strokeCount()){
-            for(point in 0 until 10000){
-                val p=native.getPoint(stroke,point) ?: break
-                if(p.size>=2 && inside(p[0],p[1])) return selection.selectStroke(stroke)
-            }
+        val count = GPNative.nativeLassoSelect(rendererHandle, packed, points.size, false)
+        if (count > 0) {
+            history.markEdit()
+            document.markDirty()
+            render()
         }
-        return false
+        return count > 0
+    }
+
+    fun setOnionSkin(enabled:Boolean,before:Int=2,after:Int=2,opacity:Float=0.35f):Boolean {
+        val ok = native.setOnionSkin(enabled,before,after,opacity)
+        if (ok) { onion.enabled=enabled; onion.setBefore(before); onion.setAfter(after); onion.setOpacity(opacity); render() }
+        return ok
+    }
+    fun setMultiframeEditing(enabled:Boolean):Boolean {
+        val ok=native.setMultiframeEditing(enabled)
+        if(ok) render()
+        return ok
+    }
+    fun smoothSelectedStroke(influence:Float=0.5f,iterations:Int=2):Boolean {
+        val i=selection.selectedStroke
+        if(i<0) return false
+        val ok=native.smoothStroke(i,influence,iterations)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
     }
     fun pushMaterialColor(){
         if(rendererHandle==0L) return

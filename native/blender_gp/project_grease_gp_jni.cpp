@@ -307,3 +307,47 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(JNIEnv *env, 
   env->SetFloatArrayRegion(result, 0, 6, values);
   return result;
 }
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaterialCount(JNIEnv *, jobject, jlong handle)
+{ return project_grease_gp_material_count(from_handle(handle)); }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateMaterial(JNIEnv *, jobject, jlong handle)
+{ return project_grease_gp_create_material(from_handle(handle)) != 0; }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialColors(
+    JNIEnv *env, jobject, jlong handle, jint index, jfloatArray stroke, jfloatArray fill)
+{
+  if (!stroke || !fill || env->GetArrayLength(stroke) < 4 || env->GetArrayLength(fill) < 4) return JNI_FALSE;
+  jfloat sr[4], fr[4];
+  env->GetFloatArrayRegion(stroke, 0, 4, sr);
+  env->GetFloatArrayRegion(fill, 0, 4, fr);
+  return project_grease_gp_set_material_colors(from_handle(handle), index, sr, fr) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialVisibility(
+    JNIEnv *, jobject, jlong handle, jint index, jboolean visible)
+{ return project_grease_gp_set_material_visibility(from_handle(handle), index, visible ? 1 : 0) != 0; }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialFillEnabled(
+    JNIEnv *, jobject, jlong handle, jint index, jboolean enabled)
+{ return project_grease_gp_set_material_fill_enabled(from_handle(handle), index, enabled ? 1 : 0) != 0; }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSmoothStroke(
+    JNIEnv *, jobject, jlong handle, jint index, jfloat influence, jint iterations)
+{ return project_grease_gp_smooth_stroke(from_handle(handle), index, influence, iterations) != 0; }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetOnionSkin(
+    JNIEnv *, jobject, jlong handle, jboolean enabled, jint before, jint after, jfloat opacity)
+{ return project_grease_gp_set_onion_skin(from_handle(handle), enabled ? 1 : 0, before, after, opacity) != 0; }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMultiframeEditing(
+    JNIEnv *, jobject, jlong handle, jboolean enabled)
+{ return project_grease_gp_set_multiframe_editing(from_handle(handle), enabled ? 1 : 0) != 0; }

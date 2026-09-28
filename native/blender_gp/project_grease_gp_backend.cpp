@@ -21,13 +21,14 @@
 #endif
 
 #include "DNA_gpencil_legacy_types.h"
+#include "DNA_material_types.h"
 #include "DNA_object_types.h"
 
 #include "draw_cache.h"
 #include "draw_cache_impl.h"
 
 #ifdef __ANDROID__
-extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame);
+extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 #endif
@@ -49,6 +50,84 @@ static void project_grease_gp_tag(bGPdata *gpd)
 #else
   BKE_gpencil_tag(gpd);
 #endif
+}
+
+static Material *gp_material_at(bGPdata *gpd, int index)
+{
+  if (!gpd || index < 0 || index >= gpd->totcol || !gpd->mat) {
+    return nullptr;
+  }
+  return gpd->mat[index];
+}
+
+static bool gp_material_ensure_slot(bGPdata *gpd, int index)
+{
+  if (!gpd || index < 0 || index > 32766) {
+    return false;
+  }
+  if (index >= gpd->totcol) {
+    const int old_count = gpd->totcol;
+    const int new_count = index + 1;
+    gpd->mat = static_cast<Material **>(
+        MEM_recallocN(gpd->mat, sizeof(Material *) * new_count));
+    if (!gpd->mat) {
+      gpd->totcol = 0;
+      return false;
+    }
+    gpd->totcol = new_count;
+    for (int i = old_count; i < new_count; ++i) {
+      gpd->mat[i] = nullptr;
+    }
+  }
+  if (!gpd->mat[index]) {
+    Material *ma = static_cast<Material *>(
+        MEM_callocN(sizeof(Material), "Project Grease Legacy GP Material"));
+    MaterialGPencilStyle *style = static_cast<MaterialGPencilStyle *>(
+        MEM_callocN(sizeof(MaterialGPencilStyle), "Project Grease Legacy GP Material Style"));
+    if (!ma || !style) {
+      MEM_SAFE_FREE(style);
+      MEM_SAFE_FREE(ma);
+      return false;
+    }
+    ma->gp_style = style;
+    style->stroke_rgba[0] = 1.0f;
+    style->stroke_rgba[1] = 1.0f;
+    style->stroke_rgba[2] = 1.0f;
+    style->stroke_rgba[3] = 1.0f;
+    style->fill_rgba[0] = 1.0f;
+    style->fill_rgba[1] = 1.0f;
+    style->fill_rgba[2] = 1.0f;
+    style->fill_rgba[3] = 1.0f;
+    style->texture_scale[0] = 1.0f;
+    style->texture_scale[1] = 1.0f;
+    style->texture_offset[0] = -0.5f;
+    style->texture_offset[1] = -0.5f;
+    style->texture_pixsize = 100.0f;
+    style->mix_factor = 0.5f;
+    style->stroke_style = GP_MATERIAL_STROKE_STYLE_SOLID;
+    style->fill_style = GP_MATERIAL_FILL_STYLE_SOLID;
+    style->flag = GP_MATERIAL_STROKE_SHOW | GP_MATERIAL_FILL_SHOW;
+    gpd->mat[index] = ma;
+  }
+  return true;
+}
+
+static void gp_materials_free(bGPdata *gpd)
+{
+  if (!gpd || !gpd->mat) {
+    return;
+  }
+  for (int i = 0; i < gpd->totcol; ++i) {
+    Material *ma = gpd->mat[i];
+    if (!ma) {
+      continue;
+    }
+    MEM_SAFE_FREE(ma->gp_style);
+    MEM_freeN(ma);
+  }
+  MEM_freeN(gpd->mat);
+  gpd->mat = nullptr;
+  gpd->totcol = 0;
 }
 
 struct Backend::Impl {
@@ -157,6 +236,7 @@ void Backend::shutdown()
       MEM_freeN(layer);
       layer = next_layer;
     }
+    gp_materials_free(impl_->gpd);
     MEM_freeN(impl_->gpd);
     impl_->gpd = nullptr;
   }
@@ -245,6 +325,10 @@ bool Backend::create_document() {
 #endif
   if (!impl_->gpd) {
     impl_->last_error = "BKE_gpencil_data_addnew() failed";
+    return false;
+  }
+  if (!gp_material_ensure_slot(impl_->gpd, 0)) {
+    impl_->last_error = "Legacy GP material slot allocation failed";
     return false;
   }
   impl_->document_created = true;
@@ -1341,6 +1425,7 @@ bool Backend::close_stroke(int index)
     }
 
     impl_->stroke = stroke;
+    BKE_gpencil_stroke_fill_triangulate(stroke);
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
     project_grease_gp_tag(impl_->gpd);
@@ -1459,6 +1544,10 @@ bool Backend::begin_stroke(const StrokeStyle &style) {
   if (impl_->stroke_open) {
     impl_->last_error = "a stroke is already open"; return false;
   }
+  if (!gp_material_ensure_slot(impl_->gpd, style.material_index)) {
+    impl_->last_error = "Legacy GP material index is unavailable";
+    return false;
+  }
   impl_->stroke_style = style;
   impl_->pending_points.clear();
   impl_->stroke = nullptr;
@@ -1512,6 +1601,9 @@ bool Backend::end_stroke() {
 
   impl_->stroke_open = false;
   impl_->pending_points.clear();
+  if (impl_->stroke->flag & GP_STROKE_CYCLIC) {
+    BKE_gpencil_stroke_fill_triangulate(impl_->stroke);
+  }
   impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
   project_grease_gp_tag(impl_->gpd);
   return true;
@@ -1587,7 +1679,7 @@ bool Backend::render_with_gpu_context()
   // the desktop GP shader stack depends on buffer-texture/material
   // infrastructure that is intentionally outside Project Grease scope.
   bool presented = cache_ready &&
-      project_grease_android_present_gp_frame(impl_->frame) != 0;
+      project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
   if (presented && impl_->stroke_open && !impl_->pending_points.empty()) {
     presented = project_grease_android_present_pending_stroke(
         impl_->pending_points.data(),
@@ -1693,6 +1785,131 @@ bool Backend::render() {
 
   return render_with_gpu_context();
 #endif
+}
+
+
+int Backend::material_count() const
+{
+  return impl_->gpd ? impl_->gpd->totcol : 0;
+}
+
+bool Backend::create_material()
+{
+  if (!impl_->gpd || !gp_material_ensure_slot(impl_->gpd, impl_->gpd->totcol)) {
+    impl_->last_error = "Legacy GP material creation failed";
+    return false;
+  }
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4])
+{
+  Material *ma = gp_material_at(impl_->gpd, index);
+  if (!ma || !ma->gp_style || !stroke_rgba || !fill_rgba) {
+    impl_->last_error = "invalid Legacy GP material";
+    return false;
+  }
+  std::memcpy(ma->gp_style->stroke_rgba, stroke_rgba, sizeof(float) * 4);
+  std::memcpy(ma->gp_style->fill_rgba, fill_rgba, sizeof(float) * 4);
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::set_material_visibility(int index, bool visible)
+{
+  Material *ma = gp_material_at(impl_->gpd, index);
+  if (!ma || !ma->gp_style) {
+    impl_->last_error = "invalid Legacy GP material";
+    return false;
+  }
+  if (visible) {
+    ma->gp_style->flag &= ~GP_MATERIAL_HIDE;
+  }
+  else {
+    ma->gp_style->flag |= GP_MATERIAL_HIDE;
+  }
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::set_material_fill_enabled(int index, bool enabled)
+{
+  Material *ma = gp_material_at(impl_->gpd, index);
+  if (!ma || !ma->gp_style) {
+    impl_->last_error = "invalid Legacy GP material";
+    return false;
+  }
+  if (enabled) {
+    ma->gp_style->flag |= GP_MATERIAL_FILL_SHOW;
+  }
+  else {
+    ma->gp_style->flag &= ~GP_MATERIAL_FILL_SHOW;
+  }
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::smooth_stroke(int index, float influence, int iterations)
+{
+  if (!impl_->frame || index < 0 || influence <= 0.0f || iterations <= 0) {
+    impl_->last_error = "invalid Legacy GP smooth parameters";
+    return false;
+  }
+  int current = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke; stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+    BKE_gpencil_stroke_smooth(stroke,
+                              std::min(influence, 1.0f),
+                              iterations,
+                              true,
+                              false,
+                              false,
+                              false,
+                              true,
+                              nullptr);
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
+bool Backend::set_onion_skin(bool enabled, int before, int after, float opacity)
+{
+  if (!impl_->layer) {
+    impl_->last_error = "layer is not selected";
+    return false;
+  }
+  impl_->layer->onion_flag = enabled ? (impl_->layer->onion_flag | GP_LAYER_ONIONSKIN) :
+                                       (impl_->layer->onion_flag & ~GP_LAYER_ONIONSKIN);
+  impl_->layer->gstep = static_cast<short>(std::max(0, std::min(before, 100)));
+  impl_->layer->gstep_next = static_cast<short>(std::max(0, std::min(after, 100)));
+  impl_->gpd->onion_factor = std::max(0.0f, std::min(opacity, 1.0f));
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::set_multiframe_editing(bool enabled)
+{
+  if (!impl_->gpd) {
+    impl_->last_error = "document is not created";
+    return false;
+  }
+  if (enabled) {
+    impl_->gpd->flag |= GP_DATA_STROKE_MULTIEDIT;
+  }
+  else {
+    impl_->gpd->flag &= ~GP_DATA_STROKE_MULTIEDIT;
+  }
+  project_grease_gp_tag(impl_->gpd);
+  return true;
 }
 
 const char *Backend::last_error() const { return impl_->last_error.c_str(); }

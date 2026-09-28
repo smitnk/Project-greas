@@ -1,27 +1,34 @@
-# Project Grease — Native Blender Grease Pencil Backend
+# Project Grease — Native Legacy Grease Pencil Backend
 
-This directory is the native drawing backend boundary for Project Grease.
+This directory is the native drawing/data boundary for Project Grease.
 
 ## Source baseline
 
-- Blender source: upstream Blender
-- Pinned release: v3.6.23
+- Blender v3.6.23
 - Pinned commit: e467db79ca8cc5c1c15e1a0e08bd52ca419f2eca
-- Legacy Grease Pencil architecture: bGPdata / bGPDlayer / bGPDframe / bGPDstroke
-- Rendering path investigated: GP draw cache -> GP draw engine -> Blender GPU/DRW -> EGL/GLES on Android
+- Legacy GP data: bGPdata / bGPDlayer / bGPDframe / bGPDstroke / bGPDspoint
 
-The previously investigated Blender Android port is **not imported** into this project. Its Android platform layer is only a historical reference for EGL/GLES/input behavior.
+## Current production boundary
 
-## Current rule
+Android UI/input
+-> Project Grease controllers
+-> Project Grease JNI/bridge
+-> real Legacy GP data
+-> focused GP cache/geometry
+-> Project Grease Android GLES presentation
 
-Do not replace Blender Grease Pencil with Android Canvas, GL4ES, or a custom stroke renderer.
+The Android application owns EGL/GLES and lifecycle. The native backend does not create Android GHOST or a Blender desktop application.
 
-The first backend milestone is a real Blender GP data object and a real GP renderer path. UI work is intentionally deferred.
+## Verified native capabilities
 
-## Import boundary
+The backend can create the real Legacy GP document/layer/frame structures, create strokes and points, capture pressure/strength/time, expose stroke editing primitives, and attach to the externally-owned Android EGL/GLES context. The latest Android shell CI also builds and verifies the APK.
 
-The source import script is responsible for obtaining the pinned upstream Blender tree. The Project Grease backend should consume only the minimum source required by the GP target; it must not turn Project Grease into the full Blender application.
+The current Android presentation remains deliberately focused and does not claim the full Blender DRW/GPU stack.
 
-See:
-- BLENDER_GP_SOURCE_MANIFEST.md
-- tools/import_blender_gp.sh
+## Rules
+
+Do not replace Legacy Grease Pencil with Android Canvas, OpenToonz, GL4ES, or a separate custom stroke engine.
+
+Do not import the full Blender application, desktop UI, Python, GHOST, scene system, or unrelated render systems merely to implement a Project Grease feature.
+
+Add Blender code only when dependency evidence proves it is required by the selected GP path.

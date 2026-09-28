@@ -159,7 +159,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSubdivideStroke(JNIEnv
   return project_grease_gp_subdivide_stroke(from_handle(handle), index, level) != 0;
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeCloseStroke(JNIEnv *, jobject, jlong handle, jint index)
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCloseStroke(JNIEnv *, jobject, jlong handle, jint index)
 {
   return project_grease_gp_close_stroke(from_handle(handle), index) != 0;
 }

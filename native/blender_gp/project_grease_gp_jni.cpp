@@ -143,6 +143,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectFrame(JNIEnv *, 
 {
   return project_grease_gp_select_frame(from_handle(handle), frame_number) != 0;
 }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectFrameOrHold(JNIEnv *, jobject, jlong handle, jint frame_number)
+{
+  return project_grease_gp_select_frame_or_hold(from_handle(handle), frame_number) != 0;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameCount(JNIEnv *, jobject, jlong handle)
 {

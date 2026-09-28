@@ -7,6 +7,7 @@
 #include <GLES3/gl3.h>
 
 #include <cstdint>
+#include <vector>
 
 namespace {
 
@@ -21,6 +22,8 @@ extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float);
 extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint);
 extern "C" int project_grease_gp_end_stroke(GPHandle);
 extern "C" void project_grease_android_present_reset(void);
+extern "C" int project_grease_android_present_pending_stroke(
+    const ProjectGreaseGPPoint *points, int count, float thickness);
 
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
@@ -32,6 +35,8 @@ struct Renderer {
   int gles_version = 0;
   GPHandle gp_handle = nullptr;
   bool gp_connected = false;
+  std::vector<ProjectGreaseGPPoint> preview_points;
+  float preview_thickness = 1.0f;
 };
 
 Renderer *from_handle(jlong value)
@@ -318,6 +323,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
     if (!project_grease_gp_render_external_context(renderer->gp_handle)) {
       return JNI_FALSE;
     }
+    if (!renderer->preview_points.empty()) {
+      if (!project_grease_android_present_pending_stroke(
+              renderer->preview_points.data(),
+              static_cast<int>(renderer->preview_points.size()),
+              renderer->preview_thickness)) {
+        return JNI_FALSE;
+      }
+    }
   }
   else {
     // Transport fallback until the Android-compatible Blender GP library is
@@ -361,6 +374,39 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPointEglRenderer(
   }
   ProjectGreaseGPPoint point{x, y, z, pressure, strength, time};
   return project_grease_gp_add_point(renderer->gp_handle, point) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPreviewStrokeEglRenderer(
+    JNIEnv *env, jobject, jlong handle, jfloatArray packed, jfloat thickness)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !packed) return JNI_FALSE;
+  const jsize length = env->GetArrayLength(packed);
+  if (length <= 0 || (length % 3) != 0) {
+    renderer->preview_points.clear();
+    return JNI_TRUE;
+  }
+  std::vector<jfloat> values(static_cast<size_t>(length));
+  env->GetFloatArrayRegion(packed, 0, length, values.data());
+  renderer->preview_points.clear();
+  renderer->preview_points.reserve(static_cast<size_t>(length / 3));
+  for (jsize n = 0; n < length; n += 3) {
+    renderer->preview_points.push_back(
+        ProjectGreaseGPPoint{values[n], values[n + 1], 0.0f, values[n + 2], 1.0f, 0.0f});
+  }
+  renderer->preview_thickness = thickness;
+  return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearPreviewStrokeEglRenderer(
+    JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  renderer->preview_points.clear();
+  return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

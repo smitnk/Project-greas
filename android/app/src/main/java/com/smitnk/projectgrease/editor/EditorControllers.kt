@@ -236,7 +236,7 @@ class EditorController {
                 val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
                 (0..48).map { i ->
                     val a=(2.0*Math.PI*i/48.0).toFloat()
-                    PendingPoint(cx+rx*kotlin.math.cos(a),cy+ry*kotlin.math.sin(a),last.pressure,last.time)
+                    PendingPoint(cx+rx*kotlin.math.cos(a.toDouble()).toFloat(),cy+ry*kotlin.math.sin(a.toDouble()).toFloat(),last.pressure,last.time)
                 }
             }
             GreaseTool.ARC -> {

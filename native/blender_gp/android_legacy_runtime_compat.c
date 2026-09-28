@@ -42,18 +42,3 @@ void CLG_logf(CLG_LogType *lg,
   (void)lg; (void)severity; (void)file_line; (void)fn; (void)format;
 }
 
-void BKE_defvert_array_copy(MDeformVert *dst, const MDeformVert *src, int totvert)
-{
-  if (!dst || !src || totvert <= 0) {
-    return;
-  }
-  for (int i = 0; i < totvert; ++i) {
-    dst[i].totweight = src[i].totweight;
-    dst[i].dw = NULL;
-    if (src[i].totweight > 0 && src[i].dw) {
-      dst[i].dw = MEM_mallocN(sizeof(MDeformWeight) * src[i].totweight,
-                              "Project Grease defvert copy");
-      memcpy(dst[i].dw, src[i].dw, sizeof(MDeformWeight) * src[i].totweight);
-    }
-  }
-}

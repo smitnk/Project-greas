@@ -216,6 +216,7 @@ class EditorController {
         if (ok) render()
         return ok
     }
+    fun strokeCount() = native.strokeCount()
     fun selectStroke(index:Int)=selection.selectStroke(index)
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}

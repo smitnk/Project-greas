@@ -68,11 +68,22 @@ jobs:
           for attempt in 1 2 3; do
             echo "Installing NDK 27.0.12077973 (attempt $attempt/3)"
             rm -rf "${ANDROID_SDK_ROOT}/ndk/27.0.12077973"
-            if yes | "$SDKMANAGER" --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.0.12077973"; then
-              test -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties"
+            set +e
+            yes | "$SDKMANAGER" --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.0.12077973"
+            sdkmanager_status=${PIPESTATUS[1]}
+            set -e
+
+            # With pipefail enabled, the helper `yes` normally exits with
+            # SIGPIPE after sdkmanager finishes consuming license input.
+            # The sdkmanager status is the result that matters.
+            if [ "$sdkmanager_status" -eq 0 ] &&
+               [ -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties" ]; then
               echo "NDK 27.0.12077973 installed and verified."
               exit 0
             fi
+
+            echo "NDK install attempt failed (sdkmanager exit $sdkmanager_status)."
+            rm -rf "${ANDROID_SDK_ROOT}/ndk/27.0.12077973"
             if [ "$attempt" -eq 3 ]; then
               echo "NDK installation failed after 3 attempts."
               exit 1

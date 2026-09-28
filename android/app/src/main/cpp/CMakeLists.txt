@@ -123,6 +123,7 @@ target_compile_definitions(projectgrease_jni PRIVATE
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
 
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
+set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c" PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion")
 
 target_compile_options(projectgrease_jni PRIVATE
     -fPIC

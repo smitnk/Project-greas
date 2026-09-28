@@ -109,6 +109,30 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLayerCount(JNIEnv *, j
   return project_grease_gp_layer_count(from_handle(handle));
 }
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerVisibility(JNIEnv *, jobject, jlong handle, jint index, jboolean visible)
+{ return project_grease_gp_set_layer_visibility(from_handle(handle), index, visible ? 1 : 0) != 0; }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerLocked(JNIEnv *, jobject, jlong handle, jint index, jboolean locked)
+{ return project_grease_gp_set_layer_locked(from_handle(handle), index, locked ? 1 : 0) != 0; }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMoveLayer(JNIEnv *, jobject, jlong handle, jint from_index, jint to_index)
+{ return project_grease_gp_move_layer(from_handle(handle), from_index, to_index) != 0; }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDuplicateLayer(JNIEnv *, jobject, jlong handle, jint index)
+{ return project_grease_gp_duplicate_layer(from_handle(handle), index) != 0; }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDeleteLayer(JNIEnv *, jobject, jlong handle, jint index)
+{ return project_grease_gp_delete_layer(from_handle(handle), index) != 0; }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenameLayer(JNIEnv *env, jobject, jlong handle, jint index, jstring name)
+{
+  const char *chars = env->GetStringUTFChars(name, nullptr);
+  const int result = project_grease_gp_rename_layer(from_handle(handle), index, chars);
+  env->ReleaseStringUTFChars(name, chars);
+  return result != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateFrame(JNIEnv *, jobject, jlong handle, jint frame_number)
 {
   return project_grease_gp_create_frame(from_handle(handle), frame_number) != 0;

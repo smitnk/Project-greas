@@ -137,6 +137,18 @@ int project_grease_gp_layer_count(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.layer_count();
 }
+int project_grease_gp_set_layer_visibility(ProjectGreaseGPHandle *handle, int index, int visible)
+{ return ensure_ready(handle) && handle->backend.set_layer_visibility(index, visible != 0) ? 1 : 0; }
+int project_grease_gp_set_layer_locked(ProjectGreaseGPHandle *handle, int index, int locked)
+{ return ensure_ready(handle) && handle->backend.set_layer_locked(index, locked != 0) ? 1 : 0; }
+int project_grease_gp_move_layer(ProjectGreaseGPHandle *handle, int from_index, int to_index)
+{ return ensure_ready(handle) && handle->backend.move_layer(from_index, to_index) ? 1 : 0; }
+int project_grease_gp_duplicate_layer(ProjectGreaseGPHandle *handle, int index)
+{ return ensure_ready(handle) && handle->backend.duplicate_layer(index) ? 1 : 0; }
+int project_grease_gp_delete_layer(ProjectGreaseGPHandle *handle, int index)
+{ return ensure_ready(handle) && handle->backend.delete_layer(index) ? 1 : 0; }
+int project_grease_gp_rename_layer(ProjectGreaseGPHandle *handle, int index, const char *name)
+{ return ensure_ready(handle) && handle->backend.rename_layer(index, name) ? 1 : 0; }
 int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number)
 {
   return ensure_ready(handle) && handle->backend.create_frame(frame_number) ? 1 : 0;

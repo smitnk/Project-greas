@@ -8,6 +8,12 @@ class NativeEditorBridge {
     fun attach(value: Long) { handle = value }
     fun detach() { handle = 0L }
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
+    fun setLayerVisibility(index: Int, visible: Boolean) = handle != 0L && GPNative.nativeSetLayerVisibility(handle, index, visible)
+    fun setLayerLocked(index: Int, locked: Boolean) = handle != 0L && GPNative.nativeSetLayerLocked(handle, index, locked)
+    fun moveLayer(from: Int, to: Int) = handle != 0L && GPNative.nativeMoveLayer(handle, from, to)
+    fun duplicateLayer(index: Int) = handle != 0L && GPNative.nativeDuplicateLayer(handle, index)
+    fun deleteLayer(index: Int) = handle != 0L && GPNative.nativeDeleteLayer(handle, index)
+    fun renameLayer(index: Int, name: String) = handle != 0L && GPNative.nativeRenameLayer(handle, index, name)
     fun createLayer(name: String) = handle != 0L && GPNative.nativeCreateLayer(handle, name)
     fun selectLayer(index: Int) = handle != 0L && GPNative.nativeSelectLayer(handle, index)
     fun frameCount() = if (handle != 0L) GPNative.nativeFrameCount(handle) else 0

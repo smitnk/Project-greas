@@ -35,6 +35,12 @@ class Backend {
   bool create_layer(const char* name);
   bool select_layer(int index);
   int layer_count() const;
+  bool set_layer_visibility(int index, bool visible);
+  bool set_layer_locked(int index, bool locked);
+  bool move_layer(int from_index, int to_index);
+  bool duplicate_layer(int index);
+  bool delete_layer(int index);
+  bool rename_layer(int index, const char* name);
 
   bool create_frame(int frame_number);
   bool select_frame(int frame_number);

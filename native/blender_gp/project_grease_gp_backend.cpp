@@ -329,6 +329,89 @@ int Backend::layer_count() const {
   return count;
 }
 
+static bGPDlayer *layer_at(bGPdata *gpd, int index)
+{
+  if (!gpd || index < 0) return nullptr;
+  int i = 0;
+  for (bGPDlayer *layer = static_cast<bGPDlayer *>(gpd->layers.first);
+       layer; layer = layer->next, ++i) {
+    if (i == index) return layer;
+  }
+  return nullptr;
+}
+
+bool Backend::set_layer_visibility(int index, bool visible)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer) { impl_->last_error = "layer index out of range"; return false; }
+  if (visible) layer->flag &= ~GP_LAYER_HIDE;
+  else layer->flag |= GP_LAYER_HIDE;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::set_layer_locked(int index, bool locked)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer) { impl_->last_error = "layer index out of range"; return false; }
+  if (locked) layer->flag |= GP_LAYER_LOCKED;
+  else layer->flag &= ~GP_LAYER_LOCKED;
+  return true;
+}
+
+bool Backend::move_layer(int from_index, int to_index)
+{
+  if (!impl_->gpd || from_index < 0 || to_index < 0 ||
+      from_index >= layer_count() || to_index >= layer_count()) {
+    impl_->last_error = "layer move index out of range"; return false;
+  }
+  if (!BLI_listbase_move_index(&impl_->gpd->layers, from_index, to_index)) return false;
+  impl_->layer = layer_at(impl_->gpd, to_index);
+  impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
+  impl_->frame_created = impl_->frame != nullptr;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::duplicate_layer(int index)
+{
+  bGPDlayer *source = layer_at(impl_->gpd, index);
+  if (!source) { impl_->last_error = "layer index out of range"; return false; }
+  bGPDlayer *copy = BKE_gpencil_layer_duplicate(source, true, true);
+  if (!copy) { impl_->last_error = "BKE_gpencil_layer_duplicate() failed"; return false; }
+  BLI_addtail(&impl_->gpd->layers, copy);
+  impl_->layer = copy;
+  impl_->frame = copy->actframe;
+  impl_->layer_created = true;
+  impl_->frame_created = impl_->frame != nullptr;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::delete_layer(int index)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer) { impl_->last_error = "layer index out of range"; return false; }
+  if (layer_count() <= 1) { impl_->last_error = "cannot delete final layer"; return false; }
+  BKE_gpencil_layer_delete(impl_->gpd, layer);
+  impl_->layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+  impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
+  impl_->layer_created = impl_->layer != nullptr;
+  impl_->frame_created = impl_->frame != nullptr;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::rename_layer(int index, const char* name)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer || !name || !name[0]) { impl_->last_error = "invalid layer rename"; return false; }
+  std::strncpy(layer->info, name, sizeof(layer->info) - 1);
+  layer->info[sizeof(layer->info) - 1] = '\0';
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
 bool Backend::select_frame(int frame_number) {
   if (!impl_->layer) {
     impl_->last_error = "layer is not selected";

@@ -48,6 +48,12 @@ object GPNative {
     external fun nativeCreateLayer(handle: Long, name: String): Boolean
     external fun nativeSelectLayer(handle: Long, index: Int): Boolean
     external fun nativeLayerCount(handle: Long): Int
+    external fun nativeSetLayerVisibility(handle: Long, index: Int, visible: Boolean): Boolean
+    external fun nativeSetLayerLocked(handle: Long, index: Int, locked: Boolean): Boolean
+    external fun nativeMoveLayer(handle: Long, fromIndex: Int, toIndex: Int): Boolean
+    external fun nativeDuplicateLayer(handle: Long, index: Int): Boolean
+    external fun nativeDeleteLayer(handle: Long, index: Int): Boolean
+    external fun nativeRenameLayer(handle: Long, index: Int, name: String): Boolean
     external fun nativeCreateFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeSelectFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeFrameCount(handle: Long): Int

@@ -890,7 +890,11 @@ bool Backend::erase_at(float x, float y, float radius)
       }
     }
 
-    if (removed) {
+    bool stroke_removed = false;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      if (stroke->points[i].flag & GP_SPOINT_TAG) { stroke_removed = true; break; }
+    }
+    if (stroke_removed) {
       BKE_gpencil_stroke_delete_tagged_points(
           impl_->gpd, impl_->frame, stroke, next, GP_SPOINT_TAG, false, false, 0);
     }

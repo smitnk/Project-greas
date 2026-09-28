@@ -51,6 +51,7 @@ int project_grease_gp_delete_layer(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_rename_layer(ProjectGreaseGPHandle *handle, int index, const char *name);
 int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_frame(ProjectGreaseGPHandle *handle, int frame_number);
+int project_grease_gp_select_frame_or_hold(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_duplicate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame);
 int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_number);

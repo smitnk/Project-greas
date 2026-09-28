@@ -92,6 +92,11 @@ int project_grease_gp_render_external_context(ProjectGreaseGPHandle *handle)
   return handle->backend.render_external_context() ? 1 : 0;
 }
 
+int project_grease_gp_render_fill_mask(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.render_fill_mask() ? 1 : 0;
+}
+
 int project_grease_gp_render(ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(handle)) {

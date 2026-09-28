@@ -25,9 +25,6 @@ extern "C" int project_grease_gp_fill_at_screen(
     GPHandle, const float *rgba, int width, int height, int seed_x, int seed_y,
     int fill_leak, int dilate_pixels, int material_index, float thickness);
 extern "C" int project_grease_gp_render_fill_mask(GPHandle);
-extern "C" int project_grease_gp_fill_at_screen(
-    GPHandle, const float *rgba, int width, int height, int seed_x, int seed_y,
-    int fill_leak, int dilate_pixels, int material_index, float thickness);
 extern "C" void project_grease_android_present_reset(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" int project_grease_android_present_pending_stroke(

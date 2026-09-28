@@ -80,6 +80,9 @@ class Backend {
   bool smooth_stroke(int index, float influence, int iterations);
   bool set_onion_skin(bool enabled, int before, int after, float opacity);
   bool set_multiframe_editing(bool enabled);
+  // Real Blender 3.6.23 Legacy GP fill geometry: triangulates a closed
+  // stroke using BKE_gpencil_stroke_fill_triangulate().
+  bool fill_stroke(int index);
 
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);

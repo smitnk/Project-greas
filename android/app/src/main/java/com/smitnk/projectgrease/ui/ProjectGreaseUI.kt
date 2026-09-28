@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
 package com.smitnk.projectgrease.ui
 
 import androidx.compose.foundation.background
@@ -152,8 +153,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @Composable private fun Properties(controller:EditorController,redraw:()->Unit){
     var thickness by remember{mutableFloatStateOf(controller.materials.thickness)};var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     Column(Modifier.width(210.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(10.dp)){
-        Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+thickness.toInt());Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},.5f..100f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity,{opacity=it;controller.materials.setOpacity(it);redraw()},0f..1f)
+        Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+thickness.toInt());Slider(thickness, {thickness=it;controller.materials.setThickness(it);redraw()}, valueRange = .5f..100f)
+        Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity, {opacity=it;controller.materials.setOpacity(it);redraw()}, valueRange = 0f..1f)
         CapabilityRow("Grid",FeatureId.GRID);CapabilityRow("Snapping",FeatureId.SNAPPING);CapabilityRow("Onion skin",FeatureId.ONION_SKIN)
     }
 }
@@ -196,8 +197,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @Composable private fun MaterialsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     var thickness by remember{mutableFloatStateOf(controller.materials.thickness)};var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Brush & Materials",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp));Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},.5f..100f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity,{opacity=it;controller.materials.setOpacity(it);redraw()},0f..1f)
+        Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp));Slider(thickness, {thickness=it;controller.materials.setThickness(it);redraw()}, valueRange = .5f..100f)
+        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.materials.setOpacity(it);redraw()}, valueRange = 0f..1f)
         CapabilityRow("Fill color",FeatureId.FILL_COLOR);CapabilityRow("Create material",FeatureId.CREATE_MATERIAL);Spacer(Modifier.height(20.dp))}
 }
 
@@ -205,9 +206,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @Composable private fun OnionSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     var opacity by remember{mutableFloatStateOf(controller.onion.opacity)}
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Onion Skin",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall);CapabilityRow("Enable",FeatureId.ONION_SKIN)
-        Text("Previous "+controller.onion.beforeFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.beforeFrames.toFloat(),{controller.onion.setBefore(it.toInt());redraw()},0f..12f)
-        Text("Next "+controller.onion.afterFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.afterFrames.toFloat(),{controller.onion.setAfter(it.toInt());redraw()},0f..12f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity,{opacity=it;controller.onion.setOpacity(it);redraw()},0f..1f);Spacer(Modifier.height(20.dp))}
+        Text("Previous "+controller.onion.beforeFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.beforeFrames.toFloat(), {controller.onion.setBefore(it.toInt());redraw()}, valueRange = 0f..12f)
+        Text("Next "+controller.onion.afterFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.afterFrames.toFloat(), {controller.onion.setAfter(it.toInt());redraw()}, valueRange = 0f..12f)
+        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.onion.setOpacity(it);redraw()}, valueRange = 0f..1f);Spacer(Modifier.height(20.dp))}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -27,8 +27,6 @@ object GPNative {
     external fun nativeEndStrokeEglRenderer(handle: Long): Boolean
     external fun nativeSetPreviewStrokeEglRenderer(handle: Long, points: FloatArray, thickness: Float): Boolean
     external fun nativeClearPreviewStrokeEglRenderer(handle: Long): Boolean
-    external fun nativeSetPreviewStrokeEglRenderer(handle: Long, points: FloatArray, thickness: Float): Boolean
-    external fun nativeClearPreviewStrokeEglRenderer(handle: Long): Boolean
 
     external fun nativeCreate(): Long
     external fun nativeDestroy(handle: Long)

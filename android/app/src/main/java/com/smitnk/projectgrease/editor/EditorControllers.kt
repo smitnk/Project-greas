@@ -29,6 +29,8 @@ class NativeEditorBridge {
     fun selectStroke(index: Int) = handle != 0L && GPNative.nativeSelectStroke(handle, index)
     fun hitTestStroke(x: Float, y: Float, radius: Float) =
         if (handle != 0L) GPNative.nativeHitTestStroke(handle, x, y, radius) else -1
+    fun eraseAt(x: Float, y: Float, radius: Float) =
+        handle != 0L && GPNative.nativeEraseAt(handle, x, y, radius)
     fun deleteStroke(index: Int) = handle != 0L && GPNative.nativeDeleteStroke(handle, index)
     fun deleteLastStroke() = handle != 0L && GPNative.nativeDeleteLastStroke(handle)
     fun duplicateStroke(index: Int) = handle != 0L && GPNative.nativeDuplicateStroke(handle, index)
@@ -387,7 +389,6 @@ class EditorController {
                 history.markEdit(); document.markDirty(); render()
             }
         } else if (shapeTool == GreaseTool.POLYLINE) {
-            // Polyline input remains a sequence of real GP points; the native bridge owns creation.
             val points = pendingShapePoints
             if (points.size >= 2) {
                 val packed = FloatArray(points.size * 2)
@@ -471,7 +472,7 @@ class EditorController {
         return native.setMaterialFillEnabled(materials.activeMaterial,enabled)
     }
     fun pushMaterialColor(){
-        if(rendererHandle==0L) return
+        if(rendererHandle==0L)return
         val c=colorToFloats(materials.colorArgb)
         GPNative.nativeSetStrokeColorEglRenderer(rendererHandle,c[0],c[1],c[2],c[3])
     }
@@ -535,9 +536,7 @@ class EditorController {
         return index >= 0 && selection.selectStroke(index)
     }
     fun eraseAt(x:Float, y:Float, radius:Float = 24f):Boolean {
-        val index = native.hitTestStroke(x, y, radius)
-        if (index < 0) return false
-        val ok = native.deleteStroke(index)
+        val ok = native.eraseAt(x, y, radius)
         if (ok) {
             selection.clear()
             history.markEdit()

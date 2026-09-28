@@ -16,6 +16,8 @@ class NativeEditorBridge {
     fun strokeCount() = if (handle != 0L) GPNative.nativeStrokeCount(handle) else 0
     fun pointCount() = if (handle != 0L) GPNative.nativePointCount(handle) else 0
     fun selectStroke(index: Int) = handle != 0L && GPNative.nativeSelectStroke(handle, index)
+    fun hitTestStroke(x: Float, y: Float, radius: Float) =
+        if (handle != 0L) GPNative.nativeHitTestStroke(handle, x, y, radius) else -1
     fun deleteStroke(index: Int) = handle != 0L && GPNative.nativeDeleteStroke(handle, index)
     fun deleteLastStroke() = handle != 0L && GPNative.nativeDeleteLastStroke(handle)
     fun duplicateStroke(index: Int) = handle != 0L && GPNative.nativeDuplicateStroke(handle, index)
@@ -223,6 +225,22 @@ class EditorController {
     }
     fun strokeCount() = native.strokeCount()
     fun selectStroke(index:Int)=selection.selectStroke(index)
+    fun hitTestAndSelectStroke(x:Float, y:Float, radius:Float = 24f):Boolean {
+        val index = native.hitTestStroke(x, y, radius)
+        return index >= 0 && selection.selectStroke(index)
+    }
+    fun eraseAt(x:Float, y:Float, radius:Float = 24f):Boolean {
+        val index = native.hitTestStroke(x, y, radius)
+        if (index < 0) return false
+        val ok = native.deleteStroke(index)
+        if (ok) {
+            selection.clear()
+            history.markEdit()
+            document.markDirty()
+            render()
+        }
+        return ok
+    }
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun duplicateSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.duplicateStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}

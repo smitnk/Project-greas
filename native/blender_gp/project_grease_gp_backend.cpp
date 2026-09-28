@@ -11,6 +11,9 @@
 
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
+#ifdef __ANDROID__
+#include "project_grease_android_edit_ops.h"
+#endif
 #ifndef __ANDROID__
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
@@ -633,7 +636,11 @@ bool Backend::flip_stroke(int index)
       return false;
     }
 
+    #ifdef __ANDROID__
+    project_grease_android_stroke_flip(stroke);
+    #else
     BKE_gpencil_stroke_flip(stroke);
+    #endif
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
@@ -668,7 +675,14 @@ bool Backend::subdivide_stroke(int index, int level)
       return false;
     }
 
+    #ifdef __ANDROID__
+    if (!project_grease_android_stroke_subdivide(stroke, level)) {
+      impl_->last_error = "Android GP stroke subdivision failed";
+      return false;
+    }
+    #else
     BKE_gpencil_stroke_subdivide(impl_->gpd, stroke, level, 0);
+    #endif
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
 #ifndef __ANDROID__
@@ -714,7 +728,11 @@ bool Backend::close_stroke(int index)
                  flags_before_close,
                  close_symbol);
 
+    #ifdef __ANDROID__
+    const bool close_result = project_grease_android_stroke_close(stroke);
+    #else
     const bool close_result = BKE_gpencil_stroke_close(stroke);
+    #endif
 
     std::fprintf(stderr,
                  "[CLOSE] after call result=%d stroke=%p points=%d flags=0x%x cyclic=%d\\n",
@@ -766,8 +784,13 @@ bool Backend::trim_stroke_points(int index,
       return false;
     }
 
+    #ifdef __ANDROID__
+    if (!project_grease_android_stroke_trim_points(
+            stroke, index_from, index_to, keep_single_point)) {
+    #else
     if (!BKE_gpencil_stroke_trim_points(
             stroke, index_from, index_to, keep_single_point)) {
+    #endif
       impl_->last_error = "BKE_gpencil_stroke_trim_points() failed";
       return false;
     }
@@ -807,9 +830,14 @@ bool Backend::split_stroke(int index, int before_index)
     }
 
     bGPDstroke *remaining = nullptr;
-    if (!BKE_gpencil_stroke_split(
-            impl_->gpd, impl_->frame, stroke, before_index, &remaining) ||
-        !remaining) {
+    #ifdef __ANDROID__
+    const bool split_result = project_grease_android_stroke_split(
+        impl_->frame, stroke, before_index, &remaining);
+    #else
+    const bool split_result = BKE_gpencil_stroke_split(
+        impl_->gpd, impl_->frame, stroke, before_index, &remaining);
+    #endif
+    if (!split_result || !remaining) {
       impl_->last_error = "BKE_gpencil_stroke_split() failed";
       return false;
     }

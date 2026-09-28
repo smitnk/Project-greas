@@ -190,8 +190,25 @@ int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int
 {
   return ensure_ready(handle) && handle->backend.split_stroke(index, before_index) ? 1 : 0;
 }
-int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out)
+int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
+                                  int stroke_index,
+                                  int point_index,
+                                  ProjectGreaseGPPoint *out)
 {
-  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) return 0;
-  return handle->backend.get_point(stroke_index, point_index, out) ? 1 : 0;
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) {
+    return 0;
+  }
+
+  project_grease::gp::StrokePoint native_point{};
+  if (!handle->backend.get_point(stroke_index, point_index, &native_point)) {
+    return 0;
+  }
+
+  out->x = native_point.x;
+  out->y = native_point.y;
+  out->z = native_point.z;
+  out->pressure = native_point.pressure;
+  out->strength = native_point.strength;
+  out->time = native_point.time;
+  return 1;
 }

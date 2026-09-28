@@ -343,7 +343,13 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){Text("More / Edit",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         listOf(FeatureId.MOVE,FeatureId.ROTATE,FeatureId.SCALE,FeatureId.MIRROR,FeatureId.DUPLICATE,FeatureId.DELETE,FeatureId.SPLIT,FeatureId.SUBDIVIDE,FeatureId.TRIM,FeatureId.CLOSE).forEach{CapabilityRow(it.name.replace('_',' '),it)}
-        ListItem(headlineContent={Text("Delete selected stroke")},modifier=Modifier.clickable{controller.deleteSelectedStroke();redraw();onDismiss()});ListItem(headlineContent={Text("Duplicate selected stroke")},modifier=Modifier.clickable{controller.duplicateSelectedStroke();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Move selected stroke")},modifier=Modifier.clickable{controller.translateSelectedStroke(20f,20f);redraw()})
+        ListItem(headlineContent={Text("Rotate selected stroke 90°")},modifier=Modifier.clickable{controller.rotateSelectedStroke((Math.PI/2.0).toFloat());redraw()})
+        ListItem(headlineContent={Text("Scale selected stroke 110%")},modifier=Modifier.clickable{controller.scaleSelectedStroke(1.1f,1.1f);redraw()})
+        ListItem(headlineContent={Text("Mirror selected stroke X")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(true,false);redraw()})
+        ListItem(headlineContent={Text("Mirror selected stroke Y")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(false,true);redraw()})
+        ListItem(headlineContent={Text("Delete selected stroke")},modifier=Modifier.clickable{controller.deleteSelectedStroke();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Duplicate selected stroke")},modifier=Modifier.clickable{controller.duplicateSelectedStroke();redraw();onDismiss()})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});Spacer(Modifier.height(20.dp))}
 }
 

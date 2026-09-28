@@ -7,7 +7,7 @@ struct bGPDstroke;
 extern "C" {
 #endif
 
-void project_grease_android_stroke_flip(bGPDstroke *stroke);
+bool project_grease_android_stroke_flip(bGPDstroke *stroke);
 bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int level);
 bool project_grease_android_stroke_close(bGPDstroke *stroke);
 bool project_grease_android_stroke_trim_points(

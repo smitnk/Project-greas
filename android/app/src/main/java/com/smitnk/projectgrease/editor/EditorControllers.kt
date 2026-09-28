@@ -50,16 +50,26 @@ class AnimationController(private val native: NativeEditorBridge) {
     var loop = true; private set
     var frameCount = 1; private set
     fun initialize() { if (native.handle != 0L) { native.selectFrame(1); frameCount = native.frameCount().coerceAtLeast(1) } }
-    fun setFrame(value: Int) {
-        val target=value.coerceAtLeast(1)
-        if (native.handle == 0L || native.selectFrame(target)) currentFrame=target
+    fun setFrame(value: Int): Boolean {
+        val target = value.coerceAtLeast(1)
+        if (native.handle == 0L) return false
+        if (!native.selectFrame(target)) return false
+        currentFrame = target
+        frameCount = native.frameCount().coerceAtLeast(1)
+        return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
-        val target=frameNumber.coerceAtLeast(1)
-        if (native.handle==0L) return false
-        if (native.selectFrame(target)) { currentFrame=target; return true }
+        val target = frameNumber.coerceAtLeast(1)
+        if (native.handle == 0L) return false
+        if (native.selectFrame(target)) {
+            currentFrame = target
+            frameCount = native.frameCount().coerceAtLeast(1)
+            return true
+        }
         if (!native.createFrame(target)) return false
-        currentFrame=target; frameCount=native.frameCount().coerceAtLeast(frameCount); return true
+        currentFrame = target
+        frameCount = native.frameCount().coerceAtLeast(1)
+        return true
     }
     fun setFps(value:Int){fps=value.coerceIn(1,120)}
     fun togglePlayback(){playing=!playing}
@@ -130,7 +140,9 @@ class ToolController {
 }
 
 class EditorController {
-    private val native=NativeEditorBridge()
+    private val native = NativeEditorBridge()
+    var selectedLayer = 0
+        private set
     val tools=ToolController()
     val document=DocumentController()
     val history=HistoryController()
@@ -142,7 +154,12 @@ class EditorController {
     val sculpt=SculptController()
     val onion=OnionSkinController()
     private var rendererHandle=0L
-    fun attachRenderer(handle:Long){rendererHandle=handle;native.attach(handle);animation.initialize()}
+    fun attachRenderer(handle:Long) {
+        rendererHandle = handle
+        native.attach(handle)
+        animation.initialize()
+        selectedLayer = 0
+    }
     fun detachRenderer(){rendererHandle=0L;native.detach()}
     fun selectTool(tool:GreaseTool)=tools.select(tool)
     fun beginStroke():Boolean {
@@ -150,15 +167,55 @@ class EditorController {
         return GPNative.nativeBeginStrokeEglRenderer(rendererHandle,materials.activeMaterial,materials.thickness)
     }
     fun addStrokePoint(x:Float,y:Float,pressure:Float,timeSeconds:Float){
-        if(rendererHandle!=0L)GPNative.nativeAddPointEglRenderer(rendererHandle,x,y,0f,pressure.coerceAtLeast(0.01f),1f,timeSeconds)
+        if(rendererHandle!=0L) {
+            GPNative.nativeAddPointEglRenderer(
+                rendererHandle,
+                x,
+                y,
+                0f,
+                pressure.coerceAtLeast(0.01f),
+                materials.opacity,
+                timeSeconds
+            )
+        }
     }
     fun endStroke(){if(rendererHandle!=0L&&GPNative.nativeEndStrokeEglRenderer(rendererHandle)){history.markEdit();document.markDirty()}}
     fun cancelStroke(){if(rendererHandle!=0L)GPNative.nativeEndStrokeEglRenderer(rendererHandle)}
     fun render(){if(rendererHandle!=0L)GPNative.nativeRenderEgl(rendererHandle)}
-    fun createLayer(name:String):Boolean{val ok=native.createLayer(name);if(ok){history.markEdit();document.markDirty()};return ok}
-    fun selectLayer(index:Int)=native.selectLayer(index)
-    fun createFrame(frame:Int)=animation.ensureFrame(frame)
-    fun selectFrame(frame:Int)=animation.ensureFrame(frame)
+    fun layerCount() = native.layerCount()
+    fun createLayer(name:String):Boolean {
+        val ok = native.createLayer(name)
+        if (ok) {
+            selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)
+            history.markEdit()
+            document.markDirty()
+            render()
+        }
+        return ok
+    }
+    fun selectLayer(index:Int):Boolean {
+        val ok = native.selectLayer(index)
+        if (ok) {
+            selectedLayer = index
+            animation.initialize()
+            render()
+        }
+        return ok
+    }
+    fun createFrame(frame:Int):Boolean {
+        val ok = animation.ensureFrame(frame)
+        if (ok) {
+            history.markEdit()
+            document.markDirty()
+            render()
+        }
+        return ok
+    }
+    fun selectFrame(frame:Int):Boolean {
+        val ok = animation.ensureFrame(frame)
+        if (ok) render()
+        return ok
+    }
     fun selectStroke(index:Int)=selection.selectStroke(index)
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}

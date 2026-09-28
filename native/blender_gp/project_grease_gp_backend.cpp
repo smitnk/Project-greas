@@ -2043,8 +2043,15 @@ bool Backend::fill_at_screen(const float* rgba,
   // Use Blender's real Legacy GP geometry update/smoothing path on the new
   // stroke rather than a Project Grease replacement.
   if (impl_->stroke) {
-    BKE_gpencil_stroke_smooth_point(
-        impl_->stroke, 0, 1.0f, 2, false, true, impl_->stroke);
+    BKE_gpencil_stroke_smooth(impl_->stroke,
+                              1.0f,
+                              2,
+                              true,
+                              false,
+                              false,
+                              false,
+                              true,
+                              nullptr);
     BKE_gpencil_stroke_geometry_update(impl_->gpd, impl_->stroke);
   }
 

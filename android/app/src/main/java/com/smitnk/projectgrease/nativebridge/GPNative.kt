@@ -81,8 +81,6 @@ object GPNative {
     external fun nativeClearSelection(handle: Long)
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
-}
-
     external fun nativeMaterialCount(handle: Long): Int
     external fun nativeCreateMaterial(handle: Long): Boolean
     external fun nativeSetMaterialColors(handle: Long, index: Int, stroke: FloatArray, fill: FloatArray): Boolean

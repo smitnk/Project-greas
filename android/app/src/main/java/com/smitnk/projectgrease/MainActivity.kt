@@ -5,38 +5,37 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.smitnk.projectgrease.editor.EditorController
 import com.smitnk.projectgrease.nativebridge.GPNative
 import com.smitnk.projectgrease.nativebridge.ProjectGreaseEglViewport
-import com.smitnk.projectgrease.ui.ProjectGreaseEditor
 import com.smitnk.projectgrease.ui.GreaseUiState
+import com.smitnk.projectgrease.ui.ProjectGreaseEditor
+import com.smitnk.projectgrease.ui.ProjectGreaseTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Runtime smoke check: verifies System.loadLibrary() and the exported
-        // JNI nativePing() entry point when the app actually starts.
         val jniReady = runCatching { GPNative.nativePing() }.getOrDefault(false)
-        Log.i("ProjectGrease", "Android JNI smoke connection: $jniReady")
+        Log.i("ProjectGrease", "Android JNI smoke connection: " + jniReady)
 
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier) {
+            ProjectGreaseTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val controller = remember { EditorController() }
                     var state by remember { mutableStateOf(GreaseUiState()) }
 
                     ProjectGreaseEditor(
+                        controller = controller,
                         state = state,
                         onStateChange = { state = it },
                         blenderViewport = {
                             ProjectGreaseEglViewport(
                                 modifier = Modifier.fillMaxSize(),
-                                drawingEnabled = state.viewportMode == com.smitnk.projectgrease.ui.ViewportMode.DRAW_2D && state.activeTool == com.smitnk.projectgrease.ui.GreaseTool.DRAW,
-                                strokeWidth = state.strokeWidth,
-                                materialIndex = state.activeMaterial
+                                controller = controller
                             )
                         }
                     )

@@ -49,6 +49,7 @@ object GPNative {
     external fun nativeSelectFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeFrameCount(handle: Long): Int
     external fun nativeSelectStroke(handle: Long, index: Int): Boolean
+    external fun nativeHitTestStroke(handle: Long, x: Float, y: Float, radius: Float): Int
     external fun nativeDeleteStroke(handle: Long, index: Int): Boolean
     external fun nativeDeleteLastStroke(handle: Long): Boolean
     external fun nativeDuplicateStroke(handle: Long, index: Int): Boolean

@@ -239,10 +239,86 @@ private fun GreasePropertiesPanel(
             }
             HorizontalDivider(Modifier.padding(vertical = 10.dp))
             Text("Layers", style = MaterialTheme.typography.titleSmall)
-            LayerRow("Character", true, false)
-            LayerRow("Ink", true, false)
-            LayerRow("Color", true, true)
-            TextButton({}) { Text("+ Add layer") }
+            val layerCount = controller.layerCount().coerceAtLeast(1)
+            for (layerIndex in 0 until layerCount) {
+                LayerRow(
+                    name = "Layer " + (layerIndex + 1),
+                    selected = layerIndex == controller.selectedLayer,
+                    onClick = {
+                        controller.selectLayer(layerIndex)
+                        onStateChange(state)
+                    }
+                )
+            }
+            TextButton(
+                onClick = {
+                    val next = controller.layerCount() + 1
+                    if (controller.createLayer("Layer " + next)) {
+                        onStateChange(state)
+                    }
+                }
+            ) { Text("+ Add layer") }
+            HorizontalDivider(Modifier.padding(vertical = 10.dp))
+            Text("Strokes", style = MaterialTheme.typography.titleSmall)
+            val strokeCount = controller.strokeCount()
+            if (strokeCount == 0) {
+                Text("No strokes", style = MaterialTheme.typography.bodySmall)
+            } else {
+                for (strokeIndex in 0 until strokeCount) {
+                    val selected = strokeIndex == controller.selection.selectedStroke
+                    ListItem(
+                        headlineContent = { Text("Stroke " + (strokeIndex + 1)) },
+                        supportingContent = {
+                            Text(
+                                if (selected) "Selected" else "Tap to select"
+                            )
+                        },
+                        modifier = Modifier.clickable {
+                            controller.selectStroke(strokeIndex)
+                            onStateChange(state)
+                        }
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        enabled = controller.selection.hasSelection,
+                        onClick = {
+                            controller.deleteSelectedStroke()
+                            onStateChange(state)
+                        }
+                    ) { Text("Delete") }
+                    TextButton(
+                        enabled = controller.selection.hasSelection,
+                        onClick = {
+                            controller.duplicateSelectedStroke()
+                            onStateChange(state)
+                        }
+                    ) { Text("Duplicate") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        enabled = controller.selection.hasSelection,
+                        onClick = {
+                            controller.flipSelectedStroke()
+                            onStateChange(state)
+                        }
+                    ) { Text("Flip") }
+                    TextButton(
+                        enabled = controller.selection.hasSelection,
+                        onClick = {
+                            controller.subdivideSelectedStroke()
+                            onStateChange(state)
+                        }
+                    ) { Text("Subdivide") }
+                    TextButton(
+                        enabled = controller.selection.hasSelection,
+                        onClick = {
+                            controller.closeSelectedStroke()
+                            onStateChange(state)
+                        }
+                    ) { Text("Close") }
+                }
+            }
             HorizontalDivider(Modifier.padding(vertical = 10.dp))
             Text("Capability status", style = MaterialTheme.typography.titleSmall)
             CapabilityRow(FeatureId.STABILIZATION)
@@ -255,12 +331,27 @@ private fun GreasePropertiesPanel(
 }
 
 @Composable
-private fun LayerRow(name: String, visible: Boolean, locked: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (visible) Icons.Default.Visibility else Icons.Default.VisibilityOff, "Visibility")
-        Spacer(Modifier.width(6.dp))
-        Text(name, Modifier.weight(1f))
-        Icon(if (locked) Icons.Default.Lock else Icons.Default.LockOpen, "Lock")
+private fun LayerRow(
+    name: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        tonalElevation = if (selected) 3.dp else 0.dp,
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 7.dp, horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Layers, "Layer")
+            Spacer(Modifier.width(6.dp))
+            Text(name, Modifier.weight(1f))
+            if (selected) {
+                Icon(Icons.Default.Check, "Selected")
+            }
+        }
     }
 }
 
@@ -308,15 +399,23 @@ private fun ProjectGreaseTimeline(
                     onClick = { controller.animation.toggleLoop(); onStateChange(state) },
                     label = { Text("Loop") }
                 )
-                TextButton({}) { Text("+ Frame") }
+                TextButton(
+                    onClick = {
+                        val nextFrame = controller.animation.currentFrame + 1
+                        if (controller.createFrame(nextFrame)) {
+                            onStateChange(state.copy(frame = controller.animation.currentFrame))
+                        }
+                    }
+                ) { Text("+ Frame") }
             }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp)) {
                 for (frame in 1..60) {
                     val selected = frame == controller.animation.currentFrame
                     Surface(
                         modifier = Modifier.width(58.dp).height(58.dp).padding(2.dp).clickable {
-                            controller.animation.setFrame(frame)
-                            onStateChange(state.copy(frame = frame))
+                            if (controller.selectFrame(frame)) {
+                                onStateChange(state.copy(frame = controller.animation.currentFrame))
+                            }
                         },
                         shape = RoundedCornerShape(8.dp),
                         tonalElevation = if (selected) 4.dp else 0.dp

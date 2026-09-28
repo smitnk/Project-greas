@@ -1,4 +1,5 @@
 #include "project_grease_gp_backend.h"
+#include "project_grease_legacy_fill.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1948,6 +1949,76 @@ bool Backend::fill_stroke(int index)
   }
 
   project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+
+bool Backend::fill_at_screen(const float* rgba,
+                             int width,
+                             int height,
+                             int seed_x,
+                             int seed_y,
+                             int fill_leak,
+                             int dilate_pixels,
+                             const StrokeStyle& style)
+{
+  if (!impl_->frame || !impl_->frame_created || !rgba ||
+      width < 3 || height < 3 ||
+      seed_x < 0 || seed_x >= width ||
+      seed_y < 0 || seed_y >= height) {
+    impl_->last_error = "invalid Legacy GP fill raster or seed";
+    return false;
+  }
+
+  legacy_gp_fill::Image image(width, height);
+  const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+  std::copy(rgba, rgba + count, image.rgba().begin());
+
+  // Blender's fill operator works on a stroke-only render mask. The Android
+  // presentation layer supplies that mask; this call performs Blender 3.6.23's
+  // boundary-fill + Moore-neighborhood outline extraction.
+  legacy_gp_fill::normalize_to_legacy_mask(image, 0.5f);
+
+  // GLES readback has its origin at the lower-left; Android touch coordinates
+  // are top-left based.
+  const int raster_seed_y = height - 1 - seed_y;
+  legacy_gp_fill::Result result =
+      legacy_gp_fill::run(image, seed_x, raster_seed_y, fill_leak, dilate_pixels);
+
+  if (!result.valid || result.outline.size() < 3) {
+    impl_->last_error = result.border_contact
+        ? "Legacy GP fill reached the render boundary"
+        : "Legacy GP fill found no closed area";
+    return false;
+  }
+
+  std::vector<StrokePoint> points;
+  points.reserve(result.outline.size());
+  for (const legacy_gp_fill::Point& p : result.outline) {
+    points.push_back({p.x,
+                      static_cast<float>(height) - p.y,
+                      0.0f,
+                      1.0f,
+                      1.0f,
+                      0.0f});
+  }
+
+  if (!create_polyline(points.data(),
+                       static_cast<int>(points.size()),
+                       style,
+                       true)) {
+    return false;
+  }
+
+  // Use Blender's real Legacy GP geometry update/smoothing path on the new
+  // stroke rather than a Project Grease replacement.
+  if (impl_->stroke) {
+    BKE_gpencil_stroke_smooth_point(
+        impl_->stroke, 0, 1.0f, 2, false, true, impl_->stroke);
+    BKE_gpencil_stroke_geometry_update(impl_->gpd, impl_->stroke);
+  }
+
   impl_->last_error.clear();
   return true;
 }

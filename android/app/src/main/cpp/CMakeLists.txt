@@ -60,6 +60,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     project_grease_android_jni_smoke.cpp
     project_grease_android_egl_renderer.cpp
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_backend.cpp"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_android_edit_ops.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_bridge.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_jni.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
@@ -76,6 +77,7 @@ set(PROJECT_GREASE_CXX_SOURCES
 )
 
 set(PROJECT_GREASE_C_SOURCES
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_legacy_runtime_compat.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_legacy.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_guarded_impl.c"

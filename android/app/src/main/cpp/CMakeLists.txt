@@ -75,13 +75,13 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_format.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_capabilities.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/listbase.cc"
-    # Exact Blender 3.6.23 curve-fit dependency used by Legacy GP curve support.
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
+    # math_matrix.c pulls the optional Eigen C API into the Android target.
+    # The selected Legacy GP/cache closure does not require it.
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"

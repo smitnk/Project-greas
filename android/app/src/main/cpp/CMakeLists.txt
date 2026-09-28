@@ -93,10 +93,10 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_curve_legacy_extract.cc"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_math_geom_legacy_extract.cc"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_string_legacy_extract.c"
-    "${GENERATED_DNA_DIR}/dna.c"
 )
 
 set(PROJECT_GREASE_C_SOURCES
+    "${GENERATED_DNA_DIR}/dna.c"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_legacy_runtime_compat.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_legacy.c"

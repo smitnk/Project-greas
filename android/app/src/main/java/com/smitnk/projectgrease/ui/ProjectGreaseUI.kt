@@ -326,10 +326,11 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun OnionSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     var opacity by remember{mutableFloatStateOf(controller.onion.opacity)}
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Onion Skin",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall);CapabilityRow("Enable",FeatureId.ONION_SKIN)
-        Text("Previous "+controller.onion.beforeFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.beforeFrames.toFloat(), {controller.onion.setBefore(it.toInt());redraw()}, valueRange = 0f..12f)
-        Text("Next "+controller.onion.afterFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.afterFrames.toFloat(), {controller.onion.setAfter(it.toInt());redraw()}, valueRange = 0f..12f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.onion.setOpacity(it);redraw()}, valueRange = 0f..1f);Spacer(Modifier.height(20.dp))}
+    ModalBottomSheet(onDismissRequest=onDismiss){Text("Onion Skin",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){Text("Enable",Modifier.weight(1f));Switch(checked=controller.onion.enabled,onCheckedChange={controller.setOnionSkin(it,controller.onion.beforeFrames,controller.onion.afterFrames,controller.onion.opacity);redraw()})}
+        Text("Previous "+controller.onion.beforeFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.beforeFrames.toFloat(), {val v=it.toInt();controller.setOnionSkin(controller.onion.enabled,v,controller.onion.afterFrames,controller.onion.opacity);redraw()}, valueRange = 0f..12f)
+        Text("Next "+controller.onion.afterFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.afterFrames.toFloat(), {val v=it.toInt();controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,v,controller.onion.opacity);redraw()}, valueRange = 0f..12f)
+        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,controller.onion.afterFrames,it);redraw()}, valueRange = 0f..1f);Spacer(Modifier.height(20.dp))}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

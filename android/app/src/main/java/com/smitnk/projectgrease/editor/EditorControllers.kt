@@ -240,16 +240,22 @@ class EditorController {
                 }
             }
             GreaseTool.ARC -> {
-                val cx=(first.x+last.x)*0.5f; val cy=(first.y+last.y)*0.5f
-                val rx=maxOf(1f,kotlin.math.abs(last.x-first.x)*0.5f)
-                val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
+                val cx=(first.x+last.x)*0.5
+                val cy=(first.y+last.y)*0.5
+                val rx=maxOf(1.0,kotlin.math.abs(last.x-first.x)*0.5)
+                val ry=maxOf(1.0,kotlin.math.abs(last.y-first.y)*0.5)
                 val start=kotlin.math.atan2((first.y-cy)/ry,(first.x-cx)/rx)
                 val end=kotlin.math.atan2((last.y-cy)/ry,(last.x-cx)/rx)
                 var sweep=end-start
                 if (sweep <= 0.0) sweep += 2.0*Math.PI
                 (0..32).map { i ->
-                    val a=(start+sweep*i/32.0).toFloat()
-                    PendingPoint(cx+rx*kotlin.math.cos(a),cy+ry*kotlin.math.sin(a),last.pressure,last.time)
+                    val a=start+sweep*i/32.0
+                    PendingPoint(
+                        (cx+rx*kotlin.math.cos(a)).toFloat(),
+                        (cy+ry*kotlin.math.sin(a)).toFloat(),
+                        last.pressure,
+                        last.time
+                    )
                 }
             }
             else -> emptyList()

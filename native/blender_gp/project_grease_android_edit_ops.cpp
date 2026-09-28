@@ -8,7 +8,8 @@
 
 static bGPDspoint interpolate_point(const bGPDspoint &a, const bGPDspoint &b)
 {
-  bGPDspoint p = a;
+  bGPDspoint p{};
+  std::memcpy(&p, &a, sizeof(p));
   p.x = (a.x + b.x) * 0.5f;
   p.y = (a.y + b.y) * 0.5f;
   p.z = (a.z + b.z) * 0.5f;
@@ -16,6 +17,8 @@ static bGPDspoint interpolate_point(const bGPDspoint &a, const bGPDspoint &b)
   p.strength = (a.strength + b.strength) * 0.5f;
   p.time = (a.time + b.time) * 0.5f;
   p.flag = a.flag & b.flag;
+  p.runtime.pt_orig = nullptr;
+  p.runtime.idx_orig = -1;
   return p;
 }
 
@@ -25,9 +28,10 @@ extern "C" void project_grease_android_stroke_flip(bGPDstroke *stroke)
     return;
   }
   for (int i = 0, j = stroke->totpoints - 1; i < j; ++i, --j) {
-    bGPDspoint tmp = stroke->points[i];
-    stroke->points[i] = stroke->points[j];
-    stroke->points[j] = tmp;
+    bGPDspoint tmp{};
+    std::memcpy(&tmp, &stroke->points[i], sizeof(tmp));
+    std::memcpy(&stroke->points[i], &stroke->points[j], sizeof(tmp));
+    std::memcpy(&stroke->points[j], &tmp, sizeof(tmp));
   }
 }
 
@@ -47,10 +51,12 @@ extern "C" bool project_grease_android_stroke_subdivide(bGPDstroke *stroke, int 
 
     int dst = 0;
     for (int i = 0; i < old_count; ++i) {
-      new_points[dst++] = stroke->points[i];
+      std::memcpy(&new_points[dst++], &stroke->points[i], sizeof(bGPDspoint));
       if (i < old_count - 1 || cyclic) {
         const int next = (i + 1) % old_count;
-        new_points[dst++] = interpolate_point(stroke->points[i], stroke->points[next]);
+        const bGPDspoint midpoint =
+            interpolate_point(stroke->points[i], stroke->points[next]);
+        std::memcpy(&new_points[dst++], &midpoint, sizeof(midpoint));
       }
     }
 
@@ -112,9 +118,15 @@ extern "C" bool project_grease_android_stroke_split(
     return false;
   }
 
-  *tail = *stroke;
+  std::memcpy(tail, stroke, sizeof(bGPDstroke));
   tail->next = nullptr;
   tail->prev = nullptr;
+  tail->points = nullptr;
+  tail->triangles = nullptr;
+  tail->dvert = nullptr;
+  tail->editcurve = nullptr;
+  tail->runtime.gps_orig = nullptr;
+  tail->_pad5 = nullptr;
   tail->totpoints = second_count;
   tail->points = static_cast<bGPDspoint *>(
       MEM_mallocN(sizeof(bGPDspoint) * second_count, "Project Grease split points"));

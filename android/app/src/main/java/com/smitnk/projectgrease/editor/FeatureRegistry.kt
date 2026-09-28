@@ -30,54 +30,11 @@ data class FeatureCapability(
 )
 
 object FeatureRegistry {
+    // Only functionality with a complete native Legacy GP path is marked available.
+    // Everything else stays IN_PROGRESS or NOT_IMPLEMENTED until its real engine path
+    // and Android presentation path are validated.
     private val available = setOf(
-        FeatureId.FREEHAND,
-        FeatureId.PRESSURE,
-        FeatureId.ERASER,
-        FeatureId.FILL,
-        FeatureId.SELECT,
-        FeatureId.LASSO,
-        FeatureId.LINE,
-        FeatureId.RECTANGLE,
-        FeatureId.CIRCLE,
-        FeatureId.ARC,
-        FeatureId.POLYLINE,
-        FeatureId.MOVE,
-        FeatureId.ROTATE,
-        FeatureId.SCALE,
-        FeatureId.MIRROR,
-        FeatureId.DUPLICATE,
-        FeatureId.DELETE,
-        FeatureId.SPLIT,
-        FeatureId.SUBDIVIDE,
-        FeatureId.TRIM,
-        FeatureId.CLOSE,
-        FeatureId.LAYERS,
-        FeatureId.LAYER_VISIBILITY,
-        FeatureId.LAYER_LOCKING,
-        FeatureId.LAYER_ORDERING,
-        FeatureId.LAYER_DUPLICATION,
-        FeatureId.LAYER_DELETION,
-        FeatureId.LAYER_RENAME,
-        FeatureId.FRAMES,
-        FeatureId.ADD_FRAME,
-        FeatureId.FRAME_NAVIGATION,
-        FeatureId.FRAME_HOLDS,
-        FeatureId.PLAYBACK,
-        FeatureId.PAUSE,
-        FeatureId.LOOP,
-        FeatureId.FPS,
-        FeatureId.THICKNESS,
-        FeatureId.OPACITY,
-        FeatureId.MATERIALS,
-        FeatureId.CREATE_MATERIAL,
-        FeatureId.SELECT_MATERIAL,
-        FeatureId.STROKE_COLOR,
-        FeatureId.FILL_ENABLE,
-        FeatureId.SMOOTHING,
-        FeatureId.ONION_SKIN,
-        FeatureId.ONION_RANGE,
-        FeatureId.ONION_OPACITY
+        FeatureId.FREEHAND
     )
     private val inProgress = setOf(
         FeatureId.FILL,

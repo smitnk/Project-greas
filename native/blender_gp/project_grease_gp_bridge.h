@@ -88,6 +88,16 @@ int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, fl
 int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity);
 int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled);
 int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
+                                     const float *rgba,
+                                     int width,
+                                     int height,
+                                     int seed_x,
+                                     int seed_y,
+                                     int fill_leak,
+                                     int dilate_pixels,
+                                     int material_index,
+                                     float thickness);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 
 const char *project_grease_gp_last_error(

@@ -258,23 +258,9 @@ bool Backend::create_layer(const char *name) {
     impl_->last_error = "document is not created"; return false;
   }
   const char *layer_name = (name && name[0]) ? name : "GP_Layer";
-#ifdef __ANDROID__
-  impl_->layer = static_cast<bGPDlayer *>(MEM_callocN(sizeof(bGPDlayer), "Project Grease Android GP layer"));
-  if (impl_->layer) {
-    std::strncpy(impl_->layer->info, layer_name, sizeof(impl_->layer->info) - 1);
-    impl_->layer->info[sizeof(impl_->layer->info) - 1] = '\0';
-    impl_->layer->opacity = 1.0f;
-    impl_->layer->vertex_paint_opacity = 1.0f;
-    impl_->layer->onion_flag |= GP_LAYER_ONIONSKIN;
-    impl_->layer->scale[0] = 1.0f;
-    impl_->layer->scale[1] = 1.0f;
-    impl_->layer->scale[2] = 1.0f;
-    BLI_addtail(&impl_->gpd->layers, impl_->layer);
-    impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
-  }
-#else
+  /* Use Blender 3.6.23's actual Legacy GP layer constructor on Android too.
+   * Android is only the host; it does not recreate layer semantics. */
   impl_->layer = BKE_gpencil_layer_addnew(impl_->gpd, layer_name, true, false);
-#endif
   if (!impl_->layer) {
     impl_->last_error = "BKE_gpencil_layer_addnew() failed"; return false;
   }
@@ -1035,29 +1021,9 @@ bool Backend::end_stroke() {
   const short thickness = static_cast<short>(
       impl_->stroke_style.thickness < 1.0f ? 1.0f : impl_->stroke_style.thickness);
 
-#ifdef __ANDROID__
-  impl_->stroke = static_cast<bGPDstroke *>(
-      MEM_callocN(sizeof(bGPDstroke), "Project Grease Android GP stroke"));
-  if (impl_->stroke) {
-    impl_->stroke->thickness = thickness;
-    impl_->stroke->fill_opacity_fac = 1.0f;
-    impl_->stroke->hardeness = 1.0f;
-    impl_->stroke->aspect_ratio[0] = 1.0f;
-    impl_->stroke->aspect_ratio[1] = 1.0f;
-    impl_->stroke->uv_scale = 1.0f;
-    impl_->stroke->flag = GP_STROKE_3DSPACE;
-    impl_->stroke->totpoints = point_count;
-    impl_->stroke->points = static_cast<bGPDspoint *>(
-        MEM_callocN(sizeof(bGPDspoint) * point_count, "Project Grease Android GP points"));
-    impl_->stroke->mat_nr = material_index;
-    if (impl_->stroke->points) {
-      BLI_addtail(&impl_->frame->strokes, impl_->stroke);
-    }
-  }
-#else
+  /* Exact Blender Legacy GP stroke allocation path. */
   impl_->stroke = BKE_gpencil_stroke_add(
       impl_->frame, material_index, point_count, thickness, false);
-#endif
   if (!impl_->stroke) {
     impl_->last_error = "BKE_gpencil_stroke_add() failed";
     impl_->stroke_open = false;

@@ -164,17 +164,17 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCloseStroke(JNIEnv *, 
   return project_grease_gp_close_stroke(from_handle(handle), index) != 0;
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeTrimStroke(JNIEnv *, jobject, jlong handle, jint index, jint from, jint to, jboolean keep_single_point)
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTrimStroke(JNIEnv *, jobject, jlong handle, jint index, jint from, jint to, jboolean keep_single_point)
 {
   return project_grease_gp_trim_stroke(from_handle(handle), index, from, to, keep_single_point ? 1 : 0) != 0;
 }
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeSplitStroke(JNIEnv *, jobject, jlong handle, jint index, jint before_index)
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSplitStroke(JNIEnv *, jobject, jlong handle, jint index, jint before_index)
 {
   return project_grease_gp_split_stroke(from_handle(handle), index, before_index) != 0;
 }
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeGetPoint(JNIEnv *env, jobject, jlong handle, jint stroke_index, jint point_index)
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(JNIEnv *env, jobject, jlong handle, jint stroke_index, jint point_index)
 {
   ProjectGreaseGPPoint point{};
   if (!project_grease_gp_get_point(from_handle(handle), stroke_index, point_index, &point)) return nullptr;

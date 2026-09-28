@@ -64,6 +64,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_presentation.cpp"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_fill.cpp"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_primitive.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"

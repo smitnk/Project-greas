@@ -83,6 +83,15 @@ class Backend {
   // Real Blender 3.6.23 Legacy GP fill geometry: triangulates a closed
   // stroke using BKE_gpencil_stroke_fill_triangulate().
   bool fill_stroke(int index);
+  // Real Blender 3.6.23 fill boundary extraction fed by Android's rendered mask.
+  bool fill_at_screen(const float* rgba,
+                      int width,
+                      int height,
+                      int seed_x,
+                      int seed_y,
+                      int fill_leak,
+                      int dilate_pixels,
+                      const StrokeStyle& style);
 
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);

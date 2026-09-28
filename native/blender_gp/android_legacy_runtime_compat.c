@@ -3,8 +3,12 @@
 
 #include "DNA_ID.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_userdef_types.h"
 #include "MEM_guardedalloc.h"
 #include "CLG_log.h"
+
+/* Minimal Android runtime instance consumed by the pinned Legacy GP API. */
+UserDef U;
 
 void DEG_id_tag_update(struct ID *id, unsigned int flags)
 {

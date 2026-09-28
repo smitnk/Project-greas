@@ -211,7 +211,7 @@ class ToolController {
         val feature=when(tool){
             GreaseTool.DRAW->FeatureId.FREEHAND; GreaseTool.ERASE->FeatureId.ERASER
             GreaseTool.SELECT->FeatureId.SELECT; GreaseTool.LASSO->FeatureId.LASSO
-            GreaseTool.FILL->FeatureId.ADVANCED_FILL; GreaseTool.EYEDROPPER->FeatureId.STROKE_COLOR
+            GreaseTool.FILL->FeatureId.FILL; GreaseTool.EYEDROPPER->FeatureId.STROKE_COLOR
             GreaseTool.LINE->FeatureId.LINE; GreaseTool.RECTANGLE->FeatureId.RECTANGLE
             GreaseTool.CIRCLE->FeatureId.CIRCLE; GreaseTool.ARC->FeatureId.ARC
             GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.PAN->FeatureId.PAN
@@ -429,6 +429,14 @@ class EditorController {
             render()
         }
         return count > 0
+    }
+
+    fun fillSelectedStroke():Boolean {
+        val i=selection.selectedStroke
+        if(i<0) return false
+        val ok=native.fillStroke(i)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
     }
 
     fun setOnionSkin(enabled:Boolean,before:Int=2,after:Int=2,opacity:Float=0.35f):Boolean {

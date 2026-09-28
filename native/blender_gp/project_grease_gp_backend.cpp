@@ -1,5 +1,6 @@
 #include "project_grease_gp_backend.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -427,6 +428,69 @@ bool Backend::select_stroke(int index) {
 
   impl_->last_error = "stroke index out of range";
   return false;
+}
+
+int Backend::hit_test_stroke(float x, float y, float radius) const
+{
+  if (!impl_->frame || radius < 0.0f) {
+    return -1;
+  }
+
+  const float radius_sq = radius * radius;
+  float best_distance_sq = radius_sq;
+  int best_index = -1;
+  int current = 0;
+
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (!stroke->points || stroke->totpoints <= 0) {
+      continue;
+    }
+
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      const float px = stroke->points[i].x;
+      const float py = stroke->points[i].y;
+      const float dx = x - px;
+      const float dy = y - py;
+      const float point_distance_sq = dx * dx + dy * dy;
+      if (point_distance_sq <= best_distance_sq) {
+        best_distance_sq = point_distance_sq;
+        best_index = current;
+      }
+    }
+
+    if (stroke->totpoints >= 2) {
+      const bool cyclic = (stroke->flag & GP_STROKE_CYCLIC) != 0;
+      const int segment_count = cyclic ? stroke->totpoints : stroke->totpoints - 1;
+      for (int i = 0; i < segment_count; ++i) {
+        const bGPDspoint &a = stroke->points[i];
+        const bGPDspoint &b = stroke->points[(i + 1) % stroke->totpoints];
+        const float vx = b.x - a.x;
+        const float vy = b.y - a.y;
+        const float len_sq = vx * vx + vy * vy;
+
+        float t = 0.0f;
+        if (len_sq > 1.0e-12f) {
+          t = ((x - a.x) * vx + (y - a.y) * vy) / len_sq;
+          t = std::fmax(0.0f, std::fmin(1.0f, t));
+        }
+
+        const float cx = a.x + t * vx;
+        const float cy = a.y + t * vy;
+        const float dx = x - cx;
+        const float dy = y - cy;
+        const float distance_sq = dx * dx + dy * dy;
+        if (distance_sq <= best_distance_sq) {
+          best_distance_sq = distance_sq;
+          best_index = current;
+        }
+      }
+    }
+  }
+
+  return best_index;
 }
 
 bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) const {

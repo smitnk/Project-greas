@@ -64,6 +64,7 @@ fun ProjectGreaseEditor(
         if (state.showTimeline) ProjectGreaseTimeline(controller, state, onStateChange)
     }
 }
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProjectGreaseTopBar(
     controller: EditorController,

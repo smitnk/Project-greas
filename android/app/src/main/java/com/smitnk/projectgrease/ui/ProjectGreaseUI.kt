@@ -54,10 +54,12 @@ fun ProjectGreaseEditor(
         }
         if (!state.canvasFocus && state.showTimeline) ProjectGreaseTimeline(controller, state, onStateChange)
         if (state.canvasFocus) {
-            IconButton(
-                onClick = { onStateChange(state.copy(canvasFocus = false)) },
-                modifier = Modifier.padding(8.dp)
-            ) { Icon(Icons.Default.CloseFullscreen, "Exit canvas focus") }
+            Box(Modifier.fillMaxSize()) {
+                IconButton(
+                    onClick = { onStateChange(state.copy(canvasFocus = false)) },
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                ) { Icon(Icons.Default.CloseFullscreen, "Exit canvas focus") }
+            }
         }
     }
 }
@@ -171,7 +173,7 @@ private fun GreaseToolRail(controller: EditorController) {
                 val capability = FeatureRegistry.capability(entry.feature)
                 NavigationRailItem(
                     selected = controller.tools.activeTool == entry.tool,
-                    enabled = capability.state != FeatureState.NOT_IMPLEMENTED,
+                    enabled = capability.state == FeatureState.AVAILABLE,
                     onClick = { controller.selectTool(entry.tool) },
                     icon = { Icon(entry.icon, entry.label) },
                     label = { Text(entry.label, maxLines = 1) }

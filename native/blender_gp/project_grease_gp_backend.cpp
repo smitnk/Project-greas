@@ -1,6 +1,10 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_legacy_fill.h"
 
+#ifdef __ANDROID__
+extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata*, int);
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -1738,6 +1742,31 @@ bool Backend::render_external_context()
   }
 
   return render_with_gpu_context();
+}
+
+
+bool Backend::render_fill_mask()
+{
+#ifdef __ANDROID__
+  if (!impl_->gpd || !impl_->frame_created || !impl_->frame) {
+    impl_->last_error = "no native GP frame is ready for fill mask";
+    return false;
+  }
+  if (!impl_->gpu_initialized || !impl_->gpu_external_context) {
+    impl_->last_error = "external Android GPU context is not ready for fill mask";
+    return false;
+  }
+  if (!project_grease_android_present_gp_fill_mask(
+          impl_->gpd, impl_->frame->framenum)) {
+    impl_->last_error = "Legacy GP fill mask presentation failed";
+    return false;
+  }
+  impl_->last_error.clear();
+  return true;
+#else
+  impl_->last_error = "Legacy GP fill mask is an Android integration operation";
+  return false;
+#endif
 }
 
 bool Backend::render() {

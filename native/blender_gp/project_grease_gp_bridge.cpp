@@ -330,6 +330,30 @@ int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index)
   return ensure_ready(handle) && handle->backend.fill_stroke(index) ? 1 : 0;
 }
 
+
+int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
+                                     const float *rgba,
+                                     int width,
+                                     int height,
+                                     int seed_x,
+                                     int seed_y,
+                                     int fill_leak,
+                                     int dilate_pixels,
+                                     int material_index,
+                                     float thickness)
+{
+  if (!ensure_ready(handle)) return 0;
+  return handle->backend.fill_at_screen(
+      rgba,
+      width,
+      height,
+      seed_x,
+      seed_y,
+      fill_leak,
+      dilate_pixels,
+      {material_index, thickness}) ? 1 : 0;
+}
+
 int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 1;

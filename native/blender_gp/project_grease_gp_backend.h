@@ -39,6 +39,8 @@ class Backend {
   bool create_frame(int frame_number);
   bool select_frame(int frame_number);
   int frame_count() const;
+  bool duplicate_frame(int source_frame, int target_frame);
+  bool delete_frame(int frame_number);
   int stroke_count() const;
   int point_count() const;
   bool select_stroke(int index);

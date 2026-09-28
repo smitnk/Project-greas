@@ -1,5 +1,8 @@
 #include "project_grease_android_edit_ops.h"
 
+#include <cstdint>
+
+#include "DNA_gpencil_legacy_types.h"
 #include "BKE_gpencil_geom_legacy.h"
 
 extern "C" bool project_grease_android_stroke_flip(bGPDstroke *stroke)

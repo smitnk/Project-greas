@@ -22,6 +22,7 @@ extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float);
 extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint);
 extern "C" int project_grease_gp_end_stroke(GPHandle);
 extern "C" void project_grease_android_present_reset(void);
+extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" int project_grease_android_present_pending_stroke(
     const ProjectGreaseGPPoint *points, int count, float thickness);
 
@@ -396,6 +397,22 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPreviewStrokeEglRen
         ProjectGreaseGPPoint{values[n], values[n + 1], 0.0f, values[n + 2], 1.0f, 0.0f});
   }
   renderer->preview_thickness = thickness;
+  return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetStrokeColorEglRenderer(
+    JNIEnv *, jobject, jlong handle, jfloat r, jfloat g, jfloat b, jfloat a)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  if (renderer->display == EGL_NO_DISPLAY || renderer->surface == EGL_NO_SURFACE) {
+    return JNI_FALSE;
+  }
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    return JNI_FALSE;
+  }
+  project_grease_android_present_set_color(r, g, b, a);
   return JNI_TRUE;
 }
 

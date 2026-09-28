@@ -1,6 +1,8 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.smitnk.projectgrease.ui
 
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,10 +18,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.smitnk.projectgrease.editor.EditorController
 import com.smitnk.projectgrease.editor.FeatureId
 import com.smitnk.projectgrease.editor.FeatureRegistry
@@ -62,15 +66,28 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var name by remember{mutableStateOf("Project Grease")}
     var preset by remember{mutableStateOf(presets[1])}
     var state by remember{mutableStateOf(GreaseUiState())}
-    when(screen){
-        Screen.HOME->Home({screen=Screen.NEW},{screen=Screen.EDITOR},{screen=Screen.SETTINGS})
-        Screen.NEW->NewProject(name,{name=it},preset,{preset=it},controller,{screen=Screen.HOME}){
-            controller.document.projectName=name.ifBlank{"Project Grease"}
-            controller.animation.setFps(preset.fps)
-            state=state.copy(projectName=controller.document.projectName);screen=Screen.EDITOR
+    var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
+
+    BackHandler(enabled=screen!=Screen.HOME){
+        screen=when(screen){
+            Screen.NEW,Screen.SETTINGS,Screen.EDITOR->Screen.HOME
+            Screen.HOME->Screen.HOME
         }
-        Screen.EDITOR->Editor(controller,state,{state=it},{screen=Screen.HOME},{screen=Screen.SETTINGS},blenderViewport)
-        Screen.SETTINGS->Settings{screen=Screen.HOME}
+    }
+
+    ProjectGreaseTheme(mode=themeMode){
+        when(screen){
+            Screen.HOME->Home({screen=Screen.NEW},{screen=Screen.EDITOR},{screen=Screen.SETTINGS})
+            Screen.NEW->NewProject(name,{name=it},preset,{preset=it},controller,{screen=Screen.HOME}){
+                controller.document.projectName=name.ifBlank{"Project Grease"}
+                controller.animation.setFps(preset.fps)
+                controller.createFrame(1)
+                state=state.copy(projectName=controller.document.projectName)
+                screen=Screen.EDITOR
+            }
+            Screen.EDITOR->Editor(controller,state,{state=it},{screen=Screen.HOME},{screen=Screen.SETTINGS},blenderViewport)
+            Screen.SETTINGS->Settings(themeMode,{themeMode=it},{screen=Screen.HOME})
+        }
     }
 }
 
@@ -109,26 +126,58 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 @Composable private fun Editor(controller:EditorController,state:GreaseUiState,onState:(GreaseUiState)->Unit,onExit:()->Unit,onSettings:()->Unit,viewport:@Composable BoxScope.()->Unit){
-    var sheet by remember{mutableStateOf(Sheet.NONE)};var refresh by remember{mutableIntStateOf(0)};fun redraw(){refresh++}
-    @Suppress("UNUSED_VARIABLE") val unused=refresh
-    if(state.canvasFocus){Box(Modifier.fillMaxSize().background(CanvasBg)){viewport();IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){Icon(Icons.Default.CloseFullscreen,"Exit canvas")}};return}
+    var sheet by remember{mutableStateOf(Sheet.NONE)}
+    var refresh by remember{mutableIntStateOf(0)}
+    var fpsDialog by remember{mutableStateOf(false)}
+    var savedTick by remember{mutableIntStateOf(0)}
+    val context=LocalContext.current
+    fun redraw(){refresh++}
+    @Suppress("UNUSED_VARIABLE") val unused=refresh+savedTick
+
+    BackHandler(enabled=sheet!=Sheet.NONE || state.canvasFocus){
+        if(sheet!=Sheet.NONE) sheet=Sheet.NONE
+        else onState(state.copy(canvasFocus=false))
+    }
+
+    if(state.canvasFocus){
+        Box(Modifier.fillMaxSize().background(CanvasBg)){
+            viewport()
+            IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
+                Icon(Icons.Default.CloseFullscreen,"Exit canvas")
+            }
+        }
+        return
+    }
+
     Column(Modifier.fillMaxSize()){
-        Surface(tonalElevation=3.dp){Row(Modifier.fillMaxWidth().height(56.dp),verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")};Text(controller.document.projectName,maxLines=1);Spacer(Modifier.weight(1f))
-            IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
-            IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
-            IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
-            IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
-        }}
+        Surface(tonalElevation=3.dp){
+            Row(Modifier.fillMaxWidth().height(56.dp),verticalAlignment=Alignment.CenterVertically){
+                IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
+                Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=120.dp))
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
+                IconButton(onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
+                IconButton(onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
+                IconButton(onClick={
+                    controller.document.markSaved();savedTick++
+                    Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show()
+                }){Icon(Icons.Default.Save,"Save")}
+                IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
+                IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
+                IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
+                IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
+            }
+        }
         Row(Modifier.fillMaxWidth().weight(1f)){
             if(state.showTools)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){viewport()}
             if(state.showProperties)Properties(controller,::redraw)
         }
-        if(state.showTimeline)Timeline(controller,::redraw)
+        if(state.showTimeline)Timeline(controller,::redraw,{fpsDialog=true})
     }
+    if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
     when(sheet){
-        Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit)
+        Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context)
         Sheet.TOOLS->ToolsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.LAYERS->LayersSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MATERIALS->MaterialsSheet(controller,{sheet=Sheet.NONE},::redraw)
@@ -159,24 +208,71 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
-@Composable private fun Timeline(controller:EditorController,redraw:()->Unit){
-    Surface(tonalElevation=4.dp){Column(Modifier.fillMaxWidth().heightIn(min=120.dp,max=190.dp)){
-        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
-            IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
-            IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
-            Text("Frame "+controller.animation.currentFrame);Spacer(Modifier.width(8.dp));Text(controller.animation.fps.toString()+" FPS");Spacer(Modifier.weight(1f))
-            FilterChip(controller.animation.loop,{controller.animation.toggleLoop();redraw()},label={Text("Loop")})
-            TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
+@Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
+    Surface(tonalElevation=4.dp){
+        Column(Modifier.fillMaxWidth().heightIn(min=120.dp,max=190.dp)){
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
+                IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
+                IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
+                Text("Frame "+controller.animation.currentFrame)
+                TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
+                Spacer(Modifier.weight(1f))
+                FilterChip(selected=controller.animation.loop,onClick={controller.animation.toggleLoop();redraw()},label={Text("Loop")})
+                TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
+                (1..controller.animation.frameCount.coerceAtLeast(1)).forEach{frame->
+                    Surface(
+                        Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{controller.selectFrame(frame);redraw()},
+                        shape=RoundedCornerShape(8.dp),
+                        tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp
+                    ){Box(contentAlignment=Alignment.Center){Text(frame.toString())}}
+                }
+                Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
+                    controller.createFrame(controller.animation.frameCount+1);redraw()
+                },shape=RoundedCornerShape(8.dp)){
+                    Box(contentAlignment=Alignment.Center){Text("+")}
+                }
+            }
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){(1..60).forEach{frame->Surface(Modifier.width(54.dp).height(54.dp).padding(2.dp).clickable{controller.selectFrame(frame);redraw()},shape=RoundedCornerShape(8.dp),tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp){Box(contentAlignment=Alignment.Center){Text(frame.toString())}}}}
-    }}
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit){
+@Composable private fun FpsDialog(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
+    var fps by remember{mutableIntStateOf(controller.animation.fps)}
+    AlertDialog(
+        onDismissRequest=onDismiss,
+        title={Text("Frame rate")},
+        text={
+            Column{
+                Text("$fps FPS",style=MaterialTheme.typography.titleLarge)
+                Slider(
+                    value=fps.toFloat(),
+                    onValueChange={fps=it.toInt()},
+                    valueRange=1f..120f,
+                    steps=119
+                )
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                    listOf(12,24,30,60).forEach{v->
+                        FilterChip(selected=fps==v,onClick={fps=v},label={Text("$v")})
+                    }
+                }
+            }
+        },
+        confirmButton={TextButton(onClick={controller.animation.setFps(fps);redraw();onDismiss()}){Text("Apply")}},
+        dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}}
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit,controller:EditorController,context:android.content.Context){
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Project",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        CapabilityRow("Open project",FeatureId.OPEN_PROJECT);CapabilityRow("Save",FeatureId.SAVE);CapabilityRow("Save as",FeatureId.SAVE_AS);CapabilityRow("Export",FeatureId.EXPORT)
+        ListItem(headlineContent={Text("Open project")},modifier=Modifier.clickable{onDismiss()})
+        ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{controller.document.markSaved();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
+        ListItem(headlineContent={Text("Save as")},modifier=Modifier.clickable{controller.document.markSaved();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
+        ListItem(headlineContent={Text("Export")},modifier=Modifier.clickable{Toast.makeText(context,"Export pipeline is not connected yet",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});ListItem(headlineContent={Text("Close editor")},modifier=Modifier.clickable{onDismiss();onExit()});Spacer(Modifier.height(20.dp))}
 }
 
@@ -195,11 +291,35 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun MaterialsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
-    var thickness by remember{mutableFloatStateOf(controller.materials.thickness)};var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Brush & Materials",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp));Slider(thickness, {thickness=it;controller.materials.setThickness(it);redraw()}, valueRange = .5f..100f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.materials.setOpacity(it);redraw()}, valueRange = 0f..1f)
-        CapabilityRow("Fill color",FeatureId.FILL_COLOR);CapabilityRow("Create material",FeatureId.CREATE_MATERIAL);Spacer(Modifier.height(20.dp))}
+    var thickness by remember{mutableFloatStateOf(controller.materials.thickness)}
+    var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
+    val palette=listOf(
+        Color.Black,Color.White,Color(0xFFE53935),Color(0xFFFF9800),
+        Color(0xFFFFEB3B),Color(0xFF4CAF50),Color(0xFF00BCD4),
+        Color(0xFF2196F3),Color(0xFF3F51B5),Color(0xFF9C27B0),
+        Color(0xFFE91E63),Color(0xFF795548)
+    )
+    ModalBottomSheet(onDismissRequest=onDismiss){
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){
+            Text("Brush & Materials",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+            Text("Stroke color",Modifier.padding(horizontal=20.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                palette.forEach{color->
+                    Box(
+                        Modifier.size(38.dp).background(color,CircleShape)
+                            .border(2.dp,if(controller.materials.colorArgb==color.toArgb())Accent else Color.Transparent,CircleShape)
+                            .clickable{controller.materials.setColor(color.toArgb());controller.pushMaterialColor();redraw()}
+                    )
+                }
+            }
+            Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp))
+            Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},valueRange=.5f..100f)
+            Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
+            Slider(opacity,{opacity=it;controller.materials.setOpacity(it);redraw()},valueRange=0f..1f)
+            Text("Active material: "+controller.materials.activeMaterial,Modifier.padding(horizontal=20.dp))
+            TextButton(onClick={controller.materials.select(controller.materials.activeMaterial+1);redraw()},Modifier.padding(horizontal=20.dp)){Text("Next brush/material")}
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -231,16 +351,40 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     ListItem(headlineContent={Text(label)},supportingContent={Text(c.state.name.replace('_',' '))},trailingContent={AssistChip(onClick={},label={Text(c.state.name.replace('_',' '),fontSize=9.sp)})})
 }
 
-@Composable private fun Settings(onBack:()->Unit){
-    var theme by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
+@Composable private fun Settings(
+    current:ProjectGreaseThemeMode,
+    onTheme:(ProjectGreaseThemeMode)->Unit,
+    onBack:()->Unit
+){
     Scaffold(topBar={TopAppBar(title={Text("Settings")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}})}){pad->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())){
             Text("Theme",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
-            ProjectGreaseThemeMode.entries.forEach{mode->ListItem(headlineContent={Text(mode.name.lowercase().replaceFirstChar{it.uppercase()})},trailingContent={if(theme==mode)Icon(Icons.Default.Check,null,tint=Accent)},modifier=Modifier.clickable{theme=mode})}
+            ProjectGreaseThemeMode.entries.forEach{mode->
+                ListItem(
+                    headlineContent={Text(mode.name.lowercase().replaceFirstChar{it.uppercase()})},
+                    trailingContent={if(current==mode)Icon(Icons.Default.Check,null,tint=Accent)},
+                    modifier=Modifier.clickable{onTheme(mode)}
+                )
+            }
             Text("Drawing",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
-            CapabilityRow("Pressure",FeatureId.PRESSURE);CapabilityRow("Smoothing",FeatureId.SMOOTHING);CapabilityRow("Stabilization",FeatureId.STABILIZATION);CapabilityRow("Grid",FeatureId.GRID);CapabilityRow("Guides",FeatureId.GUIDES);CapabilityRow("Snapping",FeatureId.SNAPPING)
+            CapabilityRow("Pressure",FeatureId.PRESSURE)
+            CapabilityRow("Smoothing",FeatureId.SMOOTHING)
+            CapabilityRow("Stabilization",FeatureId.STABILIZATION)
+            CapabilityRow("Grid",FeatureId.GRID)
+            CapabilityRow("Guides",FeatureId.GUIDES)
+            CapabilityRow("Snapping",FeatureId.SNAPPING)
             Text("Animation",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
-            CapabilityRow("Playback",FeatureId.PLAYBACK);CapabilityRow("Loop",FeatureId.LOOP);CapabilityRow("Interpolation",FeatureId.INTERPOLATION)
+            CapabilityRow("Playback",FeatureId.PLAYBACK)
+            CapabilityRow("Loop",FeatureId.LOOP)
+            CapabilityRow("FPS",FeatureId.FPS)
+            CapabilityRow("Frame navigation",FeatureId.FRAME_NAVIGATION)
+            CapabilityRow("Interpolation",FeatureId.INTERPOLATION)
+            Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
+            CapabilityRow("Layers",FeatureId.LAYERS)
+            CapabilityRow("Materials",FeatureId.MATERIALS)
+            CapabilityRow("Stroke color",FeatureId.STROKE_COLOR)
+            CapabilityRow("Lasso",FeatureId.LASSO)
+            CapabilityRow("Advanced editing",FeatureId.MODIFIERS)
         }
     }
 }

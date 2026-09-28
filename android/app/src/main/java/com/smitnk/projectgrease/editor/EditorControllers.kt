@@ -96,7 +96,9 @@ class MaterialController {
     var activeMaterial=0; private set
     var thickness=8f; private set
     var opacity=1f; private set
+    var colorArgb:Int=0xFFFFFFFF.toInt(); private set
     fun select(index:Int){activeMaterial=index.coerceAtLeast(0)}
+    fun setColor(value:Int){colorArgb=value}
     fun setThickness(value:Float){thickness=value.coerceIn(0.5f,100f)}
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
@@ -173,6 +175,7 @@ class EditorController {
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
         native.attach(handle)
+        pushMaterialColor()
         animation.initialize()
         selectedLayer = 0
     }
@@ -180,6 +183,7 @@ class EditorController {
     fun selectTool(tool:GreaseTool)=tools.select(tool)
     private data class PendingPoint(val x:Float,val y:Float,val pressure:Float,val time:Float)
     private val pendingShapePoints = mutableListOf<PendingPoint>()
+    private val pendingLassoPoints = mutableListOf<Pair<Float,Float>>()
     private var pendingShapeTool: GreaseTool? = null
 
     fun beginStroke():Boolean {
@@ -190,6 +194,7 @@ class EditorController {
                 pendingShapeTool = null
                 GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)
             }
+            GreaseTool.LASSO -> { pendingLassoPoints.clear(); true }
             GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC, GreaseTool.POLYLINE -> {
                 pendingShapePoints.clear()
                 pendingShapeTool = tools.activeTool
@@ -200,7 +205,9 @@ class EditorController {
     }
     fun addStrokePoint(x:Float,y:Float,pressure:Float,timeSeconds:Float){
         if (rendererHandle == 0L) return
-        if (tools.activeTool == GreaseTool.DRAW) {
+        if (tools.activeTool == GreaseTool.LASSO) {
+            pendingLassoPoints += x to y
+        } else if (tools.activeTool == GreaseTool.DRAW) {
             GPNative.nativeAddPointEglRenderer(
                 rendererHandle, x, y, 0f,
                 pressure.coerceAtLeast(0.01f),
@@ -274,6 +281,11 @@ class EditorController {
 
     fun endStroke(){
         if (rendererHandle == 0L) return
+        if (tools.activeTool == GreaseTool.LASSO) {
+            selectStrokeInLasso(pendingLassoPoints)
+            pendingLassoPoints.clear()
+            return
+        }
         if (tools.activeTool == GreaseTool.DRAW) {
             if (GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
                 history.markEdit(); document.markDirty()
@@ -310,7 +322,40 @@ class EditorController {
         }
         pendingShapePoints.clear()
         pendingShapeTool=null
+        pendingLassoPoints.clear()
     }
+    fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean {
+        if(points.size<3) return false
+        fun inside(x:Float,y:Float):Boolean {
+            var hit=false
+            var j=points.lastIndex
+            for(i in points.indices){
+                val xi=points[i].first; val yi=points[i].second
+                val xj=points[j].first; val yj=points[j].second
+                if(((yi>y)!=(yj>y)) && x < (xj-xi)*(y-yi)/(yj-yi+0.000001f)+xi) hit=!hit
+                j=i
+            }
+            return hit
+        }
+        for(stroke in 0 until native.strokeCount()){
+            for(point in 0 until 10000){
+                val p=native.getPoint(stroke,point) ?: break
+                if(p.size>=2 && inside(p[0],p[1])) return selection.selectStroke(stroke)
+            }
+        }
+        return false
+    }
+    fun pushMaterialColor(){
+        if(rendererHandle==0L) return
+        val c=colorToFloats(materials.colorArgb)
+        GPNative.nativeSetStrokeColorEglRenderer(rendererHandle,c[0],c[1],c[2],c[3])
+    }
+    private fun colorToFloats(argb:Int):FloatArray = floatArrayOf(
+        ((argb ushr 16) and 255)/255f,
+        ((argb ushr 8) and 255)/255f,
+        (argb and 255)/255f,
+        ((argb ushr 24) and 255)/255f
+    )
     fun render(){if(rendererHandle!=0L)GPNative.nativeRenderEgl(rendererHandle)}
     fun layerCount() = native.layerCount()
     fun createLayer(name:String):Boolean {

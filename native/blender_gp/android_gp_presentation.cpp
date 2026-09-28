@@ -19,6 +19,7 @@ GLuint g_program = 0;
 GLuint g_vbo = 0;
 GLint g_position = -1;
 GLint g_color = -1;
+float g_stroke_color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
 const char *vertex_shader_source()
 {
@@ -231,7 +232,7 @@ extern "C" int project_grease_android_present_gp_frame(const bGPDframe *frame)
   glVertexAttribPointer(
       static_cast<GLuint>(g_position), 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
 
-  glUniform4f(g_color, 1.0f, 1.0f, 1.0f, 1.0f);
+  glUniform4f(g_color, g_stroke_color[0], g_stroke_color[1], g_stroke_color[2], g_stroke_color[3]);
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -297,6 +298,14 @@ extern "C" int project_grease_android_present_pending_stroke(
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glUseProgram(0);
   return glGetError() == GL_NO_ERROR ? 1 : 0;
+}
+
+extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a)
+{
+  g_stroke_color[0] = std::clamp(r, 0.0f, 1.0f);
+  g_stroke_color[1] = std::clamp(g, 0.0f, 1.0f);
+  g_stroke_color[2] = std::clamp(b, 0.0f, 1.0f);
+  g_stroke_color[3] = std::clamp(a, 0.0f, 1.0f);
 }
 
 extern "C" void project_grease_android_present_reset()

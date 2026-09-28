@@ -35,6 +35,7 @@ object FeatureRegistry {
         FeatureId.PRESSURE,
         FeatureId.ERASER,
         FeatureId.SELECT,
+        FeatureId.LASSO,
         FeatureId.LINE,
         FeatureId.RECTANGLE,
         FeatureId.CIRCLE,

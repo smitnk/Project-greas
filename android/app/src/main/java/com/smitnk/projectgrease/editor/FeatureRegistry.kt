@@ -74,6 +74,7 @@ object FeatureRegistry {
         FeatureId.SELECT_MATERIAL,
         FeatureId.STROKE_COLOR,
         FeatureId.FILL_ENABLE,
+        FeatureId.SMOOTHING,
         FeatureId.ONION_SKIN,
         FeatureId.ONION_RANGE,
         FeatureId.ONION_OPACITY

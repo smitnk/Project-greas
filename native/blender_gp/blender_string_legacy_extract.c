@@ -160,6 +160,17 @@ static char *str_utf8_copy_max_bytes_impl(char *dst,
   return dst;
 }
 
+char *BLI_strncpy_utf8(char *__restrict dst,
+                             const char *__restrict src,
+                             size_t dst_maxncpy)
+{
+  BLI_assert(dst_maxncpy != 0);
+  BLI_string_debug_size(dst, dst_maxncpy);
+
+  str_utf8_copy_max_bytes_impl(dst, src, dst_maxncpy);
+  return dst;
+}
+
 size_t BLI_strncpy_utf8_rlen(char *__restrict dst,
                              const char *__restrict src,
                              size_t dst_maxncpy)

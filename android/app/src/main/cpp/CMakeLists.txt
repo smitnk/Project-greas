@@ -136,3 +136,5 @@ target_link_libraries(projectgrease_jni
     ${glesv2-lib}
     ${glesv3-lib}
 )
+
+// CI verification after duplicate-symbol fix.

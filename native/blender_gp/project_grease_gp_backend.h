@@ -54,6 +54,7 @@ class Backend {
   bool select_stroke(int index);
   int hit_test_stroke(float x, float y, float radius) const;
   bool get_point(int stroke_index, int point_index, StrokePoint* out) const;
+  bool stroke_center(int stroke_index, float *x, float *y) const;
   bool set_point(int stroke_index, int point_index, const StrokePoint& point);
   bool delete_stroke(int index);
   bool delete_last_stroke();
@@ -61,8 +62,11 @@ class Backend {
   bool translate_stroke(int index, float dx, float dy, float dz);
   bool flip_stroke(int index);
   bool rotate_stroke(int index, float radians);
+  bool rotate_stroke_about(int index, float radians, float center_x, float center_y);
   bool scale_stroke(int index, float scale_x, float scale_y);
+  bool scale_stroke_about(int index, float scale_x, float scale_y, float center_x, float center_y);
   bool mirror_stroke(int index, bool mirror_x, bool mirror_y);
+  bool mirror_stroke_about(int index, bool mirror_x, bool mirror_y, float center_x, float center_y);
   bool subdivide_stroke(int index, int level);
   bool close_stroke(int index);
   bool trim_stroke_points(int index, int index_from, int index_to, bool keep_single_point);

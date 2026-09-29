@@ -72,8 +72,11 @@ object GPNative {
     external fun nativeTranslateStroke(handle: Long, index: Int, dx: Float, dy: Float, dz: Float): Boolean
     external fun nativeFlipStroke(handle: Long, index: Int): Boolean
     external fun nativeRotateStroke(handle: Long, index: Int, radians: Float): Boolean
+    external fun nativeRotateStrokeAbout(handle: Long, index: Int, radians: Float, centerX: Float, centerY: Float): Boolean
     external fun nativeScaleStroke(handle: Long, index: Int, scaleX: Float, scaleY: Float): Boolean
+    external fun nativeScaleStrokeAbout(handle: Long, index: Int, scaleX: Float, scaleY: Float, centerX: Float, centerY: Float): Boolean
     external fun nativeMirrorStroke(handle: Long, index: Int, mirrorX: Boolean, mirrorY: Boolean): Boolean
+    external fun nativeMirrorStrokeAbout(handle: Long, index: Int, mirrorX: Boolean, mirrorY: Boolean, centerX: Float, centerY: Float): Boolean
     external fun nativeSubdivideStroke(handle: Long, index: Int, level: Int): Boolean
     external fun nativeCloseStroke(handle: Long, index: Int): Boolean
     external fun nativeTrimStroke(handle: Long, index: Int, from: Int, to: Int, keepSinglePoint: Boolean): Boolean

@@ -211,3 +211,12 @@ Do not mark the paint/stroke subsystem complete yet. The next step is to move mo
 - The pinned 3.6.23 implementation was verified directly: `ED_gpencil_sbuffer_ensure()` allocates/reallocates the real `tGPspoint` stroke cache and clears it when requested.
 - Commit `3ae3ff6eb5db763c3e06b48a9256ea8e1e7ad860` adds that exact pinned Blender source file to the Android target. No replacement implementation was invented.
 - Next CI gate must prove whether `gpencil_utils.c` has additional concrete dependencies. If it does, add only the smallest exact pinned Blender dependency required by the linker/compiler error.
+
+
+### #380 correction — isolate the exact sbuffer function
+
+Run #380 proved that compiling the complete `gpencil_utils.c` is outside the focused Android closure at this point: the first concrete error was missing generated `RNA_prototypes.h`. The complete file also belongs to the desktop editor/context layer and is not appropriate to pull wholesale into Project Grease.
+
+Instead of generating/porting RNA and window-manager infrastructure just to obtain one allocator, commit `27cc0d85b7e9e8f3c7226b315a8dcfa24c15f425` adds `native/blender_gp/project_grease_legacy_sbuffer.c`. It contains the exact Blender 3.6.23 `ED_gpencil_sbuffer_ensure` algorithm, using the same `MEM_callocN`, `MEM_recallocN`, `GP_STROKE_BUFFER_CHUNK` and clear semantics from the pinned source.
+
+Commit `ca3bbc78c2def0afe084d4e4b7284310861aff37` replaces the whole editor utility source in the Android CMake target with this focused extraction. This is intentional dependency minimization, not a replacement drawing engine: the public Blender API/function semantics and implementation are retained exactly, while unrelated RNA/window-manager/editor code is excluded.

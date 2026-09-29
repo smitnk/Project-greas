@@ -79,7 +79,8 @@ object GPNative {
     external fun nativeMirrorStrokeAbout(handle: Long, index: Int, mirrorX: Boolean, mirrorY: Boolean, centerX: Float, centerY: Float): Boolean
     external fun nativeSubdivideStroke(handle: Long, index: Int, level: Int): Boolean
     external fun nativeCloseStroke(handle: Long, index: Int): Boolean
-    external fun nativeTrimStroke(handle: Long, index: Int, from: Int, to: Int, keepSinglePoint: Boolean): Boolean\n    external fun nativeTrimStrokeToIntersection(handle: Long, index: Int): Boolean
+    external fun nativeTrimStroke(handle: Long, index: Int, from: Int, to: Int, keepSinglePoint: Boolean): Boolean
+    external fun nativeTrimStrokeToIntersection(handle: Long, index: Int): Boolean
     external fun nativeSplitStroke(handle: Long, index: Int, beforeIndex: Int): Boolean
     external fun nativeCreatePrimitive(handle: Long, type: Int, x0: Float, y0: Float, x1: Float, y1: Float, startAngle: Float, endAngle: Float, segments: Int, materialIndex: Int, thickness: Float): Boolean
     external fun nativeGeneratePrimitivePreview(type: Int, x0: Float, y0: Float, x1: Float, y1: Float, startAngle: Float, endAngle: Float, segments: Int): FloatArray?

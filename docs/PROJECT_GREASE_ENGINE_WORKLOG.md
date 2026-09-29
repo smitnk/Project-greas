@@ -14,7 +14,7 @@ Keep the existing Project Grease UI architecture.
 
 Branch: feature/project-grease-ui-real-integration
 Successful functional baseline: ac11bd459f81422a054708e12222cd8ea973d4c8
-Last verified CI baseline: workflow run #356 (2026-09-29), Android GP build/verification and APK artifact succeeded.
+Last verified CI baseline before the current paint-buffer work: workflow run #375 (2026-09-29), Android GP build/verification and APK artifact succeeded.
 
 ## Current bundled-engine work
 
@@ -28,7 +28,7 @@ Last verified CI baseline: workflow run #356 (2026-09-29), Android GP build/veri
    Added `project_grease_gp_engine.cpp` with an explicit capability map. A capability is marked integrated only when it is actually backed and exercised; unsupported entries remain false instead of being advertised as complete.
 
 4. d0089a8b28de07710f39cf423af1071fb161dbaa
-   Expanded the focused native CMake target to compile the pinned Blender Legacy GP editor sources under `source/blender/editors/gpencil/` and GP modifier sources under `source/blender/gpencil_modifiers/`, including Line Art sources, while retaining the minimal Android boundary.
+   Expanded the focused native CMake target to compile the pinned Blender Legacy GP editor sources under the Legacy GP editor tree and GP modifier sources, including Line Art sources, while retaining the minimal Android boundary.
 
 ## Why this is the correct direction
 
@@ -57,12 +57,6 @@ When the bundle builds:
 - verify that the new source closure is actually linked/used;
 - then continue expanding the same engine boundary with the next real Blender subsystem, rather than creating a new micro-phase.
 
-## Current state
-
-The bundled editor/modifier source integration was corrected to Blender 3.6.23's actual gpencil_legacy and gpencil_modifiers_legacy directories and was CI-verified by Android Shell run #361, including APK verification.
-
-The next action is to obtain a CI build of d0089a8, inspect the first real compiler/linker failure, and solve the dependency closure from that concrete evidence. If the build succeeds, the next action is runtime/native conformance verification of the integrated Blender GP editor/modifier path.
-
 ## Permanent architecture rule
 
 Android:
@@ -77,104 +71,17 @@ real Legacy GP data + drawing/editing/sculpt/paint/modifier/Line Art algorithms 
 Not included:
 full Blender application, desktop UI, Python, full scene/3D viewport, GHOST-on-Android, OpenToonz, GL4ES, unrelated Blender subsystems.
 
-## Next real-engine bundle — Legacy GP modifier execution
+## Modifier execution bundles already verified
 
-- CI run #361 proved the actual Blender 3.6.23 Legacy GP editor/modifier source directories compile in the Android target.
-- The next step is no longer source bundling alone: Project Grease now invokes Blender's real GpencilModifierTypeInfo::deformStroke callback through BKE_gpencil_modifier_new() / BKE_gpencil_modifier_get_info().
-- Added Backend::apply_blender_modifier(...) and the C bridge entry point.
-- Initial conformance test invokes Blender's actual Legacy GP Smooth modifier on an existing bGPDstroke and verifies geometry changes plus GP cache rendering.
-- No Project Grease smoothing algorithm is used by this path; Blender 3.6.23 owns the modifier implementation.
-- Next CI result determines the next minimal dependency fix. After this callback path passes, expand the same mechanism to additional Legacy GP modifier types and then build the modifier-stack/depsgraph closure only where the actual Blender implementation requires it.
+The real Blender 3.6.23 Legacy GP modifier registry/kernel and modifier implementations are in the Android closure. The backend can create real `GpencilModifierData` objects in Blender's `Object::greasepencil_modifiers` ListBase and invoke real `deformStroke()` callbacks for the focused context. CI #375 succeeded through Android build, APK verification and artifact upload with Smooth -> Thickness -> Subdivide conformance.
 
-
-## Exact CI error recovery — modifier API closure
-
-### Runs inspected
-
-- **#364 / 36599437309** — failed compiling `project_grease_gp_backend.cpp`.
-- **#365 / 36599452874** — same native Legacy GP modifier API/type failure at the bridge exposure stage.
-- **#366 / 36599462494** — same native failure at JNI wiring.
-- **#367 / 36599485267** — succeeded after adding the real Blender Legacy GP modifier API/DNA includes.
-- **#368 / 36599507228** — succeeded through Blender import, DNA generation, Android build, APK verification and artifact upload.
-
-### Exact root failure
-
-The failed Android compiler reported that `BKE_gpencil_modifier_init`, `BKE_gpencil_modifier_new`, `BKE_gpencil_modifier_get_info`, `GpencilModifierData`, `GpencilModifierType`, `GpencilModifierTypeInfo`, `SmoothGpencilModifierData`, `ThickGpencilModifierData`, `SubdivGpencilModifierData`, and the corresponding modifier enums/flags were unavailable while compiling the backend.
-
-This was not a problem in the JNI logic itself. The Android target had not yet established the complete real Blender 3.6.23 Legacy GP modifier kernel closure.
-
-### Upstream source verification
-
-The pinned Blender commit is `e467db79ca8cc5c1c15e1a0e08bd52ca419f2eca`, which is Blender 3.6.23 release commit. The exact upstream tree contains:
-
-- `source/blender/blenkernel/BKE_gpencil_modifier_legacy.h`
-- `source/blender/blenkernel/intern/gpencil_modifier_legacy.c`
-- `source/blender/gpencil_modifiers_legacy/`
-- `source/blender/makesdna/DNA_gpencil_modifier_types.h`
-
-The header defines the real `GpencilModifierTypeInfo::deformStroke` callback and the `BKE_gpencil_modifier_init/new/get_info/free` API. The kernel implementation initializes the actual modifier registry and dispatches to the real modifier-type implementations.
-
-### Fix applied
-
-- `29ebc357b46ef4b5749a401cbf5dcf55149ac17a`
-  - Explicitly includes the pinned Blender Legacy GP modifier DNA before the modifier API header in the backend.
-- `5001d4175d710e16694647d4bff8335232e8feed`
-  - Adds Blender 3.6.23's real `gpencil_modifier_legacy.c` to the Android native source closure.
-  - Adds the real `gpencil_modifiers_legacy` include directories.
-
-### Important interpretation
-
-Run #368 proves the previous compiler/linkage state is recoverable, but it does **not** by itself prove that Android runtime execution has exercised the real modifier callback. The next verification must therefore test the actual Android-native modifier path, not merely APK creation.
-
-## Current next target
-
-Use the exact Blender 3.6.23 modifier registry and real modifier implementations already imported into the Android closure. Continue resolving only concrete compiler/linker/runtime dependencies. Then add conformance for multiple real Legacy GP modifier callbacks and a real modifier-stack execution path where the Blender implementation requires it.
-
-Never replace these callbacks with Project Grease geometry algorithms.
-
-
-## Next bundle — real Legacy GP modifier-list execution
-
-### Verified starting point
-
-- Android CI **#370** succeeded for commit `5001d417`.
-- The real Blender 3.6.23 `gpencil_modifier_legacy.c` registry/kernel is now included in the Android native closure.
-- The real `gpencil_modifiers_legacy` implementation sources are already compiled.
-
-### Implementation
-
-- `be1cc84d83dad2ca145ca38f9e800c8d60d05d3e`
-  - Adds `Backend::apply_blender_modifier_stack()`.
-- `83a29118aa2cf2d6d47e43bbcfcacbe13a7231ef`
-  - Creates a real Blender 3.6.23 `Object` adapter with `greasepencil_modifiers`.
-  - Creates each modifier using `BKE_gpencil_modifier_new()`.
-  - Resolves its real `GpencilModifierTypeInfo`.
-  - Adds it to Blender's actual `Object::greasepencil_modifiers` ListBase.
-  - Executes the real Blender `deformStroke()` callback in list order.
-  - Frees the real Blender modifier objects afterward.
-- `6aeffc659b427c252de576995ffd49d33ca66c32` and `525a0281d44be9b1688a3b974e245832868e608e`
-  - Expose the stack through the native C bridge.
-- `2ce7c88d8585bfd736746e9fe90436f5c69b1fd1`
-  - Adds conformance for Smooth -> Thickness -> Subdivide.
-
-### Why this is a real Blender path
-
-Blender 3.6.23's DNA defines `Object::greasepencil_modifiers` as a ListBase of `GpencilModifierData`. The Project Grease stack now uses that actual Blender structure for evaluation instead of inventing a parallel modifier representation.
-
-### Constraint
-
-This stack currently targets modifiers whose real `deformStroke` callback can execute with the focused Android object/data context. Modifiers requiring a real depsgraph, scene, armature, texture, or 3D object context are not falsely marked complete. Their exact dependency closure will be added only when their upstream implementation is brought into the focused engine.
-
-### Next
-
-Run CI. Fix only the exact compiler/linker/runtime failure. After stack conformance succeeds, continue with the next real Legacy GP subsystem rather than declaring completion.
-
+These modifier paths remain a focused adapter around real Blender callbacks, not a claim that all desktop depsgraph/scene-dependent modifier evaluation is complete.
 
 ## Next bundle — real Legacy GP paint stroke buffer
 
 ### Starting verification
 
-- Android CI run **#375 / 36604200725** for commit `2ce7c88d8585bfd736746e9fe90436f5c69b1fd1` completed **successfully** through Blender import, minimal DNA generation, Android GP build, APK verification and artifact upload.
+- Android CI run **#375 / 36604200725** for commit `2ce7c88d8585bfd736746e9fe90436f5c69b1fd1` completed successfully through Blender import, minimal DNA generation, Android GP build, APK verification and artifact upload.
 - The modifier-stack conformance reached the Android build gate without introducing a new dependency failure.
 
 ### Upstream reference
@@ -202,21 +109,47 @@ This is the first explicit connection of the Android stroke session to Blender 3
 
 Do not mark the paint/stroke subsystem complete yet. The next step is to move more of the pinned Blender 3.6.23 paint processing into this same focused path: brush settings, pressure/strength processing, active smoothing, stroke subdivision/simplification and final stroke commit, adding only the concrete BKE/ED dependencies required by those upstream functions. The eventual target remains the real Legacy GP drawing pipeline, followed by editing/sculpt/paint, animation, fill/material/onion, rendering/cache and Android GLES presentation.
 
-
 ## Paint-buffer linker correction — 2026-09-29
 
-- Runs #377, #378 and #379 all reached the native link stage but failed on the same concrete symbol:
-  `undefined symbol: ED_gpencil_sbuffer_ensure`.
-- The failure was not caused by the new `tGPspoint` data path itself. The header/API was included, but its real Blender 3.6.23 implementation lives in the pinned Legacy GP editor source `source/blender/editors/gpencil_legacy/gpencil_utils.c`, which was not yet part of the focused Android source closure.
-- The pinned 3.6.23 implementation was verified directly: `ED_gpencil_sbuffer_ensure()` allocates/reallocates the real `tGPspoint` stroke cache and clears it when requested.
-- Commit `3ae3ff6eb5db763c3e06b48a9256ea8e1e7ad860` adds that exact pinned Blender source file to the Android target. No replacement implementation was invented.
-- Next CI gate must prove whether `gpencil_utils.c` has additional concrete dependencies. If it does, add only the smallest exact pinned Blender dependency required by the linker/compiler error.
+- Runs **#377, #378 and #379** reached the native link stage but failed on the same concrete symbol: `undefined symbol: ED_gpencil_sbuffer_ensure`.
+- Commit `3ae3ff6eb5db763c3e06b48a9256ea8e1e7ad860` temporarily added the full pinned `source/blender/editors/gpencil_legacy/gpencil_utils.c` to obtain that symbol.
+- Run **#380** then failed while compiling that whole desktop editor utility because it requires generated `RNA_prototypes.h`. This confirmed that importing the whole file would drag unrelated RNA/window-manager/editor infrastructure into the focused Android target.
+- Commit `27cc0d85b7e9e8f3c7226b315a8dcfa24c15f425` therefore introduced `native/blender_gp/project_grease_legacy_sbuffer.c`, containing the exact pinned Blender 3.6.23 `ED_gpencil_sbuffer_ensure()` algorithm.
+- Commit `ca3bbc78c2def0afe084d4e4b7284310861aff37` replaced the whole editor utility source in CMake with that focused extraction.
 
+## #381/#382 correction — missing upstream constant in focused extraction
 
-### #380 correction — isolate the exact sbuffer function
+### Exact CI evidence
 
-Run #380 proved that compiling the complete `gpencil_utils.c` is outside the focused Android closure at this point: the first concrete error was missing generated `RNA_prototypes.h`. The complete file also belongs to the desktop editor/context layer and is not appropriate to pull wholesale into Project Grease.
+- **#381 / run ID 36607667861 / commit `27cc0d85b7e9e8f3c7226b315a8dcfa24c15f425`** failed during Android C compilation.
+- **#382 / run ID 36607692992 / commit `ca3bbc78c2def0afe084d4e4b7284310861aff37`** failed at the same point.
+- Blender import and minimal DNA generation both succeeded. The failure was isolated to the focused sbuffer source during the Android native build.
+- Exact compiler error:
+  `use of undeclared identifier 'GP_STROKE_BUFFER_CHUNK'`
+  at the three uses inside `project_grease_legacy_sbuffer.c`.
 
-Instead of generating/porting RNA and window-manager infrastructure just to obtain one allocator, commit `27cc0d85b7e9e8f3c7226b315a8dcfa24c15f425` adds `native/blender_gp/project_grease_legacy_sbuffer.c`. It contains the exact Blender 3.6.23 `ED_gpencil_sbuffer_ensure` algorithm, using the same `MEM_callocN`, `MEM_recallocN`, `GP_STROKE_BUFFER_CHUNK` and clear semantics from the pinned source.
+### Root cause
 
-Commit `ca3bbc78c2def0afe084d4e4b7284310861aff37` replaces the whole editor utility source in the Android CMake target with this focused extraction. This is intentional dependency minimization, not a replacement drawing engine: the public Blender API/function semantics and implementation are retained exactly, while unrelated RNA/window-manager/editor code is excluded.
+The extracted function was copied from Blender 3.6.23 `gpencil_utils.c`, but the constant was originally provided by the private editor header `source/blender/editors/gpencil_legacy/gpencil_intern.h`:
+
+```
+#define GP_STROKE_BUFFER_CHUNK 2048
+```
+
+The focused extraction intentionally did not include `gpencil_intern.h` because that header pulls `ED_numinput.h` and belongs to the broader desktop editor closure. The function therefore lost one exact compile-time dependency even though its algorithm was otherwise correct.
+
+### Fix
+
+Commit **`0211e68076f96863dc1e9bfe29a261bd2764bb0f`** updates `native/blender_gp/project_grease_legacy_sbuffer.c` with the exact upstream constant:
+
+```
+#define GP_STROKE_BUFFER_CHUNK 2048
+```
+
+It is documented as an exact 3.6.23 `gpencil_intern.h` constant, kept local specifically to avoid importing the unrelated desktop header dependency closure.
+
+No drawing algorithm was changed. No custom stroke algorithm was introduced.
+
+### Next verification
+
+Run the Android Shell workflow from the new commit. If it fails, continue from the first concrete compiler/linker/runtime error only. If it passes, verify APK + conformance and then continue the real Legacy GP paint path: brush settings, pressure/strength processing, smoothing/subdivision/simplification, and final commit behavior. Do not mark the paint subsystem complete until those real Blender paths are exercised.

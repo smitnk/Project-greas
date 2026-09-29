@@ -1644,7 +1644,7 @@ bool Backend::trim_stroke(int index) {
       impl_->last_error = "stroke needs at least four points for Legacy GP trim";
       return false;
     }
-    if (!BKE_gpencil_stroke_trim(impl_->gpd, stroke)) {
+    if (!BKE_gpencil_stroke_trim(stroke)) {
       impl_->last_error = "BKE_gpencil_stroke_trim() found no intersection";
       return false;
     }

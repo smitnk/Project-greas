@@ -59,6 +59,7 @@ int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_duplicate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame);
 int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_stroke_center(const ProjectGreaseGPHandle *handle, int index, float *x, float *y);
 int project_grease_gp_hit_test_stroke(
     const ProjectGreaseGPHandle *handle,
     float x,
@@ -70,8 +71,11 @@ int project_grease_gp_duplicate_stroke(ProjectGreaseGPHandle *handle, int index)
 int project_grease_gp_translate_stroke(ProjectGreaseGPHandle *handle, int index, float dx, float dy, float dz);
 int project_grease_gp_flip_stroke(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_rotate_stroke(ProjectGreaseGPHandle *handle, int index, float radians);
+int project_grease_gp_rotate_stroke_about(ProjectGreaseGPHandle *handle, int index, float radians, float center_x, float center_y);
 int project_grease_gp_scale_stroke(ProjectGreaseGPHandle *handle, int index, float scale_x, float scale_y);
+int project_grease_gp_scale_stroke_about(ProjectGreaseGPHandle *handle, int index, float scale_x, float scale_y, float center_x, float center_y);
 int project_grease_gp_mirror_stroke(ProjectGreaseGPHandle *handle, int index, int mirror_x, int mirror_y);
+int project_grease_gp_mirror_stroke_about(ProjectGreaseGPHandle *handle, int index, int mirror_x, int mirror_y, float center_x, float center_y);
 int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index, int level);
 int project_grease_gp_close_stroke(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int from, int to, int keep_single_point);

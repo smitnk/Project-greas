@@ -679,7 +679,7 @@ int main() {
                  backend.stroke_buffer_count());
     return 61;
   }
-  const int stack_index = backend.stroke_count();
+  const int stack_index = backend.stroke_count() - 1;
   const int stack_points_before = backend.point_count();
   project_grease::gp::StrokePoint stack_before{};
   if (!backend.get_point(stack_index, 1, &stack_before)) {

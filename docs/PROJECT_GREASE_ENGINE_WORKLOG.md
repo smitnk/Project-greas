@@ -59,7 +59,7 @@ When the bundle builds:
 
 ## Current state
 
-The bundled editor/modifier source integration has been committed, but **it has not yet been CI-verified after d0089a8**. Therefore it must not be called successful yet.
+The bundled editor/modifier source integration was corrected to Blender 3.6.23's actual gpencil_legacy and gpencil_modifiers_legacy directories and was CI-verified by Android Shell run #361, including APK verification.
 
 The next action is to obtain a CI build of d0089a8, inspect the first real compiler/linker failure, and solve the dependency closure from that concrete evidence. If the build succeeds, the next action is runtime/native conformance verification of the integrated Blender GP editor/modifier path.
 
@@ -76,3 +76,12 @@ real Legacy GP data + drawing/editing/sculpt/paint/modifier/Line Art algorithms 
 
 Not included:
 full Blender application, desktop UI, Python, full scene/3D viewport, GHOST-on-Android, OpenToonz, GL4ES, unrelated Blender subsystems.
+
+## Next real-engine bundle — Legacy GP modifier execution
+
+- CI run #361 proved the actual Blender 3.6.23 Legacy GP editor/modifier source directories compile in the Android target.
+- The next step is no longer source bundling alone: Project Grease now invokes Blender's real GpencilModifierTypeInfo::deformStroke callback through BKE_gpencil_modifier_new() / BKE_gpencil_modifier_get_info().
+- Added Backend::apply_blender_modifier(...) and the C bridge entry point.
+- Initial conformance test invokes Blender's actual Legacy GP Smooth modifier on an existing bGPDstroke and verifies geometry changes plus GP cache rendering.
+- No Project Grease smoothing algorithm is used by this path; Blender 3.6.23 owns the modifier implementation.
+- Next CI result determines the next minimal dependency fix. After this callback path passes, expand the same mechanism to additional Legacy GP modifier types and then build the modifier-stack/depsgraph closure only where the actual Blender implementation requires it.

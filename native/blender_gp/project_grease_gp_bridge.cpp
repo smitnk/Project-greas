@@ -445,6 +445,45 @@ int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, fl
 {
   return ensure_ready(handle) && handle->backend.smooth_stroke(index, influence, iterations) ? 1 : 0;
 }
+
+int project_grease_gp_apply_legacy_geometry_batch(
+    ProjectGreaseGPHandle *handle,
+    int stroke_index,
+    const ProjectGreaseGPLegacyGeometryOp *operations,
+    int operation_count)
+{
+  if (!ensure_ready(handle) || !operations || operation_count <= 0) {
+    return 0;
+  }
+
+  std::vector<project_grease::gp::Backend::LegacyGeometryOp> native_operations;
+  native_operations.reserve(static_cast<size_t>(operation_count));
+
+  for (int i = 0; i < operation_count; ++i) {
+    const ProjectGreaseGPLegacyGeometryOp &src = operations[i];
+    project_grease::gp::Backend::LegacyGeometryOp dst{};
+    if (src.type < 0 ||
+        src.type > static_cast<int>(
+                       project_grease::gp::Backend::LegacyGeometryOpType::FillTriangulate)) {
+      return 0;
+    }
+    dst.type = static_cast<project_grease::gp::Backend::LegacyGeometryOpType>(src.type);
+    dst.value0 = src.value0;
+    dst.value1 = src.value1;
+    dst.value2 = src.value2;
+    dst.int0 = src.int0;
+    dst.int1 = src.int1;
+    dst.flag0 = src.flag0 != 0;
+    dst.flag1 = src.flag1 != 0;
+    native_operations.push_back(dst);
+  }
+
+  return handle->backend.apply_legacy_geometry_batch(
+             stroke_index, native_operations.data(), operation_count)
+             ? 1
+             : 0;
+}
+
 int project_grease_gp_apply_blender_modifier(ProjectGreaseGPHandle *handle,
                                               int index,
                                               int modifier_type,

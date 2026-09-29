@@ -164,6 +164,6 @@ Implemented a single batched engine entry point for Blender 3.6.23 Legacy GP geo
 - 2f66152 / 14171ce — exposed the batch through the Android-safe C bridge.
 - 923545b — added native conformance coverage for the batched callbacks, including a separate self-intersection trim case.
 
-This batch is deliberately Blender-backed: the Project Grease layer supplies operation parameters and lifecycle/cache invalidation, while the actual geometry algorithms are Blender's Legacy GP functions. Blender's Legacy GP API documents these operations as part of the GP geometry layer, including simplify, subdivide, trim, merge-distance, resample, dissolve, and stretch. citeturn4search0turn5search1turn9search0
+This batch is deliberately Blender-backed: the Project Grease layer supplies operation parameters and lifecycle/cache invalidation, while the actual geometry algorithms are Blender's Legacy GP functions. Blender's Legacy GP API documents these operations as part of the GP geometry layer, including simplify, subdivide, trim, merge-distance, resample, dissolve, and stretch.
 
 The next loop is build/CI inspection. Any compiler, linker, or runtime/conformance error from this batch is treated as a dependency-closure problem and fixed at its smallest concrete boundary before expanding the next bulk feature group.

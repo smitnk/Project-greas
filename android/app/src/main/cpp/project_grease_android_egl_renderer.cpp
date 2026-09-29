@@ -9,11 +9,17 @@
 #include <cstdint>
 #include <vector>
 
+#include "project_grease_gp_backend.h"
 #include "project_grease_gp_bridge.h"
 
 namespace {
 
 using GPHandle = ProjectGreaseGPHandle *;
+
+extern "C" void project_grease_android_present_reset(void);
+extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
+extern "C" int project_grease_android_present_pending_stroke(
+    const project_grease::gp::StrokePoint *points, int count, float thickness);
 
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;

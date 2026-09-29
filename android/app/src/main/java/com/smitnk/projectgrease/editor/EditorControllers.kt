@@ -299,39 +299,36 @@ class EditorController {
         if (p.isEmpty()) return emptyList()
         val first = p.first()
         val last = p.last()
-        return when (pendingShapeTool) {
-            GreaseTool.LINE -> listOf(first, last)
-            GreaseTool.POLYLINE -> p
-            GreaseTool.RECTANGLE -> {
-                val left=minOf(first.x,last.x); val right=maxOf(first.x,last.x)
-                val top=minOf(first.y,last.y); val bottom=maxOf(first.y,last.y)
-                listOf(first.copy(x=left,y=top),last.copy(x=right,y=top),
-                    last.copy(x=right,y=bottom),first.copy(x=left,y=bottom),
-                    first.copy(x=left,y=top))
-            }
-            GreaseTool.CIRCLE -> {
-                val cx=(first.x+last.x)*0.5f; val cy=(first.y+last.y)*0.5f
-                val rx=maxOf(1f,kotlin.math.abs(last.x-first.x)*0.5f)
-                val ry=maxOf(1f,kotlin.math.abs(last.y-first.y)*0.5f)
-                (0..48).map { n ->
-                    val a=(2.0*Math.PI*n/48.0)
-                    first.copy(x=cx+rx*kotlin.math.cos(a).toFloat(),y=cy+ry*kotlin.math.sin(a).toFloat())
-                }
-            }
-            GreaseTool.ARC -> {
-                val cx=(first.x+last.x)*0.5; val cy=(first.y+last.y)*0.5
-                val rx=maxOf(1.0,kotlin.math.abs(last.x-first.x)*0.5)
-                val ry=maxOf(1.0,kotlin.math.abs(last.y-first.y)*0.5)
-                val start=kotlin.math.atan2((first.y-cy)/ry,(first.x-cx)/rx)
-                val end=kotlin.math.atan2((last.y-cy)/ry,(last.x-cx)/rx)
-                var sweep=end-start
-                if(sweep<=0.0)sweep+=2.0*Math.PI
-                (0..32).map { n ->
-                    val a=start+sweep*n/32.0
-                    first.copy(x=(cx+rx*kotlin.math.cos(a)).toFloat(),y=(cy+ry*kotlin.math.sin(a)).toFloat())
-                }
-            }
-            else -> emptyList()
+        val tool = pendingShapeTool ?: return emptyList()
+        if (tool == GreaseTool.POLYLINE) return p
+
+        val type = when (tool) {
+            GreaseTool.LINE -> 0
+            GreaseTool.RECTANGLE -> 1
+            GreaseTool.CIRCLE -> 2
+            GreaseTool.ARC -> 3
+            else -> return emptyList()
+        }
+
+        // Preview geometry comes from the same native Blender-3.6.23-derived
+        // primitive generator used by final stroke creation. Kotlin no longer
+        // reimplements line/rectangle/circle/arc geometry.
+        val packed = GPNative.nativeGeneratePrimitivePreview(
+            type,
+            first.x, first.y,
+            last.x, last.y,
+            0f, 6.2831855f,
+            64
+        ) ?: return emptyList()
+
+        if (packed.size < 3 || packed.size % 3 != 0) return emptyList()
+        return (0 until packed.size / 3).map { i ->
+            PendingPoint(
+                packed[i * 3],
+                packed[i * 3 + 1],
+                packed[i * 3 + 2],
+                last.time
+            )
         }
     }
 

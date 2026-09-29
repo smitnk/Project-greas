@@ -264,6 +264,33 @@ int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int
 {
   return ensure_ready(handle) && handle->backend.split_stroke(index, before_index) ? 1 : 0;
 }
+
+int project_grease_gp_history_reset(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.history_reset() ? 1 : 0;
+}
+int project_grease_gp_history_record(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.history_record() ? 1 : 0;
+}
+int project_grease_gp_history_undo(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.history_undo() ? 1 : 0;
+}
+int project_grease_gp_history_redo(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.history_redo() ? 1 : 0;
+}
+int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.history_can_undo() ? 1 : 0;
+}
+int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.history_can_redo() ? 1 : 0;
+}
 int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, int material_index, float thickness)
 {
   if (!ensure_ready(handle)) return 0;

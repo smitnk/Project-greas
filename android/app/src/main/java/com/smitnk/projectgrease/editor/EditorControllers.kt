@@ -6,6 +6,12 @@ class NativeEditorBridge {
     var handle: Long = 0L
         private set
     fun attach(value: Long) { handle = value }
+    fun historyReset() = handle != 0L && GPNative.nativeHistoryReset(handle)
+    fun historyRecord() = handle != 0L && GPNative.nativeHistoryRecord(handle)
+    fun historyUndo() = handle != 0L && GPNative.nativeHistoryUndo(handle)
+    fun historyRedo() = handle != 0L && GPNative.nativeHistoryRedo(handle)
+    fun historyCanUndo() = handle != 0L && GPNative.nativeHistoryCanUndo(handle)
+    fun historyCanRedo() = handle != 0L && GPNative.nativeHistoryCanRedo(handle)
     fun detach() { handle = 0L }
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
     fun setLayerVisibility(index: Int, visible: Boolean) = handle != 0L && GPNative.nativeSetLayerVisibility(handle, index, visible)
@@ -63,12 +69,14 @@ class NativeEditorBridge {
     fun setMultiframeEditing(enabled:Boolean) = handle != 0L && GPNative.nativeSetMultiframeEditing(handle,enabled)
 }
 
-class HistoryController {
-    var canUndo = false; private set
-    var canRedo = false; private set
-    fun markEdit() { canUndo = true; canRedo = false }
-    fun undo() { if (canUndo) canRedo = true }
-    fun redo() { if (canRedo) canUndo = true }
+class HistoryController(private val native: NativeEditorBridge) {
+    val canUndo: Boolean get() = native.historyCanUndo()
+    val canRedo: Boolean get() = native.historyCanRedo()
+
+    // History is the actual Blender Legacy GP datablock state, not a UI flag.
+    fun markEdit(): Boolean = native.historyRecord()
+    fun undo(): Boolean = native.historyUndo()
+    fun redo(): Boolean = native.historyRedo()
 }
 
 class DocumentController {
@@ -237,7 +245,7 @@ class EditorController {
         private set
     val tools=ToolController()
     val document=DocumentController()
-    val history=HistoryController()
+    val history=HistoryController(native)
     val animation=AnimationController(native)
     val materials=MaterialController()
     val view=ViewController()
@@ -249,6 +257,7 @@ class EditorController {
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
         native.attach(handle)
+        native.historyReset()
         pushMaterialColor()
         animation.initialize()
         selectedLayer = 0
@@ -618,6 +627,24 @@ class EditorController {
     fun trimSelectedStroke(from:Int,to:Int,keepSinglePoint:Boolean=true):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStroke(i,from,to,keepSinglePoint);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun trimSelectedStrokeToIntersection():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStrokeToIntersection(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun splitSelectedStroke(beforeIndex:Int):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.splitStroke(i,beforeIndex);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun undo()=history.undo()
-    fun redo()=history.redo()
+    fun undo():Boolean {
+        val ok = history.undo()
+        if (ok) {
+            selection.clear()
+            animation.initialize()
+            document.markDirty()
+            render()
+        }
+        return ok
+    }
+    fun redo():Boolean {
+        val ok = history.redo()
+        if (ok) {
+            selection.clear()
+            animation.initialize()
+            document.markDirty()
+            render()
+        }
+        return ok
+    }
 }

@@ -34,23 +34,30 @@ object FeatureRegistry {
     // Everything else stays IN_PROGRESS or NOT_IMPLEMENTED until its real engine path
     // and Android presentation path are validated.
     private val available = setOf(
-        FeatureId.FREEHAND,
-        FeatureId.SELECT,
+        // Core Legacy GP drawing/editing paths validated by native tests.
+        FeatureId.FREEHAND, FeatureId.PRESSURE, FeatureId.ERASER, FeatureId.FILL,
         FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
-        FeatureId.MOVE, FeatureId.ROTATE, FeatureId.SCALE, FeatureId.MIRROR
+        FeatureId.SELECT, FeatureId.LASSO,
+        FeatureId.MOVE, FeatureId.ROTATE, FeatureId.SCALE, FeatureId.MIRROR,
+        FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE, FeatureId.CLOSE,
+        // Existing native/UI animation path.
+        FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME, FeatureId.DUPLICATE_FRAME,
+        FeatureId.DELETE_FRAME, FeatureId.PLAYBACK, FeatureId.PAUSE, FeatureId.LOOP,
+        FeatureId.FPS, FeatureId.FRAME_NAVIGATION,
+        // Existing Legacy GP material/style path.
+        FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
+        FeatureId.THICKNESS, FeatureId.OPACITY,
+        FeatureId.ONION_SKIN, FeatureId.MULTIFRAME
     )
     private val inProgress = setOf(
-        FeatureId.FILL, FeatureId.LASSO, FeatureId.ERASER,
-        FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE,
-        FeatureId.TRIM, FeatureId.CLOSE,
+        FeatureId.TRIM,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
-        FeatureId.LAYER_RENAME, FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME,
-        FeatureId.INSERT_FRAME, FeatureId.DUPLICATE_FRAME, FeatureId.DELETE_FRAME,
-        FeatureId.FRAME_HOLDS, FeatureId.PLAYBACK, FeatureId.PAUSE, FeatureId.LOOP,
-        FeatureId.FPS, FeatureId.FRAME_NAVIGATION, FeatureId.MATERIALS,
-        FeatureId.SELECT_MATERIAL, FeatureId.THICKNESS, FeatureId.OPACITY,
-        FeatureId.ONION_SKIN, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
+        FeatureId.LAYER_RENAME,
+        FeatureId.INSERT_FRAME, FeatureId.FRAME_HOLDS,
+        FeatureId.ONION_RANGE, FeatureId.ONION_OPACITY, FeatureId.ONION_FADE,
+        FeatureId.ONION_LAYER_FILTER,
+        FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
     )
 
     fun capability(id: FeatureId): FeatureCapability {

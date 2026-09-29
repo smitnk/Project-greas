@@ -10,57 +10,69 @@ Do NOT replace Blender GP algorithms with unrelated custom approximations when t
 Keep Android responsible for Activity/UI/input/EGL/GLES lifecycle.
 Keep the existing Project Grease UI architecture.
 
-## Current repository truth
+## Repository baseline
 
 Branch: feature/project-grease-ui-real-integration
-Known successful baseline commit: ac11bd459f81422a054708e12222cd8ea973d4c8
-Last verified CI: Android GP build/verification succeeded at workflow run #356 (2026-09-29), APK artifact project-grease-debug-apk.
+Successful functional baseline: ac11bd459f81422a054708e12222cd8ea973d4c8
+Last verified CI baseline: workflow run #356 (2026-09-29), Android GP build/verification and APK artifact succeeded.
 
-The recent work added individual Legacy GP operations such as join/grouped selection. Those are real GP data operations, but they do NOT constitute the complete Blender 2D drawing engine.
+## Current bundled-engine work
 
-## New working strategy
+1. 81c65980bba385007e198e3b3d5db25da3927ad9
+   Added this persistent worklog so decisions, errors, fixes, successes and next actions are not lost.
 
-Stop treating each feature as a separate micro-phase.
+2. cb8004bd0226d0d8a349380533a81c0a5930e1d9
+   Added `project_grease_gp_engine.h`, a single host-facing engine boundary over the real Legacy GP Backend. It is an adapter, not a second drawing engine.
 
-Work in bundled engineering changes:
-1. Map the actual Blender 3.6.23 Legacy GP implementation and its dependency closure.
-2. Integrate coherent groups of real Blender GP functionality behind one Project Grease engine boundary.
-3. Keep desktop-only context/UI/WindowManager/GHOST dependencies outside Android unless a concrete dependency proves otherwise.
-4. Compile the bundle.
-5. If compilation fails, inspect the exact missing symbol/header/type and add only the smallest Blender dependency closure that is genuinely required.
-6. Re-run CI.
-7. If CI succeeds, verify the resulting APK and then continue expanding the same engine boundary rather than stopping for a ceremonial phase.
-8. Record every failure, fix, success, and next action in this file.
+3. 8954a56a50b2ae1fa450622339e1a7f526072414
+   Added `project_grease_gp_engine.cpp` with an explicit capability map. A capability is marked integrated only when it is actually backed and exercised; unsupported entries remain false instead of being advertised as complete.
 
-## Source direction
+4. d0089a8b28de07710f39cf423af1071fb161dbaa
+   Expanded the focused native CMake target to compile the pinned Blender Legacy GP editor sources under `source/blender/editors/gpencil/` and GP modifier sources under `source/blender/gpencil_modifiers/`, including Line Art sources, while retaining the minimal Android boundary.
 
-Blender 3.6.23 Legacy GP functionality is distributed across GP data/kernel, drawing/editor operations, sculpt/paint/editing, fill, modifiers, line art, animation and rendering/cache systems. The official 3.6 API exposes real GP drawing, eraser, stabilizer and selection operations. The repository's pinned Blender source is the authority for exact 3.6.23 implementation.
+## Why this is the correct direction
 
-The target is not to copy all of Blender. The target is to extract the smallest complete closure needed for the real GP drawing/editor engine.
+The previous adapter already used real Blender Legacy GP data and cache code but exposed only a subset of operations. The new bundled target now points directly at Blender's actual 3.6-era GP editor/modifier implementation instead of continuing to grow a collection of isolated Project Grease replacements.
 
-## Dependency policy
+The Blender source layout confirms the Legacy GP editor subsystem contains drawing/editing/fill/interpolation/armature and related operators, while GP modifiers contain the non-destructive modifier implementations. Newer Blender Grease Pencil 3 code must not be substituted for this pinned Legacy GP target.
 
-When a compiler/linker error occurs:
-- classify it as header/type, symbol, generated DNA/RNA, allocator/math/container, data/kernel, editor operation, GPU/cache, or desktop-context dependency;
-- locate the exact Blender 3.6.23 owner of the missing item;
-- add that source/dependency only when it belongs to the GP closure;
-- never solve a dependency error by importing the full Blender CMake graph;
-- if a dependency is desktop-only, replace the context boundary with an Android-owned adapter only where necessary.
+## Error-solving procedure
 
-When runtime behavior fails:
-- identify whether the failure is in GP data creation, GP operation, cache generation, Android GPU upload, coordinate conversion, or presentation;
-- preserve the Blender GP data/algorithm and repair the adapter boundary instead of rewriting the GP operation.
+For every CI/compiler/link/runtime failure:
+1. Read the exact failure from the failing job/log.
+2. Identify the owning Blender 3.6.23 source/header/symbol.
+3. Determine whether it belongs to the GP closure or is an unrelated desktop dependency.
+4. If it belongs to GP, integrate the smallest missing closure.
+5. If it is desktop-only, keep it outside Android and introduce only a narrow adapter if the real GP algorithm requires one.
+6. Never import the full Blender application graph just to silence an error.
+7. Rebuild and verify the same bundled change.
+8. Record the failure and fix here.
 
-## Success definition
+## Success procedure
 
-A successful bundle means more than a compile:
-- real Blender Legacy GP data is created and mutated;
-- Android input reaches the real GP drawing path;
-- the resulting GP data can be edited/animated using integrated Blender functionality;
-- the Android renderer presents the result;
-- CI builds and verifies the APK;
-- tests exercise the actual native engine path.
+When the bundle builds:
+- verify the native GP tests;
+- verify Android APK creation;
+- verify the APK artifact;
+- verify that the new source closure is actually linked/used;
+- then continue expanding the same engine boundary with the next real Blender subsystem, rather than creating a new micro-phase.
 
-## Current next action
+## Current state
 
-Continue from the successful ac11bd4 baseline by integrating the real Blender Legacy GP drawing/editor dependency closure as a coherent engine, while keeping full Blender application/UI/scene/GHOST/desktop rendering outside the Android product.
+The bundled editor/modifier source integration has been committed, but **it has not yet been CI-verified after d0089a8**. Therefore it must not be called successful yet.
+
+The next action is to obtain a CI build of d0089a8, inspect the first real compiler/linker failure, and solve the dependency closure from that concrete evidence. If the build succeeds, the next action is runtime/native conformance verification of the integrated Blender GP editor/modifier path.
+
+## Permanent architecture rule
+
+Android:
+UI + input + lifecycle + EGL/GLES
+
+Project Grease:
+controller/JNI/engine boundary
+
+Blender 3.6.23:
+real Legacy GP data + drawing/editing/sculpt/paint/modifier/Line Art algorithms as their minimal dependency closure
+
+Not included:
+full Blender application, desktop UI, Python, full scene/3D viewport, GHOST-on-Android, OpenToonz, GL4ES, unrelated Blender subsystems.

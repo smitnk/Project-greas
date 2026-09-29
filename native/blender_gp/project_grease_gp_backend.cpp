@@ -1614,7 +1614,33 @@ bool Backend::join_selected_strokes()
   bGPDstroke *destination = selected.front();
   for (size_t i = 1; i < selected.size(); ++i) {
     bGPDstroke *source = selected[i];
-    BKE_gpencil_stroke_join(destination, source, false, true, false);
+    const int destination_points = destination->totpoints;
+    const int source_points = source->totpoints;
+    bGPDspoint *joined_points = static_cast<bGPDspoint *>(
+        MEM_mallocN(sizeof(bGPDspoint) *
+                        static_cast<size_t>(destination_points + source_points),
+                    "Project Grease joined stroke points"));
+    if (!joined_points) {
+      impl_->last_error = "joined stroke point allocation failed";
+      return false;
+    }
+
+    std::memcpy(joined_points,
+                destination->points,
+                sizeof(bGPDspoint) * static_cast<size_t>(destination_points));
+    std::memcpy(joined_points + destination_points,
+                source->points,
+                sizeof(bGPDspoint) * static_cast<size_t>(source_points));
+
+    MEM_freeN(destination->points);
+    destination->points = joined_points;
+    destination->totpoints = destination_points + source_points;
+    destination->flag &= ~GP_STROKE_CYCLIC;
+    MEM_SAFE_FREE(destination->triangles);
+    destination->tot_triangles = 0;
+    MEM_SAFE_FREE(destination->dvert);
+    MEM_SAFE_FREE(destination->editcurve);
+
     BLI_remlink(&impl_->frame->strokes, source);
     BKE_gpencil_free_stroke(source);
   }
@@ -1642,8 +1668,15 @@ bool Backend::select_first_points(bool only_selected_strokes, bool extend)
        stroke != nullptr;
        stroke = stroke->next) {
     if (!stroke->points || stroke->totpoints <= 0) continue;
+    bool has_selected_point = false;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      if (stroke->points[i].flag & GP_SPOINT_SELECT) {
+        has_selected_point = true;
+        break;
+      }
+    }
     if (!only_selected_strokes ||
-        (stroke->flag & GP_STROKE_SELECT) || selected_point_count(stroke) > 0) {
+        (stroke->flag & GP_STROKE_SELECT) || has_selected_point) {
       eligible.push_back(stroke);
     }
   }

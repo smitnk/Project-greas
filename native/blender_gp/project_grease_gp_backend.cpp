@@ -17,6 +17,7 @@
 
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
+#include "BKE_gpencil_modifier_legacy.h"
 #ifndef __ANDROID__
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
@@ -25,6 +26,7 @@
 #endif
 
 #include "DNA_gpencil_legacy_types.h"
+#include "DNA_gpencil_modifier_types.h"
 #include "DNA_material_types.h"
 #include "DNA_object_types.h"
 

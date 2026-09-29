@@ -1463,9 +1463,45 @@ bool Backend::dissolve_selected_points()
     }
 
     if (has_selected) {
-      BKE_gpencil_stroke_delete_tagged_points(
-          impl_->gpd, impl_->frame, stroke, next, GP_SPOINT_TAG, false, false, 0);
-      changed = true;
+      // The Android closure intentionally does not link the full legacy
+      // gpencil_geom.c implementation. Compact tagged points in-place while
+      // preserving the real Blender 3.6.23 bGPDstroke/bGPDspoint layout.
+      int write_index = 0;
+      for (int read_index = 0; read_index < stroke->totpoints; ++read_index) {
+        bGPDspoint &point = stroke->points[read_index];
+        if (point.flag & GP_SPOINT_TAG) {
+          continue;
+        }
+        if (write_index != read_index) {
+          stroke->points[write_index] = point;
+        }
+        ++write_index;
+      }
+      if (write_index != stroke->totpoints) {
+        if (write_index == 0) {
+          MEM_SAFE_FREE(stroke->points);
+          stroke->totpoints = 0;
+          stroke->flag &= ~GP_STROKE_SELECT;
+        }
+        else {
+          bGPDspoint *points = static_cast<bGPDspoint *>(
+              MEM_mallocN(sizeof(bGPDspoint) * static_cast<size_t>(write_index),
+                           "Project Grease dissolve points"));
+          if (!points) {
+            impl_->last_error = "dissolve point allocation failed";
+            return false;
+          }
+          std::memcpy(points,
+                      stroke->points,
+                      sizeof(bGPDspoint) * static_cast<size_t>(write_index));
+          MEM_freeN(stroke->points);
+          stroke->points = points;
+          stroke->totpoints = write_index;
+        }
+        MEM_SAFE_FREE(stroke->triangles);
+        stroke->tot_triangles = 0;
+        changed = true;
+      }
     }
     stroke = next;
   }
@@ -1496,8 +1532,49 @@ bool Backend::merge_selected_points(float threshold)
     if (!(stroke->flag & GP_STROKE_SELECT) || stroke->totpoints < 2) {
       continue;
     }
-    BKE_gpencil_stroke_merge_distance(impl_->gpd, impl_->frame, stroke, threshold, false);
-    changed = true;
+    // Match the Legacy GP merge-distance rule used by the 3.6 API:
+    // keep the first and last point and collapse selected interior points
+    // whose distance from the previous kept point is below the threshold.
+    const float threshold_sq = threshold * threshold;
+    int write_index = 0;
+    for (int read_index = 0; read_index < stroke->totpoints; ++read_index) {
+      const bGPDspoint &point = stroke->points[read_index];
+      const bool keep_endpoint =
+          (read_index == 0 || read_index == stroke->totpoints - 1);
+      bool merge = false;
+      if (!keep_endpoint && write_index > 0) {
+        const bGPDspoint &previous = stroke->points[write_index - 1];
+        const float dx = point.x - previous.x;
+        const float dy = point.y - previous.y;
+        const float dz = point.z - previous.z;
+        merge = (dx * dx + dy * dy + dz * dz) < threshold_sq &&
+                (point.flag & GP_SPOINT_SELECT);
+      }
+      if (!merge) {
+        if (write_index != read_index) {
+          stroke->points[write_index] = point;
+        }
+        ++write_index;
+      }
+    }
+    if (write_index != stroke->totpoints) {
+      bGPDspoint *points = static_cast<bGPDspoint *>(
+          MEM_mallocN(sizeof(bGPDspoint) * static_cast<size_t>(write_index),
+                       "Project Grease merge points"));
+      if (!points) {
+        impl_->last_error = "merge point allocation failed";
+        return false;
+      }
+      std::memcpy(points,
+                  stroke->points,
+                  sizeof(bGPDspoint) * static_cast<size_t>(write_index));
+      MEM_freeN(stroke->points);
+      stroke->points = points;
+      stroke->totpoints = write_index;
+      MEM_SAFE_FREE(stroke->triangles);
+      stroke->tot_triangles = 0;
+      changed = true;
+    }
   }
 
   if (!changed) {

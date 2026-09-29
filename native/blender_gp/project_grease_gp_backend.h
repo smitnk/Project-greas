@@ -102,6 +102,9 @@ class Backend {
   bool set_material_visibility(int index, bool visible);
   bool set_material_fill_enabled(int index, bool enabled);
   bool smooth_stroke(int index, float influence, int iterations);
+  // Invoke Blender 3.6.23's real Legacy GP modifier deformStroke callback on one stroke.
+  // No Project Grease geometry algorithm is used for the modifier itself.
+  bool apply_blender_modifier(int stroke_index, int modifier_type, float factor, int iterations);
   bool set_onion_skin(bool enabled, int before, int after, float opacity);
   bool set_multiframe_editing(bool enabled);
   // Real Blender 3.6.23 Legacy GP fill geometry: triangulates a closed

@@ -86,6 +86,13 @@ class Backend {
   bool erase_at(float x, float y, float radius);
   void clear_selection();
   int lasso_select(const float* xy, int count, bool additive);
+  // Bulk Legacy GP edit commands: selection, point editing and stroke ordering.
+  bool select_all(int mode); // 0=set/select, 1=select, 2=invert, 3=deselect
+  int select_circle(float x, float y, float radius, int mode); // 0=set, 1=add, 2=sub
+  bool reverse_selected_strokes();
+  bool dissolve_selected_points();
+  bool merge_selected_points(float threshold);
+  bool reorder_selected_strokes(int direction); // 0=top, 1=up, 2=down, 3=bottom
   int material_count() const;
   bool create_material();
   bool set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4]);

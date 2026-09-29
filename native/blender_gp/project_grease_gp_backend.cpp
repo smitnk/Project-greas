@@ -322,6 +322,17 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   return true;
 }
 
+
+static bool project_grease_modifier_system_init()
+{
+  static bool initialized = false;
+  if (!initialized) {
+    BKE_gpencil_modifier_init();
+    initialized = true;
+  }
+  return true;
+}
+
 Backend::Backend() : impl_(new Impl()) {}
 
 Backend::~Backend()
@@ -2867,6 +2878,81 @@ bool Backend::set_material_fill_enabled(int index, bool enabled)
     ma->gp_style->flag &= ~GP_MATERIAL_FILL_SHOW;
   }
   project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+
+bool Backend::apply_blender_modifier(int index, int modifier_type, float factor, int iterations)
+{
+  if (!impl_->frame || !impl_->layer || !impl_->gpd || index < 0) {
+    impl_->last_error = "invalid Legacy GP modifier target";
+    return false;
+  }
+
+  bGPDstroke *stroke = nullptr;
+  int current = 0;
+  for (bGPDstroke *candidate = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       candidate; candidate = candidate->next, ++current) {
+    if (current == index) {
+      stroke = candidate;
+      break;
+    }
+  }
+  if (!stroke) {
+    impl_->last_error = "stroke index out of range";
+    return false;
+  }
+
+  project_grease_modifier_system_init();
+  GpencilModifierData *md = BKE_gpencil_modifier_new(
+      static_cast<GpencilModifierType>(modifier_type));
+  if (!md) {
+    impl_->last_error = "Blender Legacy GP modifier creation failed";
+    return false;
+  }
+
+  const GpencilModifierTypeInfo *info = BKE_gpencil_modifier_get_info(
+      static_cast<GpencilModifierType>(modifier_type));
+  if (!info || !info->deformStroke) {
+    BKE_gpencil_modifier_free(md);
+    impl_->last_error = "Legacy GP modifier has no deformStroke callback";
+    return false;
+  }
+
+  Object object = {};
+  object.type = OB_GPENCIL_LEGACY;
+  object.data = impl_->gpd;
+
+  /* Configure only Blender-owned modifier settings. The geometry operation
+   * itself is always the callback from Blender 3.6.23. */
+  switch (modifier_type) {
+    case eGpencilModifierType_Smooth: {
+      SmoothGpencilModifierData *m = reinterpret_cast<SmoothGpencilModifierData *>(md);
+      m->factor = factor > 0.0f ? std::min(factor, 1.0f) : m->factor;
+      m->step = iterations > 0 ? iterations : m->step;
+      m->flag |= GP_SMOOTH_MOD_LOCATION;
+      break;
+    }
+    case eGpencilModifierType_Thick: {
+      ThickGpencilModifierData *m = reinterpret_cast<ThickGpencilModifierData *>(md);
+      if (factor > 0.0f) m->thickness_fac = factor;
+      break;
+    }
+    case eGpencilModifierType_Subdiv: {
+      SubdivGpencilModifierData *m = reinterpret_cast<SubdivGpencilModifierData *>(md);
+      m->level = iterations > 0 ? iterations : m->level;
+      break;
+    }
+    default:
+      break;
+  }
+
+  info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
+  BKE_gpencil_modifier_free(md);
+  impl_->stroke = stroke;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
   return true;
 }
 

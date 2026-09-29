@@ -2,6 +2,7 @@
 #include "project_grease_legacy_primitive.h"
 #include "project_grease_legacy_fill.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include "BKE_gpencil_legacy.h"
@@ -464,6 +465,38 @@ int main() {
   }
 
   std::fprintf(stderr, "[SPLIT] stroke split/render passed\\n");
+
+
+  std::fprintf(stderr, "[FILL] Legacy GP end-to-end fill path\n");
+  {
+    constexpr int width = 16;
+    constexpr int height = 16;
+    float rgba[width * height * 4] = {};
+    auto mark_boundary = [&](int x, int y) {
+      const int i = (y * width + x) * 4;
+      rgba[i + 0] = 1.0f;
+      rgba[i + 1] = 1.0f;
+      rgba[i + 2] = 1.0f;
+      rgba[i + 3] = 1.0f;
+    };
+    for (int x = 4; x <= 11; ++x) {
+      mark_boundary(x, 4);
+      mark_boundary(x, 11);
+    }
+    for (int y = 4; y <= 11; ++y) {
+      mark_boundary(4, y);
+      mark_boundary(11, y);
+    }
+    const int before_strokes = backend.stroke_count();
+    if (!backend.fill_at_screen(rgba, width, height, 7, 7, 1, 0, {0, 2.0f}) ||
+        backend.stroke_count() != before_strokes + 1 ||
+        !backend.fill_stroke(backend.stroke_count() - 1) ||
+        !backend.render()) {
+      std::fprintf(stderr, "Legacy GP end-to-end fill path failed: %s\n", backend.last_error());
+      return 40;
+    }
+  }
+  std::fprintf(stderr, "[FILL] Legacy GP end-to-end fill/render passed\n");
 
   std::fprintf(stderr, "[DONE] edit/duplicate/translate/delete operations passed\n");
   std::puts("Blender legacy GP stroke edit/duplicate/translate/delete test passed");

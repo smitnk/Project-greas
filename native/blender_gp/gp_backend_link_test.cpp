@@ -663,6 +663,33 @@ int main() {
   std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot/render passed\n");
 
 
+  std::fprintf(stderr, "[PAINT-STAGE] Blender Legacy GP brush commit smoothing\n");
+  project_grease::gp::Backend::LegacyPaintSettings paint_settings{};
+  paint_settings.draw_smooth_level = 2;
+  paint_settings.draw_smooth_factor = 0.5f;
+  paint_settings.input_samples = 5;
+  paint_settings.smooth_position = true;
+  paint_settings.smooth_strength = true;
+  if (!backend.set_legacy_paint_settings(paint_settings) ||
+      !backend.begin_stroke({0, 7.0f}) ||
+      !backend.add_point({40.0f, 50.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({41.0f, 52.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.add_point({42.0f, 50.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.add_point({43.0f, 52.0f, 0.0f, 0.7f, 0.7f, 0.3f}) ||
+      !backend.end_stroke() ||
+      backend.stroke_buffer_count() != 0 ||
+      !backend.render()) {
+    std::fprintf(stderr, "Legacy GP paint-stage smoothing failed: %s\n",
+                 backend.last_error());
+    return 68;
+  }
+  if (!backend.set_legacy_paint_settings({})) {
+    std::fprintf(stderr, "Legacy GP paint settings reset failed: %s\n",
+                 backend.last_error());
+    return 69;
+  }
+  std::fprintf(stderr, "[PAINT-STAGE] brush smoothing/input-sample callbacks passed\n");
+
   std::fprintf(stderr, "[MODIFIER-STACK] real Blender Legacy GP modifier stack\\n");
   if (!backend.begin_stroke({0, 10.0f}) ||
       !backend.add_point({50.0f, 10.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||

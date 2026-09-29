@@ -1141,6 +1141,41 @@ bool Backend::duplicate_stroke(int index) {
   return false;
 }
 
+
+bool Backend::stroke_center(int index, float *x, float *y) const
+{
+  if (!impl_->frame || index < 0 || !x || !y) {
+    return false;
+  }
+
+  int current = 0;
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current != index) {
+      continue;
+    }
+    if (stroke->totpoints <= 0 || !stroke->points) {
+      return false;
+    }
+
+    /* Blender Edit Mode's Median Point is the averaged position of the
+     * selected points. For a single selected stroke, use its point median
+     * as the stable transform pivot for an interactive gesture. */
+    double sum_x = 0.0;
+    double sum_y = 0.0;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      sum_x += stroke->points[i].x;
+      sum_y += stroke->points[i].y;
+    }
+    *x = static_cast<float>(sum_x / stroke->totpoints);
+    *y = static_cast<float>(sum_y / stroke->totpoints);
+    return true;
+  }
+  return false;
+}
+
 bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
   if (!impl_->frame || index < 0) {
     impl_->last_error = "invalid stroke translation";
@@ -1217,9 +1252,21 @@ bool Backend::flip_stroke(int index)
 }
 
 
+
 bool Backend::rotate_stroke(int index, float radians)
 {
-  if (!impl_->frame || index < 0) {
+  float cx = 0.0f, cy = 0.0f;
+  if (!stroke_center(index, &cx, &cy)) {
+    impl_->last_error = "invalid stroke rotation";
+    return false;
+  }
+  return rotate_stroke_about(index, radians, cx, cy);
+}
+
+bool Backend::rotate_stroke_about(int index, float radians, float center_x, float center_y)
+{
+  if (!impl_->frame || index < 0 || !std::isfinite(radians) ||
+      !std::isfinite(center_x) || !std::isfinite(center_y)) {
     impl_->last_error = "invalid stroke rotation";
     return false;
   }
@@ -1234,25 +1281,14 @@ bool Backend::rotate_stroke(int index, float radians)
       return false;
     }
 
-    float min_x = stroke->points[0].x, max_x = stroke->points[0].x;
-    float min_y = stroke->points[0].y, max_y = stroke->points[0].y;
-    for (int i = 1; i < stroke->totpoints; ++i) {
-      min_x = std::fmin(min_x, stroke->points[i].x);
-      max_x = std::fmax(max_x, stroke->points[i].x);
-      min_y = std::fmin(min_y, stroke->points[i].y);
-      max_y = std::fmax(max_y, stroke->points[i].y);
-    }
-
-    const float cx = (min_x + max_x) * 0.5f;
-    const float cy = (min_y + max_y) * 0.5f;
     const float c = std::cos(radians);
     const float s = std::sin(radians);
     for (int i = 0; i < stroke->totpoints; ++i) {
       bGPDspoint &p = stroke->points[i];
-      const float x = p.x - cx;
-      const float y = p.y - cy;
-      p.x = cx + x * c - y * s;
-      p.y = cy + x * s + y * c;
+      const float x = p.x - center_x;
+      const float y = p.y - center_y;
+      p.x = center_x + x * c - y * s;
+      p.y = center_y + x * s + y * c;
     }
 
     impl_->stroke = stroke;
@@ -1266,10 +1302,23 @@ bool Backend::rotate_stroke(int index, float radians)
   return false;
 }
 
+
 bool Backend::scale_stroke(int index, float scale_x, float scale_y)
 {
+  float cx = 0.0f, cy = 0.0f;
+  if (!stroke_center(index, &cx, &cy)) {
+    impl_->last_error = "invalid stroke scale";
+    return false;
+  }
+  return scale_stroke_about(index, scale_x, scale_y, cx, cy);
+}
+
+bool Backend::scale_stroke_about(
+    int index, float scale_x, float scale_y, float center_x, float center_y)
+{
   if (!impl_->frame || index < 0 || !std::isfinite(scale_x) || !std::isfinite(scale_y) ||
-      scale_x == 0.0f || scale_y == 0.0f) {
+      scale_x == 0.0f || scale_y == 0.0f ||
+      !std::isfinite(center_x) || !std::isfinite(center_y)) {
     impl_->last_error = "invalid stroke scale";
     return false;
   }
@@ -1284,21 +1333,10 @@ bool Backend::scale_stroke(int index, float scale_x, float scale_y)
       return false;
     }
 
-    float min_x = stroke->points[0].x, max_x = stroke->points[0].x;
-    float min_y = stroke->points[0].y, max_y = stroke->points[0].y;
-    for (int i = 1; i < stroke->totpoints; ++i) {
-      min_x = std::fmin(min_x, stroke->points[i].x);
-      max_x = std::fmax(max_x, stroke->points[i].x);
-      min_y = std::fmin(min_y, stroke->points[i].y);
-      max_y = std::fmax(max_y, stroke->points[i].y);
-    }
-
-    const float cx = (min_x + max_x) * 0.5f;
-    const float cy = (min_y + max_y) * 0.5f;
     for (int i = 0; i < stroke->totpoints; ++i) {
       bGPDspoint &p = stroke->points[i];
-      p.x = cx + (p.x - cx) * scale_x;
-      p.y = cy + (p.y - cy) * scale_y;
+      p.x = center_x + (p.x - center_x) * scale_x;
+      p.y = center_y + (p.y - center_y) * scale_y;
     }
 
     impl_->stroke = stroke;
@@ -1312,9 +1350,22 @@ bool Backend::scale_stroke(int index, float scale_x, float scale_y)
   return false;
 }
 
+
 bool Backend::mirror_stroke(int index, bool mirror_x, bool mirror_y)
 {
-  if (!impl_->frame || index < 0 || (!mirror_x && !mirror_y)) {
+  float cx = 0.0f, cy = 0.0f;
+  if (!stroke_center(index, &cx, &cy)) {
+    impl_->last_error = "invalid stroke mirror";
+    return false;
+  }
+  return mirror_stroke_about(index, mirror_x, mirror_y, cx, cy);
+}
+
+bool Backend::mirror_stroke_about(
+    int index, bool mirror_x, bool mirror_y, float center_x, float center_y)
+{
+  if (!impl_->frame || index < 0 || (!mirror_x && !mirror_y) ||
+      !std::isfinite(center_x) || !std::isfinite(center_y)) {
     impl_->last_error = "invalid stroke mirror";
     return false;
   }
@@ -1329,21 +1380,10 @@ bool Backend::mirror_stroke(int index, bool mirror_x, bool mirror_y)
       return false;
     }
 
-    float min_x = stroke->points[0].x, max_x = stroke->points[0].x;
-    float min_y = stroke->points[0].y, max_y = stroke->points[0].y;
-    for (int i = 1; i < stroke->totpoints; ++i) {
-      min_x = std::fmin(min_x, stroke->points[i].x);
-      max_x = std::fmax(max_x, stroke->points[i].x);
-      min_y = std::fmin(min_y, stroke->points[i].y);
-      max_y = std::fmax(max_y, stroke->points[i].y);
-    }
-
-    const float cx = (min_x + max_x) * 0.5f;
-    const float cy = (min_y + max_y) * 0.5f;
     for (int i = 0; i < stroke->totpoints; ++i) {
       bGPDspoint &p = stroke->points[i];
-      if (mirror_x) p.x = 2.0f * cx - p.x;
-      if (mirror_y) p.y = 2.0f * cy - p.y;
+      if (mirror_x) p.x = 2.0f * center_x - p.x;
+      if (mirror_y) p.y = 2.0f * center_y - p.y;
     }
 
     impl_->stroke = stroke;

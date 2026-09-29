@@ -268,4 +268,3 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMirrorStrokeAbout(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease.nativebridge.GPNative_nativeMirrorStrokeAbout

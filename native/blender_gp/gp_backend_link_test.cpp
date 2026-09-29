@@ -988,6 +988,75 @@ int main() {
   std::fprintf(stderr,
                "[MODIFIER-BULK] real Blender Legacy GP Tint -> Offset -> Texture Mapping callbacks passed\\n");
 
+
+  std::fprintf(stderr, "[MODIFIER-BULK] Blender 3.6.23 Legacy GP Weight Angle / Weight Proximity / Hook callbacks\\n");
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({120.0f, 50.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({124.0f, 54.0f, 0.0f, 1.0f, 1.0f, 0.1f}) ||
+      !backend.add_point({128.0f, 50.0f, 0.0f, 1.0f, 1.0f, 0.2f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "weight-angle setup failed: %s\\n", backend.last_error());
+    return 84;
+  }
+  const int weight_angle_index = backend.stroke_count() - 1;
+  if (!backend.apply_blender_modifier(
+          weight_angle_index, eGpencilModifierType_WeightAngle, 0.0f, 1) ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender Weight Angle modifier failed: %s\\n", backend.last_error());
+    return 85;
+  }
+  float angle_weight = -1.0f;
+  if (!backend.get_point_group_weight(weight_angle_index, 1, 0, &angle_weight) ||
+      angle_weight < 0.0f || angle_weight > 1.0f) {
+    std::fprintf(stderr, "real Blender Weight Angle group weight was not produced: %f\\n", angle_weight);
+    return 86;
+  }
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({130.0f, 60.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({132.0f, 62.0f, 0.0f, 1.0f, 1.0f, 0.1f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "weight-proximity setup failed: %s\\n", backend.last_error());
+    return 87;
+  }
+  const int weight_prox_index = backend.stroke_count() - 1;
+  if (!backend.apply_blender_modifier(
+          weight_prox_index, eGpencilModifierType_WeightProximity, 10.0f, 1) ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender Weight Proximity modifier failed: %s\\n", backend.last_error());
+    return 88;
+  }
+  float prox_weight = -1.0f;
+  if (!backend.get_point_group_weight(weight_prox_index, 1, 1, &prox_weight) ||
+      prox_weight < 0.0f || prox_weight > 1.0f) {
+    std::fprintf(stderr, "real Blender Weight Proximity group weight was not produced: %f\\n", prox_weight);
+    return 89;
+  }
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({140.0f, 70.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({144.0f, 72.0f, 0.0f, 1.0f, 1.0f, 0.1f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "hook setup failed: %s\\n", backend.last_error());
+    return 90;
+  }
+  const int hook_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint hook_before{};
+  project_grease::gp::StrokePoint hook_after{};
+  if (!backend.get_point(hook_index, 0, &hook_before) ||
+      !backend.apply_blender_modifier(hook_index, eGpencilModifierType_Hook, 1.0f, 1) ||
+      !backend.get_point(hook_index, 0, &hook_after) ||
+      std::fabs(hook_after.x - (hook_before.x + 1.0f)) > 1.0e-5f ||
+      std::fabs(hook_after.y - (hook_before.y + 0.5f)) > 1.0e-5f ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender Hook modifier failed: %s\\n", backend.last_error());
+    return 91;
+  }
+
+  std::fprintf(stderr,
+               "[MODIFIER-BULK] real Blender Legacy GP Weight Angle -> Weight Proximity -> Hook callbacks passed\\n");
+
   std::fprintf(stderr,
                "[MODIFIER-STACK] Smooth -> Thickness -> Subdivide real Blender callbacks passed\\n");
 

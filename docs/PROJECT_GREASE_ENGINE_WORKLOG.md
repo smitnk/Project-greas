@@ -232,3 +232,15 @@ The next modifier bundle is source-traced against pinned Blender 3.6.23 Legacy G
 Project Grease adds no replacement geometry algorithm. The focused adapter supplies only the Blender-owned modifier settings and the minimum Object context needed by these callbacks. Native conformance verifies actual point/color/UV changes and render/cache validity.
 
 The next CI loop must compile, link, run conformance, verify the APK, and upload the artifact. If any dependency or runtime error appears, fix the exact Blender 3.6.23 closure before adding the next modifier bundle.
+
+
+### Bulk Legacy GP modifier expansion — Weight Angle / Weight Proximity / Hook — 2026-09-30
+
+Source-traced against pinned Blender 3.6.23 Legacy GP modifier implementations.
+
+- **Weight Angle** uses the real `WeightAngleGpencilModifierData::deformStroke()` callback and Blender deform-vertex APIs. Project Grease creates only the required target deform group in the real GP datablock.
+- **Weight Proximity** uses the real `WeightProxGpencilModifierData::deformStroke()` callback. The focused adapter supplies a deterministic target Object transform; it does not port Blender's scene/depsgraph evaluation.
+- **Hook** uses the real `HookGpencilModifierData::deformStroke()` callback with a deterministic target Object transform, no armature/bone subtarget, and no desktop depsgraph evaluation.
+- Native conformance checks real deform-group weights and Hook geometry movement, followed by Blender GP render/cache validation.
+
+These are not reimplemented Project Grease deformation algorithms. The adapter supplies only the minimum Blender-owned Object/deform-group context required by the upstream 3.6.23 callbacks.

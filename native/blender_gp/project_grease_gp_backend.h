@@ -60,6 +60,8 @@ class Backend {
   bool select_stroke(int index);
   int hit_test_stroke(float x, float y, float radius) const;
   bool get_point(int stroke_index, int point_index, StrokePoint* out) const;
+  // Reads a real Blender Legacy GP deform-group weight from a stroke point.
+  bool get_point_group_weight(int stroke_index, int point_index, int group_index, float* out) const;
   bool stroke_center(int stroke_index, float *x, float *y) const;
   bool set_point(int stroke_index, int point_index, const StrokePoint& point);
   bool delete_stroke(int index);

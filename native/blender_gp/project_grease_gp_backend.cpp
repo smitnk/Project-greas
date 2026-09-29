@@ -17,6 +17,7 @@
 
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
+#include "BKE_deform.h"
 #include "DNA_gpencil_modifier_types.h"
 #include "BKE_gpencil_modifier_legacy.h"
 #ifndef __ANDROID__
@@ -1884,6 +1885,35 @@ bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) con
   return false;
 }
 
+bool Backend::get_point_group_weight(int index, int point_index, int group_index, float *out) const
+{
+  if (!out || !impl_->frame || index < 0 || point_index < 0 || group_index < 0) {
+    return false;
+  }
+
+  bGPDstroke *stroke = nullptr;
+  int current = 0;
+  for (bGPDstroke *candidate = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       candidate; candidate = candidate->next, ++current) {
+    if (current == index) {
+      stroke = candidate;
+      break;
+    }
+  }
+  if (!stroke || point_index >= stroke->totpoints || !stroke->dvert) {
+    return false;
+  }
+
+  const MDeformVert &dv = stroke->dvert[point_index];
+  for (int i = 0; i < dv.totweight; ++i) {
+    if (dv.dw[i].def_nr == group_index) {
+      *out = dv.dw[i].weight;
+      return true;
+    }
+  }
+  return false;
+}
+
 bool Backend::set_point(int stroke_index,
                         int point_index,
                         const StrokePoint &point) {
@@ -3243,6 +3273,71 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
       m->rnd_scale[0] = m->rnd_scale[1] = m->rnd_scale[2] = 0.0f;
       m->mode = GP_OFFSET_LAYER;
       break;
+    }
+    case eGpencilModifierType_WeightAngle: {
+      WeightAngleGpencilModifierData *m =
+          reinterpret_cast<WeightAngleGpencilModifierData *>(md);
+      BKE_object_defgroup_new(&object, "PGWeightAngle");
+      BLI_strncpy(m->target_vgname, "PGWeightAngle", sizeof(m->target_vgname));
+      m->vgname[0] = '\\0';
+      m->axis = 2;
+      m->space = GP_SPACE_WORLD;
+      m->angle = factor;
+      m->min_weight = 0.0f;
+      m->flag &= ~(GP_WEIGHT_INVERT_OUTPUT | GP_WEIGHT_MULTIPLY_DATA);
+      break;
+    }
+    case eGpencilModifierType_WeightProximity: {
+      WeightProxGpencilModifierData *m =
+          reinterpret_cast<WeightProxGpencilModifierData *>(md);
+      BKE_object_defgroup_new(&object, "PGWeightProximity");
+      BLI_strncpy(m->target_vgname, "PGWeightProximity", sizeof(m->target_vgname));
+      m->vgname[0] = '\\0';
+      m->dist_start = 0.0f;
+      m->dist_end = std::max(0.001f, factor);
+      m->min_weight = 0.0f;
+      m->flag &= ~(GP_WEIGHT_INVERT_OUTPUT | GP_WEIGHT_MULTIPLY_DATA);
+      Object target = {};
+      target.type = OB_EMPTY;
+      unit_m4(target.object_to_world);
+      target.object_to_world[3][0] = 0.0f;
+      target.object_to_world[3][1] = 0.0f;
+      target.object_to_world[3][2] = 0.0f;
+      m->object = &target;
+      info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
+      m->object = nullptr;
+      BKE_gpencil_modifier_free(md);
+      impl_->stroke = stroke;
+      BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+      project_grease_gp_tag(impl_->gpd);
+      impl_->last_error.clear();
+      return true;
+    }
+    case eGpencilModifierType_Hook: {
+      HookGpencilModifierData *m =
+          reinterpret_cast<HookGpencilModifierData *>(md);
+      Object target = {};
+      target.type = OB_EMPTY;
+      unit_m4(target.object_to_world);
+      target.object_to_world[3][0] = factor;
+      target.object_to_world[3][1] = factor * 0.5f;
+      target.object_to_world[3][2] = 0.0f;
+      m->object = &target;
+      m->force = iterations > 0 ? std::min(1.0f, factor) : factor;
+      m->falloff_type = eGPHook_Falloff_None;
+      m->falloff = 0.0f;
+      m->flag &= ~(GP_HOOK_INVERT_VGROUP | GP_HOOK_UNIFORM_SPACE);
+      m->cent[0] = m->cent[1] = m->cent[2] = 0.0f;
+      unit_m4(m->parentinv);
+      m->vgname[0] = '\\0';
+      info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
+      m->object = nullptr;
+      BKE_gpencil_modifier_free(md);
+      impl_->stroke = stroke;
+      BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+      project_grease_gp_tag(impl_->gpd);
+      impl_->last_error.clear();
+      return true;
     }
     case eGpencilModifierType_Texture: {
       TextureGpencilModifierData *m = reinterpret_cast<TextureGpencilModifierData *>(md);

@@ -77,6 +77,11 @@ int project_grease_gp_end_stroke(ProjectGreaseGPHandle *handle)
   return handle->backend.end_stroke() ? 1 : 0;
 }
 
+int project_grease_gp_cancel_stroke(ProjectGreaseGPHandle *handle)
+{
+  return handle && handle->backend.cancel_stroke() ? 1 : 0;
+}
+
 int project_grease_gp_initialize_external_gpu(ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(handle)) {

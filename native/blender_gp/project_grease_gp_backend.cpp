@@ -186,6 +186,50 @@ static void history_snapshot_free(HistorySnapshot *snapshot)
   delete snapshot;
 }
 
+static bGPdata *history_gp_duplicate(const bGPdata *source)
+{
+  if (!source) {
+    return nullptr;
+  }
+
+  // This mirrors Blender 3.6.23's internal_copy path in
+  // BKE_gpencil_data_duplicate(), without entering BKE_id_copy(). The Android
+  // document is not an ID database, so the ID-copy branch is intentionally
+  // outside this focused closure.
+  bGPdata *destination = static_cast<bGPdata *>(
+      MEM_dupallocN(source));
+  if (!destination) {
+    return nullptr;
+  }
+
+  // Runtime/cache state belongs to the live owner, never to the snapshot.
+  std::memset(&destination->runtime, 0, sizeof(destination->runtime));
+
+  if (source->mat) {
+    destination->mat = static_cast<Material **>(MEM_dupallocN(source->mat));
+  }
+
+  // Do not shallow-copy the source list nodes.
+  BLI_listbase_clear(&destination->layers);
+  LISTBASE_FOREACH (bGPDlayer *, source_layer, &source->layers) {
+    bGPDlayer *destination_layer =
+        BKE_gpencil_layer_duplicate(source_layer, true, true);
+    if (!destination_layer) {
+      BKE_gpencil_free_layers(&destination->layers);
+      MEM_SAFE_FREE(destination->mat);
+      MEM_freeN(destination);
+      return nullptr;
+    }
+    BLI_addtail(&destination->layers, destination_layer);
+  }
+
+  return destination;
+}
+
+struct HistorySnapshot {
+  bGPdata *data = nullptr;
+};
+
 static HistorySnapshot *history_snapshot_create(const bGPdata *source)
 {
   if (!source) {
@@ -193,19 +237,12 @@ static HistorySnapshot *history_snapshot_create(const bGPdata *source)
   }
 
   HistorySnapshot *snapshot = new HistorySnapshot();
-
-  // Blender's Legacy GP API explicitly uses internal_copy=true for undo
-  // snapshots. This duplicates the bGPdata container plus its layers, frames,
-  // strokes, points and weights using the pinned Blender implementation.
-  snapshot->data = BKE_gpencil_data_duplicate(nullptr, source, true);
+  snapshot->data = history_gp_duplicate(source);
   if (!snapshot->data) {
     delete snapshot;
     return nullptr;
   }
 
-  // The duplication API intentionally performs a straight copy of runtime
-  // pointers. Never let an undo snapshot retain the live GPU/cache pointers.
-  std::memset(&snapshot->data->runtime, 0, sizeof(snapshot->data->runtime));
   snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
   return snapshot;
 }
@@ -249,7 +286,7 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   }
 
   // Duplicate first so an allocation failure leaves the live document intact.
-  bGPdata *restored = BKE_gpencil_data_duplicate(nullptr, snapshot->data, true);
+  bGPdata *restored = history_gp_duplicate(snapshot->data);
   if (!restored) {
     return false;
   }

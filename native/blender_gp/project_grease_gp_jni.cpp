@@ -155,6 +155,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameCount(JNIEnv *, j
 {
   return project_grease_gp_frame_count(from_handle(handle));
 }
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameEnd(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_frame_end(from_handle(handle));
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDuplicateFrame(JNIEnv *, jobject, jlong handle, jint source_frame, jint target_frame)
 {

@@ -257,6 +257,48 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTrimStrokeToIntersecti
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryReset(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_reset(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryRecord(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_record(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryUndo(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_undo(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryRedo(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_redo(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeHistoryCanUndo(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_can_undo(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryCanRedo(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_can_redo(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMirrorStroke(
     JNIEnv *, jobject, jlong handle, jint index, jboolean mirror_x, jboolean mirror_y)
 {

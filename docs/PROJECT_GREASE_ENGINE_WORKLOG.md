@@ -201,3 +201,13 @@ This is the first explicit connection of the Android stroke session to Blender 3
 ### Next continuation
 
 Do not mark the paint/stroke subsystem complete yet. The next step is to move more of the pinned Blender 3.6.23 paint processing into this same focused path: brush settings, pressure/strength processing, active smoothing, stroke subdivision/simplification and final stroke commit, adding only the concrete BKE/ED dependencies required by those upstream functions. The eventual target remains the real Legacy GP drawing pipeline, followed by editing/sculpt/paint, animation, fill/material/onion, rendering/cache and Android GLES presentation.
+
+
+## Paint-buffer linker correction — 2026-09-29
+
+- Runs #377, #378 and #379 all reached the native link stage but failed on the same concrete symbol:
+  `undefined symbol: ED_gpencil_sbuffer_ensure`.
+- The failure was not caused by the new `tGPspoint` data path itself. The header/API was included, but its real Blender 3.6.23 implementation lives in the pinned Legacy GP editor source `source/blender/editors/gpencil_legacy/gpencil_utils.c`, which was not yet part of the focused Android source closure.
+- The pinned 3.6.23 implementation was verified directly: `ED_gpencil_sbuffer_ensure()` allocates/reallocates the real `tGPspoint` stroke cache and clears it when requested.
+- Commit `3ae3ff6eb5db763c3e06b48a9256ea8e1e7ad860` adds that exact pinned Blender source file to the Android target. No replacement implementation was invented.
+- Next CI gate must prove whether `gpencil_utils.c` has additional concrete dependencies. If it does, add only the smallest exact pinned Blender dependency required by the linker/compiler error.

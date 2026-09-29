@@ -34,7 +34,10 @@ object FeatureRegistry {
     // Everything else stays IN_PROGRESS or NOT_IMPLEMENTED until its real engine path
     // and Android presentation path are validated.
     private val available = setOf(
-        FeatureId.FREEHAND
+        FeatureId.FREEHAND,
+        FeatureId.SELECT, FeatureId.LASSO, FeatureId.ERASER,
+        FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
+        FeatureId.MOVE
     )
     private val inProgress = setOf(
         FeatureId.FILL,

@@ -197,3 +197,10 @@ CI verification branches were created only to trigger/inspect the Android build 
 - The modifier-stack test had an invalid expectation: it checked for 4 points in `stroke_buffer_count()` after `end_stroke()`. The backend intentionally commits the real Blender `tGPspoint` buffer to `bGPDstroke` and clears the temporary sbuffer, matching the paint lifecycle.
 - Commit `77d27217a19198f3d43417ad0cde21d74e2f4fcc` changes the test to require sbuffer count 0 after commit and validate the committed stroke through the normal stroke APIs.
 - This prevents a false runtime failure after the compile-stage smoothing fix.
+
+
+### Next Legacy modifier expansion — Simplify
+- Official Blender 3.6.23 `MOD_gpencil_legacy_simplify.c` confirms the real `deformStroke` callback dispatches Fixed, Adaptive/RDP, Sample, and Merge modes through BKE Legacy GP geometry APIs; its depsgraph parameter is unused.
+- Production commit `94ab9f080fae32071b6f7938f6d65164b95c4329` configures the real `SimplifyGpencilModifierData` in the single-modifier path, and `a11563c6f87b56dcf786febffb2156efcfafbb46` adds the same real configuration to the modifier-stack path.
+- Conformance commit `8ca5a4dfff1e2ca468b2bbf8363f4cfe370f89d7` adds a real Simplify callback test that requires the point count to decrease and the Legacy GP render/cache path to remain valid.
+- Noise and other context/depsgraph-dependent modifiers are not being falsely marked complete; each must be source-traced and only added when its focused Android dependency closure is proven.

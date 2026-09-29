@@ -250,6 +250,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeScaleStrokeAbout(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTrimStrokeToIntersection(
+    JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_trim_stroke_to_intersection(from_handle(handle), index) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMirrorStroke(
     JNIEnv *, jobject, jlong handle, jint index, jboolean mirror_x, jboolean mirror_y)
 {

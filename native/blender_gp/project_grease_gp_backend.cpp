@@ -1631,6 +1631,35 @@ bool Backend::close_stroke(int index)
   return false;
 }
 
+bool Backend::trim_stroke(int index) {
+  if (!impl_->frame || !impl_->gpd || index < 0) {
+    impl_->last_error = "invalid stroke trim";
+    return false;
+  }
+  int current = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr; stroke = stroke->next, ++current) {
+    if (current != index) continue;
+    if (stroke->totpoints < 4 || !stroke->points) {
+      impl_->last_error = "stroke needs at least four points for Legacy GP trim";
+      return false;
+    }
+    if (!BKE_gpencil_stroke_trim(impl_->gpd, stroke)) {
+      impl_->last_error = "BKE_gpencil_stroke_trim() found no intersection";
+      return false;
+    }
+    impl_->stroke = stroke;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+#ifndef __ANDROID__
+    project_grease_gp_tag(impl_->gpd);
+#endif
+    impl_->last_error.clear();
+    return true;
+  }
+  impl_->last_error = "stroke index out of range";
+  return false;
+}
+
 bool Backend::trim_stroke_points(int index,
                                  int index_from,
                                  int index_to,

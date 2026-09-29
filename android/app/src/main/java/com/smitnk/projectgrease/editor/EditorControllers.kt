@@ -48,7 +48,7 @@ class NativeEditorBridge {
         handle != 0L && GPNative.nativeMirrorStrokeAbout(handle, index, mirrorX, mirrorY, centerX, centerY)
     fun subdivideStroke(index: Int, level: Int) = handle != 0L && GPNative.nativeSubdivideStroke(handle, index, level)
     fun closeStroke(index: Int) = handle != 0L && GPNative.nativeCloseStroke(handle, index)
-    fun trimStroke(index: Int, from: Int, to: Int, keepSinglePoint: Boolean) = handle != 0L && GPNative.nativeTrimStroke(handle, index, from, to, keepSinglePoint)
+    fun trimStroke(index: Int, from: Int, to: Int, keepSinglePoint: Boolean) = handle != 0L && GPNative.nativeTrimStroke(handle, index, from, to, keepSinglePoint)\n    fun trimStrokeToIntersection(index: Int) = handle != 0L && GPNative.nativeTrimStrokeToIntersection(handle, index)
     fun splitStroke(index: Int, beforeIndex: Int) = handle != 0L && GPNative.nativeSplitStroke(handle, index, beforeIndex)
     fun getPoint(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPoint(handle, stroke, point) else null
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
@@ -614,7 +614,7 @@ class EditorController {
     fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun subdivideSelectedStroke(level:Int=1):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.subdivideStroke(i,level);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun closeSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.closeStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun trimSelectedStroke(from:Int,to:Int,keepSinglePoint:Boolean=true):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStroke(i,from,to,keepSinglePoint);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun trimSelectedStroke(from:Int,to:Int,keepSinglePoint:Boolean=true):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStroke(i,from,to,keepSinglePoint);if(ok){history.markEdit();document.markDirty();render()};return ok}\n    fun trimSelectedStrokeToIntersection():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStrokeToIntersection(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun splitSelectedStroke(beforeIndex:Int):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.splitStroke(i,beforeIndex);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun undo()=history.undo()
     fun redo()=history.redo()

@@ -39,7 +39,7 @@ object FeatureRegistry {
         FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
         FeatureId.SELECT, FeatureId.LASSO,
         FeatureId.MOVE, FeatureId.ROTATE, FeatureId.SCALE, FeatureId.MIRROR,
-        FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE, FeatureId.CLOSE,
+        FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE, FeatureId.TRIM, FeatureId.CLOSE,
         // Existing native/UI animation path.
         FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME, FeatureId.DUPLICATE_FRAME,
         FeatureId.DELETE_FRAME, FeatureId.PLAYBACK, FeatureId.PAUSE, FeatureId.LOOP,

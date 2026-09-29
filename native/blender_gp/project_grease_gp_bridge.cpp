@@ -256,6 +256,10 @@ int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int 
 {
   return ensure_ready(handle) && handle->backend.trim_stroke_points(index, from, to, keep_single_point != 0) ? 1 : 0;
 }
+int project_grease_gp_trim_stroke_to_intersection(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_ready(handle) && handle->backend.trim_stroke(index) ? 1 : 0;
+}
 int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int before_index)
 {
   return ensure_ready(handle) && handle->backend.split_stroke(index, before_index) ? 1 : 0;

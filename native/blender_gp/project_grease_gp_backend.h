@@ -69,7 +69,7 @@ class Backend {
   bool mirror_stroke_about(int index, bool mirror_x, bool mirror_y, float center_x, float center_y);
   bool subdivide_stroke(int index, int level);
   bool close_stroke(int index);
-  bool trim_stroke_points(int index, int index_from, int index_to, bool keep_single_point);
+  // Blender 3.6.23 Legacy GP trim: trim to the first self-intersection/loop.\n  bool trim_stroke(int index);\n  bool trim_stroke_points(int index, int index_from, int index_to, bool keep_single_point);
   bool split_stroke(int index, int before_index);
   bool create_primitive(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, const StrokeStyle& style);
   bool create_polyline(const StrokePoint* points, int count, const StrokeStyle& style, bool cyclic);

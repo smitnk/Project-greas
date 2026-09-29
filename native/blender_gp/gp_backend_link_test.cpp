@@ -405,6 +405,30 @@ int main() {
 
   std::fprintf(stderr, "[POINTS] stroke point trim/render passed\n");
 
+  std::fprintf(stderr, "[TRIM] create self-intersecting stroke\\n");
+  if (!backend.begin_stroke({0, 5.0f})) {
+    std::fprintf(stderr, "trim setup failed: %s\\n", backend.last_error());
+    return 41;
+  }
+  backend.add_point({6.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({8.0f, 2.0f, 0.0f, 0.9f, 0.9f, 0.1f});
+  backend.add_point({6.0f, 4.0f, 0.0f, 0.8f, 0.8f, 0.2f});
+  backend.add_point({8.0f, 0.0f, 0.0f, 0.7f, 0.7f, 0.3f});
+  backend.add_point({9.0f, 1.0f, 0.0f, 0.6f, 0.6f, 0.4f});
+  if (!backend.end_stroke()) {
+    std::fprintf(stderr, "trim setup end_stroke failed: %s\\n", backend.last_error());
+    return 41;
+  }
+  const int trim_index = backend.stroke_count() - 1;
+  const int trim_points_before = backend.point_count();
+  if (!backend.trim_stroke(trim_index) ||
+      backend.point_count() >= trim_points_before ||
+      !backend.render()) {
+    std::fprintf(stderr, "Legacy GP intersection trim failed: %s\\n", backend.last_error());
+    return 42;
+  }
+  std::fprintf(stderr, "[TRIM] Legacy GP first-intersection trim/render passed\\n");
+
   std::fprintf(stderr, "[DELETE] delete duplicated stroke\n");
   if (!backend.delete_stroke(1) || backend.stroke_count() != 1 ||
       !backend.render()) {

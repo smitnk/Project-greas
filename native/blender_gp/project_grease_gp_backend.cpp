@@ -1313,6 +1313,285 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
 
 
 
+bool Backend::select_all(int mode)
+{
+  if (!impl_->frame || mode < 0 || mode > 3) {
+    impl_->last_error = "invalid selection mode";
+    return false;
+  }
+
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    const bool select = (mode == 0 || mode == 1);
+    if (mode == 2) {
+      stroke->flag ^= GP_STROKE_SELECT;
+    }
+    else if (mode == 3) {
+      stroke->flag &= ~GP_STROKE_SELECT;
+    }
+    else if (select) {
+      stroke->flag |= GP_STROKE_SELECT;
+    }
+
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      if (mode == 2) {
+        stroke->points[i].flag ^= GP_SPOINT_SELECT;
+      }
+      else if (mode == 3) {
+        stroke->points[i].flag &= ~GP_SPOINT_SELECT;
+      }
+      else {
+        stroke->points[i].flag |= GP_SPOINT_SELECT;
+      }
+    }
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::select_circle(float x, float y, float radius, int mode)
+{
+  if (!impl_->frame || radius <= 0.0f || mode < 0 || mode > 2) {
+    impl_->last_error = "invalid circle selection";
+    return 0;
+  }
+
+  if (mode == 0) {
+    clear_selection();
+  }
+
+  const float radius_sq = radius * radius;
+  int selected = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    bool hit = false;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      const float dx = stroke->points[i].x - x;
+      const float dy = stroke->points[i].y - y;
+      if ((dx * dx + dy * dy) <= radius_sq) {
+        hit = true;
+        if (mode == 2) {
+          stroke->points[i].flag &= ~GP_SPOINT_SELECT;
+        }
+        else {
+          stroke->points[i].flag |= GP_SPOINT_SELECT;
+        }
+      }
+    }
+
+    bool any_point_selected = false;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      if (stroke->points[i].flag & GP_SPOINT_SELECT) {
+        any_point_selected = true;
+        break;
+      }
+    }
+
+    if (hit) {
+      if (mode == 2) {
+        if (!any_point_selected) {
+          stroke->flag &= ~GP_STROKE_SELECT;
+        }
+      }
+      else {
+        stroke->flag |= GP_STROKE_SELECT;
+      }
+      ++selected;
+    }
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return selected;
+}
+
+bool Backend::reverse_selected_strokes()
+{
+  if (!impl_->frame) {
+    impl_->last_error = "no active frame";
+    return false;
+  }
+
+  bool changed = false;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    if (!(stroke->flag & GP_STROKE_SELECT) || stroke->totpoints < 2 || !stroke->points) {
+      continue;
+    }
+
+    for (int left = 0, right = stroke->totpoints - 1; left < right; ++left, --right) {
+      std::swap(stroke->points[left], stroke->points[right]);
+    }
+    changed = true;
+  }
+
+  if (!changed) {
+    impl_->last_error = "no selected stroke to reverse";
+    return false;
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::dissolve_selected_points()
+{
+  if (!impl_->frame || !impl_->gpd) {
+    impl_->last_error = "no active frame";
+    return false;
+  }
+
+  bool changed = false;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;) {
+    bGPDstroke *next = stroke->next;
+    bool has_selected = false;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      if (stroke->points[i].flag & GP_SPOINT_SELECT) {
+        stroke->points[i].flag |= GP_SPOINT_TAG;
+        has_selected = true;
+      }
+    }
+
+    if (has_selected) {
+      BKE_gpencil_stroke_delete_tagged_points(
+          impl_->gpd, impl_->frame, stroke, next, GP_SPOINT_TAG, false, false, 0);
+      changed = true;
+    }
+    stroke = next;
+  }
+
+  if (!changed) {
+    impl_->last_error = "no selected points to dissolve";
+    return false;
+  }
+
+  impl_->stroke = nullptr;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::merge_selected_points(float threshold)
+{
+  if (!impl_->frame || !impl_->gpd || !std::isfinite(threshold) || threshold <= 0.0f) {
+    impl_->last_error = "invalid merge threshold";
+    return false;
+  }
+
+  bool changed = false;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    if (!(stroke->flag & GP_STROKE_SELECT) || stroke->totpoints < 2) {
+      continue;
+    }
+    BKE_gpencil_stroke_merge_distance(impl_->gpd, impl_->frame, stroke, threshold, false);
+    changed = true;
+  }
+
+  if (!changed) {
+    impl_->last_error = "no selected stroke to merge";
+    return false;
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::reorder_selected_strokes(int direction)
+{
+  if (!impl_->frame || direction < 0 || direction > 3) {
+    impl_->last_error = "invalid stroke reorder direction";
+    return false;
+  }
+
+  bool changed = false;
+  if (direction == 0 || direction == 3) {
+    std::vector<bGPDstroke *> selected;
+    for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+         stroke != nullptr;
+         stroke = stroke->next) {
+      if (stroke->flag & GP_STROKE_SELECT) {
+        selected.push_back(stroke);
+      }
+    }
+    for (bGPDstroke *stroke : selected) {
+      BLI_remlink(&impl_->frame->strokes, stroke);
+      if (direction == 0) {
+        BLI_addhead(&impl_->frame->strokes, stroke);
+      }
+      else {
+        BLI_addtail(&impl_->frame->strokes, stroke);
+      }
+      changed = true;
+    }
+  }
+  else {
+    for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+         stroke != nullptr;) {
+      bGPDstroke *next = stroke->next;
+      if (!(stroke->flag & GP_STROKE_SELECT)) {
+        stroke = next;
+        continue;
+      }
+
+      if (direction == 1) {
+        bGPDstroke *prev = stroke->prev;
+        if (prev && !(prev->flag & GP_STROKE_SELECT)) {
+          BLI_remlink(&impl_->frame->strokes, stroke);
+          stroke->prev = prev->prev;
+          stroke->next = prev;
+          if (prev->prev) prev->prev->next = stroke;
+          else impl_->frame->strokes.first = stroke;
+          prev->prev = stroke;
+          changed = true;
+        }
+      }
+      else {
+        bGPDstroke *next_unselected = next;
+        while (next_unselected && (next_unselected->flag & GP_STROKE_SELECT)) {
+          next_unselected = next_unselected->next;
+        }
+        if (next_unselected) {
+          bGPDstroke *after = next_unselected->next;
+          BLI_remlink(&impl_->frame->strokes, stroke);
+          stroke->prev = next_unselected;
+          stroke->next = after;
+          next_unselected->next = stroke;
+          if (after) after->prev = stroke;
+          else impl_->frame->strokes.last = stroke;
+          changed = true;
+        }
+      }
+      stroke = next;
+    }
+  }
+
+  if (!changed) {
+    impl_->last_error = "no selected stroke to reorder";
+    return false;
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+
 bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) const {
   if (!out || !impl_->frame || stroke_index < 0 || point_index < 0) {
     return false;

@@ -256,6 +256,32 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreatePrimitive(
                                              materialIndex, thickness) != 0;
 }
 
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGeneratePrimitivePreview(
+    JNIEnv *env, jobject, jint type, jfloat x0, jfloat y0, jfloat x1, jfloat y1,
+    jfloat startAngle, jfloat endAngle, jint segments)
+{
+  if (segments < 2) return nullptr;
+  const int capacity = std::max(segments, 2);
+  std::vector<jfloat> xy(static_cast<size_t>(capacity) * 2u);
+  int count = 0;
+  if (!project_grease_gp_generate_primitive_preview(
+          type, x0, y0, x1, y1, startAngle, endAngle, segments,
+          xy.data(), capacity, &count)) {
+    return nullptr;
+  }
+  jfloatArray result = env->NewFloatArray(count * 3);
+  if (!result) return nullptr;
+  std::vector<jfloat> packed(static_cast<size_t>(count) * 3u);
+  for (int i = 0; i < count; ++i) {
+    packed[i * 3] = xy[i * 2];
+    packed[i * 3 + 1] = xy[i * 2 + 1];
+    packed[i * 3 + 2] = 1.0f;
+  }
+  env->SetFloatArrayRegion(result, 0, count * 3, packed.data());
+  return result;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreatePolyline(
     JNIEnv *env, jobject, jlong handle, jfloatArray values, jint count,

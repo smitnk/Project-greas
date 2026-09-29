@@ -3334,19 +3334,6 @@ bool Backend::apply_blender_modifier_stack(int index,
         m->level = iterations > 0 ? iterations : m->level;
         break;
       }
-      case eGpencilModifierType_Simplify: {
-        SimplifyGpencilModifierData *m =
-            reinterpret_cast<SimplifyGpencilModifierData *>(md);
-        /*
-         * Use Blender's adaptive/Ramer-Douglas-Peucker Legacy GP mode.
-         * The focused adapter supplies only the scalar controls; the actual
-         * simplify algorithm remains Blender's deformStroke callback.
-         */
-        m->mode = GP_SIMPLIFY_ADAPTIVE;
-        m->factor = factor > 0.0f ? factor : m->factor;
-        m->step = iterations > 0 ? iterations : m->step;
-        break;
-      }
       default:
         break;
     }

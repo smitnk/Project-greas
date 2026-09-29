@@ -770,35 +770,15 @@ bool Backend::create_primitive(int type,
   const legacy_gp_primitive::Point start{x0, y0};
   const legacy_gp_primitive::Point end{x1, y1};
 
-  std::vector<legacy_gp_primitive::Point> geometry;
-  bool cyclic = false;
-
-  // Geometry follows Blender 3.6.23 source helpers. The Android adapter
-  // intentionally keeps only the geometry core; Blender's modal operator,
-  // brush, depth and context handling remain outside this focused backend.
-  switch (type) {
-    case 0: // GP_STROKE_LINE
-      geometry = legacy_gp_primitive::line(start, end, segments);
-      break;
-    case 1: // GP_STROKE_BOX
-      geometry = legacy_gp_primitive::rectangle(start, end, segments == 64 ? 1 : segments);
-      cyclic = true;
-      break;
-    case 2: // GP_STROKE_CIRCLE
-      geometry = legacy_gp_primitive::circle(start, end, segments);
-      cyclic = true;
-      break;
-    case 3: { // GP_STROKE_ARC
-      // Blender 3.6.23's default Arc is a quarter-turn from start to end.
-      // The original operator derives its control point from the endpoints;
-      // a reversed angle range is retained as the adapter's flip signal.
-      const bool flip = end_angle < start_angle;
-      geometry = legacy_gp_primitive::arc(start, end, segments, flip);
-      break;
-    }
-    default:
-      impl_->last_error = "invalid primitive type";
-      return false;
+  // Keep final geometry on the same native Blender-3.6.23-derived
+  // primitive generator used by Android preview. The modal UI is not copied;
+  // only the primitive geometry core is shared.
+  const std::vector<legacy_gp_primitive::Point> geometry =
+      legacy_gp_primitive::generate(type, start, end, start_angle, end_angle, segments);
+  bool cyclic = (type == 1 || type == 2);
+  if (geometry.empty()) {
+    impl_->last_error = "invalid primitive type";
+    return false;
   }
 
   if (geometry.size() < 2) {

@@ -12,6 +12,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "BLI_listbase.h"
+#include "BLI_lasso_2d.h"
 #include "BLI_math_geom.h"
 
 #include "BKE_gpencil_legacy.h"
@@ -932,19 +933,18 @@ void Backend::clear_selection()
 
 static bool project_grease_point_in_polygon(float x, float y, const float *xy, int count)
 {
-  bool inside = false;
-  for (int i = 0, j = count - 1; i < count; j = i++) {
-    const float xi = xy[i * 2];
-    const float yi = xy[i * 2 + 1];
-    const float xj = xy[j * 2];
-    const float yj = xy[j * 2 + 1];
-    const bool crosses = ((yi > y) != (yj > y)) &&
-                         (x < (xj - xi) * (y - yi) / ((yj - yi) + 1.0e-20f) + xi);
-    if (crosses) {
-      inside = !inside;
-    }
+  if (!xy || count < 3) {
+    return false;
   }
-  return inside;
+
+  /*
+   * Blender 3.6.23 Legacy GP lasso selection uses BLI_lasso_is_point_inside()
+   * after converting GP points to the selection space. Project Grease owns
+   * the Android canvas coordinate space, so the Android lasso coordinates and
+   * GP point coordinates are already in the same 2D space here.
+   */
+  return BLI_lasso_is_point_inside(
+      reinterpret_cast<const int (*)[2]>(xy), count, static_cast<int>(x), static_cast<int>(y), INT_MAX);
 }
 
 int Backend::lasso_select(const float *xy, int count, bool additive)
@@ -953,41 +953,53 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
     impl_->last_error = "invalid lasso";
     return 0;
   }
+
+  /*
+   * Blender 3.6.23 GPENCIL_OT_select_lasso defaults to SET selection.
+   * Keep that behavior for the Project Grease lasso tool; additive is the
+   * Android-side equivalent of extending the selection.
+   */
   if (!additive) {
     clear_selection();
   }
 
   int selected = 0;
-  int stroke_index = 0;
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;
-       stroke = stroke->next, ++stroke_index) {
-    bool hit = false;
-    if (stroke->points) {
-      for (int i = 0; i < stroke->totpoints; ++i) {
-        if (project_grease_point_in_polygon(stroke->points[i].x,
-                                            stroke->points[i].y,
-                                            xy,
-                                            count)) {
-          hit = true;
-          break;
-        }
+       stroke = stroke->next) {
+    if (!stroke->points || stroke->totpoints <= 0) {
+      continue;
+    }
+
+    bool stroke_hit = false;
+    int inside_points = 0;
+    const int original_points = stroke->totpoints;
+
+    for (int i = 0; i < original_points; ++i) {
+      bGPDspoint &point = stroke->points[i];
+      if (project_grease_point_in_polygon(point.x, point.y, xy, count)) {
+        point.flag |= GP_SPOINT_SELECT;
+        stroke_hit = true;
+        ++inside_points;
       }
     }
-    if (hit) {
+
+    if (stroke_hit) {
+      /*
+       * Point-selection mode is the Legacy GP default used by this adapter:
+       * points inside the lasso are selected and the containing stroke becomes
+       * selected/synchronized. If the lasso contains every point, the result
+       * is therefore a fully selected stroke, matching Legacy GP's point-mode
+       * behavior.
+       */
       stroke->flag |= GP_STROKE_SELECT;
-      if (stroke->points) {
-        for (int i = 0; i < stroke->totpoints; ++i) {
-          if (project_grease_point_in_polygon(stroke->points[i].x,
-                                              stroke->points[i].y,
-                                              xy,
-                                              count)) {
-            stroke->points[i].flag |= GP_SPOINT_SELECT;
-          }
-        }
-      }
-      impl_->stroke = stroke;
+      BKE_gpencil_stroke_select_index_set(impl_->gpd, stroke);
       ++selected;
+      (void)inside_points;
+    }
+    else if (!additive) {
+      BKE_gpencil_stroke_sync_selection(impl_->gpd, stroke);
     }
   }
 
@@ -996,6 +1008,7 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
   impl_->last_error.clear();
   return selected;
 }
+
 
 
 bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) const {

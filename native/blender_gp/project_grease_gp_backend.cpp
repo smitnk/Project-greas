@@ -2958,6 +2958,129 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
   return true;
 }
 
+
+bool Backend::apply_blender_modifier_stack(int index,
+                                           const int *modifier_types,
+                                           int modifier_count,
+                                           float factor,
+                                           int iterations)
+{
+  if (!impl_->frame || !impl_->layer || !impl_->gpd || index < 0 ||
+      !modifier_types || modifier_count <= 0) {
+    impl_->last_error = "invalid Legacy GP modifier stack target";
+    return false;
+  }
+
+  bGPDstroke *stroke = nullptr;
+  int current = 0;
+  for (bGPDstroke *candidate = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       candidate; candidate = candidate->next, ++current) {
+    if (current == index) {
+      stroke = candidate;
+      break;
+    }
+  }
+  if (!stroke) {
+    impl_->last_error = "stroke index out of range";
+    return false;
+  }
+
+  project_grease_modifier_system_init();
+
+  /*
+   * Blender 3.6.23 stores Legacy GP modifiers on Object::greasepencil_modifiers.
+   * Keep that real Blender ListBase for the duration of this focused Android
+   * evaluation. We do not implement a second Project Grease modifier model.
+   */
+  Object object = {};
+  object.type = OB_GPENCIL_LEGACY;
+  object.data = impl_->gpd;
+  object.mat = impl_->gpd->mat;
+  object.totcol = impl_->gpd->totcol;
+  object.actcol = 1;
+
+  for (int i = 0; i < modifier_count; ++i) {
+    const GpencilModifierType type =
+        static_cast<GpencilModifierType>(modifier_types[i]);
+    GpencilModifierData *md = BKE_gpencil_modifier_new(type);
+    if (!md) {
+      while (object.greasepencil_modifiers.first) {
+        GpencilModifierData *old = static_cast<GpencilModifierData *>(
+            object.greasepencil_modifiers.first);
+        BKE_gpencil_modifier_free(old);
+      }
+      impl_->last_error = "Blender Legacy GP modifier stack creation failed";
+      return false;
+    }
+
+    const GpencilModifierTypeInfo *info = BKE_gpencil_modifier_get_info(type);
+    if (!info || !info->deformStroke) {
+      BKE_gpencil_modifier_free(md);
+      while (object.greasepencil_modifiers.first) {
+        GpencilModifierData *old = static_cast<GpencilModifierData *>(
+            object.greasepencil_modifiers.first);
+        BKE_gpencil_modifier_free(old);
+      }
+      impl_->last_error = "Legacy GP modifier stack contains a non-deforming modifier";
+      return false;
+    }
+
+    switch (type) {
+      case eGpencilModifierType_Smooth: {
+        SmoothGpencilModifierData *m =
+            reinterpret_cast<SmoothGpencilModifierData *>(md);
+        m->factor = factor > 0.0f ? std::min(factor, 1.0f) : m->factor;
+        m->step = iterations > 0 ? iterations : m->step;
+        m->flag |= GP_SMOOTH_MOD_LOCATION;
+        break;
+      }
+      case eGpencilModifierType_Thick: {
+        ThickGpencilModifierData *m =
+            reinterpret_cast<ThickGpencilModifierData *>(md);
+        if (factor > 0.0f) {
+          m->thickness_fac = factor;
+        }
+        break;
+      }
+      case eGpencilModifierType_Subdiv: {
+        SubdivGpencilModifierData *m =
+            reinterpret_cast<SubdivGpencilModifierData *>(md);
+        m->level = iterations > 0 ? iterations : m->level;
+        break;
+      }
+      default:
+        break;
+    }
+
+    BLI_addtail(&object.greasepencil_modifiers, md);
+  }
+
+  /*
+   * Evaluate in exact list order. Each callback is Blender 3.6.23's own
+   * GpencilModifierTypeInfo::deformStroke implementation.
+   */
+  LISTBASE_FOREACH (GpencilModifierData *, md, &object.greasepencil_modifiers) {
+    const GpencilModifierTypeInfo *info = BKE_gpencil_modifier_get_info(
+        static_cast<GpencilModifierType>(md->type));
+    if (!info || !info->deformStroke) {
+      continue;
+    }
+    info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
+  }
+
+  while (object.greasepencil_modifiers.first) {
+    GpencilModifierData *md = static_cast<GpencilModifierData *>(
+        object.greasepencil_modifiers.first);
+    BKE_gpencil_modifier_free(md);
+  }
+
+  impl_->stroke = stroke;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::smooth_stroke(int index, float influence, int iterations)
 {
   if (!impl_->frame || index < 0 || influence <= 0.0f || iterations <= 0) {

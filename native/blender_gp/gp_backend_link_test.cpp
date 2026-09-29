@@ -128,6 +128,29 @@ int main() {
   std::fprintf(stderr, "[EDIT] point edit render passed\
 ");
 
+  std::fprintf(stderr, "[LASSO] Legacy GP lasso selection\\n");
+  const float lasso[] = {
+      0.60f, 0.75f,
+      0.90f, 0.75f,
+      0.90f, 1.05f,
+      0.60f, 1.05f,
+  };
+  if (backend.lasso_select(lasso, 4, false) != 1 ||
+      !backend.translate_stroke(0, 0.1f, -0.1f, 0.0f) ||
+      !backend.get_point(0, 0, &before) ||
+      before.x != 0.85f || before.y != 0.8f ||
+      !backend.get_point(0, 1, &edited) ||
+      edited.x != 0.5f || edited.y != 0.25f ||
+      !backend.translate_stroke(0, -0.1f, 0.1f, 0.0f) ||
+      !backend.get_point(0, 0, &before) ||
+      before.x != 0.75f || before.y != 0.9f ||
+      !backend.render()) {
+    std::fprintf(stderr, "Legacy GP lasso point-selection semantics failed: %s\\n",
+                 backend.last_error());
+    return 33;
+  }
+  std::fprintf(stderr, "[LASSO] Legacy GP lasso selection/render passed\\n");
+
   // Duplicate the edited stroke through Blender's native GP API.
   std::fprintf(stderr, "[DUPLICATE] duplicate edited stroke\n");
   if (!backend.duplicate_stroke(0) || backend.stroke_count() != 2) {

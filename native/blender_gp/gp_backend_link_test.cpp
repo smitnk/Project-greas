@@ -553,6 +553,34 @@ int main() {
   }
   std::fprintf(stderr, "[LASSO] real Legacy GP lasso selection/render passed\n");
 
+  std::fprintf(stderr, "[BULK-EDIT] Legacy GP selection/edit command suite\n");
+  if (!backend.begin_stroke({0, 7.0f}) ||
+      !backend.add_point({20.0f, 30.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({21.0f, 30.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.add_point({22.0f, 30.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "bulk edit setup failed: %s\n", backend.last_error());
+    return 50;
+  }
+  if (!backend.select_all(1) ||
+      !backend.reverse_selected_strokes() ||
+      backend.select_circle(21.0f, 30.0f, 2.0f, 0) <= 0 ||
+      !backend.merge_selected_points(0.001f) ||
+      !backend.reorder_selected_strokes(0) ||
+      !backend.render()) {
+    std::fprintf(stderr, "bulk selection/reverse/merge/reorder failed: %s\n",
+                 backend.last_error());
+    return 51;
+  }
+  backend.clear_selection();
+  if (backend.select_circle(21.0f, 30.0f, 0.2f, 0) <= 0 ||
+      !backend.dissolve_selected_points() ||
+      !backend.render()) {
+    std::fprintf(stderr, "bulk circle/dissolve failed: %s\n", backend.last_error());
+    return 52;
+  }
+  std::fprintf(stderr, "[BULK-EDIT] selection/reverse/circle/dissolve/merge/reorder passed\n");
+
   std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot test\n");
   if (!backend.history_reset()) {
     std::fprintf(stderr, "history reset failed: %s\n", backend.last_error());

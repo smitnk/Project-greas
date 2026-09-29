@@ -508,6 +508,37 @@ class EditorController {
     )
     fun render(){if(rendererHandle!=0L)GPNative.nativeRenderEgl(rendererHandle)}
     fun layerCount() = native.layerCount()
+    fun setLayerVisibility(index:Int, visible:Boolean):Boolean {
+        val ok=native.setLayerVisibility(index,visible)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun setLayerLocked(index:Int, locked:Boolean):Boolean {
+        val ok=native.setLayerLocked(index,locked)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun moveLayer(from:Int,to:Int):Boolean {
+        val ok=native.moveLayer(from,to)
+        if(ok){selectedLayer=to;history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun duplicateLayer(index:Int=selectedLayer):Boolean {
+        val ok=native.duplicateLayer(index)
+        if(ok){selectedLayer=(index+1).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun deleteLayer(index:Int=selectedLayer):Boolean {
+        if(native.layerCount()<=1)return false
+        val ok=native.deleteLayer(index)
+        if(ok){selectedLayer=(index-1).coerceAtLeast(0).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun renameLayer(index:Int=selectedLayer,name:String):Boolean {
+        val ok=native.renameLayer(index,name)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
     fun createLayer(name:String):Boolean {
         val ok = native.createLayer(name)
         if (ok) {

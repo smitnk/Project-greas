@@ -152,6 +152,7 @@ struct Backend::Impl {
   bGPDframe *frame = nullptr;
   bGPDstroke *stroke = nullptr;
   StrokeStyle stroke_style{};
+  LegacyPaintSettings paint_settings{};
   std::vector<StrokePoint> pending_points;
 
 #ifndef __ANDROID__
@@ -2528,6 +2529,22 @@ bool Backend::delete_last_stroke() {
   return true;
 }
 
+
+bool Backend::set_legacy_paint_settings(const LegacyPaintSettings &settings)
+{
+  if (settings.draw_smooth_level < 0 ||
+      settings.draw_smooth_factor < 0.0f ||
+      settings.draw_smooth_factor > 1.0f ||
+      settings.input_samples < 0) {
+    impl_->last_error = "invalid Legacy GP paint settings";
+    return false;
+  }
+
+  impl_->paint_settings = settings;
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::begin_stroke(const StrokeStyle &style) {
   if (!impl_->frame_created || !impl_->frame) {
     impl_->last_error = "frame is not created"; return false;
@@ -2654,6 +2671,44 @@ bool Backend::end_stroke() {
     dst.uv_rot = src.uv_rot;
     std::memcpy(dst.vert_color, src.vert_color, sizeof(dst.vert_color));
   }
+
+  /*
+   * Blender 3.6.23's Legacy paint commit performs brush-driven smoothing on
+   * the freshly created stroke before the editor finishes the stroke. Keep
+   * that stage Blender-backed: every geometry operation below is a real BKE
+   * Legacy GP callback.
+   */
+  const int smooth_level = std::max(0, impl_->paint_settings.draw_smooth_level);
+  for (int r = 0; r < smooth_level; ++r) {
+    float reduce = 0.25f * static_cast<float>(r);
+    const float factor = std::max(
+        0.0f, impl_->paint_settings.draw_smooth_factor - reduce);
+    for (int i = 0; i < impl_->stroke->totpoints - 1; ++i) {
+      if (impl_->paint_settings.smooth_position) {
+        BKE_gpencil_stroke_smooth(impl_->stroke, i, factor);
+        BKE_gpencil_stroke_smooth_point(impl_->stroke, i, factor);
+      }
+      if (impl_->paint_settings.smooth_strength) {
+        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, factor);
+      }
+    }
+  }
+
+  if (impl_->paint_settings.input_samples > 0) {
+    const float ifac = static_cast<float>(impl_->paint_settings.input_samples) / 10.0f;
+    const float sfac = 1.0f + (0.2f - 1.0f) * std::min(ifac, 1.0f);
+    for (int i = 0; i < impl_->stroke->totpoints - 1; ++i) {
+      if (impl_->paint_settings.smooth_position) {
+        BKE_gpencil_stroke_smooth(impl_->stroke, i, sfac);
+        BKE_gpencil_stroke_smooth_point(impl_->stroke, i, sfac);
+      }
+      if (impl_->paint_settings.smooth_strength) {
+        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac);
+      }
+    }
+  }
+
+  BKE_gpencil_stroke_geometry_update(impl_->gpd, impl_->stroke);
 
   impl_->stroke_open = false;
   impl_->pending_points.clear();

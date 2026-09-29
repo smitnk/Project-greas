@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "project_grease_gp_backend.h"
+#include "project_grease_legacy_primitive.h"
 
 struct ProjectGreaseGPHandle {
   project_grease::gp::Backend backend;
@@ -244,6 +245,30 @@ int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, 
 {
   if (!ensure_ready(handle)) return 0;
   return handle->backend.create_primitive(type, x0, y0, x1, y1, start_angle, end_angle, segments, {material_index, thickness}) ? 1 : 0;
+}
+
+int project_grease_gp_generate_primitive_preview(int type,
+                                                float x0,
+                                                float y0,
+                                                float x1,
+                                                float y1,
+                                                float start_angle,
+                                                float end_angle,
+                                                int segments,
+                                                float *xy,
+                                                int capacity,
+                                                int *count)
+{
+  if (!xy || !count || capacity < 1) return 0;
+  const auto geometry = project_grease::legacy_gp_primitive::generate(
+      type, {x0, y0}, {x1, y1}, start_angle, end_angle, segments);
+  if (geometry.empty() || static_cast<int>(geometry.size()) > capacity) return 0;
+  for (size_t i = 0; i < geometry.size(); ++i) {
+    xy[i * 2] = geometry[i].x;
+    xy[i * 2 + 1] = geometry[i].y;
+  }
+  *count = static_cast<int>(geometry.size());
+  return 1;
 }
 
 int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic)

@@ -943,8 +943,17 @@ static bool project_grease_point_in_polygon(float x, float y, const float *xy, i
    * the Android canvas coordinate space, so the Android lasso coordinates and
    * GP point coordinates are already in the same 2D space here.
    */
-  return BLI_lasso_is_point_inside(
-      reinterpret_cast<const int (*)[2]>(xy), count, static_cast<int>(x), static_cast<int>(y), INT_MAX);
+  std::vector<int> lasso_coords(static_cast<size_t>(count) * 2u);
+  for (int i = 0; i < count; ++i) {
+    lasso_coords[static_cast<size_t>(i) * 2u] = static_cast<int>(std::lround(xy[i * 2]));
+    lasso_coords[static_cast<size_t>(i) * 2u + 1u] = static_cast<int>(std::lround(xy[i * 2 + 1]));
+  }
+
+  return BLI_lasso_is_point_inside(reinterpret_cast<const int (*)[2]>(lasso_coords.data()),
+                                    count,
+                                    static_cast<int>(std::lround(x)),
+                                    static_cast<int>(std::lround(y)),
+                                    INT_MAX);
 }
 
 int Backend::lasso_select(const float *xy, int count, bool additive)

@@ -168,3 +168,36 @@ This stack currently targets modifiers whose real `deformStroke` callback can ex
 ### Next
 
 Run CI. Fix only the exact compiler/linker/runtime failure. After stack conformance succeeds, continue with the next real Legacy GP subsystem rather than declaring completion.
+
+
+## Next bundle — real Legacy GP paint stroke buffer
+
+### Starting verification
+
+- Android CI run **#375 / 36604200725** for commit `2ce7c88d8585bfd736746e9fe90436f5c69b1fd1` completed **successfully** through Blender import, minimal DNA generation, Android GP build, APK verification and artifact upload.
+- The modifier-stack conformance reached the Android build gate without introducing a new dependency failure.
+
+### Upstream reference
+
+The pinned Blender 3.6.23 `source/blender/editors/gpencil_legacy/gpencil_paint.c` uses the real `tGPspoint` transient stroke representation and the public `ED_gpencil_sbuffer_ensure()` editor utility. Its paint path accumulates screen-space points in `bGPdata.runtime.sbuffer` and later transfers them into a real `bGPDstroke`.
+
+### Implementation
+
+- `868d5fdc29142281d95ade28c61e88302219cda9`
+  - Exposes a conformance accessor for the current real Blender Legacy GP stroke-buffer point count.
+- `c658de1c0fb674ddcf502c073675d92b52a6bfd5`
+  - Routes Project Grease stroke input through Blender's real `tGPspoint`/sbuffer representation using `ED_gpencil_sbuffer_ensure()`.
+  - Android input is now stored in the same transient point representation used by the Legacy GP editor rather than using the custom pending vector as the authoritative buffer.
+  - The existing pending vector is retained only as a temporary Android preview bridge until the presentation path consumes Blender's sbuffer directly.
+  - Stroke commit still uses the real `BKE_gpencil_stroke_add()` and transfers Blender sbuffer point data into the real `bGPDstroke`.
+  - The Blender sbuffer is explicitly cleared with `ED_gpencil_sbuffer_ensure(..., clear=true)` after commit.
+- `8a5407a8824c0046fc271f7d12373915ce8b1e31`
+  - Adds conformance that four input points reach Blender's sbuffer and that the buffer is empty after commit.
+
+### Why this bundle is important
+
+This is the first explicit connection of the Android stroke session to Blender 3.6.23's actual Legacy GP editor paint-buffer abstraction. It is still deliberately narrower than the complete desktop operator because the desktop operator's `tGPsdata` context requires Blender window/area/region/depsgraph/brush infrastructure that Project Grease intentionally does not port wholesale.
+
+### Next continuation
+
+Do not mark the paint/stroke subsystem complete yet. The next step is to move more of the pinned Blender 3.6.23 paint processing into this same focused path: brush settings, pressure/strength processing, active smoothing, stroke subdivision/simplification and final stroke commit, adding only the concrete BKE/ED dependencies required by those upstream functions. The eventual target remains the real Legacy GP drawing pipeline, followed by editing/sculpt/paint, animation, fill/material/onion, rendering/cache and Android GLES presentation.

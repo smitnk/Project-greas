@@ -3204,6 +3204,24 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
       if (factor > 0.0f) m->thickness_fac = factor;
       break;
     }
+    case eGpencilModifierType_Opacity: {
+      OpacityGpencilModifierData *m =
+          reinterpret_cast<OpacityGpencilModifierData *>(md);
+      m->factor = std::max(0.0f, std::min(factor, 1.0f));
+      m->modify_color = GP_MODIFY_COLOR_STROKE;
+      m->flag &= ~(GP_OPACITY_NORMALIZE | GP_OPACITY_WEIGHT_FACTOR);
+      break;
+    }
+    case eGpencilModifierType_Color: {
+      ColorGpencilModifierData *m =
+          reinterpret_cast<ColorGpencilModifierData *>(md);
+      m->hsv[0] = factor;
+      m->hsv[1] = 1.0f;
+      m->hsv[2] = 1.0f;
+      m->modify_color = GP_MODIFY_COLOR_STROKE;
+      m->flag &= ~GP_COLOR_CUSTOM_CURVE;
+      break;
+    }
     case eGpencilModifierType_Subdiv: {
       SubdivGpencilModifierData *m = reinterpret_cast<SubdivGpencilModifierData *>(md);
       m->level = iterations > 0 ? iterations : m->level;

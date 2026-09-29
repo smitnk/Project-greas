@@ -191,3 +191,9 @@ CI verification branches were created only to trigger/inspect the Android build 
 - Follow-up production commit 96bc129f0bdec37c02efbfa95f4b2b7c2f8e26d7 matched the pinned Blender 3.6.23 gpencil_stroke_newfrombuffer() smoothing semantics: one stroke-wide BKE_gpencil_stroke_smooth() call using draw_smoothfac/draw_smoothlvl, then per-point input-sample smoothing with the full smooth_point/smooth_strength signatures.
 - This correction is based on the actual pinned 3.6.23 source, not newer Blender/GP3 APIs.
 - Next step is CI compile -> APK verification -> native conformance. A successful compile is not treated as feature completion.
+
+
+### Proactive conformance correction after #399 — sbuffer lifecycle
+- The modifier-stack test had an invalid expectation: it checked for 4 points in `stroke_buffer_count()` after `end_stroke()`. The backend intentionally commits the real Blender `tGPspoint` buffer to `bGPDstroke` and clears the temporary sbuffer, matching the paint lifecycle.
+- Commit `77d27217a19198f3d43417ad0cde21d74e2f4fcc` changes the test to require sbuffer count 0 after commit and validate the committed stroke through the normal stroke APIs.
+- This prevents a false runtime failure after the compile-stage smoothing fix.

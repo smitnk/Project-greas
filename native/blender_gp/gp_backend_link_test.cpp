@@ -662,6 +662,51 @@ int main() {
   }
   std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot/render passed\n");
 
+
+  std::fprintf(stderr, "[MODIFIER-STACK] real Blender Legacy GP modifier stack\\n");
+  if (!backend.begin_stroke({0, 10.0f}) ||
+      !backend.add_point({50.0f, 10.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({51.0f, 12.0f, 0.0f, 0.8f, 0.9f, 0.1f}) ||
+      !backend.add_point({52.0f, 10.0f, 0.0f, 0.6f, 0.8f, 0.2f}) ||
+      !backend.add_point({53.0f, 12.0f, 0.0f, 0.4f, 0.7f, 0.3f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "modifier stack setup failed: %s\\n", backend.last_error());
+    return 57;
+  }
+
+  const int stack_index = backend.stroke_count() - 1;
+  const int stack_points_before = backend.point_count();
+  project_grease::gp::StrokePoint stack_before{};
+  if (!backend.get_point(stack_index, 1, &stack_before)) {
+    std::fprintf(stderr, "modifier stack point read failed: %s\\n", backend.last_error());
+    return 58;
+  }
+
+  const int modifier_types[] = {
+      eGpencilModifierType_Smooth,
+      eGpencilModifierType_Thick,
+      eGpencilModifierType_Subdiv,
+  };
+  if (!backend.apply_blender_modifier_stack(
+          stack_index, modifier_types, 3, 0.5f, 1) ||
+      backend.point_count() <= stack_points_before ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender Legacy GP modifier stack failed: %s\\n",
+                 backend.last_error());
+    return 59;
+  }
+
+  project_grease::gp::StrokePoint stack_after{};
+  if (!backend.get_point(stack_index, 1, &stack_after) ||
+      stack_after.pressure >= stack_before.pressure) {
+    std::fprintf(stderr,
+                 "real Blender Legacy GP modifier stack did not apply Thickness pressure change\\n");
+    return 60;
+  }
+
+  std::fprintf(stderr,
+               "[MODIFIER-STACK] Smooth -> Thickness -> Subdivide real Blender callbacks passed\\n");
+
   std::fprintf(stderr, "[DONE] edit/duplicate/translate/delete operations passed\n");
   std::puts("Blender legacy GP stroke edit/duplicate/translate/delete test passed");
   std::fflush(stdout);

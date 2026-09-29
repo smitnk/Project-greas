@@ -465,6 +465,31 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(
   return result;
 }
 
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyEditCommand(
+    JNIEnv *env, jobject, jlong handle, jint command, jfloatArray args)
+{
+  jfloat *values = nullptr;
+  jsize count = 0;
+  if (args) {
+    count = env->GetArrayLength(args);
+    values = env->GetFloatArrayElements(args, nullptr);
+    if (!values && count > 0) {
+      return JNI_FALSE;
+    }
+  }
+
+  const int result = project_grease_gp_apply_edit_command(
+      from_handle(handle), command, values, static_cast<int>(count));
+
+  if (args && values) {
+    env->ReleaseFloatArrayElements(args, values, JNI_ABORT);
+  }
+  return result != 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaterialCount(
     JNIEnv *, jobject, jlong handle)

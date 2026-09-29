@@ -182,3 +182,12 @@ Added Blender-backed paint-stage settings to the real `tGPspoint` stroke-buffer 
 The upstream Legacy GP paint implementation performs smoothing and input-sample processing during stroke creation, using the same `BKE_gpencil_stroke_smooth*` family that this batch now calls. The Blender 3.6 API also exposes the Legacy GP drawing/interpolation/smoothing controls used by this path. 
 
 CI verification branches were created only to trigger/inspect the Android build without modifying the production branch with CI marker files. They are not production feature commits.
+
+
+### CI #399 failure correction — exact Blender 3.6.23 smoothing signatures and paint semantics
+- Run #399 (36612069140) reached the Android native compile and failed only in project_grease_gp_backend.cpp; setup, pinned Blender import and minimal DNA generation all passed.
+- The compiler exposed the real pinned 3.6.23 API in BKE_gpencil_geom_legacy.h: BKE_gpencil_stroke_smooth takes 9 arguments; BKE_gpencil_stroke_smooth_point, ..._smooth_strength, ..._smooth_thickness, and ..._smooth_uv also require their full Legacy signatures.
+- Corrected production commit 7f1b961329afecdd6548a851db14dbb97b45ac21 restored the full signatures for the new paint-stage and bulk geometry calls.
+- Follow-up production commit 96bc129f0bdec37c02efbfa95f4b2b7c2f8e26d7 matched the pinned Blender 3.6.23 gpencil_stroke_newfrombuffer() smoothing semantics: one stroke-wide BKE_gpencil_stroke_smooth() call using draw_smoothfac/draw_smoothlvl, then per-point input-sample smoothing with the full smooth_point/smooth_strength signatures.
+- This correction is based on the actual pinned 3.6.23 source, not newer Blender/GP3 APIs.
+- Next step is CI compile -> APK verification -> native conformance. A successful compile is not treated as feature completion.

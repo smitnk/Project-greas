@@ -71,6 +71,8 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_modifier_legacy.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+    # Exact Blender 3.6.23 Legacy GP editor utility implementation. This supplies ED_gpencil_sbuffer_ensure().
+    "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_index_buffer.cc"

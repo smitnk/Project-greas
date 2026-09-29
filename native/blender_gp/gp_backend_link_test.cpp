@@ -522,6 +522,43 @@ int main() {
   }
   std::fprintf(stderr, "[FILL] Legacy GP end-to-end fill/render passed\n");
 
+  std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot test\n");
+  if (!backend.history_reset()) {
+    std::fprintf(stderr, "history reset failed: %s\n", backend.last_error());
+    return 43;
+  }
+
+  const int history_baseline_strokes = backend.stroke_count();
+  if (!backend.begin_stroke({0, 6.0f}) ||
+      !backend.add_point({12.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({13.0f, 2.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.end_stroke() ||
+      backend.stroke_count() != history_baseline_strokes + 1 ||
+      !backend.history_record() ||
+      !backend.history_can_undo() ||
+      backend.history_can_redo()) {
+    std::fprintf(stderr, "history record failed: %s\n", backend.last_error());
+    return 44;
+  }
+
+  if (!backend.history_undo() ||
+      backend.stroke_count() != history_baseline_strokes ||
+      !backend.history_can_redo() ||
+      backend.history_can_undo()) {
+    std::fprintf(stderr, "history undo failed: %s\n", backend.last_error());
+    return 45;
+  }
+
+  if (!backend.history_redo() ||
+      backend.stroke_count() != history_baseline_strokes + 1 ||
+      !backend.history_can_undo() ||
+      backend.history_can_redo() ||
+      !backend.render()) {
+    std::fprintf(stderr, "history redo failed: %s\n", backend.last_error());
+    return 46;
+  }
+  std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot/render passed\n");
+
   std::fprintf(stderr, "[DONE] edit/duplicate/translate/delete operations passed\n");
   std::puts("Blender legacy GP stroke edit/duplicate/translate/delete test passed");
   std::fflush(stdout);

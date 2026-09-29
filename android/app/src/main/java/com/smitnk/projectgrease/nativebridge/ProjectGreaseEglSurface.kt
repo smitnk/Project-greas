@@ -68,6 +68,7 @@ private class ProjectGreaseDrawingSurfaceView(
 ) : SurfaceView(context) {
     private var rendererHandle = 0L
     private var strokeOpen = false
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -80,6 +81,7 @@ private class ProjectGreaseDrawingSurfaceView(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                activePointerId = event.getPointerId(0)
                 when (controller.tools.activeTool) {
                     com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
                         controller.hitTestAndSelectStroke(event.x, event.y)
@@ -96,24 +98,64 @@ private class ProjectGreaseDrawingSurfaceView(
                         if (strokeOpen) {
                             addPoint(event, 0)
                             controller.render()
+                        } else {
+                            activePointerId = MotionEvent.INVALID_POINTER_ID
                         }
                     }
                 }
                 return true
             }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Keep the original drawing pointer. A second finger/palm must
+                // never replace the pointer that owns the active stroke.
+                return true
+            }
             MotionEvent.ACTION_MOVE -> {
-                if (strokeOpen) {
-                    addPoint(event, 0)
-                    controller.render()
+                if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    val pointerIndex = event.findPointerIndex(activePointerId)
+                    if (pointerIndex >= 0) {
+                        addPoint(event, pointerIndex)
+                        controller.render()
+                    } else {
+                        controller.cancelStroke()
+                        strokeOpen = false
+                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                        controller.render()
+                    }
+                }
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    val pointerIndex = event.actionIndex
+                    val pointerId = event.getPointerId(pointerIndex)
+                    if (pointerId == activePointerId) {
+                        if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) {
+                            controller.cancelStroke()
+                        } else {
+                            addPoint(event, pointerIndex)
+                            controller.endStroke()
+                        }
+                        strokeOpen = false
+                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                        controller.render()
+                    }
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (strokeOpen) {
-                    addPoint(event, 0)
-                    controller.endStroke()
+                if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    val pointerIndex = event.findPointerIndex(activePointerId)
+                    if (pointerIndex >= 0) {
+                        addPoint(event, pointerIndex)
+                        controller.endStroke()
+                        controller.render()
+                    } else {
+                        controller.cancelStroke()
+                        controller.render()
+                    }
                     strokeOpen = false
-                    controller.render()
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
                 }
                 return true
             }
@@ -123,6 +165,7 @@ private class ProjectGreaseDrawingSurfaceView(
                     strokeOpen = false
                     controller.render()
                 }
+                activePointerId = MotionEvent.INVALID_POINTER_ID
                 return true
             }
         }

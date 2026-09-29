@@ -47,13 +47,13 @@ object FeatureRegistry {
         // Existing Legacy GP material/style path.
         FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
         FeatureId.THICKNESS, FeatureId.OPACITY,
-        FeatureId.ONION_SKIN, FeatureId.MULTIFRAME
+        FeatureId.ONION_SKIN, FeatureId.MULTIFRAME,
+        FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
+        FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
+        FeatureId.LAYER_RENAME
     )
     private val inProgress = setOf(
         FeatureId.TRIM,
-        FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
-        FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
-        FeatureId.LAYER_RENAME,
         FeatureId.INSERT_FRAME, FeatureId.FRAME_HOLDS,
         FeatureId.ONION_RANGE, FeatureId.ONION_OPACITY, FeatureId.ONION_FADE,
         FeatureId.ONION_LAYER_FILTER,

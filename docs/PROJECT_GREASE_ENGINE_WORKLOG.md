@@ -219,3 +219,16 @@ CI verification branches were created only to trigger/inspect the Android build 
 - Commit 1b9c2bf356bedf1d80cdc6f40d201abb991b2d9c configures Blender-owned Opacity and Color modifier data in both single and stack execution paths; commit ceb804eea12e92263a635ff4fa545aefc0e0c7ff wires the single-modifier path explicitly.
 - Commit 59fd1a8db475f87d1b2946ea4c22d7c58e3fa520 adds native conformance tests for real Opacity strength modification and real Color vertex-color modification.
 - These are source-derived Blender callbacks; no custom Project Grease opacity/color algorithm is substituted.
+
+
+### Bulk Legacy GP modifier expansion — Tint / Offset / Texture Mapping — 2026-09-30
+
+The next modifier bundle is source-traced against pinned Blender 3.6.23 Legacy GP code:
+
+- **Tint**: uses Blender's real `TintGpencilModifierData` + `deformStroke()` path for vertex/fill color influence.
+- **Offset**: uses Blender's real `OffsetGpencilModifierData` + `deformStroke()` path for location/rotation/scale deformation. Randomized paths remain outside this focused deterministic conformance case.
+- **Texture Mapping**: uses Blender's real `TextureGpencilModifierData` + `deformStroke()` path for stroke UV factor/rotation and fill mapping parameters.
+
+Project Grease adds no replacement geometry algorithm. The focused adapter supplies only the Blender-owned modifier settings and the minimum Object context needed by these callbacks. Native conformance verifies actual point/color/UV changes and render/cache validity.
+
+The next CI loop must compile, link, run conformance, verify the APK, and upload the artifact. If any dependency or runtime error appears, fix the exact Blender 3.6.23 closure before adding the next modifier bundle.

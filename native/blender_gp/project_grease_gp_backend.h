@@ -15,6 +15,8 @@ struct StrokePoint {
   float g = 0.0f;
   float b = 0.0f;
   float a = 0.0f;
+  float uv_fac = 0.0f;
+  float uv_rot = 0.0f;
 };
 
 struct StrokeStyle {

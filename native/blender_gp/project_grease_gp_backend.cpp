@@ -1877,6 +1877,8 @@ bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) con
     out->g = src.vert_color[1];
     out->b = src.vert_color[2];
     out->a = src.vert_color[3];
+    out->uv_fac = src.uv_fac;
+    out->uv_rot = src.uv_rot;
     return true;
   }
   return false;
@@ -1914,6 +1916,8 @@ bool Backend::set_point(int stroke_index,
     dst.vert_color[1] = point.g;
     dst.vert_color[2] = point.b;
     dst.vert_color[3] = point.a;
+    dst.uv_fac = point.uv_fac;
+    dst.uv_rot = point.uv_rot;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
     std::fprintf(stderr, "[SET] after batch cache dirty\\n");
     project_grease_gp_tag(impl_->gpd);
@@ -3196,6 +3200,10 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
   Object object = {};
   object.type = OB_GPENCIL_LEGACY;
   object.data = impl_->gpd;
+  object.mat = impl_->gpd->mat;
+  object.totcol = impl_->gpd->totcol;
+  object.actcol = 1;
+  unit_m4(object.object_to_world);
 
   /* Configure only Blender-owned modifier settings. The geometry operation
    * itself is always the callback from Blender 3.6.23. */
@@ -3210,6 +3218,39 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
     case eGpencilModifierType_Thick: {
       ThickGpencilModifierData *m = reinterpret_cast<ThickGpencilModifierData *>(md);
       if (factor > 0.0f) m->thickness_fac = factor;
+      break;
+    }
+    case eGpencilModifierType_Tint: {
+      TintGpencilModifierData *m = reinterpret_cast<TintGpencilModifierData *>(md);
+      m->factor = std::max(0.0f, std::min(factor, 1.0f));
+      m->mode = 0; /* GPPAINT_MODE_STROKE in the pinned Legacy GP paint API. */
+      m->type = GP_TINT_UNIFORM;
+      m->rgb[0] = factor;
+      m->rgb[1] = 1.0f - factor;
+      m->rgb[2] = 0.25f;
+      m->flag &= ~(GP_TINT_WEIGHT_FACTOR | GP_TINT_CUSTOM_CURVE);
+      break;
+    }
+    case eGpencilModifierType_Offset: {
+      OffsetGpencilModifierData *m = reinterpret_cast<OffsetGpencilModifierData *>(md);
+      m->loc[0] = factor;
+      m->loc[1] = 0.0f;
+      m->loc[2] = 0.0f;
+      m->rot[0] = m->rot[1] = m->rot[2] = 0.0f;
+      m->scale[0] = m->scale[1] = m->scale[2] = 0.0f;
+      m->rnd_offset[0] = m->rnd_offset[1] = m->rnd_offset[2] = 0.0f;
+      m->rnd_rot[0] = m->rnd_rot[1] = m->rnd_rot[2] = 0.0f;
+      m->rnd_scale[0] = m->rnd_scale[1] = m->rnd_scale[2] = 0.0f;
+      m->mode = GP_OFFSET_LAYER;
+      break;
+    }
+    case eGpencilModifierType_Texture: {
+      TextureGpencilModifierData *m = reinterpret_cast<TextureGpencilModifierData *>(md);
+      m->mode = 0; /* STROKE. */
+      m->fit_method = 1; /* GP_TEX_CONSTANT_LENGTH. */
+      m->uv_offset = factor;
+      m->uv_scale = 1.0f + factor;
+      m->alignment_rotation = factor * 0.25f;
       break;
     }
     case eGpencilModifierType_Opacity: {
@@ -3344,6 +3385,39 @@ bool Backend::apply_blender_modifier_stack(int index,
         m->overshoot_fac = 0.0f;
         m->point_density = 0.0f;
         m->flag &= ~GP_LENGTH_USE_RANDOM;
+        break;
+      }
+      case eGpencilModifierType_Tint: {
+        TintGpencilModifierData *m = reinterpret_cast<TintGpencilModifierData *>(md);
+        m->factor = std::max(0.0f, std::min(factor, 1.0f));
+        m->mode = 0;
+        m->type = GP_TINT_UNIFORM;
+        m->rgb[0] = factor;
+        m->rgb[1] = 1.0f - factor;
+        m->rgb[2] = 0.25f;
+        m->flag &= ~(GP_TINT_WEIGHT_FACTOR | GP_TINT_CUSTOM_CURVE);
+        break;
+      }
+      case eGpencilModifierType_Offset: {
+        OffsetGpencilModifierData *m = reinterpret_cast<OffsetGpencilModifierData *>(md);
+        m->loc[0] = factor;
+        m->loc[1] = 0.0f;
+        m->loc[2] = 0.0f;
+        m->rot[0] = m->rot[1] = m->rot[2] = 0.0f;
+        m->scale[0] = m->scale[1] = m->scale[2] = 0.0f;
+        m->rnd_offset[0] = m->rnd_offset[1] = m->rnd_offset[2] = 0.0f;
+        m->rnd_rot[0] = m->rnd_rot[1] = m->rnd_rot[2] = 0.0f;
+        m->rnd_scale[0] = m->rnd_scale[1] = m->rnd_scale[2] = 0.0f;
+        m->mode = GP_OFFSET_LAYER;
+        break;
+      }
+      case eGpencilModifierType_Texture: {
+        TextureGpencilModifierData *m = reinterpret_cast<TextureGpencilModifierData *>(md);
+        m->mode = 0;
+        m->fit_method = 1;
+        m->uv_offset = factor;
+        m->uv_scale = 1.0f + factor;
+        m->alignment_rotation = factor * 0.25f;
         break;
       }
       case eGpencilModifierType_Opacity: {

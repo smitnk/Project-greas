@@ -922,6 +922,72 @@ int main() {
 
   std::fprintf(stderr,
                "[PAINT-BUFFER] Blender Legacy GP tGPspoint stroke buffer commit passed\\n");
+
+  std::fprintf(stderr, "[MODIFIER-BULK] Blender 3.6.23 Legacy GP Tint/Offset/Texture callbacks\\n");
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({90.0f, 20.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f}) ||
+      !backend.add_point({92.0f, 22.0f, 0.0f, 0.9f, 0.9f, 0.1f, 0.0f, 0.0f, 1.0f, 1.0f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "modifier bulk Tint setup failed: %s\\n", backend.last_error());
+    return 78;
+  }
+  const int tint_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint tint_before{};
+  project_grease::gp::StrokePoint tint_after{};
+  if (!backend.get_point(tint_index, 0, &tint_before) ||
+      !backend.apply_blender_modifier(tint_index, eGpencilModifierType_Tint, 0.5f, 1) ||
+      !backend.get_point(tint_index, 0, &tint_after) ||
+      std::fabs(tint_after.r - tint_before.r) < 1.0e-5f ||
+      std::fabs(tint_after.g - tint_before.g) < 1.0e-5f ||
+      std::fabs(tint_after.b - tint_before.b) < 1.0e-5f ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Tint modifier failed: %s\\n", backend.last_error());
+    return 79;
+  }
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({100.0f, 30.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({102.0f, 31.0f, 0.0f, 1.0f, 1.0f, 0.1f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "modifier bulk Offset setup failed: %s\\n", backend.last_error());
+    return 80;
+  }
+  const int offset_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint offset_before{};
+  project_grease::gp::StrokePoint offset_after{};
+  if (!backend.get_point(offset_index, 0, &offset_before) ||
+      !backend.apply_blender_modifier(offset_index, eGpencilModifierType_Offset, 1.0f, 1) ||
+      !backend.get_point(offset_index, 0, &offset_after) ||
+      std::fabs(offset_after.x - (offset_before.x + 1.0f)) > 1.0e-5f ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Offset modifier failed: %s\\n", backend.last_error());
+    return 81;
+  }
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({110.0f, 40.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}) ||
+      !backend.add_point({112.0f, 40.0f, 0.0f, 1.0f, 1.0f, 0.1f, 0.0f, 0.0f, 0.0f, 0.0f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "modifier bulk Texture setup failed: %s\\n", backend.last_error());
+    return 82;
+  }
+  const int texture_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint texture_before{};
+  project_grease::gp::StrokePoint texture_after{};
+  if (!backend.get_point(texture_index, 0, &texture_before) ||
+      !backend.apply_blender_modifier(texture_index, eGpencilModifierType_Texture, 0.5f, 1) ||
+      !backend.get_point(texture_index, 0, &texture_after) ||
+      std::fabs(texture_after.uv_fac - texture_before.uv_fac) < 1.0e-5f ||
+      std::fabs(texture_after.uv_rot - texture_before.uv_rot) < 1.0e-5f ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Texture Mapping modifier failed: %s\\n", backend.last_error());
+    return 83;
+  }
+
+  std::fprintf(stderr,
+               "[MODIFIER-BULK] real Blender Legacy GP Tint -> Offset -> Texture Mapping callbacks passed\\n");
+
   std::fprintf(stderr,
                "[MODIFIER-STACK] Smooth -> Thickness -> Subdivide real Blender callbacks passed\\n");
 

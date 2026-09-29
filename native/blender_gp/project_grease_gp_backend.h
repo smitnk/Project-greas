@@ -97,6 +97,7 @@ class Backend {
   bool begin_stroke(const StrokeStyle& style);
   bool add_point(const StrokePoint& point);
   bool end_stroke();
+  bool cancel_stroke();
 
   // Creates the Blender GPU context on an already-current external OpenGL
   // context. The caller owns the GL/EGL context; Blender does not create or

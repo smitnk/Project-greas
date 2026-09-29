@@ -1873,6 +1873,10 @@ bool Backend::get_point(int stroke_index, int point_index, StrokePoint *out) con
     out->pressure = src.pressure;
     out->strength = src.strength;
     out->time = src.time;
+    out->r = src.vert_color[0];
+    out->g = src.vert_color[1];
+    out->b = src.vert_color[2];
+    out->a = src.vert_color[3];
     return true;
   }
   return false;
@@ -1906,6 +1910,10 @@ bool Backend::set_point(int stroke_index,
     dst.pressure = point.pressure;
     dst.strength = point.strength;
     dst.time = point.time;
+    dst.vert_color[0] = point.r;
+    dst.vert_color[1] = point.g;
+    dst.vert_color[2] = point.b;
+    dst.vert_color[3] = point.a;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
     std::fprintf(stderr, "[SET] after batch cache dirty\\n");
     project_grease_gp_tag(impl_->gpd);

@@ -37,12 +37,12 @@ object FeatureRegistry {
         FeatureId.FREEHAND,
         FeatureId.SELECT, FeatureId.LASSO, FeatureId.ERASER,
         FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
-        FeatureId.MOVE
+        FeatureId.MOVE, FeatureId.ROTATE, FeatureId.SCALE, FeatureId.MIRROR
     )
     private val inProgress = setOf(
         FeatureId.FILL,
         FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE,
-        FeatureId.TRIM, FeatureId.CLOSE, FeatureId.MIRROR,
+        FeatureId.TRIM, FeatureId.CLOSE,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
         FeatureId.LAYER_RENAME, FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME,

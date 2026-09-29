@@ -192,6 +192,14 @@ int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index)
 {
   return ensure_ready(handle) && handle->backend.select_stroke(index) ? 1 : 0;
 }
+
+int project_grease_gp_stroke_center(const ProjectGreaseGPHandle *handle, int index, float *x, float *y)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !x || !y) {
+    return 0;
+  }
+  return handle->backend.stroke_center(index, x, y) ? 1 : 0;
+}
 int project_grease_gp_hit_test_stroke(
     const ProjectGreaseGPHandle *handle,
     float x,
@@ -225,10 +233,16 @@ int project_grease_gp_flip_stroke(ProjectGreaseGPHandle *handle, int index)
 }
 int project_grease_gp_rotate_stroke(ProjectGreaseGPHandle *handle, int index, float radians)
 { return ensure_ready(handle) && handle->backend.rotate_stroke(index, radians) ? 1 : 0; }
+int project_grease_gp_rotate_stroke_about(ProjectGreaseGPHandle *handle, int index, float radians, float center_x, float center_y)
+{ return ensure_ready(handle) && handle->backend.rotate_stroke_about(index, radians, center_x, center_y) ? 1 : 0; }
 int project_grease_gp_scale_stroke(ProjectGreaseGPHandle *handle, int index, float scale_x, float scale_y)
 { return ensure_ready(handle) && handle->backend.scale_stroke(index, scale_x, scale_y) ? 1 : 0; }
+int project_grease_gp_scale_stroke_about(ProjectGreaseGPHandle *handle, int index, float scale_x, float scale_y, float center_x, float center_y)
+{ return ensure_ready(handle) && handle->backend.scale_stroke_about(index, scale_x, scale_y, center_x, center_y) ? 1 : 0; }
 int project_grease_gp_mirror_stroke(ProjectGreaseGPHandle *handle, int index, int mirror_x, int mirror_y)
 { return ensure_ready(handle) && handle->backend.mirror_stroke(index, mirror_x != 0, mirror_y != 0) ? 1 : 0; }
+int project_grease_gp_mirror_stroke_about(ProjectGreaseGPHandle *handle, int index, int mirror_x, int mirror_y, float center_x, float center_y)
+{ return ensure_ready(handle) && handle->backend.mirror_stroke_about(index, mirror_x != 0, mirror_y != 0, center_x, center_y) ? 1 : 0; }
 
 int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index, int level)
 {

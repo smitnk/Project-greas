@@ -3306,6 +3306,20 @@ bool Backend::apply_blender_modifier_stack(int index,
         m->step = iterations > 0 ? iterations : m->step;
         break;
       }
+      case eGpencilModifierType_Length: {
+        LengthGpencilModifierData *m =
+            reinterpret_cast<LengthGpencilModifierData *>(md);
+        /* Use Blender's relative stroke-length mode with no random/time path. */
+        m->mode = GP_LENGTH_RELATIVE;
+        m->start_fac = factor;
+        m->end_fac = factor;
+        m->rand_start_fac = 0.0f;
+        m->rand_end_fac = 0.0f;
+        m->overshoot_fac = 0.0f;
+        m->point_density = 0.0f;
+        m->flag &= ~GP_LENGTH_USE_RANDOM;
+        break;
+      }
       case eGpencilModifierType_Thick: {
         ThickGpencilModifierData *m =
             reinterpret_cast<ThickGpencilModifierData *>(md);

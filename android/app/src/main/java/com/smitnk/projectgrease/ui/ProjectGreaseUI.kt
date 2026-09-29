@@ -356,6 +356,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         ListItem(headlineContent={Text("Mirror selected stroke Y")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(false,true);redraw()})
         ListItem(headlineContent={Text("Delete selected stroke")},modifier=Modifier.clickable{controller.deleteSelectedStroke();redraw();onDismiss()})
         ListItem(headlineContent={Text("Duplicate selected stroke")},modifier=Modifier.clickable{controller.duplicateSelectedStroke();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Split selected stroke at point 3")},modifier=Modifier.clickable{controller.splitSelectedStroke(2);redraw();onDismiss()})
+        ListItem(headlineContent={Text("Subdivide selected stroke")},modifier=Modifier.clickable{controller.subdivideSelectedStroke(1);redraw();onDismiss()})
+        ListItem(headlineContent={Text("Close selected stroke")},modifier=Modifier.clickable{controller.closeSelectedStroke();redraw();onDismiss()})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});Spacer(Modifier.height(20.dp))}
 }
 

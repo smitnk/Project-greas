@@ -104,6 +104,12 @@ int project_grease_gp_set_material_visibility(ProjectGreaseGPHandle *handle, int
 int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, int index, int enabled);
 int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, float influence, int iterations);
 int project_grease_gp_apply_blender_modifier(ProjectGreaseGPHandle *handle, int index, int modifier_type, float factor, int iterations);
+int project_grease_gp_apply_blender_modifier_stack(ProjectGreaseGPHandle *handle,
+                                                   int index,
+                                                   const int *modifier_types,
+                                                   int modifier_count,
+                                                   float factor,
+                                                   int iterations);
 int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity);
 int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled);
 int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index);

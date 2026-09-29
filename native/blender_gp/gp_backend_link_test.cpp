@@ -1,5 +1,6 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_legacy_primitive.h"
+#include "project_grease_legacy_fill.h"
 
 #include <cstdio>
 
@@ -204,6 +205,58 @@ int main() {
     }
   }
   std::fprintf(stderr, "[PRIMITIVE] Legacy GP primitive geometry conformance passed\\n");
+
+  std::fprintf(stderr, "[FILL] Legacy GP boundary fill conformance\\n");
+  {
+    using project_grease::legacy_gp_fill::Image;
+    using project_grease::legacy_gp_fill::run;
+
+    Image closed(9, 9);
+    auto mark = [&closed](int x, int y) {
+      float *p = closed.pixel(y * closed.width() + x);
+      p[0] = 1.0f;
+      p[3] = 1.0f;
+    };
+    for (int x = 2; x <= 6; ++x) {
+      mark(x, 2);
+      mark(x, 6);
+    }
+    for (int y = 2; y <= 6; ++y) {
+      mark(2, y);
+      mark(6, y);
+    }
+
+    const auto closed_result = run(closed, 4, 4, 1, 0);
+    if (!closed_result.valid || closed_result.border_contact ||
+        closed_result.outline.size() < 4) {
+      std::fprintf(stderr, "Legacy GP closed boundary fill mismatch\\n");
+      return 38;
+    }
+
+    Image open(9, 9);
+    auto mark_open = [&open](int x, int y) {
+      float *p = open.pixel(y * open.width() + x);
+      p[0] = 1.0f;
+      p[3] = 1.0f;
+    };
+    for (int x = 2; x <= 6; ++x) {
+      mark_open(x, 2);
+      if (x != 4) {
+        mark_open(x, 6);
+      }
+    }
+    for (int y = 2; y <= 6; ++y) {
+      mark_open(2, y);
+      mark_open(6, y);
+    }
+
+    const auto open_result = run(open, 4, 4, 1, 0);
+    if (open_result.valid || !open_result.border_contact) {
+      std::fprintf(stderr, "Legacy GP open boundary leak detection mismatch\\n");
+      return 39;
+    }
+  }
+  std::fprintf(stderr, "[FILL] Legacy GP boundary fill conformance passed\\n");
 
   std::fprintf(stderr, "[DUPLICATE] duplicate edited stroke\n");
   if (!backend.duplicate_stroke(0) || backend.stroke_count() != 2) {

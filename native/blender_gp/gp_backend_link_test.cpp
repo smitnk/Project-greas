@@ -714,6 +714,30 @@ int main() {
   }
   std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Simplify callback passed\\n");
 
+  std::fprintf(stderr, "[MODIFIER] real Blender 3.6.23 Legacy GP Length modifier\\n");
+  if (!backend.begin_stroke({0, 11.0f}) ||
+      !backend.add_point({55.0f, 40.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({56.0f, 40.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.add_point({57.0f, 40.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.add_point({58.0f, 40.0f, 0.0f, 0.7f, 0.7f, 0.3f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "Length modifier setup failed: %s\\n", backend.last_error());
+    return 72;
+  }
+  const int length_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint length_before{};
+  if (!backend.get_point(length_index, 0, &length_before) ||
+      !backend.apply_blender_modifier(
+          length_index, eGpencilModifierType_Length, 0.25f, 1) ||
+      !backend.get_point(length_index, 0, &edited) ||
+      (edited.x == length_before.x && edited.y == length_before.y) ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Length modifier failed: %s\\n",
+                 backend.last_error());
+    return 73;
+  }
+  std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Length callback passed\\n");
+
   std::fprintf(stderr, "[MODIFIER-STACK] real Blender Legacy GP modifier stack\\n");
   if (!backend.begin_stroke({0, 10.0f}) ||
       !backend.add_point({50.0f, 10.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||

@@ -15,6 +15,11 @@
 #include "DNA_gpencil_legacy_types.h"
 #include "ED_gpencil_legacy.h"
 
+/* Exact constant from Blender 3.6.23 gpencil_intern.h.
+ * Keep this local so the focused extraction does not pull the desktop
+ * gpencil_intern.h -> ED_numinput.h dependency closure. */
+#define GP_STROKE_BUFFER_CHUNK 2048
+
 struct tGPspoint *ED_gpencil_sbuffer_ensure(struct tGPspoint *buffer_array,
                                             int *buffer_size,
                                             int *buffer_used,

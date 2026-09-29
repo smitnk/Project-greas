@@ -126,4 +126,25 @@ std::vector<Point> arc(const Point& start, const Point& end, int edges, bool fli
   return points;
 }
 
+std::vector<Point> generate(int type,
+                             const Point& start,
+                             const Point& end,
+                             float start_angle,
+                             float end_angle,
+                             int segments)
+{
+  switch (type) {
+    case 0:
+      return line(start, end, segments);
+    case 1:
+      return rectangle(start, end, segments == 64 ? 1 : segments);
+    case 2:
+      return circle(start, end, segments);
+    case 3:
+      return arc(start, end, segments, end_angle < start_angle);
+    default:
+      return {};
+  }
+}
+
 }  // namespace project_grease::legacy_gp_primitive

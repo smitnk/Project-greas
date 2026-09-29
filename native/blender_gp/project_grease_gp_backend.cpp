@@ -16,7 +16,6 @@
 #include "BLI_math_geom.h"
 
 #include "BKE_gpencil_legacy.h"
-#include "BKE_gpencil.h"
 #include "BKE_gpencil_geom_legacy.h"
 #ifndef __ANDROID__
 #include "BKE_idtype.h"

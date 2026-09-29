@@ -738,6 +738,54 @@ int main() {
   }
   std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Length callback passed\\n");
 
+  std::fprintf(stderr, "[MODIFIER] real Blender 3.6.23 Legacy GP Opacity modifier\\n");
+  if (!backend.begin_stroke({0, 12.0f}) ||
+      !backend.add_point({59.0f, 45.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({60.0f, 46.0f, 0.0f, 0.8f, 0.8f, 0.1f}) ||
+      !backend.add_point({61.0f, 45.0f, 0.0f, 0.6f, 0.6f, 0.2f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "Opacity modifier setup failed: %s\\n", backend.last_error());
+    return 74;
+  }
+  const int opacity_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint opacity_before{};
+  if (!backend.get_point(opacity_index, 0, &opacity_before) ||
+      !backend.apply_blender_modifier(
+          opacity_index, eGpencilModifierType_Opacity, 0.5f, 1) ||
+      !backend.get_point(opacity_index, 0, &edited) ||
+      edited.strength >= opacity_before.strength ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Opacity modifier failed: %s\\n",
+                 backend.last_error());
+    return 75;
+  }
+  std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Opacity callback passed\\n");
+
+  std::fprintf(stderr, "[MODIFIER] real Blender 3.6.23 Legacy GP Color modifier\\n");
+  if (!backend.begin_stroke({0, 13.0f}) ||
+      !backend.add_point({63.0f, 45.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({64.0f, 46.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.add_point({65.0f, 45.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "Color modifier setup failed: %s\\n", backend.last_error());
+    return 76;
+  }
+  const int color_index = backend.stroke_count() - 1;
+  project_grease::gp::StrokePoint color_before{};
+  if (!backend.get_point(color_index, 0, &color_before) ||
+      !backend.apply_blender_modifier(
+          color_index, eGpencilModifierType_Color, 0.2f, 1) ||
+      !backend.get_point(color_index, 0, &edited) ||
+      std::fabs(edited.r - color_before.r) < 1.0e-5f ||
+      std::fabs(edited.g - color_before.g) < 1.0e-5f ||
+      std::fabs(edited.b - color_before.b) < 1.0e-5f ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Color modifier failed: %s\\n",
+                 backend.last_error());
+    return 77;
+  }
+  std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Color callback passed\\n");
+
   std::fprintf(stderr, "[MODIFIER-STACK] real Blender Legacy GP modifier stack\\n");
   if (!backend.begin_stroke({0, 10.0f}) ||
       !backend.add_point({50.0f, 10.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||

@@ -445,6 +445,18 @@ int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, fl
 {
   return ensure_ready(handle) && handle->backend.smooth_stroke(index, influence, iterations) ? 1 : 0;
 }
+int project_grease_gp_apply_blender_modifier(ProjectGreaseGPHandle *handle,
+                                              int index,
+                                              int modifier_type,
+                                              float factor,
+                                              int iterations)
+{
+  return ensure_ready(handle) &&
+                 handle->backend.apply_blender_modifier(index, modifier_type, factor, iterations)
+             ? 1
+             : 0;
+}
+
 int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity)
 {
   return ensure_ready(handle) && handle->backend.set_onion_skin(enabled != 0, before, after, opacity) ? 1 : 0;

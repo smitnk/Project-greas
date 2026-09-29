@@ -35,12 +35,12 @@ object FeatureRegistry {
     // and Android presentation path are validated.
     private val available = setOf(
         FeatureId.FREEHAND,
-        FeatureId.SELECT, FeatureId.LASSO, FeatureId.ERASER,
+        FeatureId.SELECT,
         FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
         FeatureId.MOVE, FeatureId.ROTATE, FeatureId.SCALE, FeatureId.MIRROR
     )
     private val inProgress = setOf(
-        FeatureId.FILL,
+        FeatureId.FILL, FeatureId.LASSO, FeatureId.ERASER,
         FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE,
         FeatureId.TRIM, FeatureId.CLOSE,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,

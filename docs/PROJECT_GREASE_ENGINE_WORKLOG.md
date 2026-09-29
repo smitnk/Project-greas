@@ -167,3 +167,18 @@ Implemented a single batched engine entry point for Blender 3.6.23 Legacy GP geo
 This batch is deliberately Blender-backed: the Project Grease layer supplies operation parameters and lifecycle/cache invalidation, while the actual geometry algorithms are Blender's Legacy GP functions. Blender's Legacy GP API documents these operations as part of the GP geometry layer, including simplify, subdivide, trim, merge-distance, resample, dissolve, and stretch.
 
 The next loop is build/CI inspection. Any compiler, linker, or runtime/conformance error from this batch is treated as a dependency-closure problem and fixed at its smallest concrete boundary before expanding the next bulk feature group.
+
+
+### Bulk Legacy GP paint-stage integration — 2026-09-29
+
+Added Blender-backed paint-stage settings to the real `tGPspoint` stroke-buffer commit path.
+
+- 34975fe — added `LegacyPaintSettings` to the backend API.
+- 13b5c80 — stores those settings and applies Blender Legacy GP smoothing/input-sample processing when the sbuffer becomes a `bGPDstroke`.
+- faf9fb4 / 1753993 — exposed the settings through the Android C bridge.
+- 48405fa — native conformance test exercises brush smoothing/input-sample processing and verifies the real Blender sbuffer is cleared after commit.
+- f68723a — corrected the paint-stage position smoothing call to the actual 3.6.23 native API signature used by the existing backend closure.
+
+The upstream Legacy GP paint implementation performs smoothing and input-sample processing during stroke creation, using the same `BKE_gpencil_stroke_smooth*` family that this batch now calls. The Blender 3.6 API also exposes the Legacy GP drawing/interpolation/smoothing controls used by this path. 
+
+CI verification branches were created only to trigger/inspect the Android build without modifying the production branch with CI marker files. They are not production feature commits.

@@ -69,6 +69,9 @@ private class ProjectGreaseDrawingSurfaceView(
     private var rendererHandle = 0L
     private var strokeOpen = false
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
+    private var moveOpen = false
+    private var lastMoveX = 0f
+    private var lastMoveY = 0f
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -93,6 +96,14 @@ private class ProjectGreaseDrawingSurfaceView(
                         controller.fillAt(event.x, event.y)
                         controller.render()
                     }
+                    com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
+                        moveOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        if (moveOpen) {
+                            lastMoveX = event.x
+                            lastMoveY = event.y
+                            controller.render()
+                        }
+                    }
                     else -> {
                         strokeOpen = controller.beginStroke()
                         if (strokeOpen) {
@@ -111,7 +122,24 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                if (moveOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    val pointerIndex = event.findPointerIndex(activePointerId)
+                    if (pointerIndex >= 0) {
+                        val x = event.getX(pointerIndex)
+                        val y = event.getY(pointerIndex)
+                        val dx = x - lastMoveX
+                        val dy = y - lastMoveY
+                        if (dx != 0f || dy != 0f) {
+                            controller.translateSelectedStroke(dx, dy)
+                            lastMoveX = x
+                            lastMoveY = y
+                            controller.render()
+                        }
+                    } else {
+                        moveOpen = false
+                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                    }
+                } else if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
                     val pointerIndex = event.findPointerIndex(activePointerId)
                     if (pointerIndex >= 0) {
                         addPoint(event, pointerIndex)
@@ -126,7 +154,12 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                if (moveOpen && activePointerId != MotionEvent.INVALID_POINTER_ID &&
+                    event.getPointerId(event.actionIndex) == activePointerId) {
+                    moveOpen = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    controller.render()
+                } else if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
                     val pointerIndex = event.actionIndex
                     val pointerId = event.getPointerId(pointerIndex)
                     if (pointerId == activePointerId) {
@@ -144,7 +177,11 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                if (moveOpen) {
+                    moveOpen = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    controller.render()
+                } else if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
                     val pointerIndex = event.findPointerIndex(activePointerId)
                     if (pointerIndex >= 0) {
                         addPoint(event, pointerIndex)
@@ -160,6 +197,10 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                if (moveOpen) {
+                    moveOpen = false
+                    controller.render()
+                }
                 if (strokeOpen) {
                     controller.cancelStroke()
                     strokeOpen = false

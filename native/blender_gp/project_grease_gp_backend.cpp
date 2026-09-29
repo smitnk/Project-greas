@@ -16,6 +16,7 @@
 #include "BLI_math_geom.h"
 
 #include "BKE_gpencil_legacy.h"
+#include "BKE_gpencil.h"
 #include "BKE_gpencil_geom_legacy.h"
 #ifndef __ANDROID__
 #include "BKE_idtype.h"
@@ -135,6 +136,10 @@ static void gp_materials_free(bGPdata *gpd)
   gpd->totcol = 0;
 }
 
+struct HistorySnapshot {
+  bGPdata *data = nullptr;
+};
+
 struct Backend::Impl {
   std::string last_error;
 #ifndef __ANDROID__
@@ -164,7 +169,132 @@ struct Backend::Impl {
   bool layer_created = false;
   bool frame_created = false;
   bool stroke_open = false;
+
+  std::vector<HistorySnapshot *> undo_history;
+  std::vector<HistorySnapshot *> redo_history;
 };
+
+static void history_snapshot_free(HistorySnapshot *snapshot)
+{
+  if (!snapshot) {
+    return;
+  }
+  if (snapshot->data) {
+    BKE_gpencil_free_layers(&snapshot->data->layers);
+    MEM_SAFE_FREE(snapshot->data->mat);
+    MEM_freeN(snapshot->data);
+  }
+  delete snapshot;
+}
+
+static HistorySnapshot *history_snapshot_create(const bGPdata *source)
+{
+  if (!source) {
+    return nullptr;
+  }
+
+  HistorySnapshot *snapshot = new HistorySnapshot();
+  snapshot->data = static_cast<bGPdata *>(
+      MEM_callocN(sizeof(bGPdata), "Project Grease Legacy GP Undo Snapshot"));
+  if (!snapshot->data) {
+    delete snapshot;
+    return nullptr;
+  }
+
+  snapshot->data->flag = source->flag | GP_DATA_CACHE_IS_DIRTY;
+  snapshot->data->pixfactor = source->pixfactor;
+  std::memcpy(snapshot->data->line_color, source->line_color, sizeof(source->line_color));
+  snapshot->data->onion_factor = source->onion_factor;
+  snapshot->data->onion_mode = source->onion_mode;
+  snapshot->data->onion_flag = source->onion_flag;
+  snapshot->data->gstep = source->gstep;
+  snapshot->data->gstep_next = source->gstep_next;
+  std::memcpy(snapshot->data->gcolor_prev, source->gcolor_prev, sizeof(source->gcolor_prev));
+  std::memcpy(snapshot->data->gcolor_next, source->gcolor_next, sizeof(source->gcolor_next));
+  snapshot->data->zdepth_offset = source->zdepth_offset;
+  snapshot->data->totcol = source->totcol;
+  snapshot->data->draw_mode = source->draw_mode;
+  snapshot->data->onion_keytype = source->onion_keytype;
+  snapshot->data->select_last_index = source->select_last_index;
+  snapshot->data->grid = source->grid;
+
+  // Blender's Legacy GP duplication path is explicitly used for undo buffers.
+  // It deep-copies layers, frames, strokes, points and stroke weights.
+  BKE_gpencil_copy_data(snapshot->data, source, 0);
+
+  // A copied render cache must never be reused by the live Android context.
+  snapshot->data->runtime = {};
+  snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
+  return snapshot;
+}
+
+static void history_snapshot_clear(std::vector<HistorySnapshot *> &history)
+{
+  for (HistorySnapshot *snapshot : history) {
+    history_snapshot_free(snapshot);
+  }
+  history.clear();
+}
+
+static void history_copy_settings(const bGPdata *source, bGPdata *destination)
+{
+  destination->flag = source->flag | GP_DATA_CACHE_IS_DIRTY;
+  destination->pixfactor = source->pixfactor;
+  std::memcpy(destination->line_color, source->line_color, sizeof(source->line_color));
+  destination->onion_factor = source->onion_factor;
+  destination->onion_mode = source->onion_mode;
+  destination->onion_flag = source->onion_flag;
+  destination->gstep = source->gstep;
+  destination->gstep_next = source->gstep_next;
+  std::memcpy(destination->gcolor_prev, source->gcolor_prev, sizeof(source->gcolor_prev));
+  std::memcpy(destination->gcolor_next, source->gcolor_next, sizeof(source->gcolor_next));
+  destination->zdepth_offset = source->zdepth_offset;
+  destination->totcol = source->totcol;
+  destination->draw_mode = source->draw_mode;
+  destination->onion_keytype = source->onion_keytype;
+  destination->select_last_index = source->select_last_index;
+  destination->grid = source->grid;
+}
+
+static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot *snapshot)
+{
+  if (!impl || !impl->gpd || !snapshot || !snapshot->data) {
+    return false;
+  }
+
+  if (impl->gpu_initialized) {
+    DRW_gpencil_batch_cache_free(impl->gpd);
+  }
+
+  BKE_gpencil_free_layers(&impl->gpd->layers);
+  MEM_SAFE_FREE(impl->gpd->mat);
+  BLI_listbase_clear(&impl->gpd->layers);
+  impl->gpd->mat = nullptr;
+
+  history_copy_settings(snapshot->data, impl->gpd);
+  BKE_gpencil_copy_data(impl->gpd, snapshot->data, 0);
+  BKE_gpencil_stats_update(impl->gpd);
+
+  impl->layer = nullptr;
+  for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl->gpd->layers.first);
+       layer != nullptr;
+       layer = layer->next) {
+    if (layer->flag & GP_LAYER_ACTIVE) {
+      impl->layer = layer;
+      break;
+    }
+  }
+  if (!impl->layer) {
+    impl->layer = static_cast<bGPDlayer *>(impl->gpd->layers.first);
+  }
+  impl->frame = impl->layer ? impl->layer->actframe : nullptr;
+  impl->stroke = nullptr;
+  impl->layer_created = impl->layer != nullptr;
+  impl->frame_created = impl->frame != nullptr;
+  impl->stroke_open = false;
+  project_grease_gp_tag(impl->gpd);
+  return true;
+}
 
 Backend::Backend() : impl_(new Impl()) {}
 
@@ -172,6 +302,90 @@ Backend::~Backend()
 {
   shutdown();
   delete impl_;
+}
+
+bool Backend::history_reset()
+{
+  if (!impl_->gpd) {
+    impl_->last_error = "document is not created";
+    return false;
+  }
+  history_snapshot_clear(impl_->undo_history);
+  history_snapshot_clear(impl_->redo_history);
+  return history_record();
+}
+
+bool Backend::history_record()
+{
+  if (!impl_->gpd) {
+    impl_->last_error = "document is not created";
+    return false;
+  }
+
+  HistorySnapshot *snapshot = history_snapshot_create(impl_->gpd);
+  if (!snapshot) {
+    impl_->last_error = "Legacy GP history snapshot allocation failed";
+    return false;
+  }
+
+  history_snapshot_clear(impl_->redo_history);
+  impl_->undo_history.push_back(snapshot);
+
+  constexpr size_t kMaxHistory = 64;
+  if (impl_->undo_history.size() > kMaxHistory) {
+    history_snapshot_free(impl_->undo_history.front());
+    impl_->undo_history.erase(impl_->undo_history.begin());
+  }
+
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::history_undo()
+{
+  if (impl_->undo_history.size() < 2) {
+    return false;
+  }
+
+  HistorySnapshot *current = impl_->undo_history.back();
+  HistorySnapshot *target = impl_->undo_history[impl_->undo_history.size() - 2];
+  if (!history_restore_snapshot(impl_, target)) {
+    impl_->last_error = "Legacy GP undo restore failed";
+    return false;
+  }
+
+  impl_->undo_history.pop_back();
+  impl_->redo_history.push_back(current);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::history_redo()
+{
+  if (impl_->redo_history.empty()) {
+    return false;
+  }
+
+  HistorySnapshot *target = impl_->redo_history.back();
+  if (!history_restore_snapshot(impl_, target)) {
+    impl_->last_error = "Legacy GP redo restore failed";
+    return false;
+  }
+
+  impl_->redo_history.pop_back();
+  impl_->undo_history.push_back(target);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::history_can_undo() const
+{
+  return impl_->undo_history.size() >= 2;
+}
+
+bool Backend::history_can_redo() const
+{
+  return !impl_->redo_history.empty();
 }
 
 bool Backend::initialize()
@@ -263,6 +477,8 @@ void Backend::shutdown()
   impl_->layer_created = false;
   impl_->document_created = false;
   impl_->pending_points.clear();
+  history_snapshot_clear(impl_->undo_history);
+  history_snapshot_clear(impl_->redo_history);
 
 #ifndef __ANDROID__
   if (impl_->gpu_initialized) {

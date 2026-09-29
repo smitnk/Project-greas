@@ -105,6 +105,13 @@ class Backend {
   // Invoke Blender 3.6.23's real Legacy GP modifier deformStroke callback on one stroke.
   // No Project Grease geometry algorithm is used for the modifier itself.
   bool apply_blender_modifier(int stroke_index, int modifier_type, float factor, int iterations);
+  // Executes an ordered real Blender Legacy GP modifier list against the current stroke.
+  // The list is owned by the focused adapter only; every operation is Blender's callback.
+  bool apply_blender_modifier_stack(int stroke_index,
+                                     const int* modifier_types,
+                                     int modifier_count,
+                                     float factor,
+                                     int iterations);
   bool set_onion_skin(bool enabled, int before, int after, float opacity);
   bool set_multiframe_editing(bool enabled);
   // Real Blender 3.6.23 Legacy GP fill geometry: triangulates a closed

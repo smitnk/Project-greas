@@ -1427,7 +1427,10 @@ bool Backend::reverse_selected_strokes()
     }
 
     for (int left = 0, right = stroke->totpoints - 1; left < right; ++left, --right) {
-      std::swap(stroke->points[left], stroke->points[right]);
+      char temporary[sizeof(bGPDspoint)];
+      std::memcpy(temporary, &stroke->points[left], sizeof(bGPDspoint));
+      std::memcpy(&stroke->points[left], &stroke->points[right], sizeof(bGPDspoint));
+      std::memcpy(&stroke->points[right], temporary, sizeof(bGPDspoint));
     }
     changed = true;
   }
@@ -1473,7 +1476,7 @@ bool Backend::dissolve_selected_points()
           continue;
         }
         if (write_index != read_index) {
-          stroke->points[write_index] = point;
+          std::memcpy(&stroke->points[write_index], &point, sizeof(bGPDspoint));
         }
         ++write_index;
       }

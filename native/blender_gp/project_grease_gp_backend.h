@@ -102,6 +102,41 @@ class Backend {
   bool set_material_visibility(int index, bool visible);
   bool set_material_fill_enabled(int index, bool enabled);
   bool smooth_stroke(int index, float influence, int iterations);
+  // One batched entry point for the real Blender 3.6.23 Legacy GP geometry API.
+  // Each operation dispatches directly to Blender's BKE_gpencil_* implementation;
+  // Project Grease does not reimplement the geometry algorithms.
+  enum class LegacyGeometryOpType : uint8_t {
+    SimplifyAdaptive,
+    SimplifyFixed,
+    Subdivide,
+    TrimIntersection,
+    TrimPoints,
+    MergeDistance,
+    Sample,
+    SmoothStrength,
+    SmoothThickness,
+    SmoothUV,
+    Stretch,
+    Close,
+    Dissolve,
+    FillTriangulate,
+  };
+
+  struct LegacyGeometryOp {
+    LegacyGeometryOpType type;
+    float value0 = 0.0f;
+    float value1 = 0.0f;
+    float value2 = 0.0f;
+    int int0 = 0;
+    int int1 = 0;
+    bool flag0 = false;
+    bool flag1 = false;
+  };
+
+  bool apply_legacy_geometry_batch(int stroke_index,
+                                   const LegacyGeometryOp* operations,
+                                   int operation_count);
+
   // Invoke Blender 3.6.23's real Legacy GP modifier deformStroke callback on one stroke.
   // No Project Grease geometry algorithm is used for the modifier itself.
   bool apply_blender_modifier(int stroke_index, int modifier_type, float factor, int iterations);

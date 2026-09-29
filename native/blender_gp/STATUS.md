@@ -14,11 +14,14 @@
 
 ## Current application status
 
-- Freehand drawing is the only end-to-end editor tool currently marked AVAILABLE.
+- Freehand drawing is end-to-end through real Legacy GP stroke allocation.
 - Pressure capture is available through Android MotionEvent input.
+- Transform operations now follow the Blender 3.6.23 Legacy GP transform-conversion rule of transforming selected points, rather than blindly transforming every point in a stroke.
+- Move/Rotate/Scale/Mirror are still Project Grease gesture adapters around the Legacy GP point data; the full Blender transform operator/context stack is intentionally not imported.
 - UI/controller architecture has now been separated from the native bridge.
 - FeatureRegistry is the single capability source for UI availability.
 - Timeline, layers, materials, selection and advanced tools have UI/controller boundaries but are not all connected end-to-end.
+- Lasso selection and eraser remain IN_PROGRESS because their current Android hit-testing logic is not yet a direct adaptation of the Blender 3.6.23 Legacy GP editor implementation.
 - Persistence, export and full playback are not implemented.
 
 ## Important limitation

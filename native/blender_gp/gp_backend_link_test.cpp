@@ -531,9 +531,10 @@ int main() {
     return 47;
   }
   const int eraser_stroke = backend.stroke_count() - 1;
+  const int eraser_points_before = backend.point_count();
   if (!backend.erase_at(30.0f, 20.0f, 6.0f) ||
       backend.stroke_count() != eraser_stroke + 1 ||
-      backend.point_count() != 2 ||
+      backend.point_count() != eraser_points_before - 1 ||
       !backend.render()) {
     std::fprintf(stderr, "Legacy GP eraser edit/cache invalidation failed: %s\n",
                  backend.last_error());

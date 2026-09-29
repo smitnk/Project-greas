@@ -23,49 +23,71 @@ target_compile_features(project_grease_legacy_fill PUBLIC cxx_std_17)
 add_executable(project_grease_legacy_fill_test project_grease_legacy_fill_test.cpp)
 target_link_libraries(project_grease_legacy_fill_test PRIVATE project_grease_legacy_fill)
 
+# These are the actual Blender 3.6.23 Legacy GP editor/modifier sources.
+# They are compiled into the focused Project Grease native closure instead
+# of importing Blender's desktop application targets.
+file(GLOB PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES CONFIGURE_DEPENDS
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil/*.cc"
+)
+file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/*.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/*.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/lineart/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/lineart/*.cc"
+)
+
 set(PROJECT_GREASE_GP_ENGINE_SOURCES
   project_grease_gp_backend.cpp
   project_grease_gp_engine.cpp
+  ${PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES}
+  ${PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES}
+)
+
+set(PROJECT_GREASE_GP_INCLUDE_DIRS
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${BLENDER_SOURCE_DIR}/source/blender"
+  "${BLENDER_SOURCE_DIR}/source"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
+  "${BLENDER_SOURCE_DIR}/source/blender/bmesh"
+  "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
+  "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw/intern"
+  "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/include"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/lineart"
+  "${BLENDER_SOURCE_DIR}/source/blender/windowmanager"
+  "${BLENDER_SOURCE_DIR}/source/blender/depsgraph"
+  "${BLENDER_SOURCE_DIR}/source/blender/blentranslation"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpu"
+  "${BLENDER_SOURCE_DIR}/source/blender/render"
+  "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
+  "${BLENDER_SOURCE_DIR}/intern/atomic"
+  "${BLENDER_SOURCE_DIR}/intern/ghost"
 )
 
 if(TARGET bf_draw)
   add_library(project_grease_blender_gp STATIC ${PROJECT_GREASE_GP_ENGINE_SOURCES})
   add_library(project_grease_gp_bridge STATIC project_grease_gp_bridge.cpp)
-
-  target_include_directories(project_grease_blender_gp PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${BLENDER_SOURCE_DIR}/source/blender"
-    "${BLENDER_SOURCE_DIR}/source"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
-    "${BLENDER_SOURCE_DIR}/source/blender/bmesh"
-    "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
-    "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw/intern"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil"
-    "${BLENDER_SOURCE_DIR}/source/blender/editors/include"
-    "${BLENDER_SOURCE_DIR}/source/blender/windowmanager"
-    "${BLENDER_SOURCE_DIR}/source/blender/depsgraph"
-    "${BLENDER_SOURCE_DIR}/source/blender/blentranslation"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu"
-    "${BLENDER_SOURCE_DIR}/source/blender/render"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
-    "${BLENDER_SOURCE_DIR}/intern/atomic"
-    "${BLENDER_SOURCE_DIR}/intern/ghost"
-  )
-
+  target_include_directories(project_grease_blender_gp PUBLIC ${PROJECT_GREASE_GP_INCLUDE_DIRS})
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
-  target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
+  target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL WITH_LINEART)
+
   target_link_libraries(project_grease_gp_bridge PRIVATE project_grease_blender_gp project_grease_legacy_fill project_grease_legacy_primitive)
   target_include_directories(project_grease_gp_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_features(project_grease_gp_bridge PUBLIC cxx_std_17)
 
-  if(TARGET bf_editor_gizmo_library AND TARGET bf_gpu)
-    target_link_libraries(bf_editor_gizmo_library PUBLIC bf_gpu)
-  endif()
-
-  target_link_libraries(project_grease_blender_gp PRIVATE bf_draw bf_gpu bf_intern_ghost project_grease_legacy_fill project_grease_legacy_primitive)
+  target_link_libraries(project_grease_blender_gp PRIVATE
+    bf_draw bf_gpu bf_intern_ghost
+    project_grease_legacy_fill project_grease_legacy_primitive
+  )
 
   add_executable(project_grease_gp_bridge_simulation gp_bridge_simulation_test.cpp)
   target_link_libraries(project_grease_gp_bridge_simulation PRIVATE project_grease_gp_bridge project_grease_blender_gp bf_draw bf_gpu bf_intern_ghost)
@@ -84,32 +106,10 @@ else()
     "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil_engine.c"
   )
 
-  target_include_directories(project_grease_blender_gp PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${BLENDER_SOURCE_DIR}/source/blender"
-    "${BLENDER_SOURCE_DIR}/source"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
-    "${BLENDER_SOURCE_DIR}/source/blender/bmesh"
-    "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
-    "${BLENDER_SOURCE_DIR}/source/blender/makesrna"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw/intern"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil"
-    "${BLENDER_SOURCE_DIR}/source/blender/editors/include"
-    "${BLENDER_SOURCE_DIR}/source/blender/windowmanager"
-    "${BLENDER_SOURCE_DIR}/source/blender/depsgraph"
-    "${BLENDER_SOURCE_DIR}/source/blender/blentranslation"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu"
-    "${BLENDER_SOURCE_DIR}/source/blender/render"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
-    "${BLENDER_SOURCE_DIR}/intern/atomic"
-    "${BLENDER_SOURCE_DIR}/intern/ghost"
-  )
-
+  target_include_directories(project_grease_blender_gp PUBLIC ${PROJECT_GREASE_GP_INCLUDE_DIRS})
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
-  target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
+  target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL WITH_LINEART)
 endif()
 
-# This graph intentionally remains a focused Legacy GP closure.
-# Do not replace it with the full Blender application graph.
+# Focused Legacy GP closure only. Full Blender application/editor targets,
+# Python, GHOST-on-Android and unrelated render/scene systems remain excluded.

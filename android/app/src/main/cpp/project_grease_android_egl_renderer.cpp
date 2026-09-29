@@ -9,26 +9,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "project_grease_gp_bridge.h"
+
 namespace {
 
-using GPHandle = void *;
-struct ProjectGreaseGPPoint { float x; float y; float z; float pressure; float strength; float time; };
-
-extern "C" GPHandle project_grease_gp_create(void);
-extern "C" void project_grease_gp_destroy(GPHandle);
-extern "C" int project_grease_gp_initialize_external_gpu(GPHandle);
-extern "C" int project_grease_gp_render_external_context(GPHandle);
-extern "C" int project_grease_gp_begin_stroke(GPHandle, int, float);
-extern "C" int project_grease_gp_add_point(GPHandle, struct ProjectGreaseGPPoint);
-extern "C" int project_grease_gp_end_stroke(GPHandle);
-extern "C" int project_grease_gp_fill_at_screen(
-    GPHandle, const float *rgba, int width, int height, int seed_x, int seed_y,
-    int fill_leak, int dilate_pixels, int material_index, float thickness);
-extern "C" int project_grease_gp_render_fill_mask(GPHandle);
-extern "C" void project_grease_android_present_reset(void);
-extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
-extern "C" int project_grease_android_present_pending_stroke(
-    const ProjectGreaseGPPoint *points, int count, float thickness);
+using GPHandle = ProjectGreaseGPHandle *;
 
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;

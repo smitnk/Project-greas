@@ -493,6 +493,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCancelStrokeEglRenderer(
+    JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected) return JNI_FALSE;
+  return project_grease_gp_cancel_stroke(renderer->gp_handle) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEndStrokeEglRenderer(
     JNIEnv *, jobject, jlong handle)
 {

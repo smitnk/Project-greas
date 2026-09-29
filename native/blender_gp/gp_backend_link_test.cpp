@@ -522,6 +522,36 @@ int main() {
   }
   std::fprintf(stderr, "[FILL] Legacy GP end-to-end fill/render passed\n");
 
+  std::fprintf(stderr, "[ERASER] real Legacy GP hard eraser test\n");
+  if (!backend.begin_stroke({20.0f, 20.0f}) ||
+      !backend.add_point({30.0f, 20.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({40.0f, 20.0f, 0.0f, 1.0f, 1.0f, 0.1f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "eraser setup failed: %s\n", backend.last_error());
+    return 47;
+  }
+  const int eraser_stroke = backend.stroke_count() - 1;
+  if (!backend.erase_at(30.0f, 20.0f, 6.0f) ||
+      backend.stroke_count() != eraser_stroke + 1 ||
+      backend.point_count() != 2 ||
+      !backend.render()) {
+    std::fprintf(stderr, "Legacy GP eraser edit/cache invalidation failed: %s\n",
+                 backend.last_error());
+    return 48;
+  }
+  std::fprintf(stderr, "[ERASER] real Legacy GP erase/render passed\n");
+
+  std::fprintf(stderr, "[LASSO] real Legacy GP lasso selection test\n");
+  const float lasso[] = {15.0f, 15.0f, 45.0f, 15.0f, 45.0f, 25.0f, 15.0f, 25.0f};
+  backend.clear_selection();
+  if (backend.lasso_select(lasso, 4, false) != 1 ||
+      !backend.get_point(eraser_stroke, 0, &translated_point) ||
+      !backend.render()) {
+    std::fprintf(stderr, "Legacy GP lasso selection failed: %s\n", backend.last_error());
+    return 49;
+  }
+  std::fprintf(stderr, "[LASSO] real Legacy GP lasso selection/render passed\n");
+
   std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot test\n");
   if (!backend.history_reset()) {
     std::fprintf(stderr, "history reset failed: %s\n", backend.last_error());

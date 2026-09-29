@@ -409,7 +409,7 @@ class EditorController {
     fun cancelStroke(){
         if(rendererHandle!=0L) {
             if (tools.activeTool==GreaseTool.DRAW) {
-                GPNative.nativeEndStrokeEglRenderer(rendererHandle)
+                GPNative.nativeCancelStrokeEglRenderer(rendererHandle)
             }
             GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
         }

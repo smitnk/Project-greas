@@ -11,24 +11,25 @@ if(NOT EXISTS "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil
 endif()
 
 add_library(project_grease_legacy_fill STATIC project_grease_legacy_fill.cpp)
-
 add_library(project_grease_legacy_primitive STATIC project_grease_legacy_primitive.cpp)
 
 target_include_directories(project_grease_legacy_primitive PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(project_grease_legacy_primitive PUBLIC cxx_std_17)
-
 add_executable(project_grease_legacy_primitive_test project_grease_legacy_primitive_test.cpp)
 target_link_libraries(project_grease_legacy_primitive_test PRIVATE project_grease_legacy_primitive)
 
 target_include_directories(project_grease_legacy_fill PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(project_grease_legacy_fill PUBLIC cxx_std_17)
-
 add_executable(project_grease_legacy_fill_test project_grease_legacy_fill_test.cpp)
 target_link_libraries(project_grease_legacy_fill_test PRIVATE project_grease_legacy_fill)
 
-if(TARGET bf_draw)
-  add_library(project_grease_blender_gp STATIC project_grease_gp_backend.cpp)
+set(PROJECT_GREASE_GP_ENGINE_SOURCES
+  project_grease_gp_backend.cpp
+  project_grease_gp_engine.cpp
+)
 
+if(TARGET bf_draw)
+  add_library(project_grease_blender_gp STATIC ${PROJECT_GREASE_GP_ENGINE_SOURCES})
   add_library(project_grease_gp_bridge STATIC project_grease_gp_bridge.cpp)
 
   target_include_directories(project_grease_blender_gp PUBLIC
@@ -56,10 +57,8 @@ if(TARGET bf_draw)
 
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
-
   target_link_libraries(project_grease_gp_bridge PRIVATE project_grease_blender_gp project_grease_legacy_fill project_grease_legacy_primitive)
-  target_include_directories(project_grease_gp_bridge PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_include_directories(project_grease_gp_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_features(project_grease_gp_bridge PUBLIC cxx_std_17)
 
   if(TARGET bf_editor_gizmo_library AND TARGET bf_gpu)
@@ -69,39 +68,18 @@ if(TARGET bf_draw)
   target_link_libraries(project_grease_blender_gp PRIVATE bf_draw bf_gpu bf_intern_ghost project_grease_legacy_fill project_grease_legacy_primitive)
 
   add_executable(project_grease_gp_bridge_simulation gp_bridge_simulation_test.cpp)
-  target_link_libraries(project_grease_gp_bridge_simulation PRIVATE
-    project_grease_gp_bridge
-    project_grease_blender_gp
-    bf_draw
-    bf_gpu
-    bf_intern_ghost
-  )
+  target_link_libraries(project_grease_gp_bridge_simulation PRIVATE project_grease_gp_bridge project_grease_blender_gp bf_draw bf_gpu bf_intern_ghost)
 
   add_executable(project_grease_gp_link_test gp_backend_link_test.cpp)
-  target_link_libraries(project_grease_gp_link_test PRIVATE
-    project_grease_blender_gp
-    bf_draw
-    bf_gpu
-    bf_intern_ghost
-  )
+  target_link_libraries(project_grease_gp_link_test PRIVATE project_grease_blender_gp bf_draw bf_gpu bf_intern_ghost)
 
-  add_executable(project_grease_gp_external_context_test
-    gp_backend_external_context_test.cpp
-  )
-  target_link_libraries(project_grease_gp_external_context_test PRIVATE
-    project_grease_blender_gp
-    bf_draw
-    bf_gpu
-    bf_intern_ghost
-  )
+  add_executable(project_grease_gp_external_context_test gp_backend_external_context_test.cpp)
+  target_link_libraries(project_grease_gp_external_context_test PRIVATE project_grease_blender_gp bf_draw bf_gpu bf_intern_ghost)
 
-  # Temporary symbol-resolution diagnostic for native legacy GP close testing.
-  target_link_options(project_grease_gp_link_test PRIVATE
-    "-Wl,--trace-symbol=BKE_gpencil_stroke_close"
-  )
+  target_link_options(project_grease_gp_link_test PRIVATE "-Wl,--trace-symbol=BKE_gpencil_stroke_close")
 else()
   add_library(project_grease_blender_gp STATIC
-    project_grease_gp_backend.cpp
+    ${PROJECT_GREASE_GP_ENGINE_SOURCES}
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/engines/gpencil/gpencil_engine.c"
   )
@@ -133,5 +111,5 @@ else()
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL)
 endif()
 
-# The real symbol-resolution and GP cache test lives in Blender's own CMake graph.
-# The standalone configure intentionally ends at the static adapter archive.
+# This graph intentionally remains a focused Legacy GP closure.
+# Do not replace it with the full Blender application graph.

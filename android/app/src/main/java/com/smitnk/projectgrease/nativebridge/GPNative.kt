@@ -98,4 +98,10 @@ object GPNative {
     external fun nativeSetOnionSkin(handle: Long, enabled: Boolean, before: Int, after: Int, opacity: Float): Boolean
     external fun nativeSetMultiframeEditing(handle: Long, enabled: Boolean): Boolean
     external fun nativeFillStroke(handle: Long, index: Int): Boolean
+    external fun nativeHistoryReset(handle: Long): Boolean
+    external fun nativeHistoryRecord(handle: Long): Boolean
+    external fun nativeHistoryUndo(handle: Long): Boolean
+    external fun nativeHistoryRedo(handle: Long): Boolean
+    external fun nativeHistoryCanUndo(handle: Long): Boolean
+    external fun nativeHistoryCanRedo(handle: Long): Boolean
 }

@@ -1,4 +1,5 @@
 #include "project_grease_gp_backend.h"
+#include "project_grease_legacy_primitive.h"
 
 #include <cstdio>
 
@@ -152,6 +153,58 @@ int main() {
   std::fprintf(stderr, "[LASSO] Legacy GP lasso selection/render passed\\n");
 
   // Duplicate the edited stroke through Blender's native GP API.
+  std::fprintf(stderr, "[PRIMITIVE] Legacy GP primitive geometry conformance\\n");
+  {
+    using project_grease::legacy_gp_primitive::Point;
+    using project_grease::legacy_gp_primitive::generate;
+    const Point start{0.0f, 0.0f};
+    const Point end{2.0f, 1.0f};
+    const float eps = 1.0e-5f;
+
+    const auto line = generate(0, start, end, 0.0f, 0.0f, 6);
+    if (line.size() != 6 || line.front().x != 0.0f || line.front().y != 0.0f ||
+        std::fabs(line.back().x - 2.0f) > eps ||
+        std::fabs(line.back().y - 1.0f) > eps ||
+        std::fabs(line[3].x - 1.2f) > eps ||
+        std::fabs(line[3].y - 0.6f) > eps) {
+      std::fprintf(stderr, "Legacy GP line primitive mismatch\\n");
+      return 34;
+    }
+
+    const auto rect = generate(1, start, end, 0.0f, 0.0f, 1);
+    if (rect.size() != 4 ||
+        rect[0].x != 0.0f || rect[0].y != 0.0f ||
+        rect[1].x != 2.0f || rect[1].y != 0.0f ||
+        rect[2].x != 2.0f || rect[2].y != 1.0f ||
+        rect[3].x != 0.0f || rect[3].y != 1.0f) {
+      std::fprintf(stderr, "Legacy GP rectangle primitive mismatch\\n");
+      return 35;
+    }
+
+    const auto circle = generate(2, start, end, 0.0f, 0.0f, 8);
+    if (circle.size() != 8 ||
+        std::fabs(circle[0].x - 2.0f) > eps ||
+        std::fabs(circle[0].y - 0.5f) > eps ||
+        std::fabs(circle[2].x - 1.0f) > eps ||
+        std::fabs(circle[2].y - 1.0f) > eps) {
+      std::fprintf(stderr, "Legacy GP circle primitive mismatch\\n");
+      return 36;
+    }
+
+    const auto arc = generate(3, {0.0f, 0.0f}, {2.0f, 0.0f}, 0.0f, 0.0f, 5);
+    if (arc.size() != 5 ||
+        std::fabs(arc.front().x - 0.0f) > eps ||
+        std::fabs(arc.front().y - 0.0f) > eps ||
+        std::fabs(arc[2].x - 1.0f) > eps ||
+        std::fabs(arc[2].y + 0.41421356f) > eps ||
+        std::fabs(arc.back().x - 2.0f) > eps ||
+        std::fabs(arc.back().y) > eps) {
+      std::fprintf(stderr, "Legacy GP arc primitive mismatch\\n");
+      return 37;
+    }
+  }
+  std::fprintf(stderr, "[PRIMITIVE] Legacy GP primitive geometry conformance passed\\n");
+
   std::fprintf(stderr, "[DUPLICATE] duplicate edited stroke\n");
   if (!backend.duplicate_stroke(0) || backend.stroke_count() != 2) {
     std::fprintf(stderr, "stroke duplication failed: %s\n", backend.last_error());

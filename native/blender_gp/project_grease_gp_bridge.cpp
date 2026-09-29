@@ -378,6 +378,19 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
                  arg_count > 0 ? static_cast<int>(args[0]) : 1)
              ? 1
              : 0;
+    case 7: // join selected strokes
+      return handle->backend.join_selected_strokes() ? 1 : 0;
+    case 8: // select first points: only_selected_strokes, extend
+      return handle->backend.select_first_points(
+                 arg_count > 0 && args[0] != 0.0f,
+                 arg_count > 1 && args[1] != 0.0f)
+             ? 1
+             : 0;
+    case 9: // select grouped: 0=layer, 1=material
+      return handle->backend.select_grouped(
+                 arg_count > 0 ? static_cast<int>(args[0]) : 0)
+             ? 1
+             : 0;
     default:
       return 0;
   }

@@ -581,6 +581,35 @@ int main() {
   }
   std::fprintf(stderr, "[BULK-EDIT] selection/reverse/circle/dissolve/merge/reorder passed\n");
 
+  std::fprintf(stderr, "[LAYER-2] join/select-first/grouped Legacy GP conformance\\n");
+  if (!backend.begin_stroke({0, 6.0f}) ||
+      !backend.add_point({30.0f, 40.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({31.0f, 40.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.end_stroke() ||
+      !backend.begin_stroke({0, 6.0f}) ||
+      !backend.add_point({32.0f, 40.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.add_point({33.0f, 40.0f, 0.0f, 0.7f, 0.7f, 0.3f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "layer-2 stroke setup failed: %s\\n", backend.last_error());
+    return 53;
+  }
+  const int layer2_before = backend.stroke_count();
+  if (!backend.select_all(1) || !backend.join_selected_strokes() ||
+      backend.stroke_count() != layer2_before - 1 || !backend.render()) {
+    std::fprintf(stderr, "Legacy GP join selected strokes failed: %s\\n", backend.last_error());
+    return 54;
+  }
+  backend.clear_selection();
+  if (!backend.select_first_points(false, false) || !backend.render()) {
+    std::fprintf(stderr, "Legacy GP select first points failed: %s\\n", backend.last_error());
+    return 55;
+  }
+  if (!backend.select_grouped(0) || !backend.select_grouped(1) || !backend.render()) {
+    std::fprintf(stderr, "Legacy GP grouped selection failed: %s\\n", backend.last_error());
+    return 56;
+  }
+  std::fprintf(stderr, "[LAYER-2] join/select-first/grouped passed\\n");
+
   std::fprintf(stderr, "[HISTORY] real Legacy GP undo/redo snapshot test\n");
   if (!backend.history_reset()) {
     std::fprintf(stderr, "history reset failed: %s\n", backend.last_error());

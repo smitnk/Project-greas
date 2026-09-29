@@ -1591,6 +1591,127 @@ bool Backend::merge_selected_points(float threshold)
   return true;
 }
 
+bool Backend::join_selected_strokes()
+{
+  if (!impl_->frame || !impl_->gpd) {
+    impl_->last_error = "no active frame";
+    return false;
+  }
+
+  std::vector<bGPDstroke *> selected;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    if ((stroke->flag & GP_STROKE_SELECT) && stroke->totpoints > 0 && stroke->points) {
+      selected.push_back(stroke);
+    }
+  }
+  if (selected.size() < 2) {
+    impl_->last_error = "at least two selected strokes are required";
+    return false;
+  }
+
+  bGPDstroke *destination = selected.front();
+  for (size_t i = 1; i < selected.size(); ++i) {
+    bGPDstroke *source = selected[i];
+    BKE_gpencil_stroke_join(destination, source, false, true, false);
+    BLI_remlink(&impl_->frame->strokes, source);
+    BKE_gpencil_free_stroke(source);
+  }
+
+  destination->flag |= GP_STROKE_SELECT;
+  for (int i = 0; i < destination->totpoints; ++i) {
+    destination->points[i].flag |= GP_SPOINT_SELECT;
+  }
+  impl_->stroke = destination;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::select_first_points(bool only_selected_strokes, bool extend)
+{
+  if (!impl_->frame || !impl_->gpd) {
+    impl_->last_error = "no active frame";
+    return false;
+  }
+
+  std::vector<bGPDstroke *> eligible;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    if (!stroke->points || stroke->totpoints <= 0) continue;
+    if (!only_selected_strokes ||
+        (stroke->flag & GP_STROKE_SELECT) || selected_point_count(stroke) > 0) {
+      eligible.push_back(stroke);
+    }
+  }
+
+  if (!extend) clear_selection();
+
+  bool changed = false;
+  for (bGPDstroke *stroke : eligible) {
+    stroke->points[0].flag |= GP_SPOINT_SELECT;
+    stroke->flag |= GP_STROKE_SELECT;
+    changed = true;
+  }
+  if (!changed) {
+    impl_->last_error = "no eligible stroke for first-point selection";
+    return false;
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::select_grouped(int type)
+{
+  if (!impl_->frame || !impl_->gpd || (type != 0 && type != 1)) {
+    impl_->last_error = "invalid grouped selection";
+    return false;
+  }
+
+  int target_material = -1;
+  if (type == 1) {
+    for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+         stroke != nullptr;
+         stroke = stroke->next) {
+      if (stroke->flag & GP_STROKE_SELECT) {
+        target_material = stroke->mat_nr;
+        break;
+      }
+    }
+    if (target_material < 0) {
+      impl_->last_error = "select a stroke before material grouping";
+      return false;
+    }
+  }
+
+  bool changed = false;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next) {
+    if (type == 1 && stroke->mat_nr != target_material) continue;
+    stroke->flag |= GP_STROKE_SELECT;
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      stroke->points[i].flag |= GP_SPOINT_SELECT;
+    }
+    changed = true;
+  }
+  if (!changed) {
+    impl_->last_error = "no matching strokes for grouped selection";
+    return false;
+  }
+
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::reorder_selected_strokes(int direction)
 {
   if (!impl_->frame || direction < 0 || direction > 3) {

@@ -7,6 +7,8 @@ class NativeEditorBridge {
         private set
     fun attach(value: Long) { handle = value }
     fun historyReset() = handle != 0L && GPNative.nativeHistoryReset(handle)
+    fun applyEditCommand(command: Int, args: FloatArray = floatArrayOf()) =
+        handle != 0L && GPNative.nativeApplyEditCommand(handle, command, args)
     fun historyRecord() = handle != 0L && GPNative.nativeHistoryRecord(handle)
     fun historyUndo() = handle != 0L && GPNative.nativeHistoryUndo(handle)
     fun historyRedo() = handle != 0L && GPNative.nativeHistoryRedo(handle)
@@ -589,6 +591,26 @@ class EditorController {
     }
     fun strokeCount() = native.strokeCount()
     fun selectStroke(index:Int)=selection.selectStroke(index)
+    fun joinSelectedStrokes():Boolean {
+        val ok=native.applyEditCommand(7)
+        if(ok){history.markEdit();document.markDirty();selection.clear();render()}
+        return ok
+    }
+    fun selectFirstPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false):Boolean {
+        val ok=native.applyEditCommand(8, floatArrayOf(if(onlySelectedStrokes) 1f else 0f, if(extend) 1f else 0f))
+        if(ok){document.markDirty();render()}
+        return ok
+    }
+    fun selectGroupedByLayer():Boolean {
+        val ok=native.applyEditCommand(9, floatArrayOf(0f))
+        if(ok){document.markDirty();render()}
+        return ok
+    }
+    fun selectGroupedByMaterial():Boolean {
+        val ok=native.applyEditCommand(9, floatArrayOf(1f))
+        if(ok){document.markDirty();render()}
+        return ok
+    }
     fun moveSelectedStroke(dx:Float,dy:Float):Boolean {
         val i=selection.selectedStroke
         if(i<0) return false

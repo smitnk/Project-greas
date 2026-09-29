@@ -93,6 +93,9 @@ class Backend {
   bool dissolve_selected_points();
   bool merge_selected_points(float threshold);
   bool reorder_selected_strokes(int direction); // 0=top, 1=up, 2=down, 3=bottom
+  bool join_selected_strokes();
+  bool select_first_points(bool only_selected_strokes, bool extend);
+  bool select_grouped(int type); // 0=layer, 1=material
   int material_count() const;
   bool create_material();
   bool set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4]);

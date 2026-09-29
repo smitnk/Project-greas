@@ -204,7 +204,7 @@ class OnionSkinController {
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
 
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, PAN, SCULPT }
+enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, MOVE, PAN, SCULPT }
 
 class ToolController {
     var activeTool=GreaseTool.DRAW; private set
@@ -215,7 +215,7 @@ class ToolController {
             GreaseTool.FILL->FeatureId.FILL; GreaseTool.EYEDROPPER->FeatureId.STROKE_COLOR
             GreaseTool.LINE->FeatureId.LINE; GreaseTool.RECTANGLE->FeatureId.RECTANGLE
             GreaseTool.CIRCLE->FeatureId.CIRCLE; GreaseTool.ARC->FeatureId.ARC
-            GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.PAN->FeatureId.PAN
+            GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.MOVE->FeatureId.MOVE; GreaseTool.PAN->FeatureId.PAN
             GreaseTool.SCULPT->FeatureId.SCULPT
         }
         if(FeatureRegistry.capability(feature).state==FeatureState.NOT_IMPLEMENTED)return false

@@ -690,6 +690,30 @@ int main() {
   }
   std::fprintf(stderr, "[PAINT-STAGE] brush smoothing/input-sample callbacks passed\n");
 
+  std::fprintf(stderr, "[MODIFIER] real Blender 3.6.23 Legacy GP Simplify modifier\\n");
+  if (!backend.begin_stroke({0, 9.0f}) ||
+      !backend.add_point({45.0f, 30.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({46.0f, 30.02f, 0.0f, 1.0f, 0.95f, 0.1f}) ||
+      !backend.add_point({47.0f, 29.98f, 0.0f, 1.0f, 0.9f, 0.2f}) ||
+      !backend.add_point({48.0f, 30.01f, 0.0f, 1.0f, 0.85f, 0.3f}) ||
+      !backend.add_point({49.0f, 30.0f, 0.0f, 1.0f, 0.8f, 0.4f}) ||
+      !backend.add_point({50.0f, 30.02f, 0.0f, 1.0f, 0.75f, 0.5f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "Simplify modifier setup failed: %s\\n", backend.last_error());
+    return 70;
+  }
+  const int simplify_index = backend.stroke_count() - 1;
+  const int simplify_before = backend.point_count();
+  if (!backend.apply_blender_modifier(
+          simplify_index, eGpencilModifierType_Simplify, 0.1f, 1) ||
+      backend.point_count() >= simplify_before ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Simplify modifier failed: %s\\n",
+                 backend.last_error());
+    return 71;
+  }
+  std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Simplify callback passed\\n");
+
   std::fprintf(stderr, "[MODIFIER-STACK] real Blender Legacy GP modifier stack\\n");
   if (!backend.begin_stroke({0, 10.0f}) ||
       !backend.add_point({50.0f, 10.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||

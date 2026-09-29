@@ -131,3 +131,40 @@ Run #368 proves the previous compiler/linkage state is recoverable, but it does 
 Use the exact Blender 3.6.23 modifier registry and real modifier implementations already imported into the Android closure. Continue resolving only concrete compiler/linker/runtime dependencies. Then add conformance for multiple real Legacy GP modifier callbacks and a real modifier-stack execution path where the Blender implementation requires it.
 
 Never replace these callbacks with Project Grease geometry algorithms.
+
+
+## Next bundle — real Legacy GP modifier-list execution
+
+### Verified starting point
+
+- Android CI **#370** succeeded for commit `5001d417`.
+- The real Blender 3.6.23 `gpencil_modifier_legacy.c` registry/kernel is now included in the Android native closure.
+- The real `gpencil_modifiers_legacy` implementation sources are already compiled.
+
+### Implementation
+
+- `be1cc84d83dad2ca145ca38f9e800c8d60d05d3e`
+  - Adds `Backend::apply_blender_modifier_stack()`.
+- `83a29118aa2cf2d6d47e43bbcfcacbe13a7231ef`
+  - Creates a real Blender 3.6.23 `Object` adapter with `greasepencil_modifiers`.
+  - Creates each modifier using `BKE_gpencil_modifier_new()`.
+  - Resolves its real `GpencilModifierTypeInfo`.
+  - Adds it to Blender's actual `Object::greasepencil_modifiers` ListBase.
+  - Executes the real Blender `deformStroke()` callback in list order.
+  - Frees the real Blender modifier objects afterward.
+- `6aeffc659b427c252de576995ffd49d33ca66c32` and `525a0281d44be9b1688a3b974e245832868e608e`
+  - Expose the stack through the native C bridge.
+- `2ce7c88d8585bfd736746e9fe90436f5c69b1fd1`
+  - Adds conformance for Smooth -> Thickness -> Subdivide.
+
+### Why this is a real Blender path
+
+Blender 3.6.23's DNA defines `Object::greasepencil_modifiers` as a ListBase of `GpencilModifierData`. The Project Grease stack now uses that actual Blender structure for evaluation instead of inventing a parallel modifier representation.
+
+### Constraint
+
+This stack currently targets modifiers whose real `deformStroke` callback can execute with the focused Android object/data context. Modifiers requiring a real depsgraph, scene, armature, texture, or 3D object context are not falsely marked complete. Their exact dependency closure will be added only when their upstream implementation is brought into the focused engine.
+
+### Next
+
+Run CI. Fix only the exact compiler/linker/runtime failure. After stack conformance succeeds, continue with the next real Legacy GP subsystem rather than declaring completion.

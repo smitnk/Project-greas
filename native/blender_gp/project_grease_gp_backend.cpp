@@ -882,6 +882,7 @@ bool Backend::erase_at(float x, float y, float radius)
            static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;) {
     bGPDstroke *next = stroke->next;
+    bool stroke_removed = false;
 
     if (!stroke->points || stroke->totpoints <= 0) {
       stroke = next;
@@ -896,6 +897,7 @@ bool Backend::erase_at(float x, float y, float radius)
         point.pressure = 0.0f;
         point.flag |= GP_SPOINT_TAG;
         removed = true;
+        stroke_removed = true;
       }
     }
     else {
@@ -928,16 +930,18 @@ bool Backend::erase_at(float x, float y, float radius)
           pt1->pressure = 0.0f;
           pt1->flag |= GP_SPOINT_TAG;
           removed = true;
+          stroke_removed = true;
         }
         if (inf2 > 0.0f) {
           pt2->pressure = 0.0f;
           pt2->flag |= GP_SPOINT_TAG;
           removed = true;
+          stroke_removed = true;
         }
       }
     }
 
-    if (removed) {
+    if (stroke_removed) {
       BKE_gpencil_stroke_delete_tagged_points(
           impl_->gpd, impl_->frame, stroke, next, GP_SPOINT_TAG, false, false, 0);
     }

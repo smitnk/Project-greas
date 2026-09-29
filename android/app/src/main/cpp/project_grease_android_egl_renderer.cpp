@@ -320,9 +320,16 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
       return JNI_FALSE;
     }
     if (!renderer->preview_points.empty()) {
+      std::vector<project_grease::gp::StrokePoint> preview_points;
+      preview_points.reserve(renderer->preview_points.size());
+      for (const ProjectGreaseGPPoint &point : renderer->preview_points) {
+        preview_points.push_back(
+            project_grease::gp::StrokePoint{
+                point.x, point.y, point.z, point.pressure, point.strength, point.time});
+      }
       if (!project_grease_android_present_pending_stroke(
-              renderer->preview_points.data(),
-              static_cast<int>(renderer->preview_points.size()),
+              preview_points.data(),
+              static_cast<int>(preview_points.size()),
               renderer->preview_thickness)) {
         return JNI_FALSE;
       }

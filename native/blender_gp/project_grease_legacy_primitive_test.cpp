@@ -50,5 +50,29 @@ int main()
     assert(near(p.back().x, 10.0f) && near(p.back().y, 10.0f));
   }
 
+  {
+    const auto p = project_grease::legacy_gp_primitive::generate(
+        0, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 6.2831855f, 8);
+    assert(p.size() == 8);
+    assert(near(p.front().x, 0.0f) && near(p.front().y, 0.0f));
+    assert(near(p.back().x, 10.0f) && near(p.back().y, 10.0f));
+  }
+
+  {
+    const auto p = project_grease::legacy_gp_primitive::generate(
+        1, {0.0f, 0.0f}, {10.0f, 20.0f}, 0.0f, 6.2831855f, 64);
+    assert(p.size() == 4);
+    assert(near(p[0].x, 0.0f) && near(p[0].y, 0.0f));
+    assert(near(p[2].x, 10.0f) && near(p[2].y, 20.0f));
+  }
+
+  {
+    const auto p = project_grease::legacy_gp_primitive::generate(
+        3, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 6.2831855f, 9);
+    assert(p.size() == 9);
+    assert(near(p.front().x, 0.0f) && near(p.front().y, 0.0f));
+    assert(near(p.back().x, 10.0f) && near(p.back().y, 10.0f));
+  }
+
   return 0;
 }

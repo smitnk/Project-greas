@@ -2959,6 +2959,136 @@ bool Backend::set_material_fill_enabled(int index, bool enabled)
 }
 
 
+
+bool Backend::apply_legacy_geometry_batch(int stroke_index,
+                                          const LegacyGeometryOp *operations,
+                                          int operation_count)
+{
+  if (!impl_->gpd || !impl_->frame || !operations || operation_count <= 0) {
+    impl_->last_error = "invalid Legacy GP geometry batch";
+    return false;
+  }
+
+  bGPDstroke *stroke = nullptr;
+  int current = 0;
+  for (bGPDstroke *candidate =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       candidate != nullptr;
+       candidate = candidate->next, ++current) {
+    if (current == stroke_index) {
+      stroke = candidate;
+      break;
+    }
+  }
+
+  if (!stroke) {
+    impl_->last_error = "Legacy GP geometry batch stroke index out of range";
+    return false;
+  }
+
+  for (int i = 0; i < operation_count; ++i) {
+    const LegacyGeometryOp &op = operations[i];
+
+    switch (op.type) {
+      case LegacyGeometryOpType::SimplifyAdaptive:
+        BKE_gpencil_stroke_simplify_adaptive(impl_->gpd, stroke, op.value0);
+        break;
+
+      case LegacyGeometryOpType::SimplifyFixed:
+        BKE_gpencil_stroke_simplify_fixed(impl_->gpd, stroke);
+        break;
+
+      case LegacyGeometryOpType::Subdivide:
+        BKE_gpencil_stroke_subdivide(
+            impl_->gpd, stroke, std::max(1, op.int0), op.int1);
+        break;
+
+      case LegacyGeometryOpType::TrimIntersection:
+        if (!BKE_gpencil_stroke_trim(impl_->gpd, stroke)) {
+          impl_->last_error = "Blender Legacy GP trim found no intersection";
+          return false;
+        }
+        break;
+
+      case LegacyGeometryOpType::TrimPoints:
+        if (!BKE_gpencil_stroke_trim_points(
+                stroke, op.int0, op.int1, op.flag0)) {
+          impl_->last_error = "Blender Legacy GP point trim failed";
+          return false;
+        }
+        break;
+
+      case LegacyGeometryOpType::MergeDistance:
+        BKE_gpencil_stroke_merge_distance(
+            impl_->gpd, impl_->frame, stroke, op.value0, op.flag0);
+        break;
+
+      case LegacyGeometryOpType::Sample:
+        if (!BKE_gpencil_stroke_sample(
+                impl_->gpd, stroke, op.value0, op.flag0, op.value1)) {
+          impl_->last_error = "Blender Legacy GP resample failed";
+          return false;
+        }
+        break;
+
+      case LegacyGeometryOpType::SmoothStrength:
+        for (int point = 0; point < stroke->totpoints; ++point) {
+          BKE_gpencil_stroke_smooth_strength(stroke, point, op.value0);
+        }
+        break;
+
+      case LegacyGeometryOpType::SmoothThickness:
+        for (int point = 0; point < stroke->totpoints; ++point) {
+          BKE_gpencil_stroke_smooth_thickness(stroke, point, op.value0);
+        }
+        break;
+
+      case LegacyGeometryOpType::SmoothUV:
+        for (int point = 0; point < stroke->totpoints; ++point) {
+          BKE_gpencil_stroke_smooth_uv(stroke, point, op.value0);
+        }
+        break;
+
+      case LegacyGeometryOpType::Stretch:
+        if (!BKE_gpencil_stroke_stretch(stroke,
+                                        op.value0,
+                                        op.value1,
+                                        static_cast<short>(op.int0),
+                                        op.flag0,
+                                        std::max(0, op.int1),
+                                        op.value2,
+                                        op.value1,
+                                        op.flag1)) {
+          impl_->last_error = "Blender Legacy GP stroke stretch failed";
+          return false;
+        }
+        break;
+
+      case LegacyGeometryOpType::Close:
+        if (!BKE_gpencil_stroke_close(stroke)) {
+          impl_->last_error = "Blender Legacy GP stroke close failed";
+          return false;
+        }
+        break;
+
+      case LegacyGeometryOpType::Dissolve:
+        BKE_gpencil_dissolve_points(
+            impl_->gpd, impl_->frame, stroke, static_cast<short>(op.int0));
+        break;
+
+      case LegacyGeometryOpType::FillTriangulate:
+        BKE_gpencil_stroke_fill_triangulate(stroke);
+        break;
+    }
+  }
+
+  impl_->stroke = stroke;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::apply_blender_modifier(int index, int modifier_type, float factor, int iterations)
 {
   if (!impl_->frame || !impl_->layer || !impl_->gpd || index < 0) {

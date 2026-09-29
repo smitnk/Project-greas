@@ -266,5 +266,3 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMirrorStrokeAbout(
       from_handle(handle), index, mirror_x ? 1 : 0, mirror_y ? 1 : 0,
       center_x, center_y) != 0;
 }
-
-extern "C" JNIEXPORT jboolean JNICALL

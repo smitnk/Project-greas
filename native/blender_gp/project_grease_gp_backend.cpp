@@ -847,55 +847,101 @@ bool Backend::create_polyline(const StrokePoint *points,
   return true;
 }
 
+static float project_grease_legacy_eraser_influence(
+    float x, float y, float radius, float point_x, float point_y)
+{
+  if (radius <= 0.0f) {
+    return 0.0f;
+  }
+
+  const float dx = x - point_x;
+  const float dy = y - point_y;
+  const float distance = std::sqrt(dx * dx + dy * dy);
+  const float clamped = std::min(distance, radius);
+
+  /*
+   * Blender 3.6.23 Legacy GP hard-eraser influence:
+   * fac = 1 - distance / radius, multiplied by draw strength and pen
+   * pressure. Project Grease currently exposes a full-strength hard eraser,
+   * so the remaining factor is 1.0 here.
+   */
+  return 1.0f - (clamped / radius);
+}
+
 bool Backend::erase_at(float x, float y, float radius)
 {
-  if (!impl_->frame || radius <= 0.0f) {
+  if (!impl_->frame || radius <= 0.0f ||
+      !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(radius)) {
     impl_->last_error = "invalid eraser";
     return false;
   }
 
   bool removed = false;
-  const float radius_sq = radius * radius;
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;) {
     bGPDstroke *next = stroke->next;
+
     if (!stroke->points || stroke->totpoints <= 0) {
       stroke = next;
       continue;
     }
 
-    for (int i = 0; i < stroke->totpoints; ++i) {
-      stroke->points[i].flag &= ~GP_SPOINT_TAG;
-    }
-
-    for (int i = 0; i < stroke->totpoints; ++i) {
-      const float point[2] = {stroke->points[i].x, stroke->points[i].y};
-      bool hit = ((point[0] - x) * (point[0] - x) +
-                  (point[1] - y) * (point[1] - y)) <= radius_sq;
-      if (!hit && i + 1 < stroke->totpoints) {
-        const float a[2] = {stroke->points[i].x, stroke->points[i].y};
-        const float b[2] = {stroke->points[i + 1].x, stroke->points[i + 1].y};
-        hit = dist_squared_to_line_segment_v2(point, a, b) <= radius_sq;
-      }
-      if (!hit && (stroke->flag & GP_STROKE_CYCLIC) && i == stroke->totpoints - 1) {
-        const float a[2] = {stroke->points[i].x, stroke->points[i].y};
-        const float b[2] = {stroke->points[0].x, stroke->points[0].y};
-        hit = dist_squared_to_line_segment_v2(point, a, b) <= radius_sq;
-      }
-      if (hit) {
-        stroke->points[i].flag |= GP_SPOINT_TAG;
+    if (stroke->totpoints == 1) {
+      bGPDspoint &point = stroke->points[0];
+      const float influence =
+          project_grease_legacy_eraser_influence(x, y, radius, point.x, point.y);
+      if (influence > 0.0f) {
+        point.pressure = 0.0f;
+        point.flag |= GP_SPOINT_TAG;
         removed = true;
       }
     }
+    else {
+      for (int i = 0; i + 1 < stroke->totpoints; ++i) {
+        bGPDspoint *pt0 = (i > 0) ? &stroke->points[i - 1] : nullptr;
+        bGPDspoint *pt1 = &stroke->points[i];
+        bGPDspoint *pt2 = &stroke->points[i + 1];
 
-    bool stroke_removed = false;
-    for (int i = 0; i < stroke->totpoints; ++i) {
-      if (stroke->points[i].flag & GP_SPOINT_TAG) { stroke_removed = true; break; }
+        const float p0x = pt0 ? pt0->x : pt1->x;
+        const float p0y = pt0 ? pt0->y : pt1->y;
+
+        /*
+         * Blender's Legacy GP eraser first performs an edge-vs-circle
+         * collision test using the segment pt0 -> pt2.
+         */
+        const float edge_a[2] = {p0x, p0y};
+        const float edge_b[2] = {pt2->x, pt2->y};
+        const float center[2] = {x, y};
+        if (dist_squared_to_line_segment_v2(center, edge_a, edge_b) >=
+            radius * radius) {
+          continue;
+        }
+
+        const float inf1 =
+            project_grease_legacy_eraser_influence(x, y, radius, pt1->x, pt1->y);
+        const float inf2 =
+            project_grease_legacy_eraser_influence(x, y, radius, pt2->x, pt2->y);
+
+        if (inf1 > 0.0f) {
+          pt1->pressure = 0.0f;
+          pt1->flag |= GP_SPOINT_TAG;
+          removed = true;
+        }
+        if (inf2 > 0.0f) {
+          pt2->pressure = 0.0f;
+          pt2->flag |= GP_SPOINT_TAG;
+          removed = true;
+        }
+      }
     }
-    if (stroke_removed) {
+
+    if (removed) {
       BKE_gpencil_stroke_delete_tagged_points(
           impl_->gpd, impl_->frame, stroke, next, GP_SPOINT_TAG, false, false, 0);
     }
+
     stroke = next;
   }
 
@@ -910,6 +956,7 @@ bool Backend::erase_at(float x, float y, float radius)
   impl_->last_error = "eraser did not hit a stroke";
   return false;
 }
+
 
 void Backend::clear_selection()
 {

@@ -38,6 +38,24 @@ void project_grease_gp_destroy(ProjectGreaseGPHandle *handle)
   delete handle;
 }
 
+
+int project_grease_gp_set_legacy_paint_settings(
+    ProjectGreaseGPHandle *handle,
+    ProjectGreaseGPLegacyPaintSettings settings)
+{
+  if (!ensure_ready(handle)) {
+    return 0;
+  }
+
+  project_grease::gp::Backend::LegacyPaintSettings native_settings{};
+  native_settings.draw_smooth_level = settings.draw_smooth_level;
+  native_settings.draw_smooth_factor = settings.draw_smooth_factor;
+  native_settings.input_samples = settings.input_samples;
+  native_settings.smooth_position = settings.smooth_position != 0;
+  native_settings.smooth_strength = settings.smooth_strength != 0;
+  return handle->backend.set_legacy_paint_settings(native_settings) ? 1 : 0;
+}
+
 int project_grease_gp_begin_stroke(
     ProjectGreaseGPHandle *handle,
     int material_index,

@@ -226,10 +226,6 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   return destination;
 }
 
-struct HistorySnapshot {
-  bGPdata *data = nullptr;
-};
-
 static HistorySnapshot *history_snapshot_create(const bGPdata *source)
 {
   if (!source) {

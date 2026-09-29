@@ -130,6 +130,8 @@ class Backend {
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);
   bool add_point(const StrokePoint& point);
+  // Number of points currently held in Blender 3.6.23's real GP stroke buffer.
+  int stroke_buffer_count() const;
   bool end_stroke();
   bool cancel_stroke();
 

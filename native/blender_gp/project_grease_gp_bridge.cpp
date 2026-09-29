@@ -348,6 +348,42 @@ int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *x
   return handle->backend.lasso_select(xy, count, additive != 0);
 }
 
+
+int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
+                                         int command,
+                                         const float *args,
+                                         int arg_count)
+{
+  if (!ensure_ready(handle)) return 0;
+
+  switch (command) {
+    case 1: // select all: args[0] = mode
+      return handle->backend.select_all(
+                 arg_count > 0 ? static_cast<int>(args[0]) : 0)
+             ? 1
+             : 0;
+    case 2: // circle select: x, y, radius, mode
+      if (!args || arg_count < 4) return 0;
+      return handle->backend.select_circle(args[0], args[1], args[2],
+                                           static_cast<int>(args[3]));
+    case 3: // reverse selected strokes
+      return handle->backend.reverse_selected_strokes() ? 1 : 0;
+    case 4: // dissolve selected points
+      return handle->backend.dissolve_selected_points() ? 1 : 0;
+    case 5: // merge selected points: threshold
+      if (!args || arg_count < 1) return 0;
+      return handle->backend.merge_selected_points(args[0]) ? 1 : 0;
+    case 6: // reorder selected strokes: direction
+      return handle->backend.reorder_selected_strokes(
+                 arg_count > 0 ? static_cast<int>(args[0]) : 1)
+             ? 1
+             : 0;
+    default:
+      return 0;
+  }
+}
+
+
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
                                   int stroke_index,
                                   int point_index,

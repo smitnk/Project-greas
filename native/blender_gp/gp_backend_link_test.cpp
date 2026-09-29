@@ -131,6 +131,21 @@ int main() {
   std::fprintf(stderr, "[EDIT] point edit render passed\
 ");
 
+  std::fprintf(stderr, "[MODIFIER] invoke Blender 3.6.23 Legacy GP Smooth modifier\\n");
+  project_grease::gp::StrokePoint modifier_before{};
+  if (!backend.get_point(0, 0, &modifier_before) ||
+      !backend.apply_blender_modifier(0, eGpencilModifierType_Smooth, 0.5f, 2) ||
+      !backend.get_point(0, 0, &edited) ||
+      !backend.render()) {
+    std::fprintf(stderr, "real Blender GP Smooth modifier failed: %s\\n", backend.last_error());
+    return 43;
+  }
+  if (edited.x == modifier_before.x && edited.y == modifier_before.y) {
+    std::fprintf(stderr, "real Blender GP Smooth modifier made no geometry change\\n");
+    return 44;
+  }
+  std::fprintf(stderr, "[MODIFIER] real Blender Legacy GP Smooth callback passed\\n");
+
   std::fprintf(stderr, "[LASSO] Legacy GP lasso selection\\n");
   const float lasso[] = {
       0.60f, 0.75f,

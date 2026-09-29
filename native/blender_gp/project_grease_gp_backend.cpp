@@ -2685,11 +2685,18 @@ bool Backend::end_stroke() {
         0.0f, impl_->paint_settings.draw_smooth_factor - reduce);
     for (int i = 0; i < impl_->stroke->totpoints - 1; ++i) {
       if (impl_->paint_settings.smooth_position) {
-        BKE_gpencil_stroke_smooth(impl_->stroke, i, factor);
-        BKE_gpencil_stroke_smooth_point(impl_->stroke, i, factor);
+        BKE_gpencil_stroke_smooth(impl_->stroke,
+                                  factor,
+                                  1,
+                                  true,
+                                  false,
+                                  false,
+                                  false,
+                                  true,
+                                  nullptr);
       }
       if (impl_->paint_settings.smooth_strength) {
-        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, factor);
+        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, factor, 1, impl_->stroke);
       }
     }
   }
@@ -2699,11 +2706,16 @@ bool Backend::end_stroke() {
     const float sfac = 1.0f + (0.2f - 1.0f) * std::min(ifac, 1.0f);
     for (int i = 0; i < impl_->stroke->totpoints - 1; ++i) {
       if (impl_->paint_settings.smooth_position) {
-        BKE_gpencil_stroke_smooth(impl_->stroke, i, sfac);
-        BKE_gpencil_stroke_smooth_point(impl_->stroke, i, sfac);
+        BKE_gpencil_stroke_smooth_point(impl_->stroke,
+                                               i,
+                                               sfac,
+                                               2,
+                                               false,
+                                               true,
+                                               impl_->stroke);
       }
       if (impl_->paint_settings.smooth_strength) {
-        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac);
+        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac, 2, impl_->stroke);
       }
     }
   }
@@ -3088,19 +3100,19 @@ bool Backend::apply_legacy_geometry_batch(int stroke_index,
 
       case LegacyGeometryOpType::SmoothStrength:
         for (int point = 0; point < stroke->totpoints; ++point) {
-          BKE_gpencil_stroke_smooth_strength(stroke, point, op.value0);
+          BKE_gpencil_stroke_smooth_strength(stroke, point, op.value0, 1, stroke);
         }
         break;
 
       case LegacyGeometryOpType::SmoothThickness:
         for (int point = 0; point < stroke->totpoints; ++point) {
-          BKE_gpencil_stroke_smooth_thickness(stroke, point, op.value0);
+          BKE_gpencil_stroke_smooth_thickness(stroke, point, op.value0, 1, stroke);
         }
         break;
 
       case LegacyGeometryOpType::SmoothUV:
         for (int point = 0; point < stroke->totpoints; ++point) {
-          BKE_gpencil_stroke_smooth_uv(stroke, point, op.value0);
+          BKE_gpencil_stroke_smooth_uv(stroke, point, op.value0, 1, stroke);
         }
         break;
 

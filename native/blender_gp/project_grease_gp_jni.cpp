@@ -419,7 +419,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreatePolyline(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com.smitnk_projectgrease.nativebridge.GPNative_nativeEraseAt(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseAt(
     JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius)
 {
   return project_grease_gp_erase_at(from_handle(handle), x, y, radius) != 0;

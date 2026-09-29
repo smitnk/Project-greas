@@ -4,6 +4,10 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.hypot
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -72,6 +76,20 @@ private class ProjectGreaseDrawingSurfaceView(
     private var moveOpen = false
     private var lastMoveX = 0f
     private var lastMoveY = 0f
+    private var rotateOpen = false
+    private var rotateCenterX = 0f
+    private var rotateCenterY = 0f
+    private var lastRotateAngle = 0f
+    private var scaleOpen = false
+    private var scaleCenterX = 0f
+    private var scaleCenterY = 0f
+    private var lastScaleRadius = 0f
+    private var scaleAccumulated = 1f
+    private var mirrorOpen = false
+    private var mirrorCenterX = 0f
+    private var mirrorCenterY = 0f
+    private var mirrorStartX = 0f
+    private var mirrorStartY = 0f
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -104,6 +122,57 @@ private class ProjectGreaseDrawingSurfaceView(
                             controller.render()
                         }
                     }
+                    com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> {
+                        rotateOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        if (rotateOpen) {
+                            val center = controller.selectedStrokeCenter()
+                            if (center == null || center.size < 2) {
+                                rotateOpen = false
+                            } else {
+                                rotateCenterX = center[0]
+                                rotateCenterY = center[1]
+                                lastRotateAngle = atan2(
+                                    event.y - rotateCenterY,
+                                    event.x - rotateCenterX
+                                )
+                                controller.render()
+                            }
+                        }
+                    }
+                    com.smitnk.projectgrease.editor.GreaseTool.SCALE -> {
+                        scaleOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        if (scaleOpen) {
+                            val center = controller.selectedStrokeCenter()
+                            if (center == null || center.size < 2) {
+                                scaleOpen = false
+                            } else {
+                                scaleCenterX = center[0]
+                                scaleCenterY = center[1]
+                                lastScaleRadius = hypot(
+                                    event.x - scaleCenterX,
+                                    event.y - scaleCenterY
+                                )
+                                scaleAccumulated = 1f
+                                if (lastScaleRadius < 1f) scaleOpen = false
+                                else controller.render()
+                            }
+                        }
+                    }
+                    com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
+                        mirrorOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        if (mirrorOpen) {
+                            val center = controller.selectedStrokeCenter()
+                            if (center == null || center.size < 2) {
+                                mirrorOpen = false
+                            } else {
+                                mirrorCenterX = center[0]
+                                mirrorCenterY = center[1]
+                                mirrorStartX = event.x
+                                mirrorStartY = event.y
+                                controller.render()
+                            }
+                        }
+                    }
                     else -> {
                         strokeOpen = controller.beginStroke()
                         if (strokeOpen) {
@@ -117,100 +186,149 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                // Keep the original drawing pointer. A second finger/palm must
-                // never replace the pointer that owns the active stroke.
+                // Keep the original drawing/transform pointer. A second finger
+                // never steals the active gesture.
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (moveOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-                    val pointerIndex = event.findPointerIndex(activePointerId)
-                    if (pointerIndex >= 0) {
-                        val x = event.getX(pointerIndex)
-                        val y = event.getY(pointerIndex)
-                        val dx = x - lastMoveX
-                        val dy = y - lastMoveY
-                        if (dx != 0f || dy != 0f) {
-                            controller.translateSelectedStroke(dx, dy)
-                            lastMoveX = x
-                            lastMoveY = y
+                val pointerIndex = if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    event.findPointerIndex(activePointerId)
+                } else -1
+                if (pointerIndex >= 0) {
+                    val x = event.getX(pointerIndex)
+                    val y = event.getY(pointerIndex)
+                    when {
+                        moveOpen -> {
+                            val dx = x - lastMoveX
+                            val dy = y - lastMoveY
+                            if (dx != 0f || dy != 0f) {
+                                controller.translateSelectedStroke(dx, dy)
+                                lastMoveX = x
+                                lastMoveY = y
+                                controller.render()
+                            }
+                        }
+                        rotateOpen -> {
+                            val angle = atan2(y - rotateCenterY, x - rotateCenterX)
+                            var delta = angle - lastRotateAngle
+                            if (delta > PI) delta -= 2f * PI
+                            else if (delta < -PI) delta += 2f * PI
+                            if (delta != 0f) {
+                                if (controller.rotateSelectedStrokeAround(
+                                        delta, rotateCenterX, rotateCenterY
+                                    )
+                                ) {
+                                    lastRotateAngle = angle
+                                    controller.render()
+                                }
+                            }
+                        }
+                        scaleOpen -> {
+                            val radius = hypot(x - scaleCenterX, y - scaleCenterY)
+                            if (radius >= 1f && lastScaleRadius >= 1f) {
+                                var factor = radius / lastScaleRadius
+                                factor = factor.coerceIn(0.8f, 1.25f)
+                                if (factor != 1f) {
+                                    if (controller.scaleSelectedStrokeAround(
+                                            factor, factor, scaleCenterX, scaleCenterY
+                                        )
+                                    ) {
+                                        scaleAccumulated *= factor
+                                        lastScaleRadius = radius
+                                        controller.render()
+                                    }
+                                }
+                            }
+                        }
+                        mirrorOpen -> {
+                            // Mirror is committed on release so a drag cannot
+                            // accidentally flip the stroke multiple times.
                             controller.render()
                         }
-                    } else {
-                        moveOpen = false
-                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                        strokeOpen -> {
+                            addPoint(event, pointerIndex)
+                            controller.render()
+                        }
                     }
-                } else if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-                    val pointerIndex = event.findPointerIndex(activePointerId)
-                    if (pointerIndex >= 0) {
-                        addPoint(event, pointerIndex)
-                        controller.render()
-                    } else {
-                        controller.cancelStroke()
-                        strokeOpen = false
-                        activePointerId = MotionEvent.INVALID_POINTER_ID
-                        controller.render()
-                    }
+                } else if (strokeOpen) {
+                    controller.cancelStroke()
+                    strokeOpen = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    controller.render()
                 }
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                if (moveOpen && activePointerId != MotionEvent.INVALID_POINTER_ID &&
-                    event.getPointerId(event.actionIndex) == activePointerId) {
-                    moveOpen = false
-                    activePointerId = MotionEvent.INVALID_POINTER_ID
-                    controller.render()
-                } else if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-                    val pointerIndex = event.actionIndex
-                    val pointerId = event.getPointerId(pointerIndex)
-                    if (pointerId == activePointerId) {
+                val pointerId = event.getPointerId(event.actionIndex)
+                if (pointerId == activePointerId) {
+                    if (mirrorOpen) {
+                        commitMirror(event.getX(event.actionIndex), event.getY(event.actionIndex))
+                    } else if (strokeOpen) {
                         if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) {
                             controller.cancelStroke()
                         } else {
-                            addPoint(event, pointerIndex)
+                            addPoint(event, event.actionIndex)
                             controller.endStroke()
                         }
-                        strokeOpen = false
-                        activePointerId = MotionEvent.INVALID_POINTER_ID
-                        controller.render()
                     }
+                    resetGestureState()
+                    controller.render()
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (moveOpen) {
-                    moveOpen = false
-                    activePointerId = MotionEvent.INVALID_POINTER_ID
-                    controller.render()
-                } else if (strokeOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-                    val pointerIndex = event.findPointerIndex(activePointerId)
+                val pointerIndex = event.findPointerIndex(activePointerId)
+                if (mirrorOpen && pointerIndex >= 0) {
+                    commitMirror(event.getX(pointerIndex), event.getY(pointerIndex))
+                } else if (strokeOpen) {
                     if (pointerIndex >= 0) {
                         addPoint(event, pointerIndex)
                         controller.endStroke()
-                        controller.render()
                     } else {
                         controller.cancelStroke()
-                        controller.render()
                     }
-                    strokeOpen = false
-                    activePointerId = MotionEvent.INVALID_POINTER_ID
                 }
+                resetGestureState()
+                controller.render()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                if (moveOpen) {
-                    moveOpen = false
-                    controller.render()
-                }
-                if (strokeOpen) {
-                    controller.cancelStroke()
-                    strokeOpen = false
-                    controller.render()
-                }
-                activePointerId = MotionEvent.INVALID_POINTER_ID
+                if (strokeOpen) controller.cancelStroke()
+                resetGestureState()
+                controller.render()
                 return true
             }
         }
         return true
+    }
+
+    private fun commitMirror(x: Float, y: Float) {
+        if (!mirrorOpen) return
+        val dx = x - mirrorStartX
+        val dy = y - mirrorStartY
+        if (hypot(dx, dy) < 12f) return
+        if (abs(dx) >= abs(dy)) {
+            // Horizontal drag -> reflect across the stroke's vertical centerline.
+            controller.mirrorSelectedStrokeAround(
+                true, false, mirrorCenterX, mirrorCenterY
+            )
+        } else {
+            // Vertical drag -> reflect across the stroke's horizontal centerline.
+            controller.mirrorSelectedStrokeAround(
+                false, true, mirrorCenterX, mirrorCenterY
+            )
+        }
+    }
+
+    private fun resetGestureState() {
+        moveOpen = false
+        rotateOpen = false
+        scaleOpen = false
+        mirrorOpen = false
+        scaleAccumulated = 1f
+        lastScaleRadius = 0f
+        activePointerId = MotionEvent.INVALID_POINTER_ID
+        strokeOpen = false
     }
 
     private fun addPoint(event: MotionEvent, pointerIndex: Int) {

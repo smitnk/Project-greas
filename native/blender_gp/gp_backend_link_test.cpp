@@ -715,6 +715,82 @@ int main() {
     return 62;
   }
 
+
+  std::fprintf(stderr, "[BULK-GEOMETRY] Blender Legacy GP geometry API batch\n");
+  if (!backend.begin_stroke({0, 8.0f}) ||
+      !backend.add_point({60.0f, 20.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({62.0f, 21.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.add_point({64.0f, 20.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.add_point({66.0f, 21.0f, 0.0f, 0.7f, 0.7f, 0.3f}) ||
+      !backend.add_point({68.0f, 20.0f, 0.0f, 0.6f, 0.6f, 0.4f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "bulk geometry setup failed: %s\n", backend.last_error());
+    return 63;
+  }
+
+  const int bulk_index = backend.stroke_count() - 1;
+  project_grease::gp::Backend::LegacyGeometryOp bulk_ops[] = {
+      {project_grease::gp::Backend::LegacyGeometryOpType::SmoothStrength, 0.25f},
+      {project_grease::gp::Backend::LegacyGeometryOpType::SmoothThickness, 0.25f},
+      {project_grease::gp::Backend::LegacyGeometryOpType::SmoothUV, 0.25f},
+      {project_grease::gp::Backend::LegacyGeometryOpType::Subdivide, 0.0f, 0.0f, 0.0f, 1, 0},
+      {project_grease::gp::Backend::LegacyGeometryOpType::SimplifyAdaptive, 0.01f},
+      {project_grease::gp::Backend::LegacyGeometryOpType::Sample, 0.75f, 0.0f, 0.0f, 0, 0, false, false},
+      {project_grease::gp::Backend::LegacyGeometryOpType::MergeDistance, 0.01f, 0.0f, 0.0f, 0, 0, true, false},
+      {project_grease::gp::Backend::LegacyGeometryOpType::Stretch, 0.25f, 0.1f, 0.25f, 0, 1, false, false},
+      {project_grease::gp::Backend::LegacyGeometryOpType::Close},
+      {project_grease::gp::Backend::LegacyGeometryOpType::FillTriangulate},
+  };
+
+  if (!backend.apply_legacy_geometry_batch(
+          bulk_index, bulk_ops, static_cast<int>(sizeof(bulk_ops) / sizeof(bulk_ops[0]))) ||
+      !backend.render()) {
+    std::fprintf(stderr, "bulk Legacy GP geometry callback batch failed: %s\n",
+                 backend.last_error());
+    return 64;
+  }
+
+  backend.select_stroke(bulk_index);
+  project_grease::gp::Backend::LegacyGeometryOp dissolve_op = {
+      project_grease::gp::Backend::LegacyGeometryOpType::Dissolve,
+      0.0f,
+      0.0f,
+      0.0f,
+      GP_SPOINT_SELECT,
+      0,
+      false,
+      false,
+  };
+  if (!backend.apply_legacy_geometry_batch(bulk_index, &dissolve_op, 1) ||
+      !backend.render()) {
+    std::fprintf(stderr, "bulk Legacy GP dissolve callback failed: %s\n",
+                 backend.last_error());
+    return 65;
+  }
+
+  if (!backend.begin_stroke({0, 5.0f}) ||
+      !backend.add_point({72.0f, 20.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({76.0f, 24.0f, 0.0f, 0.9f, 0.9f, 0.1f}) ||
+      !backend.add_point({72.0f, 24.0f, 0.0f, 0.8f, 0.8f, 0.2f}) ||
+      !backend.add_point({76.0f, 20.0f, 0.0f, 0.7f, 0.7f, 0.3f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "bulk trim setup failed: %s\n", backend.last_error());
+    return 66;
+  }
+  const int bulk_trim_index = backend.stroke_count() - 1;
+  project_grease::gp::Backend::LegacyGeometryOp trim_op = {
+      project_grease::gp::Backend::LegacyGeometryOpType::TrimIntersection};
+  if (!backend.apply_legacy_geometry_batch(bulk_trim_index, &trim_op, 1) ||
+      !backend.render()) {
+    std::fprintf(stderr, "bulk Legacy GP trim callback failed: %s\n",
+                 backend.last_error());
+    return 67;
+  }
+
+  std::fprintf(stderr,
+               "[BULK-GEOMETRY] simplify/subdivide/resample/smooth/merge/stretch/"
+               "close/dissolve/fill/trim Blender callbacks passed\n");
+
   std::fprintf(stderr,
                "[PAINT-BUFFER] Blender Legacy GP tGPspoint stroke buffer commit passed\\n");
   std::fprintf(stderr,

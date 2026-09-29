@@ -3298,6 +3298,14 @@ bool Backend::apply_blender_modifier_stack(int index,
         m->flag |= GP_SMOOTH_MOD_LOCATION;
         break;
       }
+      case eGpencilModifierType_Simplify: {
+        SimplifyGpencilModifierData *m =
+            reinterpret_cast<SimplifyGpencilModifierData *>(md);
+        m->mode = GP_SIMPLIFY_ADAPTIVE;
+        m->factor = factor > 0.0f ? factor : m->factor;
+        m->step = iterations > 0 ? iterations : m->step;
+        break;
+      }
       case eGpencilModifierType_Thick: {
         ThickGpencilModifierData *m =
             reinterpret_cast<ThickGpencilModifierData *>(md);

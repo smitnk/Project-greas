@@ -674,7 +674,12 @@ int main() {
     return 57;
   }
 
-  const int stack_index = backend.stroke_count() - 1;
+  if (backend.stroke_buffer_count() != 4) {
+    std::fprintf(stderr, "real Legacy GP sbuffer did not receive all input points: %d\\n",
+                 backend.stroke_buffer_count());
+    return 61;
+  }
+  const int stack_index = backend.stroke_count();
   const int stack_points_before = backend.point_count();
   project_grease::gp::StrokePoint stack_before{};
   if (!backend.get_point(stack_index, 1, &stack_before)) {
@@ -704,6 +709,14 @@ int main() {
     return 60;
   }
 
+  if (backend.stroke_buffer_count() != 0) {
+    std::fprintf(stderr, "real Legacy GP sbuffer was not cleared after stroke commit: %d\\n",
+                 backend.stroke_buffer_count());
+    return 62;
+  }
+
+  std::fprintf(stderr,
+               "[PAINT-BUFFER] Blender Legacy GP tGPspoint stroke buffer commit passed\\n");
   std::fprintf(stderr,
                "[MODIFIER-STACK] Smooth -> Thickness -> Subdivide real Blender callbacks passed\\n");
 

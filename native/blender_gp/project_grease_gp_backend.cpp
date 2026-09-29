@@ -193,36 +193,19 @@ static HistorySnapshot *history_snapshot_create(const bGPdata *source)
   }
 
   HistorySnapshot *snapshot = new HistorySnapshot();
-  snapshot->data = static_cast<bGPdata *>(
-      MEM_callocN(sizeof(bGPdata), "Project Grease Legacy GP Undo Snapshot"));
+
+  // Blender's Legacy GP API explicitly uses internal_copy=true for undo
+  // snapshots. This duplicates the bGPdata container plus its layers, frames,
+  // strokes, points and weights using the pinned Blender implementation.
+  snapshot->data = BKE_gpencil_data_duplicate(nullptr, source, true);
   if (!snapshot->data) {
     delete snapshot;
     return nullptr;
   }
 
-  snapshot->data->flag = source->flag | GP_DATA_CACHE_IS_DIRTY;
-  snapshot->data->pixfactor = source->pixfactor;
-  std::memcpy(snapshot->data->line_color, source->line_color, sizeof(source->line_color));
-  snapshot->data->onion_factor = source->onion_factor;
-  snapshot->data->onion_mode = source->onion_mode;
-  snapshot->data->onion_flag = source->onion_flag;
-  snapshot->data->gstep = source->gstep;
-  snapshot->data->gstep_next = source->gstep_next;
-  std::memcpy(snapshot->data->gcolor_prev, source->gcolor_prev, sizeof(source->gcolor_prev));
-  std::memcpy(snapshot->data->gcolor_next, source->gcolor_next, sizeof(source->gcolor_next));
-  snapshot->data->zdepth_offset = source->zdepth_offset;
-  snapshot->data->totcol = source->totcol;
-  snapshot->data->draw_mode = source->draw_mode;
-  snapshot->data->onion_keytype = source->onion_keytype;
-  snapshot->data->select_last_index = source->select_last_index;
-  snapshot->data->grid = source->grid;
-
-  // Blender's Legacy GP duplication path is explicitly used for undo buffers.
-  // It deep-copies layers, frames, strokes, points and stroke weights.
-  BKE_gpencil_copy_data(snapshot->data, source, 0);
-
-  // A copied render cache must never be reused by the live Android context.
-  snapshot->data->runtime = {};
+  // The duplication API intentionally performs a straight copy of runtime
+  // pointers. Never let an undo snapshot retain the live GPU/cache pointers.
+  std::memset(&snapshot->data->runtime, 0, sizeof(snapshot->data->runtime));
   snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
   return snapshot;
 }
@@ -270,8 +253,22 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   BLI_listbase_clear(&impl->gpd->layers);
   impl->gpd->mat = nullptr;
 
+  // Duplicate the snapshot with Blender's real Legacy GP copy path, then
+  // move the duplicated containers into the live Android-owned bGPdata.
+  bGPdata *restored = BKE_gpencil_data_duplicate(nullptr, snapshot->data, true);
+  if (!restored) {
+    return false;
+  }
+  std::memset(&restored->runtime, 0, sizeof(restored->runtime));
+
   history_copy_settings(snapshot->data, impl->gpd);
-  BKE_gpencil_copy_data(impl->gpd, snapshot->data, 0);
+  BKE_gpencil_free_layers(&impl->gpd->layers);
+  MEM_SAFE_FREE(impl->gpd->mat);
+  impl->gpd->layers = restored->layers;
+  impl->gpd->mat = restored->mat;
+  restored->layers = {};
+  restored->mat = nullptr;
+  MEM_freeN(restored);
   BKE_gpencil_stats_update(impl->gpd);
 
   impl->layer = nullptr;
@@ -1859,7 +1856,7 @@ bool Backend::trim_stroke(int index) {
       impl_->last_error = "stroke needs at least four points for Legacy GP trim";
       return false;
     }
-    if (!BKE_gpencil_stroke_trim(stroke)) {
+    if (!BKE_gpencil_stroke_trim(impl_->gpd, stroke)) {
       impl_->last_error = "BKE_gpencil_stroke_trim() found no intersection";
       return false;
     }

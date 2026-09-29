@@ -23,6 +23,18 @@ typedef struct ProjectGreaseGPStrokeStyle {
 ProjectGreaseGPHandle *project_grease_gp_create(void);
 void project_grease_gp_destroy(ProjectGreaseGPHandle *handle);
 
+typedef struct ProjectGreaseGPLegacyPaintSettings {
+  int draw_smooth_level;
+  float draw_smooth_factor;
+  int input_samples;
+  int smooth_position;
+  int smooth_strength;
+} ProjectGreaseGPLegacyPaintSettings;
+
+int project_grease_gp_set_legacy_paint_settings(
+    ProjectGreaseGPHandle *handle,
+    ProjectGreaseGPLegacyPaintSettings settings);
+
 int project_grease_gp_begin_stroke(
     ProjectGreaseGPHandle *handle,
     int material_index,

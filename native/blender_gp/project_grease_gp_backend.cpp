@@ -1555,7 +1555,7 @@ bool Backend::merge_selected_points(float threshold)
       }
       if (!merge) {
         if (write_index != read_index) {
-          stroke->points[write_index] = point;
+          std::memcpy(&stroke->points[write_index], &point, sizeof(bGPDspoint));
         }
         ++write_index;
       }

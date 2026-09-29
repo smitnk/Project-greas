@@ -153,3 +153,17 @@ No drawing algorithm was changed. No custom stroke algorithm was introduced.
 ### Next verification
 
 Run the Android Shell workflow from the new commit. If it fails, continue from the first concrete compiler/linker/runtime error only. If it passes, verify APK + conformance and then continue the real Legacy GP paint path: brush settings, pressure/strength processing, smoothing/subdivision/simplification, and final commit behavior. Do not mark the paint subsystem complete until those real Blender paths are exercised.
+
+
+### Bulk Legacy GP geometry integration — 2026-09-29
+
+Implemented a single batched engine entry point for Blender 3.6.23 Legacy GP geometry operations instead of adding each operation as a separate Project Grease geometry algorithm.
+
+- f650466 — added Backend::LegacyGeometryOp and apply_legacy_geometry_batch() to the native engine API.
+- e4d6858 — dispatches the batch directly to Blender Legacy GP BKE algorithms: adaptive/fixed simplify, subdivide, intersection trim, point trim, merge-distance, resample/sample, strength/thickness/UV smoothing, stretch, close, dissolve, and fill triangulation.
+- 2f66152 / 14171ce — exposed the batch through the Android-safe C bridge.
+- 923545b — added native conformance coverage for the batched callbacks, including a separate self-intersection trim case.
+
+This batch is deliberately Blender-backed: the Project Grease layer supplies operation parameters and lifecycle/cache invalidation, while the actual geometry algorithms are Blender's Legacy GP functions. Blender's Legacy GP API documents these operations as part of the GP geometry layer, including simplify, subdivide, trim, merge-distance, resample, dissolve, and stretch. citeturn4search0turn5search1turn9search0
+
+The next loop is build/CI inspection. Any compiler, linker, or runtime/conformance error from this batch is treated as a dependency-closure problem and fixed at its smallest concrete boundary before expanding the next bulk feature group.

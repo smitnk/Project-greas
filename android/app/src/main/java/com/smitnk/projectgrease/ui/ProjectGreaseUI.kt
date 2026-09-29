@@ -187,7 +187,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.LAYERS->LayersSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MATERIALS->MaterialsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.ONION->OnionSheet(controller,{sheet=Sheet.NONE},::redraw)
-        Sheet.ADVANCED->AdvancedSheet{sheet=Sheet.NONE}
+        Sheet.ADVANCED->AdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MORE->MoreSheet(controller,{sheet=Sheet.NONE},onSettings,::redraw)
         Sheet.NONE->Unit
     }
@@ -226,6 +226,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 Spacer(Modifier.weight(1f))
                 FilterChip(selected=controller.animation.loop,onClick={controller.animation.toggleLoop();redraw()},label={Text("Loop")})
                 TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
+                TextButton(onClick={controller.animation.duplicateFrame(controller.animation.currentFrame,controller.animation.currentFrame+1);redraw()}){Text("Duplicate")}
+                TextButton(onClick={if(controller.animation.frameCount>1){controller.animation.deleteFrame(controller.animation.currentFrame);redraw()}}){Text("Delete")}
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
                 (1..controller.animation.frameCount.coerceAtLeast(1)).forEach{frame->
@@ -290,9 +292,48 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun LayersSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Layers",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        Text("Layer "+(controller.selectedLayer+1),Modifier.padding(horizontal=20.dp));Button(onClick={controller.createLayer("Layer "+(controller.layerCount()+1));redraw()},Modifier.padding(20.dp)){Text("Add layer")}
-        CapabilityRow("Visibility",FeatureId.LAYER_VISIBILITY);CapabilityRow("Locking",FeatureId.LAYER_LOCKING);CapabilityRow("Ordering",FeatureId.LAYER_ORDERING);CapabilityRow("Rename",FeatureId.LAYER_RENAME);Spacer(Modifier.height(20.dp))}
+    var visible by remember{mutableStateOf(true)}
+    var locked by remember{mutableStateOf(false)}
+    var renameOpen by remember{mutableStateOf(false)}
+    var renameText by remember{mutableStateOf("Layer "+(controller.selectedLayer+1))}
+    ModalBottomSheet(onDismissRequest=onDismiss){
+        Text("Layers",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        Text("Layer "+(controller.selectedLayer+1),Modifier.padding(horizontal=20.dp))
+        Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            Button(onClick={controller.createLayer("Layer "+(controller.layerCount()+1));redraw()}){Text("Add")}
+            Button(onClick={controller.duplicateLayer();redraw()}){Text("Duplicate")}
+            Button(onClick={controller.deleteLayer();redraw()},enabled=controller.layerCount()>1){Text("Delete")}
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            Button(onClick={if(controller.selectedLayer>0){controller.moveLayer(controller.selectedLayer,controller.selectedLayer-1);redraw()}},enabled=controller.selectedLayer>0){Text("Up")}
+            Button(onClick={if(controller.selectedLayer<controller.layerCount()-1){controller.moveLayer(controller.selectedLayer,controller.selectedLayer+1);redraw()}},enabled=controller.selectedLayer<controller.layerCount()-1){Text("Down")}
+            Button(onClick={renameOpen=true}){Text("Rename")}
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Visible",Modifier.weight(1f))
+            Switch(checked=visible,onCheckedChange={visible=it;controller.setLayerVisibility(controller.selectedLayer,it);redraw()})
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Locked",Modifier.weight(1f))
+            Switch(checked=locked,onCheckedChange={locked=it;controller.setLayerLocked(controller.selectedLayer,it);redraw()})
+        }
+        CapabilityRow("Visibility",FeatureId.LAYER_VISIBILITY)
+        CapabilityRow("Locking",FeatureId.LAYER_LOCKING)
+        CapabilityRow("Ordering",FeatureId.LAYER_ORDERING)
+        CapabilityRow("Duplication",FeatureId.LAYER_DUPLICATION)
+        CapabilityRow("Deletion",FeatureId.LAYER_DELETION)
+        CapabilityRow("Rename",FeatureId.LAYER_RENAME)
+        Spacer(Modifier.height(20.dp))
+    }
+    if(renameOpen){
+        AlertDialog(
+            onDismissRequest={renameOpen=false},
+            title={Text("Rename layer")},
+            text={OutlinedTextField(value=renameText,onValueChange={renameText=it},singleLine=true)},
+            confirmButton={TextButton(onClick={controller.renameLayer(name=renameText);renameOpen=false;redraw()}){Text("Rename")}},
+            dismissButton={TextButton(onClick={renameOpen=false}){Text("Cancel")}}
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -339,10 +380,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun AdvancedSheet(onDismiss:()->Unit){
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Advanced",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+@Composable private fun AdvancedSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
+    var multiframe by remember{mutableStateOf(false)}
+    ModalBottomSheet(onDismissRequest=onDismiss){
+        Text("Advanced",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Multiframe editing",Modifier.weight(1f))
+            Switch(checked=multiframe,onCheckedChange={multiframe=it;controller.setMultiframeEditing(it);redraw()})
+        }
         listOf(FeatureId.SCULPT,FeatureId.STABILIZATION,FeatureId.ADVANCED_FILL,FeatureId.STROKE_TEXTURES,FeatureId.FILL_TEXTURES,FeatureId.MODIFIERS,FeatureId.NOISE,FeatureId.DASH,FeatureId.OUTLINE,FeatureId.MULTIFRAME,FeatureId.ADVANCED_ONION_SKIN,FeatureId.VISUAL_EFFECTS).forEach{CapabilityRow(it.name.replace('_',' '),it)}
-        Spacer(Modifier.height(20.dp))}
+        Spacer(Modifier.height(20.dp))
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

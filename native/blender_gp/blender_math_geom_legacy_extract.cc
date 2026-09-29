@@ -1,4 +1,38 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Focused Blender 3.6.23 lasso helper required by Legacy GP lasso selection.
+ * Kept here instead of linking the full blenlib lasso/math-geometry closure. */
+static bool project_grease_isect_point_poly_v2_int(
+    const int pt[2], const int verts[][2], const unsigned int nr)
+{
+  unsigned int i, j;
+  bool isect = false;
+  for (i = 0, j = nr - 1; i < nr; j = i++) {
+    if (((verts[i][1] > pt[1]) != (verts[j][1] > pt[1])) &&
+        (pt[0] <
+         (verts[j][0] - verts[i][0]) * (pt[1] - verts[i][1]) /
+                 (verts[j][1] - verts[i][1]) +
+             verts[i][0])) {
+      isect = !isect;
+    }
+  }
+  return isect;
+}
+
+extern "C" bool BLI_lasso_is_point_inside(
+    const int mcoords[][2],
+    unsigned int mcoords_len,
+    int sx,
+    int sy,
+    int error_value)
+{
+  if (sx == error_value || mcoords_len == 0) {
+    return false;
+  }
+
+  const int pt[2] = {sx, sy};
+  return project_grease_isect_point_poly_v2_int(pt, mcoords, mcoords_len);
+}
+
 /* Exact helper extracted from Blender 3.6.23 source/blender/blenlib/intern/math_geom.c.
  * Only cross_poly_v2 is required by the selected Legacy Grease Pencil closure. */
 #include "BLI_math_geom.h"

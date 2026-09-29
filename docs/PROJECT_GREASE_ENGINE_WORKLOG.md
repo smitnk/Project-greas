@@ -85,3 +85,49 @@ full Blender application, desktop UI, Python, full scene/3D viewport, GHOST-on-A
 - Initial conformance test invokes Blender's actual Legacy GP Smooth modifier on an existing bGPDstroke and verifies geometry changes plus GP cache rendering.
 - No Project Grease smoothing algorithm is used by this path; Blender 3.6.23 owns the modifier implementation.
 - Next CI result determines the next minimal dependency fix. After this callback path passes, expand the same mechanism to additional Legacy GP modifier types and then build the modifier-stack/depsgraph closure only where the actual Blender implementation requires it.
+
+
+## Exact CI error recovery — modifier API closure
+
+### Runs inspected
+
+- **#364 / 36599437309** — failed compiling `project_grease_gp_backend.cpp`.
+- **#365 / 36599452874** — same native Legacy GP modifier API/type failure at the bridge exposure stage.
+- **#366 / 36599462494** — same native failure at JNI wiring.
+- **#367 / 36599485267** — succeeded after adding the real Blender Legacy GP modifier API/DNA includes.
+- **#368 / 36599507228** — succeeded through Blender import, DNA generation, Android build, APK verification and artifact upload.
+
+### Exact root failure
+
+The failed Android compiler reported that `BKE_gpencil_modifier_init`, `BKE_gpencil_modifier_new`, `BKE_gpencil_modifier_get_info`, `GpencilModifierData`, `GpencilModifierType`, `GpencilModifierTypeInfo`, `SmoothGpencilModifierData`, `ThickGpencilModifierData`, `SubdivGpencilModifierData`, and the corresponding modifier enums/flags were unavailable while compiling the backend.
+
+This was not a problem in the JNI logic itself. The Android target had not yet established the complete real Blender 3.6.23 Legacy GP modifier kernel closure.
+
+### Upstream source verification
+
+The pinned Blender commit is `e467db79ca8cc5c1c15e1a0e08bd52ca419f2eca`, which is Blender 3.6.23 release commit. The exact upstream tree contains:
+
+- `source/blender/blenkernel/BKE_gpencil_modifier_legacy.h`
+- `source/blender/blenkernel/intern/gpencil_modifier_legacy.c`
+- `source/blender/gpencil_modifiers_legacy/`
+- `source/blender/makesdna/DNA_gpencil_modifier_types.h`
+
+The header defines the real `GpencilModifierTypeInfo::deformStroke` callback and the `BKE_gpencil_modifier_init/new/get_info/free` API. The kernel implementation initializes the actual modifier registry and dispatches to the real modifier-type implementations.
+
+### Fix applied
+
+- `29ebc357b46ef4b5749a401cbf5dcf55149ac17a`
+  - Explicitly includes the pinned Blender Legacy GP modifier DNA before the modifier API header in the backend.
+- `5001d4175d710e16694647d4bff8335232e8feed`
+  - Adds Blender 3.6.23's real `gpencil_modifier_legacy.c` to the Android native source closure.
+  - Adds the real `gpencil_modifiers_legacy` include directories.
+
+### Important interpretation
+
+Run #368 proves the previous compiler/linkage state is recoverable, but it does **not** by itself prove that Android runtime execution has exercised the real modifier callback. The next verification must therefore test the actual Android-native modifier path, not merely APK creation.
+
+## Current next target
+
+Use the exact Blender 3.6.23 modifier registry and real modifier implementations already imported into the Android closure. Continue resolving only concrete compiler/linker/runtime dependencies. Then add conformance for multiple real Legacy GP modifier callbacks and a real modifier-stack execution path where the Blender implementation requires it.
+
+Never replace these callbacks with Project Grease geometry algorithms.

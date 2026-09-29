@@ -701,8 +701,14 @@ int main() {
     return 57;
   }
 
-  if (backend.stroke_buffer_count() != 4) {
-    std::fprintf(stderr, "real Legacy GP sbuffer did not receive all input points: %d\\n",
+  /*
+   * end_stroke() commits the real Blender tGPspoint buffer into bGPDstroke
+   * data and clears the temporary editor buffer, matching Blender's paint
+   * lifecycle. Validate the committed stroke rather than expecting sbuffer
+   * points to survive the commit.
+   */
+  if (backend.stroke_buffer_count() != 0) {
+    std::fprintf(stderr, "real Legacy GP sbuffer was not cleared after commit: %d\\n",
                  backend.stroke_buffer_count());
     return 61;
   }

@@ -211,8 +211,8 @@ private class ProjectGreaseDrawingSurfaceView(
                         rotateOpen -> {
                             val angle = atan2(y - rotateCenterY, x - rotateCenterX)
                             var delta = angle - lastRotateAngle
-                            if (delta > PI) delta -= 2f * PI
-                            else if (delta < -PI) delta += 2f * PI
+                            if (delta > PI.toFloat()) delta -= 2f * PI.toFloat()
+                            else if (delta < -PI.toFloat()) delta += 2f * PI.toFloat()
                             if (delta != 0f) {
                                 if (controller.rotateSelectedStrokeAround(
                                         delta, rotateCenterX, rotateCenterY

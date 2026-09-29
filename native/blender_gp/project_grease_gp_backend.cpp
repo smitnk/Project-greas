@@ -1142,6 +1142,20 @@ bool Backend::duplicate_stroke(int index) {
 }
 
 
+static int selected_point_count(const bGPDstroke *stroke)
+{
+  if (!stroke || !stroke->points || stroke->totpoints <= 0) {
+    return 0;
+  }
+  int count = 0;
+  for (int i = 0; i < stroke->totpoints; ++i) {
+    if (stroke->points[i].flag & GP_SPOINT_SELECT) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 bool Backend::stroke_center(int index, float *x, float *y) const
 {
   if (!impl_->frame || index < 0 || !x || !y) {
@@ -1160,21 +1174,35 @@ bool Backend::stroke_center(int index, float *x, float *y) const
       return false;
     }
 
-    /* Blender Edit Mode's Median Point is the averaged position of the
-     * selected points. For a single selected stroke, use its point median
-     * as the stable transform pivot for an interactive gesture. */
+    /*
+     * Match Blender 3.6.23 Legacy GP transform conversion:
+     * the transform pivot is the median of selected points. This matters
+     * for lasso/point selection; falling back to the whole stroke would
+     * move the pivot away from the actual Blender selection.
+     */
     double sum_x = 0.0;
     double sum_y = 0.0;
+    int selected = 0;
     for (int i = 0; i < stroke->totpoints; ++i) {
-      sum_x += stroke->points[i].x;
-      sum_y += stroke->points[i].y;
+      const bGPDspoint &point = stroke->points[i];
+      if (point.flag & GP_SPOINT_SELECT) {
+        sum_x += point.x;
+        sum_y += point.y;
+        ++selected;
+      }
     }
-    *x = static_cast<float>(sum_x / stroke->totpoints);
-    *y = static_cast<float>(sum_y / stroke->totpoints);
+
+    if (selected == 0) {
+      return false;
+    }
+
+    *x = static_cast<float>(sum_x / selected);
+    *y = static_cast<float>(sum_y / selected);
     return true;
   }
   return false;
 }
+
 
 bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
   if (!impl_->frame || index < 0) {
@@ -1196,8 +1224,17 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
       return false;
     }
 
+    if (selected_point_count(stroke) == 0) {
+      impl_->last_error = "stroke has no selected points";
+      return false;
+    }
+
+    /* Blender's Legacy GP transform path operates on selected points. */
     for (int point_index = 0; point_index < stroke->totpoints; ++point_index) {
       bGPDspoint &point = stroke->points[point_index];
+      if (!(point.flag & GP_SPOINT_SELECT)) {
+        continue;
+      }
       point.x += dx;
       point.y += dy;
       point.z += dz;
@@ -1205,9 +1242,7 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
 
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-#ifndef __ANDROID__
     project_grease_gp_tag(impl_->gpd);
-#endif
     impl_->last_error.clear();
     return true;
   }
@@ -1215,6 +1250,7 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
   impl_->last_error = "stroke index out of range";
   return false;
 }
+
 
 bool Backend::flip_stroke(int index)
 {
@@ -1275,20 +1311,29 @@ bool Backend::rotate_stroke_about(int index, float radians, float center_x, floa
   for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;
        stroke = stroke->next, ++current) {
-    if (current != index) continue;
+    if (current != index) {
+      continue;
+    }
     if (stroke->totpoints <= 0 || !stroke->points) {
       impl_->last_error = "stroke has no points";
       return false;
     }
+    if (selected_point_count(stroke) == 0) {
+      impl_->last_error = "stroke has no selected points";
+      return false;
+    }
 
     const float c = std::cos(radians);
-    const float s = std::sin(radians);
+    const float ss = std::sin(radians);
     for (int i = 0; i < stroke->totpoints; ++i) {
       bGPDspoint &p = stroke->points[i];
+      if (!(p.flag & GP_SPOINT_SELECT)) {
+        continue;
+      }
       const float x = p.x - center_x;
       const float y = p.y - center_y;
-      p.x = center_x + x * c - y * s;
-      p.y = center_y + x * s + y * c;
+      p.x = center_x + x * c - y * ss;
+      p.y = center_y + x * ss + y * c;
     }
 
     impl_->stroke = stroke;
@@ -1327,14 +1372,23 @@ bool Backend::scale_stroke_about(
   for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;
        stroke = stroke->next, ++current) {
-    if (current != index) continue;
+    if (current != index) {
+      continue;
+    }
     if (stroke->totpoints <= 0 || !stroke->points) {
       impl_->last_error = "stroke has no points";
+      return false;
+    }
+    if (selected_point_count(stroke) == 0) {
+      impl_->last_error = "stroke has no selected points";
       return false;
     }
 
     for (int i = 0; i < stroke->totpoints; ++i) {
       bGPDspoint &p = stroke->points[i];
+      if (!(p.flag & GP_SPOINT_SELECT)) {
+        continue;
+      }
       p.x = center_x + (p.x - center_x) * scale_x;
       p.y = center_y + (p.y - center_y) * scale_y;
     }
@@ -1374,16 +1428,29 @@ bool Backend::mirror_stroke_about(
   for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;
        stroke = stroke->next, ++current) {
-    if (current != index) continue;
+    if (current != index) {
+      continue;
+    }
     if (stroke->totpoints <= 0 || !stroke->points) {
       impl_->last_error = "stroke has no points";
+      return false;
+    }
+    if (selected_point_count(stroke) == 0) {
+      impl_->last_error = "stroke has no selected points";
       return false;
     }
 
     for (int i = 0; i < stroke->totpoints; ++i) {
       bGPDspoint &p = stroke->points[i];
-      if (mirror_x) p.x = 2.0f * center_x - p.x;
-      if (mirror_y) p.y = 2.0f * center_y - p.y;
+      if (!(p.flag & GP_SPOINT_SELECT)) {
+        continue;
+      }
+      if (mirror_x) {
+        p.x = 2.0f * center_x - p.x;
+      }
+      if (mirror_y) {
+        p.y = 2.0f * center_y - p.y;
+      }
     }
 
     impl_->stroke = stroke;
@@ -1396,6 +1463,7 @@ bool Backend::mirror_stroke_about(
   impl_->last_error = "stroke index out of range";
   return false;
 }
+
 
 bool Backend::subdivide_stroke(int index, int level)
 {

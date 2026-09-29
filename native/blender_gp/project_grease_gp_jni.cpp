@@ -291,7 +291,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryRedo(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge.GPNative_nativeHistoryCanUndo(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryCanUndo(
     JNIEnv *, jobject, jlong handle)
 {
   return project_grease_gp_history_can_undo(from_handle(handle)) != 0;

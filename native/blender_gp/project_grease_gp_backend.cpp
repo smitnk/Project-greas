@@ -2678,41 +2678,33 @@ bool Backend::end_stroke() {
    * that stage Blender-backed: every geometry operation below is a real BKE
    * Legacy GP callback.
    */
+  /*
+   * Match Blender 3.6.23 gpencil_stroke_newfrombuffer() paint post-process:
+   * one stroke-wide smooth callback using draw_smoothfac/draw_smoothlvl,
+   * followed by per-point input-sample smoothing when depth projection is
+   * active. Project Grease does not invent a second smoothing algorithm.
+   */
   const int smooth_level = std::max(0, impl_->paint_settings.draw_smooth_level);
-  for (int r = 0; r < smooth_level; ++r) {
-    float reduce = 0.25f * static_cast<float>(r);
-    const float factor = std::max(
-        0.0f, impl_->paint_settings.draw_smooth_factor - reduce);
-    for (int i = 0; i < impl_->stroke->totpoints - 1; ++i) {
-      if (impl_->paint_settings.smooth_position) {
-        BKE_gpencil_stroke_smooth(impl_->stroke,
-                                  factor,
-                                  1,
-                                  true,
-                                  false,
-                                  false,
-                                  false,
-                                  true,
-                                  nullptr);
-      }
-      if (impl_->paint_settings.smooth_strength) {
-        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, factor, 1, impl_->stroke);
-      }
-    }
+  if (smooth_level > 0 &&
+      (impl_->paint_settings.smooth_position || impl_->paint_settings.smooth_strength)) {
+    BKE_gpencil_stroke_smooth(impl_->stroke,
+                              std::max(0.0f, impl_->paint_settings.draw_smooth_factor),
+                              smooth_level,
+                              impl_->paint_settings.smooth_position,
+                              impl_->paint_settings.smooth_strength,
+                              false,
+                              false,
+                              true,
+                              nullptr);
   }
 
   if (impl_->paint_settings.input_samples > 0) {
     const float ifac = static_cast<float>(impl_->paint_settings.input_samples) / 10.0f;
     const float sfac = 1.0f + (0.2f - 1.0f) * std::min(ifac, 1.0f);
-    for (int i = 0; i < impl_->stroke->totpoints - 1; ++i) {
+    for (int i = 0; i < impl_->stroke->totpoints; ++i) {
       if (impl_->paint_settings.smooth_position) {
-        BKE_gpencil_stroke_smooth_point(impl_->stroke,
-                                               i,
-                                               sfac,
-                                               2,
-                                               false,
-                                               true,
-                                               impl_->stroke);
+        BKE_gpencil_stroke_smooth_point(
+            impl_->stroke, i, sfac, 2, false, true, impl_->stroke);
       }
       if (impl_->paint_settings.smooth_strength) {
         BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac, 2, impl_->stroke);

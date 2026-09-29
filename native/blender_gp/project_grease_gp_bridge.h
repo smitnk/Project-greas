@@ -78,8 +78,15 @@ int project_grease_gp_mirror_stroke(ProjectGreaseGPHandle *handle, int index, in
 int project_grease_gp_mirror_stroke_about(ProjectGreaseGPHandle *handle, int index, int mirror_x, int mirror_y, float center_x, float center_y);
 int project_grease_gp_subdivide_stroke(ProjectGreaseGPHandle *handle, int index, int level);
 int project_grease_gp_close_stroke(ProjectGreaseGPHandle *handle, int index);
-int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int from, int to, int keep_single_point);\nint project_grease_gp_trim_stroke_to_intersection(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_trim_stroke(ProjectGreaseGPHandle *handle, int index, int from, int to, int keep_single_point);
+int project_grease_gp_trim_stroke_to_intersection(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_split_stroke(ProjectGreaseGPHandle *handle, int index, int before_index);
+int project_grease_gp_history_reset(ProjectGreaseGPHandle *handle);
+int project_grease_gp_history_record(ProjectGreaseGPHandle *handle);
+int project_grease_gp_history_undo(ProjectGreaseGPHandle *handle);
+int project_grease_gp_history_redo(ProjectGreaseGPHandle *handle);
+int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, int material_index, float thickness);
 int project_grease_gp_generate_primitive_preview(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, float *xy, int capacity, int *count);
 int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic);

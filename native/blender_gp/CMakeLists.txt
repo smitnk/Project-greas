@@ -23,20 +23,18 @@ target_compile_features(project_grease_legacy_fill PUBLIC cxx_std_17)
 add_executable(project_grease_legacy_fill_test project_grease_legacy_fill_test.cpp)
 target_link_libraries(project_grease_legacy_fill_test PRIVATE project_grease_legacy_fill)
 
-# These are the actual Blender 3.6.23 Legacy GP editor/modifier sources.
+# These are the actual Blender 3.6.23 Legacy GP editor/modifier sources from the pinned legacy directories.
 # They are compiled into the focused Project Grease native closure instead
 # of importing Blender's desktop application targets.
 file(GLOB PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES CONFIGURE_DEPENDS
-  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil/*.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/*.cc"
 )
 file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/*.cc"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/*.cc"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/lineart/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/lineart/*.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/*.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/*.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/*.cc"
 )
 
 set(PROJECT_GREASE_GP_ENGINE_SOURCES
@@ -61,8 +59,8 @@ set(PROJECT_GREASE_GP_INCLUDE_DIRS
   "${BLENDER_SOURCE_DIR}/source/blender/editors"
   "${BLENDER_SOURCE_DIR}/source/blender/editors/include"
   "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers/intern/lineart"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern"
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/lineart"
   "${BLENDER_SOURCE_DIR}/source/blender/windowmanager"
   "${BLENDER_SOURCE_DIR}/source/blender/depsgraph"
   "${BLENDER_SOURCE_DIR}/source/blender/blentranslation"

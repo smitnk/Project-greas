@@ -204,3 +204,10 @@ CI verification branches were created only to trigger/inspect the Android build 
 - Production commit `94ab9f080fae32071b6f7938f6d65164b95c4329` configures the real `SimplifyGpencilModifierData` in the single-modifier path, and `a11563c6f87b56dcf786febffb2156efcfafbb46` adds the same real configuration to the modifier-stack path.
 - Conformance commit `8ca5a4dfff1e2ca468b2bbf8363f4cfe370f89d7` adds a real Simplify callback test that requires the point count to decrease and the Legacy GP render/cache path to remain valid.
 - Noise and other context/depsgraph-dependent modifiers are not being falsely marked complete; each must be source-traced and only added when its focused Android dependency closure is proven.
+
+
+### CI #404 failure — duplicate Simplify switch case; corrected before next validation
+- Run #404 failed in the Android CMake build at project_grease_gp_backend.cpp:3323 with clang error duplicate case value eGpencilModifierType_Simplify; the earlier case was at line 3301.
+- This was a local integration error introduced while adding real Legacy GP Length configuration, not a Blender API/dependency failure.
+- Commit 874550e5e8c36880f34dc5c5166076b53e9a0d1d removes the duplicate case. The current modifier-stack switch has one Smooth, one Simplify, one Length, one Thick, one Subdiv case, then default.
+- Run #407 is validating this correction; #408 is the newer Length conformance validation.

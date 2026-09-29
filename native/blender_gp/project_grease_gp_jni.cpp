@@ -193,7 +193,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameEnd(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk.projectgrease.nativebridge.GPNative_nativeDuplicateFrame(
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDuplicateFrame(
     JNIEnv *, jobject, jlong handle, jint source_frame, jint target_frame)
 {
   return project_grease_gp_duplicate_frame(

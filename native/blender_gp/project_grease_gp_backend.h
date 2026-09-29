@@ -162,6 +162,19 @@ class Backend {
                       int dilate_pixels,
                       const StrokeStyle& style);
 
+  // Blender 3.6.23 Legacy GP paint-stage settings used when committing the
+  // real tGPspoint buffer into bGPDstroke data. The processing below calls
+  // Blender's own GP geometry functions rather than a Project Grease smoother.
+  struct LegacyPaintSettings {
+    int draw_smooth_level = 0;
+    float draw_smooth_factor = 0.0f;
+    int input_samples = 0;
+    bool smooth_position = true;
+    bool smooth_strength = true;
+  };
+
+  bool set_legacy_paint_settings(const LegacyPaintSettings& settings);
+
   // Writes native GP stroke points. No Android Canvas rendering is used.
   bool begin_stroke(const StrokeStyle& style);
   bool add_point(const StrokePoint& point);

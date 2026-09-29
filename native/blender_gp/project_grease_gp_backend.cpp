@@ -32,6 +32,7 @@
 
 #include "draw_cache.h"
 #include "draw_cache_impl.h"
+#include "ED_gpencil_legacy.h"
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
@@ -2538,6 +2539,24 @@ bool Backend::begin_stroke(const StrokeStyle &style) {
     impl_->last_error = "Legacy GP material index is unavailable";
     return false;
   }
+
+  /*
+   * Enter Blender 3.6.23's actual editor stroke-cache representation.
+   * tGPspoint/sbuffer is the transient point format used by the upstream
+   * Legacy GP paint operator. Android remains only the input host; it does
+   * not introduce a second stroke-buffer format.
+   */
+  impl_->gpd->runtime.sbuffer = ED_gpencil_sbuffer_ensure(
+      static_cast<tGPspoint *>(impl_->gpd->runtime.sbuffer),
+      &impl_->gpd->runtime.sbuffer_size,
+      &impl_->gpd->runtime.sbuffer_used,
+      true);
+  if (!impl_->gpd->runtime.sbuffer) {
+    impl_->last_error = "Blender Legacy GP stroke buffer allocation failed";
+    return false;
+  }
+
+  impl_->gpd->runtime.sbuffer_sflag = 0;
   impl_->stroke_style = style;
   impl_->pending_points.clear();
   impl_->stroke = nullptr;
@@ -2547,10 +2566,48 @@ bool Backend::begin_stroke(const StrokeStyle &style) {
 
 bool Backend::add_point(const StrokePoint &point) {
   if (!impl_->stroke_open) {
-    impl_->last_error = "stroke is not open"; return false;
+    impl_->last_error = "stroke is not open";
+    return false;
   }
+
+  impl_->gpd->runtime.sbuffer = ED_gpencil_sbuffer_ensure(
+      static_cast<tGPspoint *>(impl_->gpd->runtime.sbuffer),
+      &impl_->gpd->runtime.sbuffer_size,
+      &impl_->gpd->runtime.sbuffer_used,
+      false);
+  if (!impl_->gpd->runtime.sbuffer) {
+    impl_->last_error = "Blender Legacy GP stroke buffer allocation failed";
+    return false;
+  }
+
+  tGPspoint *buffer = static_cast<tGPspoint *>(impl_->gpd->runtime.sbuffer);
+  tGPspoint &dst = buffer[impl_->gpd->runtime.sbuffer_used++];
+  dst.m_xy[0] = point.x;
+  dst.m_xy[1] = point.y;
+  dst.pressure = point.pressure;
+  dst.strength = point.strength;
+  dst.time = point.time;
+  dst.uv_fac = 0.0f;
+  dst.uv_rot = 0.0f;
+  dst.rnd[0] = dst.rnd[1] = dst.rnd[2] = 0.0f;
+  dst.rnd_dirty = false;
+  dst.vert_color[0] = 1.0f;
+  dst.vert_color[1] = 1.0f;
+  dst.vert_color[2] = 1.0f;
+  dst.vert_color[3] = 1.0f;
+
+  // Kept only for the existing Android preview adapter. The authoritative
+  // input representation is now Blender's sbuffer above.
   impl_->pending_points.push_back(point);
   return true;
+}
+
+int Backend::stroke_buffer_count() const
+{
+  if (!impl_->gpd) {
+    return 0;
+  }
+  return impl_->gpd->runtime.sbuffer_used;
 }
 
 bool Backend::end_stroke() {
@@ -2558,18 +2615,23 @@ bool Backend::end_stroke() {
     impl_->last_error = "stroke is not open";
     return false;
   }
-  if (impl_->pending_points.empty()) {
+  if (impl_->gpd->runtime.sbuffer_used <= 0 ||
+      impl_->gpd->runtime.sbuffer == nullptr) {
     impl_->last_error = "stroke has no points";
     impl_->stroke_open = false;
     return false;
   }
 
-  const int point_count = static_cast<int>(impl_->pending_points.size());
+  const int point_count = impl_->gpd->runtime.sbuffer_used;
   const int material_index = impl_->stroke_style.material_index;
   const short thickness = static_cast<short>(
       impl_->stroke_style.thickness < 1.0f ? 1.0f : impl_->stroke_style.thickness);
 
-  /* Exact Blender Legacy GP stroke allocation path. */
+  /*
+   * Commit the real Blender Legacy GP paint buffer into the real
+   * bGPDstroke data structure. The temporary sbuffer is not retained as the
+   * document; Blender's frame stroke remains the authoritative drawing.
+   */
   impl_->stroke = BKE_gpencil_stroke_add(
       impl_->frame, material_index, point_count, thickness, false);
   if (!impl_->stroke) {
@@ -2578,19 +2640,32 @@ bool Backend::end_stroke() {
     return false;
   }
 
+  const tGPspoint *buffer = static_cast<const tGPspoint *>(impl_->gpd->runtime.sbuffer);
   for (int i = 0; i < point_count; ++i) {
-    const StrokePoint &src = impl_->pending_points[i];
+    const tGPspoint &src = buffer[i];
     bGPDspoint &dst = impl_->stroke->points[i];
-    dst.x = src.x;
-    dst.y = src.y;
-    dst.z = src.z;
+    dst.x = src.m_xy[0];
+    dst.y = src.m_xy[1];
+    dst.z = 0.0f;
     dst.pressure = src.pressure;
     dst.strength = src.strength;
     dst.time = src.time;
+    dst.uv_fac = src.uv_fac;
+    dst.uv_rot = src.uv_rot;
+    std::memcpy(dst.vert_color, src.vert_color, sizeof(dst.vert_color));
   }
 
   impl_->stroke_open = false;
   impl_->pending_points.clear();
+
+  // Clear Blender's temporary paint buffer through the same public editor
+  // utility used by the Legacy GP paint session.
+  impl_->gpd->runtime.sbuffer = ED_gpencil_sbuffer_ensure(
+      static_cast<tGPspoint *>(impl_->gpd->runtime.sbuffer),
+      &impl_->gpd->runtime.sbuffer_size,
+      &impl_->gpd->runtime.sbuffer_used,
+      true);
+
   if (impl_->stroke->flag & GP_STROKE_CYCLIC) {
     BKE_gpencil_stroke_fill_triangulate(impl_->stroke);
   }

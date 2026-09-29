@@ -248,25 +248,22 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
     DRW_gpencil_batch_cache_free(impl->gpd);
   }
 
-  BKE_gpencil_free_layers(&impl->gpd->layers);
-  MEM_SAFE_FREE(impl->gpd->mat);
-  BLI_listbase_clear(&impl->gpd->layers);
-  impl->gpd->mat = nullptr;
-
-  // Duplicate the snapshot with Blender's real Legacy GP copy path, then
-  // move the duplicated containers into the live Android-owned bGPdata.
+  // Duplicate first so an allocation failure leaves the live document intact.
   bGPdata *restored = BKE_gpencil_data_duplicate(nullptr, snapshot->data, true);
   if (!restored) {
     return false;
   }
   std::memset(&restored->runtime, 0, sizeof(restored->runtime));
 
-  history_copy_settings(snapshot->data, impl->gpd);
   BKE_gpencil_free_layers(&impl->gpd->layers);
   MEM_SAFE_FREE(impl->gpd->mat);
+  BLI_listbase_clear(&impl->gpd->layers);
+  impl->gpd->mat = nullptr;
+
+  history_copy_settings(snapshot->data, impl->gpd);
   impl->gpd->layers = restored->layers;
   impl->gpd->mat = restored->mat;
-  restored->layers = {};
+  BLI_listbase_clear(&restored->layers);
   restored->mat = nullptr;
   MEM_freeN(restored);
   BKE_gpencil_stats_update(impl->gpd);

@@ -1057,6 +1057,24 @@ int main() {
   std::fprintf(stderr,
                "[MODIFIER-BULK] real Blender Legacy GP Weight Angle -> Weight Proximity -> Hook callbacks passed\\n");
 
+  std::fprintf(stderr, "[GENERATOR] real Blender 3.6.23 Legacy GP Build algorithm closure\\n");
+  if (!backend.begin_stroke({0, 6.0f}) ||
+      !backend.add_point({180.0f, 80.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||
+      !backend.add_point({184.0f, 82.0f, 0.0f, 1.0f, 1.0f, 0.1f}) ||
+      !backend.add_point({188.0f, 84.0f, 0.0f, 1.0f, 1.0f, 0.2f}) ||
+      !backend.add_point({192.0f, 86.0f, 0.0f, 1.0f, 1.0f, 0.3f}) ||
+      !backend.add_point({196.0f, 88.0f, 0.0f, 1.0f, 1.0f, 0.4f}) ||
+      !backend.end_stroke()) {
+    std::fprintf(stderr, "Build generator setup failed: %s\\n", backend.last_error()); return 92;
+  }
+  const int build_before = backend.point_count();
+  if (build_before != 5 ||
+      !backend.apply_blender_generator(eGpencilModifierType_Build, 0.5f, 1) ||
+      backend.point_count() >= build_before || backend.point_count() <= 0 || !backend.render()) {
+    std::fprintf(stderr, "real Blender Build generator failed: %s\\n", backend.last_error()); return 93;
+  }
+  std::fprintf(stderr, "[GENERATOR] real Blender Legacy GP Build deterministic closure passed\\n");
+
   std::fprintf(stderr,
                "[MODIFIER-STACK] Smooth -> Thickness -> Subdivide real Blender callbacks passed\\n");
 

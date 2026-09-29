@@ -244,3 +244,12 @@ Source-traced against pinned Blender 3.6.23 Legacy GP modifier implementations.
 - Native conformance checks real deform-group weights and Hook geometry movement, followed by Blender GP render/cache validation.
 
 These are not reimplemented Project Grease deformation algorithms. The adapter supplies only the minimum Blender-owned Object/deform-group context required by the upstream 3.6.23 callbacks.
+
+
+### Generator closure — Legacy GP Build — 2026-09-30
+
+Run #415 for commit `7bb2130e238ef86cd3984585925da30545307fc3` completed successfully through APK verification and artifact upload.
+
+The generator sequence started with **Build**. Blender 3.6.23's desktop `generateStrokes()` requires Depsgraph/Scene evaluation, which Project Grease intentionally does not port. The focused implementation isolates Blender's deterministic `build_concurrent()`, `reduce_stroke_points()`, and `fade_stroke_points()` algorithms over the real `bGPdata/bGPDframe`, while retaining Blender's real `BuildGpencilModifierData`. The Android adapter supplies only deterministic percentage/concurrent context.
+
+The conformance test creates a real GP stroke, configures a real Blender Legacy GP Build modifier, runs the pinned 3.6.23 algorithm closure, verifies point reduction, and renders the resulting GP data.

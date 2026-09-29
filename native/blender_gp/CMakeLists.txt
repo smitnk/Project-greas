@@ -40,6 +40,7 @@ file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
 set(PROJECT_GREASE_GP_ENGINE_SOURCES
   project_grease_gp_backend.cpp
   project_grease_gp_engine.cpp
+  project_grease_legacy_build.cpp
   ${PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES}
   ${PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES}
 )

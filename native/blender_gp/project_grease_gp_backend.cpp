@@ -2,6 +2,8 @@
 #include "project_grease_legacy_fill.h"
 #include "project_grease_legacy_primitive.h"
 
+extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, BuildGpencilModifierData *mmd, float factor);
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -3384,6 +3386,38 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
   return true;
 }
 
+
+bool Backend::apply_blender_generator(int modifier_type, float factor, int iterations)
+{
+  if (!impl_->frame || !impl_->layer || !impl_->gpd) {
+    impl_->last_error = "invalid Legacy GP generator target"; return false;
+  }
+  if (modifier_type != eGpencilModifierType_Build) {
+    impl_->last_error = "generator is not yet in focused deterministic closure"; return false;
+  }
+  project_grease_modifier_system_init();
+  GpencilModifierData *md = BKE_gpencil_modifier_new(static_cast<GpencilModifierType>(modifier_type));
+  if (!md) { impl_->last_error = "Blender Legacy GP Build modifier creation failed"; return false; }
+  BuildGpencilModifierData *build = reinterpret_cast<BuildGpencilModifierData *>(md);
+  build->mode = GP_BUILD_MODE_CONCURRENT;
+  build->transition = GP_BUILD_TRANSITION_GROW;
+  build->time_alignment = GP_BUILD_TIMEALIGN_START;
+  build->time_mode = GP_BUILD_TIMEMODE_PERCENTAGE;
+  build->percentage_fac = std::clamp(factor, 0.0f, 1.0f);
+  build->fade_fac = 0.0f;
+  build->fade_thickness_strength = 0.0f;
+  build->fade_opacity_strength = 0.0f;
+  build->flag &= ~(GP_BUILD_USE_FADING | GP_BUILD_RESTRICT_TIME);
+  (void)iterations;
+  const bool ok = project_grease_legacy_build_apply(impl_->gpd, impl_->frame, build, build->percentage_fac);
+  BKE_gpencil_modifier_free(md);
+  if (!ok) { impl_->last_error = "Blender Legacy GP Build deterministic algorithm failed"; return false; }
+  impl_->stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.last);
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
 
 bool Backend::apply_blender_modifier_stack(int index,
                                            const int *modifier_types,

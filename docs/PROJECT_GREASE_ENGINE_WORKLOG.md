@@ -211,3 +211,11 @@ CI verification branches were created only to trigger/inspect the Android build 
 - This was a local integration error introduced while adding real Legacy GP Length configuration, not a Blender API/dependency failure.
 - Commit 874550e5e8c36880f34dc5c5166076b53e9a0d1d removes the duplicate case. The current modifier-stack switch has one Smooth, one Simplify, one Length, one Thick, one Subdiv case, then default.
 - Run #407 is validating this correction; #408 is the newer Length conformance validation.
+
+
+### Next real Legacy modifier expansion — Opacity and Color
+- Pinned Blender 3.6.23 `MOD_gpencil_legacy_opacity.c` uses the real `OpacityGpencilModifierData` callback to modify stroke strength/fill opacity/hardness. Its depsgraph parameter is unused for the focused deform path.
+- Pinned `MOD_gpencil_legacy_color.c` uses real HSV conversion on Legacy GP vertex colors, with material-style fallback and optional curve weighting.
+- Commit 1b9c2bf356bedf1d80cdc6f40d201abb991b2d9c configures Blender-owned Opacity and Color modifier data in both single and stack execution paths; commit ceb804eea12e92263a635ff4fa545aefc0e0c7ff wires the single-modifier path explicitly.
+- Commit 59fd1a8db475f87d1b2946ea4c22d7c58e3fa520 adds native conformance tests for real Opacity strength modification and real Color vertex-color modification.
+- These are source-derived Blender callbacks; no custom Project Grease opacity/color algorithm is substituted.

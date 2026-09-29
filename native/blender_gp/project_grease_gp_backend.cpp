@@ -1621,6 +1621,24 @@ bool Backend::end_stroke() {
   return true;
 }
 
+bool Backend::cancel_stroke()
+{
+  if (!impl_->stroke_open) {
+    impl_->pending_points.clear();
+    impl_->stroke = nullptr;
+    return true;
+  }
+
+  // The stroke is only allocated in end_stroke(). During input collection
+  // Android holds points in pending_points, so cancellation must discard the
+  // pending input without creating a Blender bGPDstroke.
+  impl_->pending_points.clear();
+  impl_->stroke = nullptr;
+  impl_->stroke_open = false;
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::initialize_external_gpu_context()
 {
   if (!impl_->initialized) {

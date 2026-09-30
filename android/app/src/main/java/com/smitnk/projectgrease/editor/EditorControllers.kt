@@ -207,7 +207,7 @@ class MaterialController {
     var activeMaterial=0; private set
     var thickness=8f; private set
     var opacity=1f; private set
-    var colorArgb:Int=0xFFFFFFFF.toInt(); private set
+    var colorArgb:Int=0xFF202124.toInt(); private set
     fun select(index:Int){activeMaterial=index.coerceAtLeast(0)}
     fun setColor(value:Int){colorArgb=value}
     fun setFillEnabled(value:Boolean){fillEnabled=value}
@@ -599,6 +599,7 @@ class EditorController {
                 materials.activeMaterial, materials.thickness
             )
             if (ok) {
+                selection.selectStroke(native.strokeCount() - 1)
                 history.markEdit(); document.markDirty(); render()
             }
         } else if (shapeTool == GreaseTool.POLYLINE) {
@@ -922,6 +923,7 @@ class EditorController {
         val index = native.hitTestStroke(x, y, radius)
         return index >= 0 && selection.selectStroke(index)
     }
+    fun eraserRadius():Float = brushes.size.coerceIn(8f, 96f)
     fun eraseAt(x:Float, y:Float, radius:Float = 24f):Boolean {
         val ok = native.eraseAt(x, y, radius)
         if (ok) {

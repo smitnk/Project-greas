@@ -16,6 +16,7 @@ on:
       - "native/blender_gp/**"
       - "tools/import_blender_gp.sh"
       - "tools/android_blender_gp_generate_dna.sh"
+      - "tools/android_blender_gp_native_link_probe.sh"
       - ".github/workflows/android-shell.yml"
 
 jobs:
@@ -48,7 +49,10 @@ jobs:
           fi
 
           SDKMANAGER=""
-          for candidate in             "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"             "${ANDROID_SDK_ROOT}/cmdline-tools/bin/sdkmanager"             "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager"; do
+          for candidate in \
+            "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT}/cmdline-tools/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager"; do
             if [ -n "$candidate" ] && [ -x "$candidate" ]; then
               SDKMANAGER="$candidate"
               break
@@ -73,9 +77,6 @@ jobs:
             sdkmanager_status=${PIPESTATUS[1]}
             set -e
 
-            # With pipefail enabled, the helper `yes` normally exits with
-            # SIGPIPE after sdkmanager finishes consuming license input.
-            # The sdkmanager status is the result that matters.
             if [ "$sdkmanager_status" -eq 0 ] &&
                [ -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties" ]; then
               echo "NDK 27.0.12077973 installed and verified."
@@ -100,6 +101,12 @@ jobs:
       - name: Build Android GP application
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
+
+      - name: Verify Android GP native link closure
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
+          ANDROID_API: "26"
+        run: bash tools/android_blender_gp_native_link_probe.sh
 
       - name: Verify APK
         run: |

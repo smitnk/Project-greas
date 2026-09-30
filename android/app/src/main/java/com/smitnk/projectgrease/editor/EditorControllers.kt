@@ -628,9 +628,10 @@ class EditorController {
         }
         val params = shapeParameters()
         val shapeTool = pendingShapeTool
-        // Preserve the captured polyline points before clearing the preview state.
-        // Previously pendingShapePoints was cleared before the POLYLINE branch read it,
-        // making every polyline finish with zero points.
+        // Preserve all final shape geometry before clearing the modal preview state.
+        // This is also the fallback geometry if the native primitive bridge rejects
+        // the modal parameters.
+        val finalShapePoints = generatedShapePoints()
         val polylinePoints = pendingShapePoints.toList()
         GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
         pendingShapePoints.clear()
@@ -654,7 +655,7 @@ class EditorController {
             // the primitive bridge rejects a modal parameter. This fallback still
             // commits a real Legacy GP stroke, not a UI-only path.
             if (!created) {
-                val preview = generatedShapePoints()
+                val preview = finalShapePoints
                 if (preview.size >= 2) {
                     val packed = FloatArray(preview.size * 2)
                     preview.forEachIndexed { i, point ->

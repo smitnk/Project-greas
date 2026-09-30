@@ -32,6 +32,8 @@ import com.smitnk.projectgrease.editor.FeatureId
 import com.smitnk.projectgrease.editor.FeatureRegistry
 import com.smitnk.projectgrease.editor.FeatureState
 import com.smitnk.projectgrease.editor.GreaseTool
+import com.smitnk.projectgrease.editor.GreaseMode
+import com.smitnk.projectgrease.editor.BrushPreset
 
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
@@ -244,6 +246,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
             }
         }
+        ModeBrushBar(controller,::redraw)
         Row(Modifier.fillMaxWidth().weight(1f)){
             if(state.showTools)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
@@ -267,17 +270,57 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
-@Composable private fun ToolRail(controller:EditorController,onState:()->Unit,onTools:()->Unit){
-    Column(Modifier.width(78.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
-        tools.forEach{entry->val c=FeatureRegistry.capability(entry.feature);val enabled=c.state!=FeatureState.NOT_IMPLEMENTED;val selected=controller.tools.activeTool==entry.tool
-            Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(entry.tool);onState()}.padding(5.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                Surface(shape=RoundedCornerShape(22.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent){Icon(entry.icon,entry.label,Modifier.padding(9.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)}
-                Text(entry.label,fontSize=10.sp)
+@Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
+    Surface(tonalElevation=2.dp){
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Mode",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
+            GreaseMode.entries.forEach{mode->
+                val selected=controller.mode==mode
+                val supported=selected || when(mode){
+                    GreaseMode.DRAW,GreaseMode.EDIT->true
+                    GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state==FeatureState.AVAILABLE
+                    GreaseMode.VERTEX_PAINT,GreaseMode.WEIGHT_PAINT->false
+                }
+                FilterChip(selected=selected,enabled=supported,onClick={if(controller.setMode(mode))redraw()},label={Text(mode.name.replace('_',' '),fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
             }
-        };IconButton(onClick=onTools){Icon(Icons.Default.Apps,"Tools")}
+            Spacer(Modifier.width(7.dp))
+            Text("Brush",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
+            BrushPreset.entries.forEach{preset->
+                FilterChip(selected=controller.brushes.preset==preset,onClick={controller.brushes.select(preset);controller.pushMaterialColor();redraw()},label={Text(preset.name,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+            }
+            Text("Size " + controller.brushes.size.toInt(),fontSize=10.sp,modifier=Modifier.padding(horizontal=4.dp))
+            Slider(value=controller.brushes.size,onValueChange={controller.brushes.setSize(it);redraw()},valueRange=.5f..100f,modifier=Modifier.width(115.dp))
+            Text("Strength " + (controller.brushes.strength*100).toInt() + "%",fontSize=10.sp,modifier=Modifier.padding(horizontal=4.dp))
+            Slider(value=controller.brushes.strength,onValueChange={controller.brushes.setStrength(it);controller.pushMaterialColor();redraw()},valueRange=0f..1f,modifier=Modifier.width(100.dp))
+        }
     }
 }
 
+@Composable private fun ToolRail(controller:EditorController,onState:()->Unit,onTools:()->Unit){
+    val groups=listOf(
+        "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.PAN),
+        "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
+        "SCULPT" to listOf(GreaseTool.SCULPT)
+    )
+    Column(Modifier.width(86.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
+        groups.forEach{(title,group)->
+            Text(title,fontSize=9.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=6.dp,bottom=2.dp))
+            group.forEach{tool->
+                val entry=tools.first{it.tool==tool}
+                val capability=FeatureRegistry.capability(entry.feature)
+                val enabled=capability.state!=FeatureState.NOT_IMPLEMENTED
+                val selected=controller.tools.activeTool==tool
+                Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(tool);onState()}.padding(horizontal=4.dp,vertical=2.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                    Surface(shape=RoundedCornerShape(18.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent){
+                        Icon(entry.icon,entry.label,Modifier.padding(8.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)
+                    }
+                    Text(entry.label,fontSize=9.sp,maxLines=1)
+                }
+            }
+        }
+        IconButton(onClick=onTools){Icon(Icons.Default.Apps,"Tools")}
+    }
+}
 @Composable private fun Properties(controller:EditorController,redraw:()->Unit){
     var thickness by remember{mutableFloatStateOf(controller.materials.thickness)};var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     Column(Modifier.width(210.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(10.dp)){

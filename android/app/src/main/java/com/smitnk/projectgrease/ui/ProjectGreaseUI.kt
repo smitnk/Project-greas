@@ -472,7 +472,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @Composable private fun ToolsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){
         Text("Tools",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        tools.chunked(3).forEach { row ->
+        tools.filter { FeatureRegistry.capability(it.feature).state != FeatureState.NOT_IMPLEMENTED }.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 row.forEach { entry ->
                     val selected=controller.tools.activeTool==entry.tool

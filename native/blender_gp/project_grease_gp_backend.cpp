@@ -1330,45 +1330,49 @@ bool Backend::erase_at(float x, float y, float radius)
       }
     }
     else {
-      for (int i = 0; i + 1 < stroke->totpoints; ++i) {
-        bGPDspoint *pt0 = (i > 0) ? &stroke->points[i - 1] : nullptr;
-        bGPDspoint *pt1 = &stroke->points[i];
-        bGPDspoint *pt2 = &stroke->points[i + 1];
-
-        const float p0x = pt0 ? pt0->x : pt1->x;
-        const float p0y = pt0 ? pt0->y : pt1->y;
-
-        /*
-         * Blender's Legacy GP eraser first performs an edge-vs-circle
-         * collision test using the segment pt0 -> pt2.
-         */
-        const float edge_a[2] = {p0x, p0y};
-        const float edge_b[2] = {pt2->x, pt2->y};
-        const float center[2] = {x, y};
-        if (dist_squared_to_line_segment_v2(center, edge_a, edge_b) >=
-            radius * radius) {
-          continue;
-        }
-
-        const float inf1 =
-            project_grease_legacy_eraser_influence(x, y, radius, pt1->x, pt1->y);
-        const float inf2 =
-            project_grease_legacy_eraser_influence(x, y, radius, pt2->x, pt2->y);
-
-        if (inf1 > 0.0f) {
-          pt1->pressure = 0.0f;
-          pt1->flag |= GP_SPOINT_TAG;
-          removed = true;
-          stroke_removed = true;
-        }
-        if (inf2 > 0.0f) {
-          pt2->pressure = 0.0f;
-          pt2->flag |= GP_SPOINT_TAG;
+      /*
+       * Tag only points that are actually inside the eraser footprint.
+       * The previous adapter tested a two-point-expanded segment and then
+       * tagged both adjacent points, which removed too much of sparse strokes
+       * and produced the fragmented/cut appearance seen on-device.
+       * Android now densely samples the eraser path, so Legacy GP's tagged-point
+       * deletion can split the real bGPDstroke cleanly without over-deleting.
+       */
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        bGPDspoint &point = stroke->points[i];
+        const float influence =
+            project_grease_legacy_eraser_influence(x, y, radius, point.x, point.y);
+        if (influence > 0.0f) {
+          point.pressure = 0.0f;
+          point.flag |= GP_SPOINT_TAG;
           removed = true;
           stroke_removed = true;
         }
       }
-    }
+
+      /*
+       * If a sparse segment crosses the eraser circle without either endpoint
+       * landing inside it, tag only the closer endpoint. This preserves more
+       * of the stroke than tagging both sides while still making the crossing
+       * erasable.
+       */
+      for (int i = 0; i + 1 < stroke->totpoints; ++i) {
+        const bGPDspoint &a = stroke->points[i];
+        const bGPDspoint &b = stroke->points[i + 1];
+        const float edge_a[2] = {a.x, a.y};
+        const float edge_b[2] = {b.x, b.y};
+        const float center[2] = {x, y};
+        if (dist_squared_to_line_segment_v2(center, edge_a, edge_b) < radius * radius) {
+          const float da = (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y);
+          const float db = (b.x - x) * (b.x - x) + (b.y - y) * (b.y - y);
+          bGPDspoint &near = (da <= db) ? stroke->points[i] : stroke->points[i + 1];
+          near.pressure = 0.0f;
+          near.flag |= GP_SPOINT_TAG;
+          removed = true;
+          stroke_removed = true;
+        }
+      }
+    }}
 
     if (stroke_removed) {
       BKE_gpencil_stroke_delete_tagged_points(

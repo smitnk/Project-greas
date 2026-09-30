@@ -29,9 +29,6 @@ std::vector<Point> line(const Point& start, const Point& end, int edges)
   const int count = std::max(2, edges);
   std::vector<Point> points;
   points.reserve(count);
-
-  // Blender 3.6.23 gpencil_primitive_line:
-  // step = 1 / (tot_edges - 1), then interpolate start -> end.
   for (int i = 0; i < count; ++i) {
     const float t = static_cast<float>(i) / static_cast<float>(count - 1);
     points.push_back(lerp(start, end, t));
@@ -41,8 +38,6 @@ std::vector<Point> line(const Point& start, const Point& end, int edges)
 
 std::vector<Point> rectangle(const Point& start, const Point& end, int edges)
 {
-  // Blender's rectangle helper treats one edge as the four corners and,
-  // for higher edge counts, subdivides each of the four sides.
   const int side_edges = std::max(1, edges);
   const Point corners[5] = {
       start,
@@ -62,10 +57,9 @@ std::vector<Point> rectangle(const Point& start, const Point& end, int edges)
 
   const float step = 1.0f / static_cast<float>(side_edges);
   for (int side = 0; side < 4; ++side) {
-    float t = 0.0f;
     for (int k = 0; k < side_edges; ++k) {
+      const float t = static_cast<float>(k) * step;
       points.push_back(lerp(corners[side], corners[side + 1], t));
-      t += step;
     }
   }
   return points;
@@ -84,11 +78,10 @@ std::vector<Point> circle(const Point& start, const Point& end, int edges)
 
   std::vector<Point> points;
   points.reserve(count);
-  float angle = 0.0f;
   for (int i = 0; i < count; ++i) {
+    const float angle = static_cast<float>(i) * step;
     points.push_back({center.x + std::cos(angle) * rx,
                       center.y + std::sin(angle) * ry});
-    angle += step;
   }
   return points;
 }
@@ -102,8 +95,6 @@ std::vector<Point> arc(const Point& start, const Point& end, int edges, bool fli
       (start.y + end.y) * 0.5f,
   };
 
-  // Blender 3.6.23 gpencil_primitive_update_cps initializes the Arc control
-  // line by rotating end/start around their midpoint by +/- 90 degrees.
   const float rotation = flip ? kHalfPi : -kHalfPi;
   const Point cp1 = rotate_around(flip ? start : end, midpoint, rotation);
   const Point corner{
@@ -113,24 +104,23 @@ std::vector<Point> arc(const Point& start, const Point& end, int edges, bool fli
 
   std::vector<Point> points;
   points.reserve(count);
-  float angle = 0.0f;
   for (int i = 0; i < count; ++i) {
+    const float angle = static_cast<float>(i) * step;
     const float s = std::sin(angle);
     const float c = std::cos(angle);
     points.push_back({
         corner.x + (end.x - corner.x) * s + (start.x - corner.x) * c,
         corner.y + (end.y - corner.y) * s + (start.y - corner.y) * c,
     });
-    angle += step;
   }
   return points;
 }
 
 std::vector<Point> bezier(const Point& start,
-                                  const Point& control1,
-                                  const Point& control2,
-                                  const Point& end,
-                                  int edges)
+                          const Point& control1,
+                          const Point& control2,
+                          const Point& end,
+                          int edges)
 {
   const int count = std::max(2, edges);
   std::vector<Point> points;

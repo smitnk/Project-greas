@@ -181,7 +181,7 @@ private class ProjectGreaseDrawingSurfaceView(
                             }
                         }
                     }
-                    GreaseTool.PAN -> {
+                    com.smitnk.projectgrease.editor.GreaseTool.PAN -> {
                         panOpen = true
                         lastPanX = event.x
                         lastPanY = event.y

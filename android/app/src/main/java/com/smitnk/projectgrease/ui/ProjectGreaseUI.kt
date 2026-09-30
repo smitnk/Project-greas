@@ -565,6 +565,13 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},valueRange=.5f..100f)
             Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
             Slider(opacity,{opacity=it;controller.materials.setOpacity(it);redraw()},valueRange=0f..1f)
+            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+                Text("Fill closed strokes",Modifier.weight(1f))
+                Switch(
+                    checked=controller.materials.fillEnabled,
+                    onCheckedChange={controller.setMaterialFillEnabled(it);redraw()}
+                )
+            }
             Text("Active material: "+controller.materials.activeMaterial,Modifier.padding(horizontal=20.dp))
             TextButton(onClick={controller.selectMaterial(controller.materials.activeMaterial+1);redraw()},Modifier.padding(horizontal=20.dp)){Text("Next brush/material")}
         }

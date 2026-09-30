@@ -69,6 +69,9 @@ data class GreaseUiState(
 
 @Composable
 fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable BoxScope.()->Unit){
+    val context=LocalContext.current
+    val projectStore=remember{ProjectStore(context)}
+    var projects by remember{mutableStateOf(projectStore.load())}
     var screen by remember{mutableStateOf(Screen.HOME)}
     var name by remember{mutableStateOf("Project Grease")}
     var preset by remember{mutableStateOf(presets[1])}
@@ -84,11 +87,16 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     ProjectGreaseTheme(mode=themeMode){
         when(screen){
-            Screen.HOME->Home({screen=Screen.NEW},{screen=Screen.EDITOR},{screen=Screen.SETTINGS})
+            Screen.HOME->Home(projects,{record->controller.document.projectName=record.name;controller.document.canvasWidth=record.width;controller.document.canvasHeight=record.height;controller.animation.setFps(record.fps);screen=Screen.EDITOR},{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},controller,{screen=Screen.HOME}){
                 controller.document.projectName=name.ifBlank{"Project Grease"}
+                controller.document.canvasWidth=preset.width
+                controller.document.canvasHeight=preset.height
                 controller.animation.setFps(preset.fps)
                 controller.createFrame(1)
+                val record=ProjectRecord(controller.document.projectName,preset.width,preset.height,preset.fps,System.currentTimeMillis())
+                projectStore.upsert(record)
+                projects=projectStore.load()
                 state=state.copy(projectName=controller.document.projectName)
                 screen=Screen.EDITOR
             }
@@ -122,21 +130,57 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
-@Composable private fun Home(onNew:()->Unit,onOpen:()->Unit,onSettings:()->Unit){
-    Scaffold(topBar={
-        Row(Modifier.fillMaxWidth().height(64.dp),verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick=onSettings){Icon(Icons.Default.Menu,"Menu")};Spacer(Modifier.weight(1f))
-            Text("PROJECT GREASE",fontWeight=FontWeight.Bold,letterSpacing=1.sp);Spacer(Modifier.weight(1f))
-            IconButton(onClick={}){Icon(Icons.Default.Search,"Search")}
+@Composable private fun Home(
+    projects:List<ProjectRecord>,
+    onOpen:(ProjectRecord)->Unit,
+    onNew:()->Unit,
+    onSettings:()->Unit
+){
+    Scaffold(
+        topBar={
+            Row(Modifier.fillMaxWidth().height(64.dp),verticalAlignment=Alignment.CenterVertically){
+                IconButton(onClick=onSettings){Icon(Icons.Default.Menu,"Menu")}
+                Spacer(Modifier.weight(1f))
+                Text("PROJECT GREASE",fontWeight=FontWeight.Bold,letterSpacing=1.sp)
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick={}){Icon(Icons.Default.Search,"Search")}
+            }
+        },
+        floatingActionButton={
+            FloatingActionButton(onClick=onNew,containerColor=Accent){Icon(Icons.Default.Add,"New")}
         }
-    },floatingActionButton={FloatingActionButton(onClick=onNew,containerColor=Accent){Icon(Icons.Default.Add,"New")}}){pad->
-        Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)){
-            Text("Projects",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(16.dp))
-            listOf("Sketch","Animation","Character","Storyboard","Practice").forEach{item->
-                Card(Modifier.fillMaxWidth().padding(vertical=5.dp).clickable(onClick=onOpen)){
-                    Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
-                        Box(Modifier.size(72.dp).background(Color(0xFFE8E3E5),RoundedCornerShape(8.dp)));Spacer(Modifier.width(14.dp))
-                        Column{Text(item,fontWeight=FontWeight.Bold);Text("Project Grease • 12 FPS",color=MaterialTheme.colorScheme.onSurfaceVariant)}
+    ){pad->
+        Column(
+            Modifier.fillMaxSize().padding(pad).padding(horizontal=16.dp,vertical=12.dp)
+                .verticalScroll(rememberScrollState())
+        ){
+            Text("Projects",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            if(projects.isEmpty()){
+                Text("No projects yet",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Text("Create a project to start drawing.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                projects.forEach{item->
+                    Card(
+                        Modifier.fillMaxWidth().padding(vertical=5.dp).clickable{onOpen(item)}
+                    ){
+                        Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
+                            Box(
+                                Modifier.size(72.dp).background(
+                                    Color(0xFFE8E3E5),RoundedCornerShape(8.dp)
+                                )
+                            )
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)){
+                                Text(item.name,fontWeight=FontWeight.Bold)
+                                Text(
+                                    "${item.width} × ${item.height} • ${item.fps} FPS",
+                                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(Icons.Default.ChevronRight,"Open")
+                        }
                     }
                 }
             }

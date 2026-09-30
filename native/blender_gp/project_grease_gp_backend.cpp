@@ -2265,6 +2265,30 @@ bool Backend::stroke_center(int index, float *x, float *y) const
 
 
 bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
+  if (impl_->gpd && (impl_->gpd->flag & GP_DATA_STROKE_MULTIEDIT) && impl_->layer) {
+    bool changed = false;
+    for (bGPDframe *edit_frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+         edit_frame; edit_frame = edit_frame->next) {
+      if (!(edit_frame->flag & GP_FRAME_SELECT)) continue;
+      int edit_index = 0;
+      for (bGPDstroke *edit_stroke = static_cast<bGPDstroke *>(edit_frame->strokes.first);
+           edit_stroke; edit_stroke = edit_stroke->next, ++edit_index) {
+        if (edit_index != index || selected_point_count(edit_stroke) == 0) continue;
+        changed = true;
+        for (int point_index=0; point_index<edit_stroke->totpoints; ++point_index) {
+          bGPDspoint &point=edit_stroke->points[point_index];
+          if (point.flag & GP_SPOINT_SELECT) { point.x+=dx; point.y+=dy; point.z+=dz; }
+        }
+      }
+    }
+    if (!changed) { impl_->last_error = "no selected stroke in multiframe edit set"; return false; }
+    impl_->stroke = impl_->frame ? static_cast<bGPDstroke *>(impl_->frame->strokes.first) : nullptr;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
   if (!impl_->frame || index < 0) {
     impl_->last_error = "invalid stroke translation";
     return false;
@@ -2361,6 +2385,33 @@ bool Backend::rotate_stroke(int index, float radians)
 
 bool Backend::rotate_stroke_about(int index, float radians, float center_x, float center_y)
 {
+  if (impl_->gpd && (impl_->gpd->flag & GP_DATA_STROKE_MULTIEDIT) && impl_->layer) {
+    bool changed = false;
+    for (bGPDframe *edit_frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+         edit_frame; edit_frame = edit_frame->next) {
+      if (!(edit_frame->flag & GP_FRAME_SELECT)) continue;
+      int edit_index = 0;
+      for (bGPDstroke *edit_stroke = static_cast<bGPDstroke *>(edit_frame->strokes.first);
+           edit_stroke; edit_stroke = edit_stroke->next, ++edit_index) {
+        if (edit_index != index || selected_point_count(edit_stroke) == 0) continue;
+        changed = true;
+        const float c=std::cos(radians), s=std::sin(radians);
+        for (int point_index=0; point_index<edit_stroke->totpoints; ++point_index) {
+          bGPDspoint &p=edit_stroke->points[point_index];
+          if (!(p.flag & GP_SPOINT_SELECT)) continue;
+          const float x=p.x-center_x, y=p.y-center_y;
+          p.x=center_x+x*c-y*s; p.y=center_y+x*s+y*c;
+        }
+      }
+    }
+    if (!changed) { impl_->last_error = "no selected stroke in multiframe edit set"; return false; }
+    impl_->stroke = impl_->frame ? static_cast<bGPDstroke *>(impl_->frame->strokes.first) : nullptr;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
   if (!impl_->frame || index < 0 || !std::isfinite(radians) ||
       !std::isfinite(center_x) || !std::isfinite(center_y)) {
     impl_->last_error = "invalid stroke rotation";
@@ -2421,6 +2472,31 @@ bool Backend::scale_stroke(int index, float scale_x, float scale_y)
 bool Backend::scale_stroke_about(
     int index, float scale_x, float scale_y, float center_x, float center_y)
 {
+  if (impl_->gpd && (impl_->gpd->flag & GP_DATA_STROKE_MULTIEDIT) && impl_->layer) {
+    bool changed = false;
+    for (bGPDframe *edit_frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+         edit_frame; edit_frame = edit_frame->next) {
+      if (!(edit_frame->flag & GP_FRAME_SELECT)) continue;
+      int edit_index = 0;
+      for (bGPDstroke *edit_stroke = static_cast<bGPDstroke *>(edit_frame->strokes.first);
+           edit_stroke; edit_stroke = edit_stroke->next, ++edit_index) {
+        if (edit_index != index || selected_point_count(edit_stroke) == 0) continue;
+        changed = true;
+        for (int point_index=0; point_index<edit_stroke->totpoints; ++point_index) {
+          bGPDspoint &p=edit_stroke->points[point_index];
+          if (!(p.flag & GP_SPOINT_SELECT)) continue;
+          p.x=center_x+(p.x-center_x)*scale_x; p.y=center_y+(p.y-center_y)*scale_y;
+        }
+      }
+    }
+    if (!changed) { impl_->last_error = "no selected stroke in multiframe edit set"; return false; }
+    impl_->stroke = impl_->frame ? static_cast<bGPDstroke *>(impl_->frame->strokes.first) : nullptr;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
   if (!impl_->frame || index < 0 || !std::isfinite(scale_x) || !std::isfinite(scale_y) ||
       scale_x == 0.0f || scale_y == 0.0f ||
       !std::isfinite(center_x) || !std::isfinite(center_y)) {
@@ -2478,6 +2554,32 @@ bool Backend::mirror_stroke(int index, bool mirror_x, bool mirror_y)
 bool Backend::mirror_stroke_about(
     int index, bool mirror_x, bool mirror_y, float center_x, float center_y)
 {
+  if (impl_->gpd && (impl_->gpd->flag & GP_DATA_STROKE_MULTIEDIT) && impl_->layer) {
+    bool changed = false;
+    for (bGPDframe *edit_frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+         edit_frame; edit_frame = edit_frame->next) {
+      if (!(edit_frame->flag & GP_FRAME_SELECT)) continue;
+      int edit_index = 0;
+      for (bGPDstroke *edit_stroke = static_cast<bGPDstroke *>(edit_frame->strokes.first);
+           edit_stroke; edit_stroke = edit_stroke->next, ++edit_index) {
+        if (edit_index != index || selected_point_count(edit_stroke) == 0) continue;
+        changed = true;
+        for (int point_index=0; point_index<edit_stroke->totpoints; ++point_index) {
+          bGPDspoint &p=edit_stroke->points[point_index];
+          if (!(p.flag & GP_SPOINT_SELECT)) continue;
+          if (mirror_x) p.x=2.0f*center_x-p.x;
+          if (mirror_y) p.y=2.0f*center_y-p.y;
+        }
+      }
+    }
+    if (!changed) { impl_->last_error = "no selected stroke in multiframe edit set"; return false; }
+    impl_->stroke = impl_->frame ? static_cast<bGPDstroke *>(impl_->frame->strokes.first) : nullptr;
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+    impl_->last_error.clear();
+    return true;
+  }
+
   if (!impl_->frame || index < 0 || (!mirror_x && !mirror_y) ||
       !std::isfinite(center_x) || !std::isfinite(center_y)) {
     impl_->last_error = "invalid stroke mirror";

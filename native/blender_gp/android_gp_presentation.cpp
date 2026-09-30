@@ -258,7 +258,7 @@ extern "C" int project_grease_android_present_pending_stroke(const project_greas
   else for(int i=0;i+1<count;i++){bGPDspoint a={},b={};a.x=points[i].x;a.y=points[i].y;a.pressure=std::max(points[i].pressure,0.01f);b.x=points[i+1].x;b.y=points[i+1].y;b.pressure=std::max(points[i+1].pressure,0.01f);append_segment(v,a,b,thickness*0.5f*(a.pressure+b.pressure),w,h,1.0f);}
   float c[4]={1,1,1,1};draw_vertices(v,c);return glGetError()==GL_NO_ERROR?1:0;
 }
-extern "C" void project_grease_android_present_set_canvas_size(int width,int height){g_canvas_width=std::max(1,width);g_canvas_height=std::max(1,height);}\nextern "C" void project_grease_android_present_set_canvas_size(int width,int height){
+extern "C" void project_grease_android_present_set_canvas_size(int width,int height){
   g_canvas_width=std::max(1,width);
   g_canvas_height=std::max(1,height);
 }

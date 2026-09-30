@@ -99,9 +99,10 @@ static bool gp_material_ensure_slot(bGPdata *gpd, int index)
       return false;
     }
     ma->gp_style = style;
-    style->stroke_rgba[0] = 1.0f;
-    style->stroke_rgba[1] = 1.0f;
-    style->stroke_rgba[2] = 1.0f;
+    // Default outline is dark so it remains visible on the light canvas.
+    style->stroke_rgba[0] = 0.05f;
+    style->stroke_rgba[1] = 0.05f;
+    style->stroke_rgba[2] = 0.05f;
     style->stroke_rgba[3] = 1.0f;
     style->fill_rgba[0] = 1.0f;
     style->fill_rgba[1] = 1.0f;

@@ -116,7 +116,7 @@ private class ProjectGreaseDrawingSurfaceView(
                         controller.eraseAt(start.first, start.second)
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
-                        controller.fillAt(start.first, start.second)
+                        controller.fillAt(event.x, event.y)
                         controller.render()
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {

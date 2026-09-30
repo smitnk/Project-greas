@@ -1,5 +1,7 @@
 package com.smitnk.projectgrease.editor
 
+import kotlin.math.pow
+
 import com.smitnk.projectgrease.nativebridge.GPNative
 
 class NativeEditorBridge {

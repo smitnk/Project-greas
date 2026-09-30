@@ -156,6 +156,8 @@ class AnimationController(private val native: NativeEditorBridge) {
         if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
         currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
     }
+    fun frameNumbers(): IntArray = native.frameNumbers()
+
     fun interpolateAt(frame:Int):Boolean {
         if (native.handle == 0L) return false
         val keys = native.frameNumbers().sorted()

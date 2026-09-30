@@ -573,3 +573,12 @@ int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 1;
   return handle->backend.frame_end();
 }
+int project_grease_gp_frame_numbers(const ProjectGreaseGPHandle *handle, int *out_frames, int capacity)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.frame_numbers(out_frames, capacity);
+}
+int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor)
+{
+  return ensure_ready(handle) && handle->backend.interpolate_frame(source_frame, target_frame, result_frame, factor) ? 1 : 0;
+}

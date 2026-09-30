@@ -20,12 +20,12 @@ int main() {
   if (!backend.initialize()) {
     std::fprintf(stderr, "initialize failed: %s\n", backend.last_error());
     return 1;
-  }  if (backend.material_fill_enabled(0)) {
+  }
+  if (!backend.create_document() ||
+  if (backend.material_fill_enabled(0)) {
     std::fprintf(stderr, "new Legacy GP material must not fill closed primitive strokes by default\\n");
     return 94;
   }
-
-  if (!backend.create_document() ||
       !backend.create_layer("Layer 1") ||
       !backend.create_frame(1) ||
       !backend.begin_stroke({0, 3.0f})) {

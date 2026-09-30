@@ -1,0 +1,29 @@
+Project Grease focused Android Legacy GP link closure notes.
+
+Purpose: verification bookkeeping only; does not add Blender runtime architecture.
+
+The Android link probe must include every object required by the focused boundary. Current verified missing symbols from run #591 are:
+- minmax_v3v3_v3
+- BKE_defvert_find_weight
+- interp_v3_v3v3
+- interp_v2_v2v2
+- interp_v4_v4v4
+- BKE_gpencil_stroke_update_geometry_from_editcurve
+- angle_normalized_v3v3
+- axis_angle_to_quat
+- quat_to_mat3
+- mul_qt_v3
+- mul_v3_m3v3
+- _DNA_internal_memcpy
+- BKE_defvert_ensure_index
+- _bli_array_reverse
+- BLI_heap_new
+- BLI_heap_insert
+- BLI_heap_pop_min
+- BLI_heap_free
+- angle_v3v3v3
+- ED_gpencil_sbuffer_ensure
+
+Required rule: map each symbol to the pinned Blender 3.6.23 source implementation and add only the minimum source object(s) to the probe and CMake closure. Do not implement substitutes unless source inspection proves the original code cannot be extracted safely.
+
+This note deliberately does not include full Blender targets, GHOST, scene/Main/ID, or GP3.

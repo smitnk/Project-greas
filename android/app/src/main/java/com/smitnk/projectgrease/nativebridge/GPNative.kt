@@ -94,6 +94,7 @@ object GPNative {
     external fun nativeGeneratePrimitivePreview(type: Int, x0: Float, y0: Float, x1: Float, y1: Float, startAngle: Float, endAngle: Float, segments: Int): FloatArray?
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
+    external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean
     external fun nativeClearSelection(handle: Long)
     external fun nativeApplyEditCommand(handle: Long, command: Int, args: FloatArray = floatArrayOf()): Boolean
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int

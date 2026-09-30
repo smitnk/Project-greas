@@ -53,6 +53,8 @@ class Backend {
   bool select_frame_or_hold(int frame_number);
   int frame_count() const;
   int frame_end() const;
+  int frame_numbers(int *out_frames, int capacity) const;
+  bool interpolate_frame(int source_frame, int target_frame, int result_frame, float factor);
   bool duplicate_frame(int source_frame, int target_frame);
   bool delete_frame(int frame_number);
   int stroke_count() const;

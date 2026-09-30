@@ -34,6 +34,7 @@ import com.smitnk.projectgrease.editor.FeatureState
 import com.smitnk.projectgrease.editor.GreaseTool
 import com.smitnk.projectgrease.editor.GreaseMode
 import com.smitnk.projectgrease.editor.BrushPreset
+import com.smitnk.projectgrease.editor.EraserMode
 
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)

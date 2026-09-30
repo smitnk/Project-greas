@@ -94,6 +94,9 @@ private class ProjectGreaseDrawingSurfaceView(
     private var panOpen = false
     private var lastPanX = 0f
     private var lastPanY = 0f
+    private var pinchOpen = false
+    private var pinchStartDistance = 0f
+    private var pinchStartZoom = 1f
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -196,11 +199,29 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                // Keep the original drawing/transform pointer. A second finger
-                // never steals the active gesture.
+                if (event.pointerCount >= 2) {
+                    if (strokeOpen) {
+                        controller.cancelStroke()
+                        strokeOpen = false
+                    }
+                    panOpen = false
+                    pinchOpen = true
+                    pinchStartDistance = pointerDistance(event).coerceAtLeast(1f)
+                    pinchStartZoom = controller.view.zoom
+                }
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (pinchOpen && event.pointerCount >= 2) {
+                    val distance = pointerDistance(event)
+                    if (pinchStartDistance > 0f && distance > 0f) {
+                        controller.view.setZoom(
+                            pinchStartZoom * (distance / pinchStartDistance)
+                        )
+                        controller.render()
+                    }
+                    return true
+                }
                 val pointerIndex = if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
                     event.findPointerIndex(activePointerId)
                 } else -1
@@ -220,6 +241,9 @@ private class ProjectGreaseDrawingSurfaceView(
                                 lastPanY = rawY
                                 controller.render()
                             }
+                        }
+                        controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
+                            if (controller.eraseAt(x, y)) controller.render()
                         }
                         moveOpen -> {
                             val dx = x - lastMoveX
@@ -282,6 +306,12 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
+                if (pinchOpen) {
+                    pinchOpen = false
+                    pinchStartDistance = 0f
+                    pinchStartZoom = controller.view.zoom
+                    return true
+                }
                 val pointerId = event.getPointerId(event.actionIndex)
                 if (pointerId == activePointerId) {
                     val up = canvasPoint(event.getX(event.actionIndex), event.getY(event.actionIndex))
@@ -345,6 +375,13 @@ private class ProjectGreaseDrawingSurfaceView(
         }
     }
 
+    private fun pointerDistance(event: MotionEvent): Float {
+        if (event.pointerCount < 2) return 0f
+        val dx = event.getX(0) - event.getX(1)
+        val dy = event.getY(0) - event.getY(1)
+        return hypot(dx, dy)
+    }
+
     private fun canvasPoint(rawX:Float,rawY:Float):Pair<Float,Float>{
         val cw=controller.document.canvasWidth.coerceAtLeast(1)
         val ch=controller.document.canvasHeight.coerceAtLeast(1)
@@ -360,6 +397,9 @@ private class ProjectGreaseDrawingSurfaceView(
         scaleOpen = false
         mirrorOpen = false
         panOpen = false
+        pinchOpen = false
+        pinchStartDistance = 0f
+        pinchStartZoom = controller.view.zoom
         scaleAccumulated = 1f
         lastScaleRadius = 0f
         activePointerId = MotionEvent.INVALID_POINTER_ID

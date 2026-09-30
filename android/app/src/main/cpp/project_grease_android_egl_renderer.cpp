@@ -18,6 +18,8 @@ using GPHandle = ProjectGreaseGPHandle *;
 
 extern "C" void project_grease_android_present_reset(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
+extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
+extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 
@@ -399,6 +401,33 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPreviewStrokeEglRen
         ProjectGreaseGPPoint{values[n], values[n + 1], 0.0f, values[n + 2], 1.0f, 0.0f});
   }
   renderer->preview_thickness = thickness;
+  return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetCanvasSize(
+    JNIEnv *, jobject, jlong handle, jint width, jint height)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || width <= 0 || height <= 0) return JNI_FALSE;
+  project_grease_android_present_set_canvas_size(width, height);
+  return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetViewTransform(
+    JNIEnv *, jobject, jlong handle, jfloat zoom, jfloat pan_x, jfloat pan_y)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  if (renderer->display == EGL_NO_DISPLAY || renderer->surface == EGL_NO_SURFACE) {
+    return JNI_FALSE;
+  }
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    return JNI_FALSE;
+  }
+  project_grease_android_present_set_view_transform(
+      std::max(0.1f, std::min(8.0f, zoom)), pan_x, pan_y);
   return JNI_TRUE;
 }
 

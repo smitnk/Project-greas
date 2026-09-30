@@ -817,6 +817,113 @@ int Backend::frame_count() const {
   return count;
 }
 
+int Backend::frame_numbers(int *out_frames, int capacity) const
+{
+  if (!impl_->layer || !out_frames || capacity <= 0) return 0;
+  int count = 0;
+  for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+       frame != nullptr && count < capacity;
+       frame = frame->next) {
+    out_frames[count++] = frame->framenum;
+  }
+  return count;
+}
+
+bool Backend::interpolate_frame(int source_frame, int target_frame, int result_frame, float factor)
+{
+  if (!impl_->layer || source_frame < 1 || target_frame < 1 || result_frame < 1 ||
+      result_frame == source_frame || result_frame == target_frame) {
+    impl_->last_error = "invalid interpolation frame parameters";
+    return false;
+  }
+  bGPDframe *source = BKE_gpencil_layer_frame_find(impl_->layer, source_frame);
+  bGPDframe *target = BKE_gpencil_layer_frame_find(impl_->layer, target_frame);
+  if (!source || !target) {
+    impl_->last_error = "interpolation source/target frame not found";
+    return false;
+  }
+  if (BKE_gpencil_layer_frame_find(impl_->layer, result_frame)) {
+    impl_->last_error = "interpolation result frame already exists";
+    return false;
+  }
+  if (factor < 0.0f || factor > 1.0f) {
+    impl_->last_error = "interpolation factor must be in range 0..1";
+    return false;
+  }
+
+  bGPDframe *result = BKE_gpencil_frame_duplicate(source, true);
+  if (!result) {
+    impl_->last_error = "BKE_gpencil_frame_duplicate() failed for interpolation";
+    return false;
+  }
+  result->framenum = result_frame;
+
+  bGPDstroke *rs = static_cast<bGPDstroke *>(result->strokes.first);
+  bGPDstroke *ts = static_cast<bGPDstroke *>(target->strokes.first);
+  for (; rs && ts; rs = rs->next, ts = ts->next) {
+    if (rs->totpoints != ts->totpoints) {
+      BKE_gpencil_free_strokes(result);
+      MEM_freeN(result);
+      impl_->last_error = "interpolation requires matching stroke point counts";
+      return false;
+    }
+    for (int i = 0; i < rs->totpoints; ++i) {
+      const bGPDspoint &a = rs->points[i];
+      const bGPDspoint &b = ts->points[i];
+      bGPDspoint &p = rs->points[i];
+      p.x = a.x + (b.x - a.x) * factor;
+      p.y = a.y + (b.y - a.y) * factor;
+      p.z = a.z + (b.z - a.z) * factor;
+      p.pressure = a.pressure + (b.pressure - a.pressure) * factor;
+      p.strength = a.strength + (b.strength - a.strength) * factor;
+      p.time = a.time + (b.time - a.time) * factor;
+      p.uv_fac = a.uv_fac + (b.uv_fac - a.uv_fac) * factor;
+      p.uv_rot = a.uv_rot + (b.uv_rot - a.uv_rot) * factor;
+    }
+  }
+  if (rs || ts) {
+    BKE_gpencil_free_strokes(result);
+    MEM_freeN(result);
+    impl_->last_error = "interpolation requires matching stroke counts";
+    return false;
+  }
+  BLI_addtail(&impl_->layer->frames, result);
+  BKE_gpencil_layer_frames_sort(impl_->layer, nullptr);
+  impl_->layer->actframe = result;
+  impl_->frame = result;
+  impl_->frame_created = true;
+  impl_->stroke = nullptr;
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::set_multiframe_editing(bool enabled)
+{
+  if (!impl_->gpd) {
+    impl_->last_error = "document is not created";
+    return false;
+  }
+  if (enabled) {
+    impl_->gpd->flag |= GP_DATA_STROKE_MULTIEDIT;
+    if (impl_->layer) {
+      for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first); frame; frame = frame->next) {
+        frame->flag |= GP_FRAME_SELECT;
+      }
+    }
+  }
+  else {
+    impl_->gpd->flag &= ~GP_DATA_STROKE_MULTIEDIT;
+    if (impl_->layer) {
+      for (bGPDframe *frame = static_cast<bGPDframe *>(impl_->layer->frames.first); frame; frame = frame->next) {
+        frame->flag &= ~GP_FRAME_SELECT;
+      }
+    }
+  }
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
 int Backend::frame_end() const
 {
   if (!impl_->layer) return 1;
@@ -3775,22 +3882,6 @@ bool Backend::fill_at_screen(const float* rgba,
   }
 
   impl_->last_error.clear();
-  return true;
-}
-
-bool Backend::set_multiframe_editing(bool enabled)
-{
-  if (!impl_->gpd) {
-    impl_->last_error = "document is not created";
-    return false;
-  }
-  if (enabled) {
-    impl_->gpd->flag |= GP_DATA_STROKE_MULTIEDIT;
-  }
-  else {
-    impl_->gpd->flag &= ~GP_DATA_STROKE_MULTIEDIT;
-  }
-  project_grease_gp_tag(impl_->gpd);
   return true;
 }
 

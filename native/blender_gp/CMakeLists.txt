@@ -93,12 +93,28 @@ set(PROJECT_GREASE_GP_ENGINE_SOURCES
   ${PROJECT_GREASE_GP_ENGINE_C_SOURCES}
 )
 
-# Explicit source-language guard for the Android focused closure.
-# Blender's Legacy GP curve/editor files are C in 3.6.23; forcing LANGUAGE C
-# prevents Android CMake/Ninja from feeding them to clang++ merely because the
-# surrounding target is C++.
+# Blender 3.6.23 Legacy GP files with .c extension must remain C sources.
+# Do not let a mixed C/C++ target select clang++ for them.
 set_source_files_properties(
   ${PROJECT_GREASE_GP_ENGINE_C_SOURCES}
+  PROPERTIES LANGUAGE C
+)
+set_source_files_properties(
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/dna_utils.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
   PROPERTIES LANGUAGE C
 )
 

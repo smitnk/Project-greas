@@ -357,6 +357,22 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     )
                 }
             }
+            if (controller.tools.activeTool == GreaseTool.ERASE) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+                    verticalAlignment=Alignment.CenterVertically
+                ) {
+                    Text("Eraser",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+                    EraserMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected=controller.eraserMode == mode,
+                            onClick={controller.setEraserMode(mode);redraw()},
+                            label={Text(mode.name,fontSize=10.sp)},
+                            modifier=Modifier.padding(end=3.dp)
+                        )
+                    }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=3.dp),
                 verticalAlignment=Alignment.CenterVertically

@@ -1401,6 +1401,67 @@ bool Backend::erase_at(float x, float y, float radius)
 }
 
 
+bool Backend::soft_erase_at(float x, float y, float radius, float strength)
+{
+  if (!impl_->frame || radius <= 0.0f || !std::isfinite(x) || !std::isfinite(y) ||
+      !std::isfinite(radius) || !std::isfinite(strength)) {
+    impl_->last_error = "invalid soft eraser";
+    return false;
+  }
+
+  const float amount = std::max(0.0f, std::min(strength, 1.0f));
+  bool changed = false;
+
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;) {
+    bGPDstroke *next = stroke->next;
+    bool stroke_removed = false;
+
+    if (!stroke->points || stroke->totpoints <= 0) {
+      stroke = next;
+      continue;
+    }
+
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      bGPDspoint &point = stroke->points[i];
+      const float influence =
+          project_grease_legacy_eraser_influence(x, y, radius, point.x, point.y);
+      if (influence <= 0.0f) {
+        continue;
+      }
+
+      const float before = std::max(0.0f, std::min(point.strength, 1.0f));
+      const float after = before * (1.0f - influence * amount);
+      point.strength = after;
+      changed = true;
+
+      if (after <= 0.01f) {
+        point.flag |= GP_SPOINT_TAG;
+        stroke_removed = true;
+      }
+    }
+
+    if (stroke_removed) {
+      BKE_gpencil_stroke_delete_tagged_points(
+          impl_->gpd, impl_->frame, stroke, next, GP_SPOINT_TAG, false, false, 0);
+    }
+
+    stroke = next;
+  }
+
+  if (!changed) {
+    impl_->last_error = "soft eraser did not hit a stroke";
+    return false;
+  }
+
+  impl_->stroke = nullptr;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
 void Backend::clear_selection()
 {
   if (!impl_->frame) {

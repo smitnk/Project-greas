@@ -69,6 +69,8 @@ done
 
 CXX_SOURCES=(
   "$ROOT/native/blender_gp/project_grease_gp_backend.cpp"
+  # Project Grease primitive implementation used by the bridge/backend.
+  "$ROOT/native/blender_gp/project_grease_legacy_primitive.cpp"
   # Exact Blender 3.6.23 Legacy GP BKE geometry closure.
   "$BLENDER/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
   "$ROOT/native/blender_gp/project_grease_gp_bridge.cpp"

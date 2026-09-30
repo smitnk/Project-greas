@@ -184,9 +184,17 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     }
     fun deleteFrame(frameNumber:Int):Boolean {
         if (native.handle == 0L) return false
+        if (native.frameCount() <= 1) return false
         if (!native.deleteFrame(frameNumber)) return false
-        currentFrame=native.frameEnd().let { if(it>0) minOf(currentFrame,it) else 1 }
-        frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
+        val remaining = native.frameNumbers().sorted()
+        val target = remaining.lastOrNull { it <= frameNumber }
+            ?: remaining.firstOrNull()
+            ?: 1
+        native.selectFrameOrHold(target)
+        currentFrame = target
+        frameCount = native.frameCount().coerceAtLeast(1)
+        timelineEnd = native.frameEnd().coerceAtLeast(1)
+        return true
     }
 
     fun setFps(value:Int){

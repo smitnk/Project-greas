@@ -529,12 +529,16 @@ class EditorController {
             64
         ) ?: return emptyList()
 
-        if (packed.size < 3 || packed.size % 3 != 0) return emptyList()
-        return (0 until packed.size / 3).map { i ->
+        // nativeGeneratePrimitivePreview returns packed XY pairs.
+        // The old controller incorrectly treated them as XYZ/pressure triples,
+        // so every circle/rectangle/line preview was rejected or decoded with
+        // corrupted coordinates.
+        if (packed.size < 4 || packed.size % 2 != 0) return emptyList()
+        return (0 until packed.size / 2).map { i ->
             PendingPoint(
-                packed[i * 3],
-                packed[i * 3 + 1],
-                packed[i * 3 + 2],
+                packed[i * 2],
+                packed[i * 2 + 1],
+                1f,
                 last.time
             )
         }

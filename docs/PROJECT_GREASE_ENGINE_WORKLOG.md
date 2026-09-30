@@ -253,3 +253,15 @@ Run #415 for commit `7bb2130e238ef86cd3984585925da30545307fc3` completed success
 The generator sequence started with **Build**. Blender 3.6.23's desktop `generateStrokes()` requires Depsgraph/Scene evaluation, which Project Grease intentionally does not port. The focused implementation isolates Blender's deterministic `build_concurrent()`, `reduce_stroke_points()`, and `fade_stroke_points()` algorithms over the real `bGPdata/bGPDframe`, while retaining Blender's real `BuildGpencilModifierData`. The Android adapter supplies only deterministic percentage/concurrent context.
 
 The conformance test creates a real GP stroke, configures a real Blender Legacy GP Build modifier, runs the pinned 3.6.23 algorithm closure, verifies point reduction, and renders the resulting GP data.
+
+### Primitive closure bundle — 2026-09-30
+
+Source reference: pinned Blender 3.6.23 `source/blender/editors/gpencil_legacy/gpencil_primitive.c`.
+
+- `8d48ae8` extends the focused primitive API with Bézier and polyline operations.
+- `b6a74c3` implements the deterministic point generation using the same cubic Bézier interpolation and segmented line construction used by the pinned Legacy GP primitive implementation.
+- `5f01e72` adds conformance coverage for Bézier and polyline generation and their `generate()` dispatch.
+
+Review result: the mathematical generation path is source-aligned, but this does **not** yet mean the full Blender primitive operator is complete. The desktop operator still owns modal context, brush/material state, depth projection, control points, frame transfer and auto-merge. Those dependencies must be selectively closed before the Android tool can be marked complete.
+
+Next bundled work remains the real operator lifecycle and fill/editor dependency closure, not another custom shape implementation.

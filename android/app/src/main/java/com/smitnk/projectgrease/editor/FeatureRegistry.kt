@@ -61,7 +61,6 @@ object FeatureRegistry {
     private val inProgress = setOf(
         // These paths are deliberately kept non-complete until their Blender 3.6.23
         // Legacy editor implementations are integrated instead of Project Grease geometry.
-        FeatureId.FILL, FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
         FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING, FeatureId.PRESSURE_CURVE,
         FeatureId.INSERT_FRAME,
         // Legacy GP interpolation currently supports only matched stroke topology;

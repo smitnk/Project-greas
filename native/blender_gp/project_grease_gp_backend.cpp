@@ -115,7 +115,7 @@ static bool gp_material_ensure_slot(bGPdata *gpd, int index)
     style->mix_factor = 0.5f;
     style->stroke_style = GP_MATERIAL_STROKE_STYLE_SOLID;
     style->fill_style = GP_MATERIAL_FILL_STYLE_SOLID;
-    style->flag = GP_MATERIAL_STROKE_SHOW | GP_MATERIAL_FILL_SHOW;
+    style->flag = GP_MATERIAL_STROKE_SHOW;
     gpd->mat[index] = ma;
   }
   return true;
@@ -1261,6 +1261,13 @@ bool Backend::create_polyline(const StrokePoint *points,
     BKE_gpencil_stroke_fill_triangulate(stroke);
   }
 
+  // New primitive strokes behave like Blender Edit Mode stroke selection:
+  // select the whole generated stroke so it can immediately be transformed.
+  clear_selection();
+  stroke->flag |= GP_STROKE_SELECT;
+  for (int i = 0; i < stroke->totpoints; ++i) {
+    stroke->points[i].flag |= GP_SPOINT_SELECT;
+  }
   impl_->stroke = stroke;
   BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);
@@ -3322,6 +3329,12 @@ bool Backend::set_material_fill_enabled(int index, bool enabled)
   }
   project_grease_gp_tag(impl_->gpd);
   return true;
+}
+
+bool Backend::material_fill_enabled(int index) const
+{
+  const Material *ma = gp_material_at(impl_->gpd, index);
+  return ma && ma->gp_style && (ma->gp_style->flag & GP_MATERIAL_FILL_SHOW) != 0;
 }
 
 

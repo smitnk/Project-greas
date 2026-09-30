@@ -101,7 +101,7 @@ class DocumentController {
     fun markSaved() { dirty = false }
 }
 
-class AnimationController(private val native: NativeEditorBridge) {
+class AnimationController(private val native: NativeEditorBridge, private val renderFrame: () -> Unit) {
     var currentFrame = 1; private set
     var fps = 12; private set
     var playing = false; private set
@@ -124,7 +124,7 @@ class AnimationController(private val native: NativeEditorBridge) {
             if (native.selectFrameOrHold(next)) {
                 currentFrame = next
                 frameCount = native.frameCount().coerceAtLeast(1)
-                native.render()
+                renderFrame()
             }
             if (playing) handler.postDelayed(this, (1000L / fps.coerceIn(1,120)).coerceAtLeast(1L))
         }
@@ -349,7 +349,7 @@ class EditorController {
     val tools=ToolController()
     val document=DocumentController()
     val history=HistoryController(native)
-    val animation=AnimationController(native)
+    val animation=AnimationController(native) { render() }
     val materials=MaterialController()
     val brushes=BrushController(materials)
     var mode=GreaseMode.DRAW
@@ -702,7 +702,7 @@ class EditorController {
             native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
             native.selectFrameOrHold(originalFrame)
         }
-        native.render()
+        render()
         root.put("layers", layers)
         return root.toString()
     }

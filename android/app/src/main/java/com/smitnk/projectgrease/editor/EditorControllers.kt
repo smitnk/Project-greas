@@ -746,6 +746,14 @@ class EditorController {
         return ok
     }
 
+    fun applySelectedModifier(name:String,factor:Float=0.5f,iterations:Int=2):Boolean {
+        val index=selection.selectedStroke
+        if(index<0)return false
+        val ok=native.applyModifier(index,name,factor,iterations)
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
+
     fun smoothSelectedStroke(influence:Float=0.5f,iterations:Int=2):Boolean {
         val i=selection.selectedStroke
         if(i<0) return false

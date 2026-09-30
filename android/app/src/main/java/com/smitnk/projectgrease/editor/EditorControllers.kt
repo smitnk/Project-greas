@@ -377,7 +377,7 @@ class EditorController {
         if(ok){
             selectedLayer=0
             animation.initialize()
-            history.reset()
+            historyReset()
             document.markDirty()
             render()
         }
@@ -730,7 +730,7 @@ class EditorController {
                 for (strokeIndex in 0 until strokes.length()) {
                     val points = strokes.optJSONObject(strokeIndex)?.optJSONArray("points") ?: continue
                     if (points.length() == 0) continue
-                    if (!native.beginStroke(0, brushes.size)) return false
+                    if (!native.beginStroke(0, brushes.size.toFloat())) return false
                     for (pointIndex in 0 until points.length()) {
                         val a = points.optJSONArray(pointIndex) ?: continue
                         val p = FloatArray(6) { a.optDouble(it, 0.0).toFloat() }
@@ -743,7 +743,7 @@ class EditorController {
         val targetFrame = root.optInt("frame", 1).coerceAtLeast(1)
         native.selectFrameOrHold(targetFrame)
         animation.setFrame(targetFrame)
-        history.reset()
+        historyReset()
         document.markSaved()
         render()
         return true

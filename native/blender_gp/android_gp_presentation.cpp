@@ -5,6 +5,7 @@
 #include <GLES2/gl2.h>
 
 #include "BKE_gpencil_legacy.h"
+#include "ED_gpencil_legacy.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
 
@@ -94,6 +95,30 @@ void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=t
   if(blend)glDisable(GL_BLEND);
   glDisableVertexAttribArray((GLuint)g_position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
+void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
+{
+  if (!gpd || !gpd->runtime.sbuffer || gpd->runtime.sbuffer_used <= 0) return;
+  const tGPspoint *points = static_cast<const tGPspoint *>(gpd->runtime.sbuffer);
+  std::vector<Vertex> stroke;
+  stroke.reserve(static_cast<size_t>(std::max(1, gpd->runtime.sbuffer_used - 1)) * 6u);
+  if (gpd->runtime.sbuffer_used == 1) {
+    bGPDspoint p{};
+    p.x = points[0].m_xy[0]; p.y = points[0].m_xy[1];
+    p.pressure = std::max(points[0].pressure, 0.01f);
+    append_dot(stroke, p, thickness * p.pressure, w, h);
+  } else {
+    for (int i=0; i+1<gpd->runtime.sbuffer_used; ++i) {
+      bGPDspoint a{}, b{};
+      a.x=points[i].m_xy[0]; a.y=points[i].m_xy[1];
+      b.x=points[i+1].m_xy[0]; b.y=points[i+1].m_xy[1];
+      a.pressure=std::max(points[i].pressure,0.01f);
+      b.pressure=std::max(points[i+1].pressure,0.01f);
+      append_segment(stroke,a,b,thickness*0.5f*(a.pressure+b.pressure),w,h,1.0f);
+    }
+  }
+  draw_vertices(stroke,g_stroke_color);
+}
+
 void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,int w,int h,float alpha){
   if(!frame||!layer||!gpd)return;
   std::vector<Vertex> fill,stroke; fill.reserve(512);stroke.reserve(1024);
@@ -191,6 +216,8 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     }
     draw_frame(gpd,layer,current,w,h,1.0f);
   }
+  // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
+  draw_sbuffer(gpd, 1.0f, w, h);
   return glGetError()==GL_NO_ERROR?1:0;
 }
 

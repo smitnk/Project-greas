@@ -328,7 +328,8 @@ class EditorController {
     fun addStrokePoint(x:Float,y:Float,pressure:Float,timeSeconds:Float){
         if (rendererHandle == 0L) return
         if (tools.activeTool == GreaseTool.LASSO) {
-            pendingLassoPoints += x to y
+            val snapped=view.snapPoint(x,y)
+            pendingLassoPoints += snapped.first to snapped.second
         } else if (tools.activeTool == GreaseTool.DRAW) {
             var px=x
             var py=y
@@ -368,7 +369,8 @@ class EditorController {
                 lastEmittedY=py
             }
         } else if (pendingShapeTool != null) {
-            pendingShapePoints += PendingPoint(x, y, pressure.coerceAtLeast(0.01f), timeSeconds)
+            val snapped=view.snapPoint(x,y)
+            pendingShapePoints += PendingPoint(snapped.first, snapped.second, pressure.coerceAtLeast(0.01f), timeSeconds)
             val preview = generatedShapePoints()
             if (preview.isNotEmpty()) {
                 val packed = FloatArray(preview.size * 3)

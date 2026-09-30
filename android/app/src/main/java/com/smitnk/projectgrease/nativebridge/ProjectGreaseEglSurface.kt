@@ -27,8 +27,8 @@ fun ProjectGreaseEglViewport(
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     val handle = GPNative.nativeCreateEglRenderer()
                     view.setRendererHandle(handle)
-                    controller.attachRenderer(handle)
                     if (handle != 0L && GPNative.nativeAttachSurface(handle, holder.surface)) {
+                        controller.attachRenderer(handle)
                         Log.i(
                             "ProjectGrease",
                             "EGL/GLES " + GPNative.nativeGlesVersion(handle) +
@@ -48,6 +48,7 @@ fun ProjectGreaseEglViewport(
                     val handle = view.getRendererHandle()
                     if (handle != 0L) {
                         GPNative.nativeAttachSurface(handle, holder.surface)
+                        controller.attachRenderer(handle)
                         controller.render()
                     }
                 }

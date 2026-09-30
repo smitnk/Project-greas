@@ -315,6 +315,7 @@ class SelectionController(private val native: NativeEditorBridge) {
 }
 
 class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
+enum class EraserMode { HARD, SOFT, STROKE }
 enum class SculptBrush { SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH }
 
 class SculptController(private val native: NativeEditorBridge) {
@@ -1013,17 +1014,37 @@ class EditorController {
         val index = native.hitTestStroke(x, y, radius)
         return index >= 0 && selection.selectStroke(index)
     }
+    var eraserMode = EraserMode.HARD
+        private set
+    private var eraseGestureChanged = false
+    fun setEraserMode(value:EraserMode) { eraserMode = value }
     fun eraserRadius():Float = brushes.size.coerceIn(8f, 96f)
 
-    fun eraseAt(x:Float, y:Float, radius:Float = eraserRadius()):Boolean {
-        val ok = native.eraseAt(x, y, radius)
+    fun eraseAt(x:Float, y:Float, radius:Float = eraserRadius(), recordHistory:Boolean = true):Boolean {
+        val ok = when (eraserMode) {
+            EraserMode.HARD -> native.eraseAt(x, y, radius)
+            EraserMode.SOFT -> native.handle != 0L &&
+                GPNative.nativeSoftEraseAt(native.handle, x, y, radius, brushes.strength)
+            EraserMode.STROKE -> {
+                val index = native.hitTestStroke(x, y, radius)
+                index >= 0 && native.deleteStroke(index)
+            }
+        }
         if (ok) {
             selection.clear()
-            history.markEdit()
+            eraseGestureChanged = true
             document.markDirty()
-            render()
+            if (recordHistory) {
+                history.markEdit()
+                eraseGestureChanged = false
+                render()
+            }
         }
         return ok
+    }
+    fun endErase() {
+        if (eraseGestureChanged) history.markEdit()
+        eraseGestureChanged = false
     }
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}

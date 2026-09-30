@@ -3073,14 +3073,15 @@ bool Backend::end_stroke() {
   const int smooth_level = std::max(0, impl_->paint_settings.draw_smooth_level);
   if (smooth_level > 0 &&
       (impl_->paint_settings.smooth_position || impl_->paint_settings.smooth_strength)) {
-    for (int pass = 0; pass < smooth_level; ++pass) {
-      for (int i = 0; i < impl_->stroke->totpoints; ++i) {
-        if (impl_->paint_settings.smooth_position) {
-          BKE_gpencil_stroke_smooth(
-              impl_->stroke, i, std::max(0.0f, impl_->paint_settings.draw_smooth_factor));
-        }
-      }
-    }
+    BKE_gpencil_stroke_smooth(impl_->stroke,
+                              std::max(0.0f, impl_->paint_settings.draw_smooth_factor),
+                              smooth_level,
+                              impl_->paint_settings.smooth_position,
+                              impl_->paint_settings.smooth_strength,
+                              false,
+                              false,
+                              true,
+                              nullptr);
   }
 
   if (impl_->paint_settings.input_samples > 0) {
@@ -3088,10 +3089,11 @@ bool Backend::end_stroke() {
     const float sfac = 1.0f + (0.2f - 1.0f) * std::min(ifac, 1.0f);
     for (int i = 0; i < impl_->stroke->totpoints; ++i) {
       if (impl_->paint_settings.smooth_position) {
-        BKE_gpencil_stroke_smooth_point(impl_->stroke, i, sfac);
+        BKE_gpencil_stroke_smooth_point(
+            impl_->stroke, i, sfac, 2, false, true, impl_->stroke);
       }
       if (impl_->paint_settings.smooth_strength) {
-        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac);
+        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac, 2, impl_->stroke);
       }
     }
   }
@@ -3494,19 +3496,19 @@ bool Backend::apply_legacy_geometry_batch(int stroke_index,
 
       case LegacyGeometryOpType::SmoothStrength:
         for (int point = 0; point < stroke->totpoints; ++point) {
-          BKE_gpencil_stroke_smooth_strength(stroke, point, op.value0);
+          BKE_gpencil_stroke_smooth_strength(stroke, point, op.value0, 1, stroke);
         }
         break;
 
       case LegacyGeometryOpType::SmoothThickness:
         for (int point = 0; point < stroke->totpoints; ++point) {
-          BKE_gpencil_stroke_smooth_thickness(stroke, point, op.value0);
+          BKE_gpencil_stroke_smooth_thickness(stroke, point, op.value0, 1, stroke);
         }
         break;
 
       case LegacyGeometryOpType::SmoothUV:
         for (int point = 0; point < stroke->totpoints; ++point) {
-          BKE_gpencil_stroke_smooth_uv(stroke, point, op.value0);
+          BKE_gpencil_stroke_smooth_uv(stroke, point, op.value0, 1, stroke);
         }
         break;
 
@@ -3715,11 +3717,15 @@ bool Backend::smooth_stroke(int index, float influence, int iterations)
     if (current != index) {
       continue;
     }
-    for (int pass = 0; pass < iterations; ++pass) {
-      for (int i = 0; i < stroke->totpoints; ++i) {
-        BKE_gpencil_stroke_smooth(stroke, i, std::min(influence, 1.0f));
-      }
-    }
+    BKE_gpencil_stroke_smooth(stroke,
+                              std::min(influence, 1.0f),
+                              iterations,
+                              true,
+                              false,
+                              false,
+                              false,
+                              true,
+                              nullptr);
     impl_->stroke = stroke;
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
     project_grease_gp_tag(impl_->gpd);
@@ -3762,13 +3768,15 @@ bool Backend::sculpt_at(int tool, float x, float y, float radius, float influenc
 
       switch (tool) {
         case 0: /* Smooth: Blender Legacy GP BKE position smoothing. */
-          changed |= BKE_gpencil_stroke_smooth(stroke, i, falloff);
+          changed |= changed = true;
+          BKE_gpencil_stroke_smooth(
+              stroke, i, falloff, 1, true, false, false, false, true, nullptr);
           break;
         case 1: /* Thickness: Blender Legacy GP pressure smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff);
+          changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff, 1, stroke);
           break;
         case 2: /* Strength: Blender Legacy GP strength smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_strength(stroke, i, falloff);
+          changed |= BKE_gpencil_stroke_smooth_strength(stroke, i, falloff, 1, stroke);
           break;
         case 3: { /* Grab: move real Legacy GP points with brush falloff. */
           point.x += dx * 0.0f + (x - point.x) * falloff;
@@ -3919,9 +3927,15 @@ bool Backend::fill_at_screen(const float* rgba,
   // Use Blender's real Legacy GP geometry update/smoothing path on the new
   // stroke rather than a Project Grease replacement.
   if (impl_->stroke) {
-    for (int i = 0; i < impl_->stroke->totpoints; ++i) {
-      BKE_gpencil_stroke_smooth(impl_->stroke, i, 1.0f);
-    }
+    BKE_gpencil_stroke_smooth(impl_->stroke,
+                              1.0f,
+                              2,
+                              true,
+                              false,
+                              false,
+                              false,
+                              true,
+                              nullptr);
     BKE_gpencil_stroke_geometry_update(impl_->gpd, impl_->stroke);
   }
 

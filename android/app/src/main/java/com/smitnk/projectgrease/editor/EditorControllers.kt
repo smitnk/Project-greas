@@ -248,7 +248,7 @@ class BrushController(private val materials: MaterialController) {
     }
 
     fun pressure(input: Float): Float =
-        input.coerceIn(0f, 1f).let { kotlin.math.pow(it, pressureCurve) }
+        input.coerceIn(0f, 1f).let { kotlin.math.pow(it.toDouble(), pressureCurve.toDouble()).toFloat() }
 
     private fun apply(newSize: Float, newStrength: Float, curve: Float) {
         size = newSize

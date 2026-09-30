@@ -126,8 +126,8 @@ private class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
                         moveOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (moveOpen) {
-                            lastMoveX = event.x
-                            lastMoveY = event.y
+                            lastMoveX = start.first
+                            lastMoveY = start.second
                             controller.render()
                         }
                     }
@@ -244,7 +244,7 @@ private class ProjectGreaseDrawingSurfaceView(
                             }
                         }
                         controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
-                            if (controller.eraseAt(x, y)) controller.render()
+                            if (controller.eraseAt(x, y, controller.eraserRadius())) controller.render()
                         }
                         moveOpen -> {
                             val dx = x - lastMoveX

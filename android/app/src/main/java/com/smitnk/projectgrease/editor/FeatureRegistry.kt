@@ -51,6 +51,7 @@ object FeatureRegistry {
         FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
         FeatureId.THICKNESS, FeatureId.OPACITY,
         FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING, FeatureId.PRESSURE_CURVE,
+        FeatureId.SCULPT, FeatureId.SCULPT_SMOOTH, FeatureId.SCULPT_PUSH, FeatureId.SCULPT_GRAB,
         FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,

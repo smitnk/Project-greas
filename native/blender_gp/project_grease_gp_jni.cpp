@@ -158,6 +158,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenameLayer(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeResetDocument(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_reset_document(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateFrame(
     JNIEnv *, jobject, jlong handle, jint frame_number)
 {

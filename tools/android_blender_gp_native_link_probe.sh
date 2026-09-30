@@ -84,23 +84,23 @@ CXX_SOURCES=(
   "$BLENDER/source/blender/gpu/intern/gpu_capabilities.cc"
   "$ROOT/native/blender_gp/android_gpu_backend.cpp"
   "$BLENDER/source/blender/blenlib/intern/listbase.cc"
-  # Exact Blender 3.6.23 math primitives required by Legacy GP geometry.
-  "$BLENDER/source/blender/blenlib/intern/math_vector.c"
-  "$BLENDER/source/blender/blenlib/intern/math_rotation.c"
-  # Exact Blender 3.6.23 Legacy GP curve/deform/editor closure.
+  # Exact Blender 3.6.23 C++ Legacy GP/deform closure.
   "$BLENDER/source/blender/blenkernel/intern/deform.cc"
-  "$BLENDER/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
-  "$BLENDER/source/blender/editors/gpencil_legacy/gpencil_utils.c"
-  # Exact Blender DNA and array utility implementations used by GP C++ code.
-  "$BLENDER/source/blender/makesdna/intern/dna_utils.c"
-  "$BLENDER/source/blender/blenlib/intern/array_utils.c"
-  # Exact heap implementation used by Legacy GP uniform subdivision.
-  "$BLENDER/source/blender/blenlib/intern/BLI_heap.c"
   "$BLENDER/intern/guardedalloc/intern/leak_detector.cc"
   "$BLENDER/intern/guardedalloc/intern/memory_usage.cc"
 )
 
 C_SOURCES=(
+  # Preserve Blender 3.6.23 source language exactly: these files are C and
+  # must be compiled with the Android clang C driver, never clang++.
+  "$BLENDER/source/blender/blenlib/intern/math_vector.c"
+  "$BLENDER/source/blender/blenlib/intern/math_rotation.c"
+  "$BLENDER/source/blender/blenlib/intern/array_utils.c"
+  "$BLENDER/source/blender/blenlib/intern/BLI_heap.c"
+  "$BLENDER/source/blender/makesdna/intern/dna_utils.c"
+  "$BLENDER/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+  "$BLENDER/source/blender/editors/gpencil_legacy/gpencil_utils.c"
+
   # Exact Blender 3.6.23 curve-fit implementation required by
   # gpencil_curve_legacy.c.
   "$BLENDER/extern/curve_fit_nd/intern/curve_fit_cubic.c"

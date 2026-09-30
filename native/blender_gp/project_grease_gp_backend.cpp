@@ -3555,124 +3555,41 @@ bool Backend::apply_legacy_geometry_batch(int stroke_index,
 bool Backend::apply_blender_modifier(int index, int modifier_type, float factor, int iterations)
 {
   if (!impl_->frame || !impl_->gpd || index < 0) {
-    impl_->last_error = "invalid Legacy GP modifier target";
-    return false;
-  }
-
-  int current = 0;
-  bGPDstroke *stroke = nullptr;
-  for (bGPDstroke *candidate =
-           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       candidate;
-       candidate = candidate->next, ++current) {
-    if (current == index) {
-      stroke = candidate;
-      break;
-    }
-  }
-  if (!stroke) {
-    impl_->last_error = "stroke index out of range";
+    impl_->last_error = "invalid Legacy GP geometry target";
     return false;
   }
 
   /*
-   * Focused Android closure:
-   * use Blender 3.6.23 Legacy GP data/geometry algorithms already linked into
-   * Project Grease. We do not pull the desktop modifier registry, RNA/UI,
-   * object/depsgraph, or full modifier dependency graph into the Android app.
-   * Every supported operation still mutates the real bGPDstroke/bGPDpoint
-   * structures and uses Blender's Legacy GP BKE geometry routines where they
-   * exist.
+   * This adapter deliberately does NOT emulate Blender's modifier stack.
+   * Only operations with a direct Blender 3.6.23 Legacy GP BKE implementation
+   * are exposed here. Real object-level modifier evaluation remains outside the
+   * focused Android closure until its actual Blender dependency graph can be
+   * brought in without replacing it with custom code.
    */
   const float amount = std::max(0.0f, factor);
-  bool ok = false;
-
   switch (modifier_type) {
     case eGpencilModifierType_Smooth:
-      ok = smooth_stroke(index, std::min(amount, 1.0f), std::max(1, iterations));
-      break;
+      return smooth_stroke(index, std::min(amount, 1.0f), std::max(1, iterations));
 
     case eGpencilModifierType_Simplify: {
       LegacyGeometryOp op{};
       op.type = LegacyGeometryOpType::SimplifyAdaptive;
       op.value0 = amount;
-      ok = apply_legacy_geometry_batch(index, &op, 1);
-      break;
+      return apply_legacy_geometry_batch(index, &op, 1);
     }
 
     case eGpencilModifierType_Subdiv: {
       LegacyGeometryOp op{};
       op.type = LegacyGeometryOpType::Subdivide;
       op.int0 = std::max(1, iterations);
-      ok = apply_legacy_geometry_batch(index, &op, 1);
-      break;
+      return apply_legacy_geometry_batch(index, &op, 1);
     }
-
-    case eGpencilModifierType_Offset:
-      ok = translate_stroke(index, factor, 0.0f, 0.0f);
-      break;
-
-    case eGpencilModifierType_Mirror:
-      ok = mirror_stroke(index, true, false);
-      break;
-
-    case eGpencilModifierType_Thick: {
-      const float scale = factor > 0.0f ? factor : 1.0f;
-      stroke->thickness = static_cast<short>(
-          std::max(1.0f, std::min(32767.0f,
-                                   static_cast<float>(stroke->thickness) * scale)));
-      ok = true;
-      break;
-    }
-
-    case eGpencilModifierType_Opacity: {
-      const float opacity = std::max(0.0f, std::min(1.0f, factor));
-      for (int i = 0; i < stroke->totpoints; ++i) {
-        stroke->points[i].strength *= opacity;
-      }
-      ok = true;
-      break;
-    }
-
-    case eGpencilModifierType_Tint:
-    case eGpencilModifierType_Color: {
-      const float t = std::max(0.0f, std::min(1.0f, factor));
-      for (int i = 0; i < stroke->totpoints; ++i) {
-        bGPDspoint &point = stroke->points[i];
-        point.vert_color[0] = point.vert_color[0] * (1.0f - t) + t;
-        point.vert_color[1] = point.vert_color[1] * (1.0f - t) + (1.0f - t);
-        point.vert_color[2] = point.vert_color[2] * (1.0f - t) + 0.25f * t;
-        point.vert_color[3] = 1.0f;
-      }
-      ok = true;
-      break;
-    }
-
-    case eGpencilModifierType_Texture:
-      for (int i = 0; i < stroke->totpoints; ++i) {
-        stroke->points[i].uv_fac += factor;
-        stroke->points[i].uv_rot += factor * 0.25f;
-      }
-      ok = true;
-      break;
 
     default:
-      impl_->last_error = "Legacy GP modifier is outside the focused Android closure";
+      impl_->last_error =
+          "This Legacy GP modifier requires Blender's real object-level modifier stack";
       return false;
   }
-
-  if (!ok) {
-    if (impl_->last_error.empty()) {
-      impl_->last_error = "Legacy GP modifier operation failed";
-    }
-    return false;
-  }
-
-  impl_->stroke = stroke;
-  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-  project_grease_gp_tag(impl_->gpd);
-  impl_->last_error.clear();
-  return true;
 }
 
 bool Backend::apply_blender_generator(int modifier_type, float factor, int iterations)

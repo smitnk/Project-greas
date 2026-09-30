@@ -316,7 +316,7 @@ class SelectionController(private val native: NativeEditorBridge) {
 
 class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
 enum class EraserMode { HARD, SOFT, STROKE }
-enum class SculptBrush { SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH }
+enum class SculptBrush { SMOOTH, THICKNESS, STRENGTH }
 
 class SculptController(private val native: NativeEditorBridge) {
     var brush = SculptBrush.SMOOTH
@@ -327,8 +327,6 @@ class SculptController(private val native: NativeEditorBridge) {
         SculptBrush.SMOOTH -> 0
         SculptBrush.THICKNESS -> 1
         SculptBrush.STRENGTH -> 2
-        SculptBrush.GRAB -> 3
-        SculptBrush.PUSH -> 4
     }
     fun apply(x: Float, y: Float, radius: Float, influence: Float = 0.35f): Boolean =
         native.handle != 0L && GPNative.nativeSculptAt(native.handle, toolId(), x, y, radius, influence)

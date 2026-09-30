@@ -32,6 +32,7 @@ object GPNative {
     external fun nativeSetPreviewStrokeEglRenderer(handle: Long, points: FloatArray, thickness: Float): Boolean
     external fun nativeClearPreviewStrokeEglRenderer(handle: Long): Boolean
     external fun nativeSetStrokeColorEglRenderer(handle: Long, r: Float, g: Float, b: Float, a: Float): Boolean
+    external fun nativePickColorEglRenderer(handle: Long, x: Int, y: Int): Int
     external fun nativeSetCanvasSize(handle: Long, width: Int, height: Int): Boolean
     external fun nativeSetViewTransform(handle: Long, zoom: Float, panX: Float, panY: Float): Boolean
 

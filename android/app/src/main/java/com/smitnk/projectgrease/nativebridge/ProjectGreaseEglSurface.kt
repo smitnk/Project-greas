@@ -123,6 +123,10 @@ private class ProjectGreaseDrawingSurfaceView(
                         controller.fillAt(event.x, event.y)
                         controller.render()
                     }
+                    com.smitnk.projectgrease.editor.GreaseTool.EYEDROPPER -> {
+                        controller.pickColorAt(event.x.toInt(), event.y.toInt())
+                        controller.render()
+                    }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
                         moveOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (moveOpen) {

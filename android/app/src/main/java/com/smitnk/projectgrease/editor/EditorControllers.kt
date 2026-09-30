@@ -797,6 +797,13 @@ class EditorController {
         if(ok){history.markEdit();document.markDirty();render()}
         return ok
     }
+    fun pickColorAt(x:Int,y:Int):Boolean {
+        if (rendererHandle == 0L) return false
+        val argb = GPNative.nativePickColorEglRenderer(rendererHandle, x, y)
+        if ((argb ushr 24) == 0) return false
+        return setMaterialColor(argb)
+    }
+
     fun setMaterialColor(argb:Int):Boolean {
         materials.setColor(argb)
         if (rendererHandle == 0L) return false

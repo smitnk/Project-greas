@@ -455,6 +455,42 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetViewTransform(
   return JNI_TRUE;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativePickColorEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint x, jint y)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected ||
+      renderer->display == EGL_NO_DISPLAY ||
+      renderer->surface == EGL_NO_SURFACE ||
+      renderer->context == EGL_NO_CONTEXT) {
+    return 0;
+  }
+  if (eglMakeCurrent(
+          renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    return 0;
+  }
+  eglQuerySurface(renderer->display, renderer->surface, EGL_WIDTH, &renderer->width);
+  eglQuerySurface(renderer->display, renderer->surface, EGL_HEIGHT, &renderer->height);
+  if (x < 0 || y < 0 || x >= renderer->width || y >= renderer->height) {
+    return 0;
+  }
+  // Render the current Legacy GP document before sampling it.
+  if (!project_grease_gp_render_external_context(renderer->gp_handle)) {
+    return 0;
+  }
+  const GLint read_y = renderer->height - 1 - y;
+  GLubyte rgba[4] = {0, 0, 0, 0};
+  glReadPixels(x, read_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+  if (glGetError() != GL_NO_ERROR) {
+    return 0;
+  }
+  return (static_cast<jint>(rgba[3]) << 24) |
+         (static_cast<jint>(rgba[0]) << 16) |
+         (static_cast<jint>(rgba[1]) << 8) |
+         static_cast<jint>(rgba[2]);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetStrokeColorEglRenderer(
     JNIEnv *, jobject, jlong handle, jfloat r, jfloat g, jfloat b, jfloat a)

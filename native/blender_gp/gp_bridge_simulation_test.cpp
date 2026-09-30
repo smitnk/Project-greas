@@ -46,6 +46,16 @@ int main()
     return 5;
   }
 
+  if (!project_grease_gp_create_frame(handle, 2) ||
+      project_grease_gp_frame_count(handle) != 2 ||
+      !project_grease_gp_delete_frame(handle, 2) ||
+      project_grease_gp_frame_count(handle) != 1) {
+    std::fprintf(stderr, "frame create/delete regression failed: %s\n",
+                 project_grease_gp_last_error(handle));
+    project_grease_gp_destroy(handle);
+    return 6;
+  }
+
   // Cancellation must discard an open Android stroke instead of committing it.
   if (!project_grease_gp_begin_stroke(handle, 0, 3.0f) ||
       !project_grease_gp_add_point(handle, {5.0f, 5.0f, 0.0f, 0.7f, 1.0f, 1.0f}) ||
@@ -55,7 +65,7 @@ int main()
     std::fprintf(stderr, "bridge stroke cancellation failed: %s\n",
                  project_grease_gp_last_error(handle));
     project_grease_gp_destroy(handle);
-    return 6;
+    return 7;
   }
 
   std::puts("Project Grease GP native bridge simulation passed");

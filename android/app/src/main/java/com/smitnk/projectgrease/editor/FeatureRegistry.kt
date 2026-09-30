@@ -50,7 +50,7 @@ object FeatureRegistry {
         // Existing Legacy GP material/style path.
         FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
         FeatureId.THICKNESS, FeatureId.OPACITY,
-        FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING,
+        FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING, FeatureId.PRESSURE_CURVE,
         FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,

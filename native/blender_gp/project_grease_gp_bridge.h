@@ -55,6 +55,7 @@ int project_grease_gp_stroke_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_point_count(const ProjectGreaseGPHandle *handle);
 
 int project_grease_gp_create_layer(ProjectGreaseGPHandle *handle, const char *name);
+int project_grease_gp_reset_document(ProjectGreaseGPHandle *handle);
 int project_grease_gp_select_layer(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_layer_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_set_layer_visibility(ProjectGreaseGPHandle *handle, int index, int visible);

@@ -519,6 +519,31 @@ int project_grease_gp_apply_blender_modifier(ProjectGreaseGPHandle *handle,
              : 0;
 }
 
+int project_grease_gp_apply_blender_modifier_named(ProjectGreaseGPHandle *handle,
+                                                    int index,
+                                                    const char *name,
+                                                    float factor,
+                                                    int iterations)
+{
+  if (!ensure_ready(handle) || !name) return 0;
+  const std::string key(name);
+  int type = -1;
+  if (key == "SMOOTH") type = eGpencilModifierType_Smooth;
+  else if (key == "SIMPLIFY") type = eGpencilModifierType_Simplify;
+  else if (key == "OFFSET") type = eGpencilModifierType_Offset;
+  else if (key == "MIRROR") type = eGpencilModifierType_Mirror;
+  else if (key == "THICKNESS") type = eGpencilModifierType_Thick;
+  else if (key == "TINT") type = eGpencilModifierType_Tint;
+  else if (key == "OPACITY") type = eGpencilModifierType_Opacity;
+  else if (key == "NOISE") type = eGpencilModifierType_Noise;
+  else if (key == "LENGTH") type = eGpencilModifierType_Length;
+  else if (key == "TEXTURE") type = eGpencilModifierType_Texture;
+  else if (key == "WEIGHT_ANGLE") type = eGpencilModifierType_WeightAngle;
+  else if (key == "WEIGHT_PROXIMITY") type = eGpencilModifierType_WeightProximity;
+  else return 0;
+  return handle->backend.apply_blender_modifier(index, type, factor, iterations) ? 1 : 0;
+}
+
 int project_grease_gp_apply_blender_modifier_stack(ProjectGreaseGPHandle *handle,
                                                    int index,
                                                    const int *modifier_types,

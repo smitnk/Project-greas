@@ -45,9 +45,8 @@ object FeatureRegistry {
         // Existing native/UI animation path.
         FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME, FeatureId.DUPLICATE_FRAME,
         FeatureId.DELETE_FRAME, FeatureId.PLAYBACK, FeatureId.PAUSE, FeatureId.LOOP,
-        FeatureId.FPS, FeatureId.FRAME_NAVIGATION, FeatureId.INTERPOLATION,
+        FeatureId.FPS, FeatureId.FRAME_NAVIGATION,
         FeatureId.ONION_SKIN, FeatureId.ONION_RANGE, FeatureId.ONION_OPACITY, FeatureId.ONION_FADE,
-        FeatureId.MULTIFRAME,
         // Existing Legacy GP material/style path.
         FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
         FeatureId.THICKNESS, FeatureId.OPACITY,
@@ -59,6 +58,12 @@ object FeatureRegistry {
     )
     private val inProgress = setOf(
         FeatureId.INSERT_FRAME,
+        // Legacy GP interpolation currently supports only matched stroke topology;
+        // Blender 3.6 interpolation also handles topology differences/pairing.
+        FeatureId.INTERPOLATION,
+        // The flag/selection path exists, but edit operations still target the
+        // active frame rather than Blender's true multi-frame edit set.
+        FeatureId.MULTIFRAME,
         FeatureId.ONION_LAYER_FILTER,
         FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
     )

@@ -51,7 +51,7 @@ object FeatureRegistry {
         FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
         FeatureId.THICKNESS, FeatureId.OPACITY,
         FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING,
-        FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING,
+        FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
         FeatureId.LAYER_RENAME
@@ -64,8 +64,7 @@ object FeatureRegistry {
         // The flag/selection path exists, but edit operations still target the
         // active frame rather than Blender's true multi-frame edit set.
         FeatureId.MULTIFRAME,
-        FeatureId.ONION_LAYER_FILTER,
-        FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
+        FeatureId.ONION_LAYER_FILTER
     )
 
     fun capability(id: FeatureId): FeatureCapability {

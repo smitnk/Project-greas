@@ -69,11 +69,9 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_primitive.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_modifier_legacy.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
     # Focused extraction of the exact pinned Blender 3.6.23 ED_gpencil_sbuffer_ensure algorithm.
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_index_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_batch.cc"

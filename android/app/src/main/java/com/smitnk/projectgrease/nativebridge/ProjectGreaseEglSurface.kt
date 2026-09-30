@@ -115,6 +115,10 @@ private class ProjectGreaseDrawingSurfaceView(
                 val start = canvasPoint(event.x, event.y)
                 activePointerId = event.getPointerId(0)
                 when (controller.tools.activeTool) {
+                    com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
+                        controller.sculptAt(start.first, start.second)
+                        controller.render()
+                    }
                     com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
                         controller.hitTestAndSelectStroke(start.first, start.second)
                     }
@@ -241,6 +245,9 @@ private class ProjectGreaseDrawingSurfaceView(
                     val x = canvas.first
                     val y = canvas.second
                     when {
+                        controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
+                            if (controller.sculptAt(x, y)) controller.render()
+                        }
                         panOpen -> {
                             val dx = rawX - lastPanX
                             val dy = rawY - lastPanY

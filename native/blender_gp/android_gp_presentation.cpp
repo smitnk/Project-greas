@@ -21,14 +21,17 @@ int g_canvas_height=720;
 float g_map_origin_x=0.0f;
 float g_map_origin_y=0.0f;
 float g_map_scale=1.0f;
+float g_view_zoom=1.0f;
+float g_view_pan_x=0.0f;
+float g_view_pan_y=0.0f;
 void update_canvas_map(int w,int h){
   const float sx=float(w)/float(std::max(1,g_canvas_width));
   const float sy=float(h)/float(std::max(1,g_canvas_height));
-  g_map_scale=std::min(sx,sy)*0.92f;
+  g_map_scale=std::min(sx,sy)*0.92f*g_view_zoom;
   const float cw=float(g_canvas_width)*g_map_scale;
   const float ch=float(g_canvas_height)*g_map_scale;
-  g_map_origin_x=(float(w)-cw)*0.5f;
-  g_map_origin_y=(float(h)-ch)*0.5f;
+  g_map_origin_x=(float(w)-cw)*0.5f+g_view_pan_x;
+  g_map_origin_y=(float(h)-ch)*0.5f+g_view_pan_y;
 }
 
 
@@ -255,5 +258,14 @@ extern "C" int project_grease_android_present_pending_stroke(const project_greas
   else for(int i=0;i+1<count;i++){bGPDspoint a={},b={};a.x=points[i].x;a.y=points[i].y;a.pressure=std::max(points[i].pressure,0.01f);b.x=points[i+1].x;b.y=points[i+1].y;b.pressure=std::max(points[i+1].pressure,0.01f);append_segment(v,a,b,thickness*0.5f*(a.pressure+b.pressure),w,h,1.0f);}
   float c[4]={1,1,1,1};draw_vertices(v,c);return glGetError()==GL_NO_ERROR?1:0;
 }
-extern "C" void project_grease_android_present_set_canvas_size(int width,int height){g_canvas_width=std::max(1,width);g_canvas_height=std::max(1,height);}\nextern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
+extern "C" void project_grease_android_present_set_canvas_size(int width,int height){g_canvas_width=std::max(1,width);g_canvas_height=std::max(1,height);}\nextern "C" void project_grease_android_present_set_canvas_size(int width,int height){
+  g_canvas_width=std::max(1,width);
+  g_canvas_height=std::max(1,height);
+}
+extern "C" void project_grease_android_present_set_view_transform(float zoom,float pan_x,float pan_y){
+  g_view_zoom=std::clamp(zoom,0.1f,8.0f);
+  g_view_pan_x=pan_x;
+  g_view_pan_y=pan_y;
+}
+extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;}

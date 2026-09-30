@@ -240,6 +240,20 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var savedTick by remember{mutableIntStateOf(0)}
     val context=LocalContext.current
     fun redraw(){refresh++}
+    fun persistProject(){
+        controller.saveDocumentJson()?.let {
+            ProjectStore(context).saveDocument(controller.document.projectName,it)
+            ProjectStore(context).upsert(ProjectRecord(
+                controller.document.projectName,
+                controller.document.canvasWidth,
+                controller.document.canvasHeight,
+                controller.animation.fps,
+                System.currentTimeMillis()
+            ))
+            controller.document.markSaved()
+            savedTick++
+        }
+    }
     @Suppress("UNUSED_VARIABLE") val unused=refresh+savedTick
 
     BackHandler(enabled=sheet!=Sheet.NONE || state.canvasFocus){
@@ -268,7 +282,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 IconButton(onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
                 IconButton(onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
                 IconButton(onClick={
-                    controller.document.markSaved();savedTick++
+                    persistProject()
                     Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show()
                 }){Icon(Icons.Default.Save,"Save")}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
@@ -290,7 +304,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
     if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
     when(sheet){
-        Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context)
+        Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject)
         Sheet.TOOLS->ToolsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.LAYERS->LayersSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MATERIALS->MaterialsSheet(controller,{sheet=Sheet.NONE},::redraw)
@@ -445,11 +459,11 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit,controller:EditorController,context:android.content.Context){
+@Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit,controller:EditorController,context:android.content.Context,onSave:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Project",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("Open project")},modifier=Modifier.clickable{onDismiss()})
-        ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{controller.document.markSaved();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
-        ListItem(headlineContent={Text("Save as")},modifier=Modifier.clickable{controller.document.markSaved();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
+        ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
+        ListItem(headlineContent={Text("Save as")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Export")},modifier=Modifier.clickable{Toast.makeText(context,"Export pipeline is not connected yet",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});ListItem(headlineContent={Text("Close editor")},modifier=Modifier.clickable{onDismiss();onExit()});Spacer(Modifier.height(20.dp))}
 }

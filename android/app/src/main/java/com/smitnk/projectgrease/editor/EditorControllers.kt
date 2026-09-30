@@ -371,6 +371,18 @@ class EditorController {
         selectedLayer = 0
     }
     fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
+    fun resetDocument():Boolean {
+        if (rendererHandle == 0L) return false
+        val ok=native.resetDocument()
+        if(ok){
+            selectedLayer=0
+            animation.initialize()
+            history.reset()
+            document.markDirty()
+            render()
+        }
+        return ok
+    }
     fun selectTool(tool:GreaseTool)=tools.select(tool)
     fun setMode(value:GreaseMode):Boolean {
         val supported = when (value) {

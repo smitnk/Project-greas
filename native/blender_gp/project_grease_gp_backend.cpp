@@ -3210,14 +3210,8 @@ bool Backend::render_with_gpu_context()
   //
   // Keep building the real Blender GP cache when possible, but never make
   // Android's live presentation depend on that cache.
-  bool presented =
+  const bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
-  if (presented && impl_->stroke_open && !impl_->pending_points.empty()) {
-    presented = project_grease_android_present_pending_stroke(
-        impl_->pending_points.data(),
-        static_cast<int>(impl_->pending_points.size()),
-        impl_->stroke_style.thickness) != 0;
-  }
 #else
   const bool presented = cache_ready;
 #endif

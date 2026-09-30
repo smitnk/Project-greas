@@ -13,6 +13,8 @@ data class ProjectRecord(
 )
 
 class ProjectStore(context: Context) {
+    private val appContext = context.applicationContext
+    private val documentDir = java.io.File(appContext.filesDir, "projects").apply { mkdirs() }
     private val prefs = context.applicationContext.getSharedPreferences("project_grease_projects", Context.MODE_PRIVATE)
     private val key = "records"
 
@@ -41,6 +43,18 @@ class ProjectStore(context: Context) {
         val records = load().filterNot { it.name == record.name }.toMutableList()
         records.add(record)
         save(records.sortedByDescending { it.lastOpened })
+    }
+
+    fun saveDocument(name:String, json:String) {
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "Project_Grease" }
+        val file = java.io.File(documentDir, safe + ".gpjson")
+        file.writeText(json, Charsets.UTF_8)
+    }
+
+    fun loadDocument(name:String):String? {
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "Project_Grease" }
+        val file = java.io.File(documentDir, safe + ".gpjson")
+        return file.takeIf { it.isFile }?.readText(Charsets.UTF_8)
     }
 
     fun save(records: List<ProjectRecord>) {

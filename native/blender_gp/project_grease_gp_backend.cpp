@@ -2,8 +2,6 @@
 #include "project_grease_legacy_fill.h"
 #include "project_grease_legacy_primitive.h"
 
-extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, BuildGpencilModifierData *mmd, float factor);
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -36,6 +34,8 @@ extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, 
 #include "draw_cache.h"
 #include "draw_cache_impl.h"
 #include "ED_gpencil_legacy.h"
+
+extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, BuildGpencilModifierData *mmd, float factor);
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);

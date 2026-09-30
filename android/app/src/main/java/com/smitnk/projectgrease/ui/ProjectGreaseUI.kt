@@ -426,8 +426,31 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun ToolsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Tools",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        tools.forEach{CapabilityRow(it.label,it.feature)};TextButton(onClick={controller.view.toggleGrid();redraw()},Modifier.padding(horizontal=20.dp)){Text("Toggle grid")};Spacer(Modifier.height(20.dp))}
+    ModalBottomSheet(onDismissRequest=onDismiss){
+        Text("Tools",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        tools.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                row.forEach { entry ->
+                    val selected=controller.tools.activeTool==entry.tool
+                    Surface(
+                        modifier=Modifier.weight(1f).height(64.dp).clickable{
+                            if(controller.selectTool(entry.tool)){redraw();onDismiss()}
+                        },
+                        shape=RoundedCornerShape(12.dp),
+                        tonalElevation=if(selected)4.dp else 1.dp,
+                        color=if(selected)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    ){
+                        Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+                            Icon(entry.icon,entry.label)
+                            Text(entry.label,fontSize=11.sp)
+                        }
+                    }
+                }
+                repeat(3-row.size){Spacer(Modifier.weight(1f))}
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -521,22 +544,33 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun AdvancedSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
-    var multiframe by remember{mutableStateOf(false)}
     ModalBottomSheet(onDismissRequest=onDismiss){
-        Text("Advanced",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        Text("Advanced drawing",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
-            Text("Multiframe editing",Modifier.weight(1f))
-            Switch(checked=multiframe,onCheckedChange={multiframe=it;controller.setMultiframeEditing(it);redraw()})
+            Text("Stabilization",Modifier.weight(1f))
+            Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it);redraw()})
         }
-        listOf(FeatureId.SCULPT,FeatureId.STABILIZATION,FeatureId.ADVANCED_FILL,FeatureId.STROKE_TEXTURES,FeatureId.FILL_TEXTURES,FeatureId.MODIFIERS,FeatureId.NOISE,FeatureId.DASH,FeatureId.OUTLINE,FeatureId.MULTIFRAME,FeatureId.ADVANCED_ONION_SKIN,FeatureId.VISUAL_EFFECTS).forEach{CapabilityRow(it.name.replace('_',' '),it)}
+        Text("Stabilizer factor " + (controller.stabilizerFactor*100).toInt() + "%",Modifier.padding(horizontal=20.dp))
+        Slider(controller.stabilizerFactor,{controller.setStabilizer(true,it);redraw()},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
+        Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=20.dp))
+        Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it);redraw()},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=20.dp))
+        Button(onClick={if(controller.smoothSelectedStroke()){redraw()}},modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp)){Text("Smooth selected stroke")}
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Grid",Modifier.weight(1f));Switch(checked=controller.view.showGrid,onCheckedChange={controller.view.toggleGrid();redraw()})
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Guides",Modifier.weight(1f));Switch(checked=controller.view.showGuides,onCheckedChange={controller.view.toggleGuides();redraw()})
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Snapping",Modifier.weight(1f));Switch(checked=controller.view.snapEnabled,onCheckedChange={controller.view.toggleSnapping();redraw()})
+        }
         Spacer(Modifier.height(20.dp))
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit){
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("More / Edit",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        listOf(FeatureId.MOVE,FeatureId.ROTATE,FeatureId.SCALE,FeatureId.MIRROR,FeatureId.DUPLICATE,FeatureId.DELETE,FeatureId.SPLIT,FeatureId.SUBDIVIDE,FeatureId.TRIM,FeatureId.CLOSE).forEach{CapabilityRow(it.name.replace('_',' '),it)}
+    ModalBottomSheet(onDismissRequest=onDismiss){Text("Edit actions",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("Move selected stroke")},modifier=Modifier.clickable{controller.translateSelectedStroke(20f,20f);redraw()})
         ListItem(headlineContent={Text("Rotate selected stroke 90°")},modifier=Modifier.clickable{controller.rotateSelectedStroke((Math.PI/2.0).toFloat());redraw()})
         ListItem(headlineContent={Text("Scale selected stroke 110%")},modifier=Modifier.clickable{controller.scaleSelectedStroke(1.1f,1.1f);redraw()})
@@ -548,12 +582,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         ListItem(headlineContent={Text("Subdivide selected stroke")},modifier=Modifier.clickable{controller.subdivideSelectedStroke(1);redraw();onDismiss()})
         ListItem(headlineContent={Text("Close selected stroke")},modifier=Modifier.clickable{controller.closeSelectedStroke();redraw();onDismiss()})
         ListItem(headlineContent={Text("Trim selected stroke at first intersection")},modifier=Modifier.clickable{controller.trimSelectedStrokeToIntersection();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});Spacer(Modifier.height(20.dp))}
+        ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()})
+        Spacer(Modifier.height(20.dp))
+    }
 }
 
 @Composable private fun CapabilityRow(label:String,id:FeatureId){
     val c=FeatureRegistry.capability(id)
-    ListItem(headlineContent={Text(label)},supportingContent={Text(c.state.name.replace('_',' '))},trailingContent={AssistChip(onClick={},label={Text(c.state.name.replace('_',' '),fontSize=9.sp)})})
+    if(c.state==FeatureState.NOT_IMPLEMENTED)return
+    ListItem(headlineContent={Text(label)},supportingContent={Text("Engine connected")})
 }
 
 @Composable private fun Settings(
@@ -565,31 +602,37 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())){
             Text("Theme",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             ProjectGreaseThemeMode.entries.forEach{mode->
-                ListItem(
-                    headlineContent={Text(mode.name.lowercase().replaceFirstChar{it.uppercase()})},
+                ListItem(headlineContent={Text(mode.name.lowercase().replaceFirstChar{it.uppercase()})},
                     trailingContent={if(current==mode)Icon(Icons.Default.Check,null,tint=Accent)},
-                    modifier=Modifier.clickable{onTheme(mode)}
-                )
+                    modifier=Modifier.clickable{onTheme(mode)})
             }
             Text("Drawing",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
-            CapabilityRow("Pressure",FeatureId.PRESSURE)
-            CapabilityRow("Smoothing",FeatureId.SMOOTHING)
-            CapabilityRow("Stabilization",FeatureId.STABILIZATION)
-            CapabilityRow("Grid",FeatureId.GRID)
-            CapabilityRow("Guides",FeatureId.GUIDES)
-            CapabilityRow("Snapping",FeatureId.SNAPPING)
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Text("Stabilization",Modifier.weight(1f))
+                Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it)})
+            }
+            Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=16.dp))
+            Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it)},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=16.dp))
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Text("Grid",Modifier.weight(1f));Switch(checked=controller.view.showGrid,onCheckedChange={controller.view.toggleGrid()})
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Text("Guides",Modifier.weight(1f));Switch(checked=controller.view.showGuides,onCheckedChange={controller.view.toggleGuides()})
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Text("Snapping",Modifier.weight(1f));Switch(checked=controller.view.snapEnabled,onCheckedChange={controller.view.toggleSnapping()})
+            }
             Text("Animation",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
-            CapabilityRow("Playback",FeatureId.PLAYBACK)
-            CapabilityRow("Loop",FeatureId.LOOP)
-            CapabilityRow("FPS",FeatureId.FPS)
-            CapabilityRow("Frame navigation",FeatureId.FRAME_NAVIGATION)
-            CapabilityRow("Interpolation",FeatureId.INTERPOLATION)
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Text("Loop playback",Modifier.weight(1f));Switch(checked=controller.animation.loop,onCheckedChange={controller.animation.toggleLoop()})
+            }
+            Text("FPS " + controller.animation.fps,Modifier.padding(horizontal=16.dp))
+            Slider(controller.animation.fps.toFloat(),{controller.animation.setFps(it.toInt())},valueRange=1f..60f,modifier=Modifier.padding(horizontal=16.dp))
+            Button(onClick={controller.animation.togglePlayback()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text(if(controller.animation.playing)"Pause" else "Play")}
+            Button(onClick={controller.animation.interpolateAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
-            CapabilityRow("Layers",FeatureId.LAYERS)
-            CapabilityRow("Materials",FeatureId.MATERIALS)
-            CapabilityRow("Stroke color",FeatureId.STROKE_COLOR)
-            CapabilityRow("Lasso",FeatureId.LASSO)
-            CapabilityRow("Advanced editing",FeatureId.MODIFIERS)
+            Button(onClick={controller.view.reset();controller.render()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Reset canvas view")}
+            Button(onClick={controller.smoothSelectedStroke()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Smooth selected stroke")}
         }
     }
 }

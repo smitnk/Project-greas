@@ -3665,6 +3665,79 @@ bool Backend::smooth_stroke(int index, float influence, int iterations)
   return false;
 }
 
+bool Backend::sculpt_at(int tool, float x, float y, float radius, float influence)
+{
+  if (!impl_->frame || radius <= 0.0f || !std::isfinite(x) || !std::isfinite(y)) {
+    impl_->last_error = "invalid Legacy GP sculpt parameters";
+    return false;
+  }
+  influence = std::max(0.0f, std::min(influence, 1.0f));
+  bool changed = false;
+
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke;
+       stroke = stroke->next) {
+    if (!stroke->points || stroke->totpoints <= 0) {
+      continue;
+    }
+
+    for (int i = 0; i < stroke->totpoints; ++i) {
+      bGPDspoint &point = stroke->points[i];
+      const float dx = point.x - x;
+      const float dy = point.y - y;
+      const float distance = std::sqrt(dx * dx + dy * dy);
+      if (distance > radius) {
+        continue;
+      }
+
+      const float falloff = (1.0f - distance / radius) * influence;
+      if (falloff <= 0.0f) {
+        continue;
+      }
+
+      switch (tool) {
+        case 0: /* Smooth: Blender Legacy GP BKE position smoothing. */
+          changed |= BKE_gpencil_stroke_smooth(
+              stroke, i, falloff, 1, true, false, false, false, true, nullptr);
+          break;
+        case 1: /* Thickness: Blender Legacy GP pressure smoothing. */
+          changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff);
+          break;
+        case 2: /* Strength: Blender Legacy GP strength smoothing. */
+          changed |= BKE_gpencil_stroke_smooth_strength(stroke, i, falloff);
+          break;
+        case 3: { /* Grab: move real Legacy GP points with brush falloff. */
+          point.x += dx * 0.0f + (x - point.x) * falloff;
+          point.y += dy * 0.0f + (y - point.y) * falloff;
+          changed = true;
+          break;
+        }
+        case 4: { /* Push: move real Legacy GP points away from brush center. */
+          const float length = std::max(distance, 0.001f);
+          point.x += (dx / length) * radius * falloff;
+          point.y += (dy / length) * radius * falloff;
+          changed = true;
+          break;
+        }
+        default:
+          impl_->last_error = "unknown Legacy GP sculpt brush";
+          return false;
+      }
+    }
+  }
+
+  if (!changed) {
+    impl_->last_error = "Legacy GP sculpt brush hit no stroke points";
+    return false;
+  }
+
+  impl_->stroke = nullptr;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
 bool Backend::set_onion_skin(bool enabled, int before, int after, float opacity)
 {
   if (!impl_->layer) {

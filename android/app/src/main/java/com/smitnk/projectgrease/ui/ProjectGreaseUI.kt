@@ -265,8 +265,12 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
                 IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
                 IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
-                Text("Frame "+controller.animation.currentFrame)
+                Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd)
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
+                TextButton(
+                    enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
+                    onClick={if(controller.animation.interpolateAt(controller.animation.currentFrame)){redraw()}}
+                ){Text("Interpolate")}
                 Spacer(Modifier.weight(1f))
                 FilterChip(selected=controller.animation.loop,onClick={controller.animation.toggleLoop();redraw()},label={Text("Loop")})
                 TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
@@ -274,15 +278,20 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 TextButton(onClick={if(controller.animation.frameCount>1){controller.animation.deleteFrame(controller.animation.currentFrame);redraw()}}){Text("Delete")}
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
-                (1..controller.animation.frameCount.coerceAtLeast(1)).forEach{frame->
+                val keyframes=controller.frameNumbers().toSet()
+                (1..controller.animation.timelineEnd.coerceAtLeast(1)).forEach{frame->
+                    val key=frame in keyframes
                     Surface(
-                        Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{controller.selectFrame(frame);redraw()},
+                        Modifier.width(52.dp).height(54.dp).padding(2.dp).clickable{controller.selectFrame(frame);redraw()},
                         shape=RoundedCornerShape(8.dp),
                         tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp
-                    ){Box(contentAlignment=Alignment.Center){Text(frame.toString())}}
+                    ){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+                        Text(frame.toString())
+                        Text(if(key) "KEY" else "HOLD",fontSize=8.sp)
+                    }}
                 }
                 Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
-                    controller.createFrame(controller.animation.frameCount+1);redraw()
+                    controller.createFrame((controller.animation.timelineEnd+1).coerceAtLeast(1));redraw()
                 },shape=RoundedCornerShape(8.dp)){
                     Box(contentAlignment=Alignment.Center){Text("+")}
                 }

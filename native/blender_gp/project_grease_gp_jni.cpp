@@ -444,6 +444,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseAt(
   return project_grease_gp_erase_at(from_handle(handle), x, y, radius) != 0;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSoftEraseAt(
+    JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius, jfloat strength)
+{
+  return project_grease_gp_soft_erase_at(
+             from_handle(handle), x, y, radius, strength) != 0;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearSelection(
     JNIEnv *, jobject, jlong handle)

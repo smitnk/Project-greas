@@ -576,6 +576,19 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSmoothStroke(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyBlenderModifier(
+    JNIEnv *env, jobject, jlong handle, jint index, jstring name, jfloat factor, jint iterations)
+{
+  if (!name) return JNI_FALSE;
+  const char *chars = env->GetStringUTFChars(name, nullptr);
+  if (!chars) return JNI_FALSE;
+  const int ok = project_grease_gp_apply_blender_modifier_named(
+      from_handle(handle), index, chars, factor, iterations);
+  env->ReleaseStringUTFChars(name, chars);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetOnionSkin(
     JNIEnv *, jobject, jlong handle, jboolean enabled,
     jint before, jint after, jfloat opacity)

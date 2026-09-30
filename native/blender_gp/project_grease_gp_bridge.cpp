@@ -537,6 +537,7 @@ int project_grease_gp_apply_blender_modifier_named(ProjectGreaseGPHandle *handle
   int type = -1;
   if (key == "SMOOTH") type = eGpencilModifierType_Smooth;
   else if (key == "SIMPLIFY") type = eGpencilModifierType_Simplify;
+  else if (key == "SUBDIVIDE") type = eGpencilModifierType_Subdiv;
   else if (key == "OFFSET") type = eGpencilModifierType_Offset;
   else if (key == "MIRROR") type = eGpencilModifierType_Mirror;
   else if (key == "THICKNESS") type = eGpencilModifierType_Thick;

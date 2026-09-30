@@ -114,6 +114,12 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     const float point_count = float(std::max(1, s->totpoints));
     avg_strength /= point_count;
     for (float &channel : avg_vertex_color) channel /= point_count;
+    // Older Project Grease strokes predate explicit Legacy GP vertex-color
+    // initialization. Treat an all-zero vertex color as the material default.
+    if (avg_vertex_color[3] <= 0.001f) {
+      avg_vertex_color[0] = avg_vertex_color[1] =
+          avg_vertex_color[2] = avg_vertex_color[3] = 1.0f;
+    }
     float color[4]={
         g_stroke_color[0] * avg_vertex_color[0],
         g_stroke_color[1] * avg_vertex_color[1],

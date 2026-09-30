@@ -37,6 +37,16 @@ file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
   "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/*.cc"
 )
 
+# Exact Blender 3.6.23 external curve-fitting implementation used by
+# gpencil_curve_legacy.c. Keep the upstream algorithm and only its direct
+# sources in the focused closure.
+set(PROJECT_GREASE_GP_CURVE_FIT_SOURCES
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
+)
+
 # BKE_gpencil_stroke_uniform_subdivide() uses Blender's real BLI heap.
 # Keep this dependency minimal rather than importing the full blenlib target.
 set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
@@ -60,6 +70,7 @@ set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
 )
 
 set(PROJECT_GREASE_GP_ENGINE_SOURCES
+  ${PROJECT_GREASE_GP_CURVE_FIT_SOURCES}
   ${PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES}
   project_grease_gp_backend.cpp
   project_grease_gp_engine.cpp
@@ -92,6 +103,7 @@ set(PROJECT_GREASE_GP_INCLUDE_DIRS
   "${BLENDER_SOURCE_DIR}/source/blender/blentranslation"
   "${BLENDER_SOURCE_DIR}/source/blender/gpu"
   "${BLENDER_SOURCE_DIR}/source/blender/render"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd"
   "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
   "${BLENDER_SOURCE_DIR}/intern/atomic"
   "${BLENDER_SOURCE_DIR}/intern/ghost"

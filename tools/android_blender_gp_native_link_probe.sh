@@ -26,6 +26,7 @@ INCLUDES=(
   "$BLENDER/source/blender"
   "$BLENDER/source"
   "$BLENDER/source/blender/blenlib"
+  "$BLENDER/extern/curve_fit_nd"
   "$BLENDER/source/blender/gpu"
   "$BLENDER/source/blender/gpu/intern"
   "$BLENDER/source/blender/draw"
@@ -100,6 +101,13 @@ CXX_SOURCES=(
 )
 
 C_SOURCES=(
+  # Exact Blender 3.6.23 curve-fit implementation required by
+  # gpencil_curve_legacy.c.
+  "$BLENDER/extern/curve_fit_nd/intern/curve_fit_cubic.c"
+  "$BLENDER/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
+  "$BLENDER/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
+  "$BLENDER/extern/curve_fit_nd/intern/generic_heap.c"
+
   "$BLENDER/source/blender/blenkernel/intern/gpencil_legacy.c"
   # Exact BLI helpers referenced by the Legacy GP editor/eraser/fill paths.
   "$BLENDER/source/blender/blenlib/intern/math_geom.c"

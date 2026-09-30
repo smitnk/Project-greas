@@ -54,7 +54,9 @@ object FeatureRegistry {
         FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,
-        FeatureId.LAYER_RENAME
+        FeatureId.LAYER_RENAME,
+        // Real JSON persistence of Legacy GP layers, frames, strokes and points.
+        FeatureId.NEW_PROJECT, FeatureId.OPEN_PROJECT, FeatureId.SAVE
     )
     private val inProgress = setOf(
         FeatureId.INSERT_FRAME,

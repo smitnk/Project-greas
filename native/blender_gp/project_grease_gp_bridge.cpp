@@ -544,16 +544,6 @@ int project_grease_gp_apply_blender_modifier_named(ProjectGreaseGPHandle *handle
   if (key == "SMOOTH") type = eGpencilModifierType_Smooth;
   else if (key == "SIMPLIFY") type = eGpencilModifierType_Simplify;
   else if (key == "SUBDIVIDE") type = eGpencilModifierType_Subdiv;
-  else if (key == "OFFSET") type = eGpencilModifierType_Offset;
-  else if (key == "MIRROR") type = eGpencilModifierType_Mirror;
-  else if (key == "THICKNESS") type = eGpencilModifierType_Thick;
-  else if (key == "TINT") type = eGpencilModifierType_Tint;
-  else if (key == "OPACITY") type = eGpencilModifierType_Opacity;
-  else if (key == "NOISE") type = eGpencilModifierType_Noise;
-  else if (key == "LENGTH") type = eGpencilModifierType_Length;
-  else if (key == "TEXTURE") type = eGpencilModifierType_Texture;
-  else if (key == "WEIGHT_ANGLE") type = eGpencilModifierType_WeightAngle;
-  else if (key == "WEIGHT_PROXIMITY") type = eGpencilModifierType_WeightProximity;
   else return 0;
   return handle->backend.apply_blender_modifier(index, type, factor, iterations) ? 1 : 0;
 }

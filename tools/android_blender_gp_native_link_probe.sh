@@ -69,6 +69,8 @@ done
 
 CXX_SOURCES=(
   "$ROOT/native/blender_gp/project_grease_gp_backend.cpp"
+  # Exact Blender 3.6.23 Legacy GP BKE geometry closure.
+  "$BLENDER/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
   "$ROOT/native/blender_gp/project_grease_gp_bridge.cpp"
   "$ROOT/native/blender_gp/project_grease_gp_jni.cpp"
   "$BLENDER/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
@@ -79,12 +81,16 @@ CXX_SOURCES=(
   "$BLENDER/source/blender/gpu/intern/gpu_capabilities.cc"
   "$ROOT/native/blender_gp/android_gpu_backend.cpp"
   "$BLENDER/source/blender/blenlib/intern/listbase.cc"
+  "$BLENDER/source/blender/blenlib/intern/polyfill_2d.c"
   "$BLENDER/intern/guardedalloc/intern/leak_detector.cc"
   "$BLENDER/intern/guardedalloc/intern/memory_usage.cc"
 )
 
 C_SOURCES=(
   "$BLENDER/source/blender/blenkernel/intern/gpencil_legacy.c"
+  # Exact BLI helpers referenced by the Legacy GP editor/eraser/fill paths.
+  "$BLENDER/source/blender/blenlib/intern/math_geom.c"
+  "$BLENDER/source/blender/blenlib/intern/lasso_2d.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn_guarded_impl.c"
   "$BLENDER/intern/guardedalloc/intern/mallocn_lockfree_impl.c"

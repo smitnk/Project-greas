@@ -126,12 +126,64 @@ std::vector<Point> arc(const Point& start, const Point& end, int edges, bool fli
   return points;
 }
 
+std::vector<Point> bezier(const Point& start,
+                                  const Point& control1,
+                                  const Point& control2,
+                                  const Point& end,
+                                  int edges)
+{
+  const int count = std::max(2, edges);
+  std::vector<Point> points;
+  points.reserve(count);
+  for (int i = 0; i < count; ++i) {
+    const float t = static_cast<float>(i) / static_cast<float>(count - 1);
+    const float u = 1.0f - t;
+    points.push_back({
+        u * u * u * start.x + 3.0f * u * u * t * control1.x +
+            3.0f * u * t * t * control2.x + t * t * t * end.x,
+        u * u * u * start.y + 3.0f * u * u * t * control1.y +
+            3.0f * u * t * t * control2.y + t * t * t * end.y,
+    });
+  }
+  return points;
+}
+
+std::vector<Point> polyline(const std::vector<Point>& control_points, int edges_per_segment)
+{
+  if (control_points.empty()) {
+    return {};
+  }
+  if (control_points.size() == 1) {
+    return control_points;
+  }
+
+  const int edges = std::max(2, edges_per_segment);
+  std::vector<Point> points;
+  points.reserve((control_points.size() - 1) * edges);
+
+  for (size_t segment = 0; segment + 1 < control_points.size(); ++segment) {
+    const Point& a = control_points[segment];
+    const Point& b = control_points[segment + 1];
+    for (int i = 0; i < edges; ++i) {
+      if (segment > 0 && i == 0) {
+        continue;
+      }
+      const float t = static_cast<float>(i) / static_cast<float>(edges - 1);
+      points.push_back(lerp(a, b, t));
+    }
+  }
+  return points;
+}
+
 std::vector<Point> generate(int type,
                              const Point& start,
                              const Point& end,
                              float start_angle,
                              float end_angle,
-                             int segments)
+                             int segments,
+                             const Point& control1,
+                             const Point& control2,
+                             const std::vector<Point>& polyline_points)
 {
   switch (type) {
     case 0:
@@ -142,6 +194,11 @@ std::vector<Point> generate(int type,
       return circle(start, end, segments);
     case 3:
       return arc(start, end, segments, end_angle < start_angle);
+    case 4:
+      return bezier(start, control1, control2, end, segments);
+    case 5:
+      return polyline(polyline_points.empty() ? std::vector<Point>{start, end} : polyline_points,
+                      segments);
     default:
       return {};
   }

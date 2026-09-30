@@ -80,7 +80,30 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var state by remember{mutableStateOf(GreaseUiState())}
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
+    fun saveCurrentProject() {
+        controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName, it) }
+        projectStore.upsert(ProjectRecord(
+            controller.document.projectName,
+            controller.document.canvasWidth,
+            controller.document.canvasHeight,
+            controller.animation.fps,
+            System.currentTimeMillis()
+        ))
+        projects=projectStore.load()
+        controller.document.markSaved()
+    }
+
+    LaunchedEffect(screen) {
+        if (screen == Screen.EDITOR) {
+            while (true) {
+                kotlinx.coroutines.delay(5000L)
+                saveCurrentProject()
+            }
+        }
+    }
+
     BackHandler(enabled=screen!=Screen.HOME){
+        if (screen == Screen.EDITOR) saveCurrentProject()
         screen=when(screen){
             Screen.NEW,Screen.SETTINGS,Screen.EDITOR->Screen.HOME
             Screen.HOME->Screen.HOME
@@ -89,13 +112,21 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     ProjectGreaseTheme(mode=themeMode){
         when(screen){
-            Screen.HOME->Home(projects,{record->controller.document.projectName=record.name;controller.document.canvasWidth=record.width;controller.document.canvasHeight=record.height;controller.animation.setFps(record.fps);screen=Screen.EDITOR},{screen=Screen.NEW},{screen=Screen.SETTINGS})
+            Screen.HOME->Home(projects,{record->
+                controller.document.projectName=record.name
+                controller.document.canvasWidth=record.width
+                controller.document.canvasHeight=record.height
+                controller.animation.setFps(record.fps)
+                projectStore.loadDocument(record.name)?.let { controller.loadDocumentJson(it) }
+                screen=Screen.EDITOR
+            },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},controller,{screen=Screen.HOME}){
                 controller.document.projectName=name.ifBlank{"Project Grease"}
                 controller.document.canvasWidth=preset.width
                 controller.document.canvasHeight=preset.height
                 controller.animation.setFps(preset.fps)
                 controller.createFrame(1)
+                controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName,it) }
                 val record=ProjectRecord(controller.document.projectName,preset.width,preset.height,preset.fps,System.currentTimeMillis())
                 projectStore.upsert(record)
                 projects=projectStore.load()

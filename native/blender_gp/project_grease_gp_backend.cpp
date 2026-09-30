@@ -560,10 +560,63 @@ bool Backend::reset_document()
     impl_->last_error = "backend is not initialized";
     return false;
   }
-  shutdown();
-  if (!initialize() || !create_document() || !create_layer("Layer 1") || !create_frame(1)) {
+
+  if (impl_->stroke_open) {
+    cancel_stroke();
+  }
+  if (impl_->gpd) {
+    if (impl_->gpu_initialized) {
+      DRW_gpencil_batch_cache_free(impl_->gpd);
+    }
+#ifdef __ANDROID__
+    for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+         layer;) {
+      bGPDlayer *next_layer = layer->next;
+      for (bGPDframe *frame = static_cast<bGPDframe *>(layer->frames.first);
+           frame;) {
+        bGPDframe *next_frame = frame->next;
+        for (bGPDstroke *stroke = static_cast<bGPDstroke *>(frame->strokes.first);
+             stroke;) {
+          bGPDstroke *next_stroke = stroke->next;
+          MEM_SAFE_FREE(stroke->points);
+          MEM_SAFE_FREE(stroke->triangles);
+          MEM_SAFE_FREE(stroke->dvert);
+          MEM_SAFE_FREE(stroke->editcurve);
+          MEM_freeN(stroke);
+          stroke = next_stroke;
+        }
+        MEM_freeN(frame);
+        frame = next_frame;
+      }
+      MEM_freeN(layer);
+      layer = next_layer;
+    }
+    gp_materials_free(impl_->gpd);
+    MEM_freeN(impl_->gpd);
+#else
+    if (impl_->bmain) {
+      /* The desktop proof path owns the GP ID through Main. */
+      BKE_gpencil_data_free(impl_->gpd);
+    }
+#endif
+    impl_->gpd = nullptr;
+  }
+
+  impl_->layer = nullptr;
+  impl_->frame = nullptr;
+  impl_->stroke = nullptr;
+  impl_->document_created = false;
+  impl_->layer_created = false;
+  impl_->frame_created = false;
+  impl_->stroke_open = false;
+  impl_->pending_points.clear();
+  history_snapshot_clear(impl_->undo_history);
+  history_snapshot_clear(impl_->redo_history);
+
+  if (!create_document() || !create_layer("Layer 1") || !create_frame(1)) {
     return false;
   }
+  impl_->last_error.clear();
   return true;
 }
 

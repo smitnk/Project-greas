@@ -353,6 +353,8 @@ class EditorController {
     val brushes=BrushController(materials)
     var mode=GreaseMode.DRAW
         private set
+    var multiframeEditing=false
+        private set
     val view=ViewController()
     val selection=SelectionController(native)
     val modifiers=ModifierController()
@@ -736,7 +738,7 @@ class EditorController {
 
     fun setMultiframeEditing(enabled:Boolean):Boolean {
         val ok=native.setMultiframeEditing(enabled)
-        if(ok) render()
+        if(ok){ multiframeEditing=enabled; render() }
         return ok
     }
     fun fillAt(x: Float, y: Float): Boolean {

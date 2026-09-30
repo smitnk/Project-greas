@@ -1255,6 +1255,12 @@ bool Backend::create_polyline(const StrokePoint *points,
     dst.pressure = std::max(0.0f, src.pressure);
     dst.strength = std::max(0.0f, std::min(src.strength, 1.0f));
     dst.time = src.time;
+    // Legacy GP point vertex color defaults to transparent in a zeroed point;
+    // explicit white keeps material color authoritative until vertex paint is used.
+    dst.vert_color[0] = 1.0f;
+    dst.vert_color[1] = 1.0f;
+    dst.vert_color[2] = 1.0f;
+    dst.vert_color[3] = 1.0f;
   }
 
   if (cyclic) {

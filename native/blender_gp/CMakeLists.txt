@@ -117,6 +117,27 @@ set_source_files_properties(
   "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
   PROPERTIES LANGUAGE C
 )
+# Explicitly mark the pinned Blender 3.6.23 C sources by absolute path too.
+# This prevents the mixed-language target from selecting clang++ for these
+# legacy sources.
+set_source_files_properties(
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/dna_utils.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
+  "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
+  PROPERTIES LANGUAGE C
+)
 
 set(PROJECT_GREASE_GP_INCLUDE_DIRS
   "${CMAKE_CURRENT_SOURCE_DIR}"

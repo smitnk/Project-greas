@@ -235,7 +235,7 @@ class BrushController(private val materials: MaterialController) {
         private set
     var size = materials.thickness
         private set
-    var strength = materials.opacity
+    var strength = 1f
         private set
     var pressureCurve = 1f
         private set
@@ -273,7 +273,6 @@ class BrushController(private val materials: MaterialController) {
         strength = newStrength
         pressureCurve = curve
         materials.setThickness(size)
-        materials.setOpacity(strength)
     }
 }
 
@@ -521,7 +520,7 @@ class EditorController {
             if (GPNative.nativeAddPointEglRenderer(
                     rendererHandle, px, py, 0f,
                     brushes.pressure(pressure).coerceAtLeast(0.01f),
-                    materials.opacity, timeSeconds)) {
+                    brushes.strength, timeSeconds)) {
                 lastEmittedX=px
                 lastEmittedY=py
             }

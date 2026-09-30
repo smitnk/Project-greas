@@ -68,6 +68,8 @@ int project_grease_gp_select_frame(ProjectGreaseGPHandle *handle, int frame_numb
 int project_grease_gp_select_frame_or_hold(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_frame_numbers(const ProjectGreaseGPHandle *handle, int *out_frames, int capacity);
+int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor);
 int project_grease_gp_duplicate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame);
 int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index);

@@ -714,6 +714,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         ListItem(headlineContent={Text("Subdivide selected stroke")},modifier=Modifier.clickable{controller.subdivideSelectedStroke(1);redraw();onDismiss()})
         ListItem(headlineContent={Text("Close selected stroke")},modifier=Modifier.clickable{controller.closeSelectedStroke();redraw();onDismiss()})
         ListItem(headlineContent={Text("Trim selected stroke at first intersection")},modifier=Modifier.clickable{controller.trimSelectedStrokeToIntersection();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Reverse selected stroke (Legacy GP)")},modifier=Modifier.clickable{controller.reverseSelectedStroke();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Uniform subdivide selected stroke (Legacy GP)")},modifier=Modifier.clickable{controller.uniformSubdivideSelectedStroke(8);redraw();onDismiss()})
+        ListItem(headlineContent={Text("Shrink selected stroke from start (Legacy GP)")},modifier=Modifier.clickable{controller.shrinkSelectedStroke(5f,1);redraw();onDismiss()})
+        ListItem(headlineContent={Text("Randomize selected stroke color (Legacy GP)")},modifier=Modifier.clickable{controller.randomizeSelectedStrokeColor();redraw();onDismiss()})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()})
         Spacer(Modifier.height(20.dp))
     }

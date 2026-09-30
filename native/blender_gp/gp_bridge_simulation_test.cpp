@@ -21,6 +21,31 @@ int main()
     return 2;
   }
 
+  // Advanced edit regression: these operations must stay direct Blender 3.6.23 BKE calls.
+  if (!project_grease_gp_duplicate_stroke(handle, 0) ||
+      !project_grease_gp_apply_legacy_geometry_batch(
+          handle, 1,
+          (ProjectGreaseGPLegacyGeometryOp[]){{14, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0}},
+          1) ||
+      !project_grease_gp_apply_legacy_geometry_batch(
+          handle, 1,
+          (ProjectGreaseGPLegacyGeometryOp[]){{15, 0.0f, 0.0f, 0.0f, 8, 0, 1, 0}},
+          1) ||
+      !project_grease_gp_apply_legacy_geometry_batch(
+          handle, 1,
+          (ProjectGreaseGPLegacyGeometryOp[]){{16, 5.0f, 0.0f, 0.0f, 1, 0, 0, 0}},
+          1) ||
+      !project_grease_gp_apply_legacy_geometry_batch(
+          handle, 1,
+          (ProjectGreaseGPLegacyGeometryOp[]){{17, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0}},
+          1) ||
+      !project_grease_gp_delete_stroke(handle, 1)) {
+    std::fprintf(stderr, "advanced Legacy GP geometry regression failed: %s\n",
+                 project_grease_gp_last_error(handle));
+    project_grease_gp_destroy(handle);
+    return 10;
+  }
+
   if (project_grease_gp_stroke_count(handle) != 1 ||
       project_grease_gp_point_count(handle) != 3) {
     std::fprintf(stderr, "bridge state mismatch: strokes=%d points=%d\n",

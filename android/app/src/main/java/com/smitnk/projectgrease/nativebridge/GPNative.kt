@@ -109,6 +109,9 @@ object GPNative {
     external fun nativeSetOnionSkin(handle: Long, enabled: Boolean, before: Int, after: Int, opacity: Float): Boolean
     external fun nativeSetMultiframeEditing(handle: Long, enabled: Boolean): Boolean
     external fun nativeApplyBlenderModifier(handle: Long, strokeIndex: Int, name: String, factor: Float, iterations: Int): Boolean
+    external fun nativeApplyLegacyGeometry(handle: Long, strokeIndex: Int, type: Int,
+                                            value0: Float, value1: Float, value2: Float,
+                                            int0: Int, int1: Int, flag0: Boolean, flag1: Boolean): Boolean
     external fun nativeFillStroke(handle: Long, index: Int): Boolean
     external fun nativeHistoryReset(handle: Long): Boolean
     external fun nativeHistoryRecord(handle: Long): Boolean

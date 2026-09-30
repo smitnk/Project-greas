@@ -136,6 +136,10 @@ class Backend {
     Close,
     Dissolve,
     FillTriangulate,
+    Reverse,
+    UniformSubdivide,
+    Shrink,
+    RandomColor,
   };
 
   struct LegacyGeometryOp {

@@ -584,6 +584,25 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSculptAt(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyLegacyGeometry(
+    JNIEnv *, jobject, jlong handle, jint strokeIndex, jint type,
+    jfloat value0, jfloat value1, jfloat value2, jint int0, jint int1,
+    jboolean flag0, jboolean flag1)
+{
+  ProjectGreaseGPLegacyGeometryOp op{};
+  op.type = type;
+  op.value0 = value0;
+  op.value1 = value1;
+  op.value2 = value2;
+  op.int0 = int0;
+  op.int1 = int1;
+  op.flag0 = flag0 ? 1 : 0;
+  op.flag1 = flag1 ? 1 : 0;
+  return project_grease_gp_apply_legacy_geometry_batch(
+             from_handle(handle), strokeIndex, &op, 1) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyBlenderModifier(
     JNIEnv *env, jobject, jlong handle, jint index, jstring name, jfloat factor, jint iterations)
 {

@@ -3542,6 +3542,27 @@ bool Backend::apply_legacy_geometry_batch(int stroke_index,
       case LegacyGeometryOpType::FillTriangulate:
         BKE_gpencil_stroke_fill_triangulate(stroke);
         break;
+      
+      case LegacyGeometryOpType::Reverse:
+        BKE_gpencil_stroke_flip(stroke);
+        break;
+
+      case LegacyGeometryOpType::UniformSubdivide:
+        BKE_gpencil_stroke_uniform_subdivide(
+            impl_->gpd, stroke, std::max<uint32_t>(2u, static_cast<uint32_t>(op.int0)), op.flag0);
+        break;
+
+      case LegacyGeometryOpType::Shrink:
+        if (!BKE_gpencil_stroke_shrink(
+                stroke, std::max(0.0f, op.value0), static_cast<short>(op.int0))) {
+          impl_->last_error = "Blender Legacy GP stroke shrink failed";
+          return false;
+        }
+        break;
+
+      case LegacyGeometryOpType::RandomColor:
+        BKE_gpencil_stroke_set_random_color(stroke);
+        break;
     }
   }
 

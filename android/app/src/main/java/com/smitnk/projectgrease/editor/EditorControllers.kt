@@ -79,6 +79,16 @@ class NativeEditorBridge {
     fun setMultiframeEditing(enabled:Boolean) = handle != 0L && GPNative.nativeSetMultiframeEditing(handle,enabled)
     fun applyModifier(strokeIndex:Int,name:String,factor:Float=0.5f,iterations:Int=2):Boolean =
         handle != 0L && GPNative.nativeApplyBlenderModifier(handle,strokeIndex,name,factor,iterations)
+    fun legacyGeometry(strokeIndex:Int, type:Int, value0:Float=0f, value1:Float=0f, value2:Float=0f,
+                       int0:Int=0, int1:Int=0, flag0:Boolean=false, flag1:Boolean=false):Boolean =
+        handle != 0L && GPNative.nativeApplyLegacyGeometry(
+            handle, strokeIndex, type, value0, value1, value2, int0, int1, flag0, flag1)
+    fun reverseStroke(index:Int) = legacyGeometry(index, 14)
+    fun uniformSubdivideStroke(index:Int, targetPoints:Int) =
+        legacyGeometry(index, 15, int0=targetPoints, flag0=true)
+    fun shrinkStroke(index:Int, distance:Float, mode:Int) =
+        legacyGeometry(index, 16, value0=distance, int0=mode)
+    fun randomizeStrokeColor(index:Int) = legacyGeometry(index, 17)
 }
 
 class HistoryController(private val native: NativeEditorBridge) {
@@ -1059,6 +1069,35 @@ class EditorController {
     fun subdivideSelectedStroke(level:Int=1):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.subdivideStroke(i,level);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun closeSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.closeStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun trimSelectedStroke(from:Int,to:Int,keepSinglePoint:Boolean=true):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStroke(i,from,to,keepSinglePoint);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun reverseSelectedStroke():Boolean {
+        val index=selection.selectedStroke
+        if(index<0)return false
+        val ok=native.reverseStroke(index)
+        if(ok)history.markEdit()
+        return ok
+    }
+    fun uniformSubdivideSelectedStroke(targetPoints:Int):Boolean {
+        val index=selection.selectedStroke
+        if(index<0)return false
+        val ok=native.uniformSubdivideStroke(index,targetPoints)
+        if(ok)history.markEdit()
+        return ok
+    }
+    fun shrinkSelectedStroke(distance:Float,mode:Int):Boolean {
+        val index=selection.selectedStroke
+        if(index<0)return false
+        val ok=native.shrinkStroke(index,distance,mode)
+        if(ok)history.markEdit()
+        return ok
+    }
+    fun randomizeSelectedStrokeColor():Boolean {
+        val index=selection.selectedStroke
+        if(index<0)return false
+        val ok=native.randomizeStrokeColor(index)
+        if(ok)history.markEdit()
+        return ok
+    }
+
     fun trimSelectedStrokeToIntersection():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStrokeToIntersection(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun splitSelectedStroke(beforeIndex:Int):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.splitStroke(i,beforeIndex);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun undo():Boolean {

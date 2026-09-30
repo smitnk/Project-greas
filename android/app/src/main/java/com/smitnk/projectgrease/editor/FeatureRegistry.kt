@@ -58,8 +58,7 @@ object FeatureRegistry {
         FeatureId.LAYER_RENAME
     )
     private val inProgress = setOf(
-        FeatureId.TRIM,
-        FeatureId.INSERT_FRAME, FeatureId.FRAME_HOLDS,
+        FeatureId.INSERT_FRAME,
         FeatureId.ONION_LAYER_FILTER,
         FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW
     )

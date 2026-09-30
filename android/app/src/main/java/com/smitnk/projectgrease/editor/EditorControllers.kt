@@ -309,7 +309,23 @@ class SelectionController(private val native: NativeEditorBridge) {
 }
 
 class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
-class SculptController { fun isAvailable()=FeatureRegistry.capability(FeatureId.SCULPT).state==FeatureState.AVAILABLE }
+enum class SculptBrush { SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH }
+
+class SculptController(private val native: NativeEditorBridge) {
+    var brush = SculptBrush.SMOOTH
+        private set
+    fun isAvailable() = FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+    fun select(value: SculptBrush) { brush = value }
+    fun toolId(): Int = when (brush) {
+        SculptBrush.SMOOTH -> 0
+        SculptBrush.THICKNESS -> 1
+        SculptBrush.STRENGTH -> 2
+        SculptBrush.GRAB -> 3
+        SculptBrush.PUSH -> 4
+    }
+    fun apply(x: Float, y: Float, radius: Float, influence: Float = 0.35f): Boolean =
+        native.handle != 0L && GPNative.nativeSculptAt(native.handle, toolId(), x, y, radius, influence)
+}
 
 class OnionSkinController {
     var enabled=false; private set
@@ -360,7 +376,7 @@ class EditorController {
     val view=ViewController()
     val selection=SelectionController(native)
     val modifiers=ModifierController()
-    val sculpt=SculptController()
+    val sculpt=SculptController(native)
     val onion=OnionSkinController()
     private var rendererHandle=0L
     fun attachRenderer(handle:Long) {
@@ -386,6 +402,13 @@ class EditorController {
         return ok
     }
     fun selectTool(tool:GreaseTool)=tools.select(tool)
+    fun sculptAt(x:Float,y:Float):Boolean {
+        if (rendererHandle == 0L) return false
+        val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
+        val ok = sculpt.apply(x, y, radius)
+        if (ok) { history.markEdit(); document.markDirty() }
+        return ok
+    }
     fun selectBrush(preset:BrushPreset) {
         brushes.select(preset)
         setMaterialColor(materials.colorArgb)

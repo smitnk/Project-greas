@@ -87,7 +87,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c",
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/memory_usage.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"

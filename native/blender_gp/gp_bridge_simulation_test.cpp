@@ -30,11 +30,20 @@ int main()
     return 3;
   }
 
+  // Sculpt foundation must operate on the real Legacy GP stroke without changing
+  // stroke topology. Smooth is Blender's BKE GP algorithm.
+  if (!project_grease_gp_sculpt_at(handle, 0, 0.0f, 0.0f, 64.0f, 0.25f)) {
+    std::fprintf(stderr, "legacy GP sculpt smooth failed: %s\n",
+                 project_grease_gp_last_error(handle));
+    project_grease_gp_destroy(handle);
+    return 4;
+  }
+
   if (!project_grease_gp_render(handle)) {
     std::fprintf(stderr, "bridge render failed: %s\n",
                  project_grease_gp_last_error(handle));
     project_grease_gp_destroy(handle);
-    return 4;
+    return 5;
   }
 
   // Cancellation must discard an open Android stroke instead of committing it.
@@ -46,7 +55,7 @@ int main()
     std::fprintf(stderr, "bridge stroke cancellation failed: %s\n",
                  project_grease_gp_last_error(handle));
     project_grease_gp_destroy(handle);
-    return 5;
+    return 6;
   }
 
   std::puts("Project Grease GP native bridge simulation passed");

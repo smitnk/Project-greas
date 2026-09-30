@@ -363,7 +363,8 @@ class EditorController {
     private var rendererHandle=0L
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
-        native.attach(handle)
+        val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
+        native.attach(gpHandle)
         native.historyReset()
         pushMaterialColor()
         animation.initialize()

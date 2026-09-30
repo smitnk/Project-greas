@@ -815,7 +815,13 @@ class EditorController {
     fun pushMaterialColor(){
         if(rendererHandle==0L)return
         val c=colorToFloats(materials.colorArgb)
-        GPNative.nativeSetStrokeColorEglRenderer(rendererHandle,c[0],c[1],c[2],c[3])
+        // Strength is the active material alpha for the focused Android
+        // presentation path. The previous implementation sent the palette
+        // alpha unchanged, so the Strength control had no visible effect.
+        GPNative.nativeSetStrokeColorEglRenderer(
+            rendererHandle,
+            c[0], c[1], c[2], c[3] * materials.opacity
+        )
     }
     private fun colorToFloats(argb:Int):FloatArray = floatArrayOf(
         ((argb ushr 16) and 255)/255f,

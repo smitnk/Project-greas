@@ -3131,11 +3131,15 @@ bool Backend::render_with_gpu_context()
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
   const bool cache_ready = batch != nullptr;
 #ifdef __ANDROID__
-  // The Legacy GP cache is the Blender geometry/data proof layer. Android
-  // presents the same real bGPDframe through a focused GLES adapter because
-  // the desktop GP shader stack depends on buffer-texture/material
-  // infrastructure that is intentionally outside Project Grease scope.
-  bool presented = cache_ready &&
+  // Android presentation is the focused Project Grease renderer. It must not
+  // depend on DRW cache availability while a Legacy GP stroke is still open:
+  // Blender's sbuffer is the authoritative live input and there may be no
+  // committed bGPDstroke/batch yet. The previous cache_ready gate caused
+  // live drawing to remain invisible until ACTION_UP committed the stroke.
+  //
+  // Keep building the real Blender GP cache when possible, but never make
+  // Android's live presentation depend on that cache.
+  bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
   if (presented && impl_->stroke_open && !impl_->pending_points.empty()) {
     presented = project_grease_android_present_pending_stroke(
@@ -3153,11 +3157,19 @@ bool Backend::render_with_gpu_context()
   BKE_id_free(impl_->bmain, &ob->id);
 #endif
 
+#ifdef __ANDROID__
+  impl_->last_error = !presented
+      ? "Blender Legacy GP Android presentation failed"
+      : (cache_ready
+          ? "Blender Legacy GP data/cache accepted and presented through Android GLES"
+          : "Blender Legacy GP data presented through focused Android GLES while DRW cache was unavailable");
+#else
   impl_->last_error = !cache_ready
       ? "DRW_cache_gpencil_get() returned null"
       : !presented
           ? "Blender Legacy GP cache built, but Android presentation failed"
           : "Blender Legacy GP data/cache accepted and presented through Android GLES";
+#endif
   return presented;
 }
 

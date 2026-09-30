@@ -135,7 +135,12 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 screen=Screen.EDITOR
             }
             Screen.EDITOR->Editor(controller,state,{state=it},{screen=Screen.HOME},{screen=Screen.SETTINGS},blenderViewport)
-            Screen.SETTINGS->Settings(controller,themeMode,{themeMode=it},{screen=Screen.HOME})
+            Screen.SETTINGS->Settings(
+                controller,
+                themeMode,
+                {themeMode=it},
+                {screen=Screen.HOME}
+            )
         }
     }
 }
@@ -318,26 +323,63 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
     Surface(tonalElevation=2.dp){
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
-            Text("Mode",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
-            GreaseMode.entries.forEach{mode->
-                val selected=controller.mode==mode
-                val supported=selected || when(mode){
-                    GreaseMode.DRAW,GreaseMode.EDIT->true
-                    GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state==FeatureState.AVAILABLE
-                    GreaseMode.VERTEX_PAINT,GreaseMode.WEIGHT_PAINT->false
+        Column(Modifier.fillMaxWidth()){
+            Row(
+                Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal=8.dp,vertical=5.dp),
+                verticalAlignment=Alignment.CenterVertically
+            ){
+                Text("Mode",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
+                GreaseMode.entries.forEach{mode->
+                    val selected=controller.mode==mode
+                    val supported=selected || when(mode){
+                        GreaseMode.DRAW,GreaseMode.EDIT->true
+                        GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state==FeatureState.AVAILABLE
+                        GreaseMode.VERTEX_PAINT,GreaseMode.WEIGHT_PAINT->false
+                    }
+                    FilterChip(
+                        selected=selected,
+                        enabled=supported,
+                        onClick={if(controller.setMode(mode))redraw()},
+                        label={Text(mode.name.replace('_',' '),fontSize=10.sp)},
+                        modifier=Modifier.padding(end=3.dp)
+                    )
                 }
-                FilterChip(selected=selected,enabled=supported,onClick={if(controller.setMode(mode))redraw()},label={Text(mode.name.replace('_',' '),fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("Brush",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
+                BrushPreset.entries.forEach{preset->
+                    FilterChip(
+                        selected=controller.brushes.preset==preset,
+                        onClick={controller.brushes.select(preset);controller.pushMaterialColor();redraw()},
+                        label={Text(preset.name,fontSize=10.sp)},
+                        modifier=Modifier.padding(end=3.dp)
+                    )
+                }
             }
-            Spacer(Modifier.width(7.dp))
-            Text("Brush",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
-            BrushPreset.entries.forEach{preset->
-                FilterChip(selected=controller.brushes.preset==preset,onClick={controller.brushes.select(preset);controller.pushMaterialColor();redraw()},label={Text(preset.name,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=3.dp),
+                verticalAlignment=Alignment.CenterVertically
+            ){
+                Text("Size "+controller.brushes.size.toInt(),fontSize=10.sp,modifier=Modifier.width(58.dp))
+                Slider(
+                    value=controller.brushes.size,
+                    onValueChange={controller.brushes.setSize(it);redraw()},
+                    valueRange=.5f..100f,
+                    modifier=Modifier.weight(1f).padding(horizontal=4.dp)
+                )
+                Text("Strength "+(controller.brushes.strength*100).toInt()+"%",fontSize=10.sp,modifier=Modifier.width(76.dp))
+                Slider(
+                    value=controller.brushes.strength,
+                    onValueChange={
+                        controller.brushes.setStrength(it)
+                        controller.pushMaterialColor()
+                        redraw()
+                    },
+                    valueRange=0f..1f,
+                    modifier=Modifier.weight(1f).padding(horizontal=4.dp)
+                )
             }
-            Text("Size " + controller.brushes.size.toInt(),fontSize=10.sp,modifier=Modifier.padding(horizontal=4.dp))
-            Slider(value=controller.brushes.size,onValueChange={controller.brushes.setSize(it);redraw()},valueRange=.5f..100f,modifier=Modifier.width(115.dp))
-            Text("Strength " + (controller.brushes.strength*100).toInt() + "%",fontSize=10.sp,modifier=Modifier.padding(horizontal=4.dp))
-            Slider(value=controller.brushes.strength,onValueChange={controller.brushes.setStrength(it);controller.pushMaterialColor();redraw()},valueRange=0f..1f,modifier=Modifier.width(100.dp))
         }
     }
 }
@@ -660,6 +702,14 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     onTheme:(ProjectGreaseThemeMode)->Unit,
     onBack:()->Unit
 ){
+    var stabilization by remember { mutableStateOf(controller.stabilizerEnabled) }
+    var pressureCurve by remember { mutableFloatStateOf(controller.brushes.pressureCurve) }
+    var grid by remember { mutableStateOf(controller.view.showGrid) }
+    var guides by remember { mutableStateOf(controller.view.showGuides) }
+    var snapping by remember { mutableStateOf(controller.view.snapEnabled) }
+    var loop by remember { mutableStateOf(controller.animation.loop) }
+    var fps by remember { mutableFloatStateOf(controller.animation.fps.toFloat()) }
+
     Scaffold(topBar={TopAppBar(title={Text("Settings")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}})}){pad->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())){
             Text("Theme",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
@@ -671,25 +721,60 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Text("Drawing",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
                 Text("Stabilization",Modifier.weight(1f))
-                Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it)})
+                Switch(
+                    checked=stabilization,
+                    onCheckedChange={stabilization=it;controller.setStabilizer(it)}
+                )
             }
-            Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=16.dp))
-            Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it)},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=16.dp))
+            Text("Pressure curve " + "%.2f".format(pressureCurve),Modifier.padding(horizontal=16.dp))
+            Slider(
+                pressureCurve,
+                {
+                    pressureCurve=it
+                    controller.brushes.setPressureCurve(it)
+                },
+                valueRange=.25f..3f,
+                modifier=Modifier.padding(horizontal=16.dp)
+            )
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
-                Text("Grid",Modifier.weight(1f));Switch(checked=controller.view.showGrid,onCheckedChange={controller.view.toggleGrid()})
+                Text("Grid",Modifier.weight(1f))
+                Switch(
+                    checked=grid,
+                    onCheckedChange={grid=it;controller.view.toggleGrid();controller.render()}
+                )
             }
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
-                Text("Guides",Modifier.weight(1f));Switch(checked=controller.view.showGuides,onCheckedChange={controller.view.toggleGuides()})
+                Text("Guides",Modifier.weight(1f))
+                Switch(
+                    checked=guides,
+                    onCheckedChange={guides=it;controller.view.toggleGuides();controller.render()}
+                )
             }
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
-                Text("Snapping",Modifier.weight(1f));Switch(checked=controller.view.snapEnabled,onCheckedChange={controller.view.toggleSnapping()})
+                Text("Snapping",Modifier.weight(1f))
+                Switch(
+                    checked=snapping,
+                    onCheckedChange={snapping=it;controller.view.toggleSnapping();controller.render()}
+                )
             }
             Text("Animation",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
-                Text("Loop playback",Modifier.weight(1f));Switch(checked=controller.animation.loop,onCheckedChange={controller.animation.toggleLoop()})
+                Text("Loop playback",Modifier.weight(1f))
+                Switch(
+                    checked=loop,
+                    onCheckedChange={loop=it;controller.animation.toggleLoop()}
+                )
             }
-            Text("FPS " + controller.animation.fps,Modifier.padding(horizontal=16.dp))
-            Slider(controller.animation.fps.toFloat(),{controller.animation.setFps(it.toInt())},valueRange=1f..60f,modifier=Modifier.padding(horizontal=16.dp))
+            Text("FPS " + fps.toInt(),Modifier.padding(horizontal=16.dp))
+            Slider(
+                fps,
+                {
+                    fps=it
+                    controller.animation.setFps(it.toInt())
+                },
+                valueRange=1f..60f,
+                modifier=Modifier.padding(horizontal=16.dp)
+            )
             Button(onClick={controller.animation.togglePlayback()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text(if(controller.animation.playing)"Pause" else "Play")}
             Button(onClick={controller.animation.interpolateAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)

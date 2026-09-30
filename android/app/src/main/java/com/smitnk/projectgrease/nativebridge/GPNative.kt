@@ -104,6 +104,7 @@ object GPNative {
     external fun nativeSetMaterialVisibility(handle: Long, index: Int, visible: Boolean): Boolean
     external fun nativeSetMaterialFillEnabled(handle: Long, index: Int, enabled: Boolean): Boolean
     external fun nativeSmoothStroke(handle: Long, index: Int, influence: Float, iterations: Int): Boolean
+    external fun nativeSculptAt(handle: Long, tool: Int, x: Float, y: Float, radius: Float, influence: Float): Boolean
     external fun nativeSetOnionSkin(handle: Long, enabled: Boolean, before: Int, after: Int, opacity: Float): Boolean
     external fun nativeSetMultiframeEditing(handle: Long, enabled: Boolean): Boolean
     external fun nativeApplyBlenderModifier(handle: Long, strokeIndex: Int, name: String, factor: Float, iterations: Int): Boolean

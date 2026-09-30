@@ -99,7 +99,6 @@ C_SOURCES=(
   "$BLENDER/source/blender/blenlib/intern/BLI_heap.c"
   "$BLENDER/source/blender/makesdna/intern/dna_utils.c"
   "$BLENDER/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
-  "$BLENDER/source/blender/editors/gpencil_legacy/gpencil_utils.c"
 
   # Exact Blender 3.6.23 curve-fit implementation required by
   # gpencil_curve_legacy.c.

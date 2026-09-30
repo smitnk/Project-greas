@@ -62,7 +62,6 @@ set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
   "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
   "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
   "${BLENDER_SOURCE_DIR}/source/blender/makesdna/intern/dna_utils.c"
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"

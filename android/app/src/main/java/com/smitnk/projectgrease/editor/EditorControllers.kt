@@ -685,6 +685,7 @@ class EditorController {
         if (ok) render()
         return ok
     }
+    fun frameNumbers(): IntArray = native.frameNumbers()
     fun strokeCount() = native.strokeCount()
     fun selectStroke(index:Int)=selection.selectStroke(index)
     fun joinSelectedStrokes():Boolean {

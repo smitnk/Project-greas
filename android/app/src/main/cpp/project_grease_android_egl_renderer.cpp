@@ -264,6 +264,20 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDestroyEglRenderer(
   delete renderer;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeResetDocumentEgl(
+    JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected ||
+      renderer->display == EGL_NO_DISPLAY || renderer->surface == EGL_NO_SURFACE ||
+      renderer->context == EGL_NO_CONTEXT) return JNI_FALSE;
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    return JNI_FALSE;
+  }
+  return project_grease_gp_reset_document(renderer->gp_handle) ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetGpHandle(
     JNIEnv *, jobject, jlong handle)

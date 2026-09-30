@@ -37,7 +37,14 @@ file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
   "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/*.cc"
 )
 
+# BKE_gpencil_stroke_uniform_subdivide() uses Blender's real BLI heap.
+# Keep this dependency minimal rather than importing the full blenlib target.
+set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
+)
+
 set(PROJECT_GREASE_GP_ENGINE_SOURCES
+  ${PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES}
   project_grease_gp_backend.cpp
   project_grease_gp_engine.cpp
   project_grease_legacy_build.cpp

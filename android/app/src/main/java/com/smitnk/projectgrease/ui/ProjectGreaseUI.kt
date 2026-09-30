@@ -672,8 +672,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)
             ){Text(label)}
         }
-        Text("Legacy GP modifiers",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
-        listOf("SMOOTH","SIMPLIFY","SUBDIVIDE","OFFSET","MIRROR","THICKNESS","TINT","OPACITY").forEach { modifier ->
+        Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
+        listOf("SMOOTH","SIMPLIFY","SUBDIVIDE").forEach { modifier ->
             Button(
                 onClick={if(controller.applySelectedModifier(modifier)){redraw()}},
                 modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp),

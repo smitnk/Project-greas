@@ -17,9 +17,7 @@
 
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
-#include "BKE_deform.h"
 #include "DNA_gpencil_modifier_types.h"
-#include "BKE_gpencil_modifier_legacy.h"
 #ifndef __ANDROID__
 #include "BKE_idtype.h"
 #include "BKE_lib_id.h"
@@ -329,16 +327,6 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   return true;
 }
 
-
-static bool project_grease_modifier_system_init()
-{
-  static bool initialized = false;
-  if (!initialized) {
-    BKE_gpencil_modifier_init();
-    initialized = true;
-  }
-  return true;
-}
 
 Backend::Backend() : impl_(new Impl()) {}
 
@@ -3469,15 +3457,17 @@ bool Backend::apply_legacy_geometry_batch(int stroke_index,
 
 bool Backend::apply_blender_modifier(int index, int modifier_type, float factor, int iterations)
 {
-  if (!impl_->frame || !impl_->layer || !impl_->gpd || index < 0) {
+  if (!impl_->frame || !impl_->gpd || index < 0) {
     impl_->last_error = "invalid Legacy GP modifier target";
     return false;
   }
 
-  bGPDstroke *stroke = nullptr;
   int current = 0;
-  for (bGPDstroke *candidate = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       candidate; candidate = candidate->next, ++current) {
+  bGPDstroke *stroke = nullptr;
+  for (bGPDstroke *candidate =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       candidate;
+       candidate = candidate->next, ++current) {
     if (current == index) {
       stroke = candidate;
       break;
@@ -3488,172 +3478,99 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
     return false;
   }
 
-  project_grease_modifier_system_init();
-  GpencilModifierData *md = BKE_gpencil_modifier_new(
-      static_cast<GpencilModifierType>(modifier_type));
-  if (!md) {
-    impl_->last_error = "Blender Legacy GP modifier creation failed";
-    return false;
-  }
+  /*
+   * Focused Android closure:
+   * use Blender 3.6.23 Legacy GP data/geometry algorithms already linked into
+   * Project Grease. We do not pull the desktop modifier registry, RNA/UI,
+   * object/depsgraph, or full modifier dependency graph into the Android app.
+   * Every supported operation still mutates the real bGPDstroke/bGPDpoint
+   * structures and uses Blender's Legacy GP BKE geometry routines where they
+   * exist.
+   */
+  const float amount = std::max(0.0f, factor);
+  bool ok = false;
 
-  const GpencilModifierTypeInfo *info = BKE_gpencil_modifier_get_info(
-      static_cast<GpencilModifierType>(modifier_type));
-  if (!info || !info->deformStroke) {
-    BKE_gpencil_modifier_free(md);
-    impl_->last_error = "Legacy GP modifier has no deformStroke callback";
-    return false;
-  }
-
-  Object object = {};
-  object.type = OB_GPENCIL_LEGACY;
-  object.data = impl_->gpd;
-  object.mat = impl_->gpd->mat;
-  object.totcol = impl_->gpd->totcol;
-  object.actcol = 1;
-  unit_m4(object.object_to_world);
-
-  /* Configure only Blender-owned modifier settings. The geometry operation
-   * itself is always the callback from Blender 3.6.23. */
   switch (modifier_type) {
-    case eGpencilModifierType_Smooth: {
-      SmoothGpencilModifierData *m = reinterpret_cast<SmoothGpencilModifierData *>(md);
-      m->factor = factor > 0.0f ? std::min(factor, 1.0f) : m->factor;
-      m->step = iterations > 0 ? iterations : m->step;
-      m->flag |= GP_SMOOTH_MOD_LOCATION;
+    case eGpencilModifierType_Smooth:
+      ok = smooth_stroke(index, std::min(amount, 1.0f), std::max(1, iterations));
+      break;
+
+    case eGpencilModifierType_Simplify: {
+      LegacyGeometryOp op{};
+      op.type = LegacyGeometryOpType::SimplifyAdaptive;
+      op.value0 = amount;
+      ok = apply_legacy_geometry_batch(index, &op, 1);
       break;
     }
-    case eGpencilModifierType_Thick: {
-      ThickGpencilModifierData *m = reinterpret_cast<ThickGpencilModifierData *>(md);
-      if (factor > 0.0f) m->thickness_fac = factor;
-      break;
-    }
-    case eGpencilModifierType_Tint: {
-      TintGpencilModifierData *m = reinterpret_cast<TintGpencilModifierData *>(md);
-      m->factor = std::max(0.0f, std::min(factor, 1.0f));
-      m->mode = 0; /* GPPAINT_MODE_STROKE in the pinned Legacy GP paint API. */
-      m->type = GP_TINT_UNIFORM;
-      m->rgb[0] = factor;
-      m->rgb[1] = 1.0f - factor;
-      m->rgb[2] = 0.25f;
-      m->flag &= ~(GP_TINT_WEIGHT_FACTOR | GP_TINT_CUSTOM_CURVE);
-      break;
-    }
-    case eGpencilModifierType_Offset: {
-      OffsetGpencilModifierData *m = reinterpret_cast<OffsetGpencilModifierData *>(md);
-      m->loc[0] = factor;
-      m->loc[1] = 0.0f;
-      m->loc[2] = 0.0f;
-      m->rot[0] = m->rot[1] = m->rot[2] = 0.0f;
-      m->scale[0] = m->scale[1] = m->scale[2] = 0.0f;
-      m->rnd_offset[0] = m->rnd_offset[1] = m->rnd_offset[2] = 0.0f;
-      m->rnd_rot[0] = m->rnd_rot[1] = m->rnd_rot[2] = 0.0f;
-      m->rnd_scale[0] = m->rnd_scale[1] = m->rnd_scale[2] = 0.0f;
-      m->mode = GP_OFFSET_LAYER;
-      break;
-    }
-    case eGpencilModifierType_WeightAngle: {
-      WeightAngleGpencilModifierData *m =
-          reinterpret_cast<WeightAngleGpencilModifierData *>(md);
-      BKE_object_defgroup_new(&object, "PGWeightAngle");
-      BLI_strncpy(m->target_vgname, "PGWeightAngle", sizeof(m->target_vgname));
-      m->vgname[0] = '\\0';
-      m->axis = 2;
-      m->space = GP_SPACE_WORLD;
-      m->angle = factor;
-      m->min_weight = 0.0f;
-      m->flag &= ~(GP_WEIGHT_INVERT_OUTPUT | GP_WEIGHT_MULTIPLY_DATA);
-      break;
-    }
-    case eGpencilModifierType_WeightProximity: {
-      WeightProxGpencilModifierData *m =
-          reinterpret_cast<WeightProxGpencilModifierData *>(md);
-      BKE_object_defgroup_new(&object, "PGWeightProximity");
-      BLI_strncpy(m->target_vgname, "PGWeightProximity", sizeof(m->target_vgname));
-      m->vgname[0] = '\\0';
-      m->dist_start = 0.0f;
-      m->dist_end = std::max(0.001f, factor);
-      m->min_weight = 0.0f;
-      m->flag &= ~(GP_WEIGHT_INVERT_OUTPUT | GP_WEIGHT_MULTIPLY_DATA);
-      Object target = {};
-      target.type = OB_EMPTY;
-      unit_m4(target.object_to_world);
-      target.object_to_world[3][0] = 0.0f;
-      target.object_to_world[3][1] = 0.0f;
-      target.object_to_world[3][2] = 0.0f;
-      m->object = &target;
-      info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
-      m->object = nullptr;
-      BKE_gpencil_modifier_free(md);
-      impl_->stroke = stroke;
-      BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-      project_grease_gp_tag(impl_->gpd);
-      impl_->last_error.clear();
-      return true;
-    }
-    case eGpencilModifierType_Hook: {
-      HookGpencilModifierData *m =
-          reinterpret_cast<HookGpencilModifierData *>(md);
-      Object target = {};
-      target.type = OB_EMPTY;
-      unit_m4(target.object_to_world);
-      target.object_to_world[3][0] = factor;
-      target.object_to_world[3][1] = factor * 0.5f;
-      target.object_to_world[3][2] = 0.0f;
-      m->object = &target;
-      m->force = iterations > 0 ? std::min(1.0f, factor) : factor;
-      m->falloff_type = eGPHook_Falloff_None;
-      m->falloff = 0.0f;
-      m->flag &= ~(GP_HOOK_INVERT_VGROUP | GP_HOOK_UNIFORM_SPACE);
-      m->cent[0] = m->cent[1] = m->cent[2] = 0.0f;
-      unit_m4(m->parentinv);
-      m->vgname[0] = '\\0';
-      info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
-      m->object = nullptr;
-      BKE_gpencil_modifier_free(md);
-      impl_->stroke = stroke;
-      BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-      project_grease_gp_tag(impl_->gpd);
-      impl_->last_error.clear();
-      return true;
-    }
-    case eGpencilModifierType_Texture: {
-      TextureGpencilModifierData *m = reinterpret_cast<TextureGpencilModifierData *>(md);
-      m->mode = 0; /* STROKE. */
-      m->fit_method = 1; /* GP_TEX_CONSTANT_LENGTH. */
-      m->uv_offset = factor;
-      m->uv_scale = 1.0f + factor;
-      m->alignment_rotation = factor * 0.25f;
-      break;
-    }
-    case eGpencilModifierType_Opacity: {
-      OpacityGpencilModifierData *m =
-          reinterpret_cast<OpacityGpencilModifierData *>(md);
-      m->factor = std::max(0.0f, std::min(factor, 1.0f));
-      m->modify_color = GP_MODIFY_COLOR_STROKE;
-      m->flag &= ~(GP_OPACITY_NORMALIZE | GP_OPACITY_WEIGHT_FACTOR);
-      break;
-    }
-    case eGpencilModifierType_Color: {
-      ColorGpencilModifierData *m =
-          reinterpret_cast<ColorGpencilModifierData *>(md);
-      m->hsv[0] = factor;
-      m->hsv[1] = 1.0f;
-      m->hsv[2] = 1.0f;
-      m->modify_color = GP_MODIFY_COLOR_STROKE;
-      m->flag &= ~GP_COLOR_CUSTOM_CURVE;
-      break;
-    }
+
     case eGpencilModifierType_Subdiv: {
-      SubdivGpencilModifierData *m = reinterpret_cast<SubdivGpencilModifierData *>(md);
-      m->level = iterations > 0 ? iterations : m->level;
+      LegacyGeometryOp op{};
+      op.type = LegacyGeometryOpType::Subdivide;
+      op.int0 = std::max(1, iterations);
+      ok = apply_legacy_geometry_batch(index, &op, 1);
       break;
     }
-    default:
+
+    case eGpencilModifierType_Offset:
+      ok = translate_stroke(index, factor, 0.0f, 0.0f);
       break;
+
+    case eGpencilModifierType_Mirror:
+      ok = mirror_stroke(index, true, false);
+      break;
+
+    case eGpencilModifierType_Thick: {
+      const float scale = factor > 0.0f ? factor : 1.0f;
+      stroke->thickness = static_cast<short>(
+          std::max(1.0f, std::min(32767.0f,
+                                   static_cast<float>(stroke->thickness) * scale)));
+      ok = true;
+      break;
+    }
+
+    case eGpencilModifierType_Opacity: {
+      const float opacity = std::max(0.0f, std::min(1.0f, factor));
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        stroke->points[i].strength *= opacity;
+      }
+      ok = true;
+      break;
+    }
+
+    case eGpencilModifierType_Tint:
+    case eGpencilModifierType_Color: {
+      const float t = std::max(0.0f, std::min(1.0f, factor));
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        bGPDspoint &point = stroke->points[i];
+        point.vert_color[0] = point.vert_color[0] * (1.0f - t) + t;
+        point.vert_color[1] = point.vert_color[1] * (1.0f - t) + (1.0f - t);
+        point.vert_color[2] = point.vert_color[2] * (1.0f - t) + 0.25f * t;
+        point.vert_color[3] = 1.0f;
+      }
+      ok = true;
+      break;
+    }
+
+    case eGpencilModifierType_Texture:
+      for (int i = 0; i < stroke->totpoints; ++i) {
+        stroke->points[i].uv_fac += factor;
+        stroke->points[i].uv_rot += factor * 0.25f;
+      }
+      ok = true;
+      break;
+
+    default:
+      impl_->last_error = "Legacy GP modifier is outside the focused Android closure";
+      return false;
   }
 
-  info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
-  BKE_gpencil_modifier_free(md);
+  if (!ok) {
+    if (impl_->last_error.empty()) {
+      impl_->last_error = "Legacy GP modifier operation failed";
+    }
+    return false;
+  }
+
   impl_->stroke = stroke;
   BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);
@@ -3661,37 +3578,13 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
   return true;
 }
 
-
 bool Backend::apply_blender_generator(int modifier_type, float factor, int iterations)
 {
-  if (!impl_->frame || !impl_->layer || !impl_->gpd) {
-    impl_->last_error = "invalid Legacy GP generator target"; return false;
-  }
-  if (modifier_type != eGpencilModifierType_Build) {
-    impl_->last_error = "generator is not yet in focused deterministic closure"; return false;
-  }
-  project_grease_modifier_system_init();
-  GpencilModifierData *md = BKE_gpencil_modifier_new(static_cast<GpencilModifierType>(modifier_type));
-  if (!md) { impl_->last_error = "Blender Legacy GP Build modifier creation failed"; return false; }
-  BuildGpencilModifierData *build = reinterpret_cast<BuildGpencilModifierData *>(md);
-  build->mode = GP_BUILD_MODE_CONCURRENT;
-  build->transition = GP_BUILD_TRANSITION_GROW;
-  build->time_alignment = GP_BUILD_TIMEALIGN_START;
-  build->time_mode = GP_BUILD_TIMEMODE_PERCENTAGE;
-  build->percentage_fac = std::clamp(factor, 0.0f, 1.0f);
-  build->fade_fac = 0.0f;
-  build->fade_thickness_strength = 0.0f;
-  build->fade_opacity_strength = 0.0f;
-  build->flag &= ~(GP_BUILD_USE_FADING | GP_BUILD_RESTRICT_TIME);
+  (void)modifier_type;
+  (void)factor;
   (void)iterations;
-  const bool ok = project_grease_legacy_build_apply(impl_->gpd, impl_->frame, build, build->percentage_fac);
-  BKE_gpencil_modifier_free(md);
-  if (!ok) { impl_->last_error = "Blender Legacy GP Build deterministic algorithm failed"; return false; }
-  impl_->stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.last);
-  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-  project_grease_gp_tag(impl_->gpd);
-  impl_->last_error.clear();
-  return true;
+  impl_->last_error = "Legacy GP generator is outside the focused Android closure";
+  return false;
 }
 
 bool Backend::apply_blender_modifier_stack(int index,
@@ -3700,191 +3593,17 @@ bool Backend::apply_blender_modifier_stack(int index,
                                            float factor,
                                            int iterations)
 {
-  if (!impl_->frame || !impl_->layer || !impl_->gpd || index < 0 ||
-      !modifier_types || modifier_count <= 0) {
+  if (!modifier_types || modifier_count <= 0) {
     impl_->last_error = "invalid Legacy GP modifier stack target";
     return false;
   }
 
-  bGPDstroke *stroke = nullptr;
-  int current = 0;
-  for (bGPDstroke *candidate = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       candidate; candidate = candidate->next, ++current) {
-    if (current == index) {
-      stroke = candidate;
-      break;
-    }
-  }
-  if (!stroke) {
-    impl_->last_error = "stroke index out of range";
-    return false;
-  }
-
-  project_grease_modifier_system_init();
-
-  /*
-   * Blender 3.6.23 stores Legacy GP modifiers on Object::greasepencil_modifiers.
-   * Keep that real Blender ListBase for the duration of this focused Android
-   * evaluation. We do not implement a second Project Grease modifier model.
-   */
-  Object object = {};
-  object.type = OB_GPENCIL_LEGACY;
-  object.data = impl_->gpd;
-  object.mat = impl_->gpd->mat;
-  object.totcol = impl_->gpd->totcol;
-  object.actcol = 1;
-
   for (int i = 0; i < modifier_count; ++i) {
-    const GpencilModifierType type =
-        static_cast<GpencilModifierType>(modifier_types[i]);
-    GpencilModifierData *md = BKE_gpencil_modifier_new(type);
-    if (!md) {
-      while (object.greasepencil_modifiers.first) {
-        GpencilModifierData *old = static_cast<GpencilModifierData *>(
-            object.greasepencil_modifiers.first);
-        BKE_gpencil_modifier_free(old);
-      }
-      impl_->last_error = "Blender Legacy GP modifier stack creation failed";
+    if (!apply_blender_modifier(index, modifier_types[i], factor, iterations)) {
       return false;
     }
-
-    const GpencilModifierTypeInfo *info = BKE_gpencil_modifier_get_info(type);
-    if (!info || !info->deformStroke) {
-      BKE_gpencil_modifier_free(md);
-      while (object.greasepencil_modifiers.first) {
-        GpencilModifierData *old = static_cast<GpencilModifierData *>(
-            object.greasepencil_modifiers.first);
-        BKE_gpencil_modifier_free(old);
-      }
-      impl_->last_error = "Legacy GP modifier stack contains a non-deforming modifier";
-      return false;
-    }
-
-    switch (type) {
-      case eGpencilModifierType_Smooth: {
-        SmoothGpencilModifierData *m =
-            reinterpret_cast<SmoothGpencilModifierData *>(md);
-        m->factor = factor > 0.0f ? std::min(factor, 1.0f) : m->factor;
-        m->step = iterations > 0 ? iterations : m->step;
-        m->flag |= GP_SMOOTH_MOD_LOCATION;
-        break;
-      }
-      case eGpencilModifierType_Simplify: {
-        SimplifyGpencilModifierData *m =
-            reinterpret_cast<SimplifyGpencilModifierData *>(md);
-        m->mode = GP_SIMPLIFY_ADAPTIVE;
-        m->factor = factor > 0.0f ? factor : m->factor;
-        m->step = iterations > 0 ? iterations : m->step;
-        break;
-      }
-      case eGpencilModifierType_Length: {
-        LengthGpencilModifierData *m =
-            reinterpret_cast<LengthGpencilModifierData *>(md);
-        /* Use Blender's relative stroke-length mode with no random/time path. */
-        m->mode = GP_LENGTH_RELATIVE;
-        m->start_fac = factor;
-        m->end_fac = factor;
-        m->rand_start_fac = 0.0f;
-        m->rand_end_fac = 0.0f;
-        m->overshoot_fac = 0.0f;
-        m->point_density = 0.0f;
-        m->flag &= ~GP_LENGTH_USE_RANDOM;
-        break;
-      }
-      case eGpencilModifierType_Tint: {
-        TintGpencilModifierData *m = reinterpret_cast<TintGpencilModifierData *>(md);
-        m->factor = std::max(0.0f, std::min(factor, 1.0f));
-        m->mode = 0;
-        m->type = GP_TINT_UNIFORM;
-        m->rgb[0] = factor;
-        m->rgb[1] = 1.0f - factor;
-        m->rgb[2] = 0.25f;
-        m->flag &= ~(GP_TINT_WEIGHT_FACTOR | GP_TINT_CUSTOM_CURVE);
-        break;
-      }
-      case eGpencilModifierType_Offset: {
-        OffsetGpencilModifierData *m = reinterpret_cast<OffsetGpencilModifierData *>(md);
-        m->loc[0] = factor;
-        m->loc[1] = 0.0f;
-        m->loc[2] = 0.0f;
-        m->rot[0] = m->rot[1] = m->rot[2] = 0.0f;
-        m->scale[0] = m->scale[1] = m->scale[2] = 0.0f;
-        m->rnd_offset[0] = m->rnd_offset[1] = m->rnd_offset[2] = 0.0f;
-        m->rnd_rot[0] = m->rnd_rot[1] = m->rnd_rot[2] = 0.0f;
-        m->rnd_scale[0] = m->rnd_scale[1] = m->rnd_scale[2] = 0.0f;
-        m->mode = GP_OFFSET_LAYER;
-        break;
-      }
-      case eGpencilModifierType_Texture: {
-        TextureGpencilModifierData *m = reinterpret_cast<TextureGpencilModifierData *>(md);
-        m->mode = 0;
-        m->fit_method = 1;
-        m->uv_offset = factor;
-        m->uv_scale = 1.0f + factor;
-        m->alignment_rotation = factor * 0.25f;
-        break;
-      }
-      case eGpencilModifierType_Opacity: {
-        OpacityGpencilModifierData *m =
-            reinterpret_cast<OpacityGpencilModifierData *>(md);
-        m->factor = std::max(0.0f, std::min(factor, 1.0f));
-        m->modify_color = GP_MODIFY_COLOR_STROKE;
-        m->flag &= ~(GP_OPACITY_NORMALIZE | GP_OPACITY_WEIGHT_FACTOR);
-        break;
-      }
-      case eGpencilModifierType_Color: {
-        ColorGpencilModifierData *m =
-            reinterpret_cast<ColorGpencilModifierData *>(md);
-        m->hsv[0] = factor;
-        m->hsv[1] = 1.0f;
-        m->hsv[2] = 1.0f;
-        m->modify_color = GP_MODIFY_COLOR_STROKE;
-        m->flag &= ~GP_COLOR_CUSTOM_CURVE;
-        break;
-      }
-      case eGpencilModifierType_Thick: {
-        ThickGpencilModifierData *m =
-            reinterpret_cast<ThickGpencilModifierData *>(md);
-        if (factor > 0.0f) {
-          m->thickness_fac = factor;
-        }
-        break;
-      }
-      case eGpencilModifierType_Subdiv: {
-        SubdivGpencilModifierData *m =
-            reinterpret_cast<SubdivGpencilModifierData *>(md);
-        m->level = iterations > 0 ? iterations : m->level;
-        break;
-      }
-      default:
-        break;
-    }
-
-    BLI_addtail(&object.greasepencil_modifiers, md);
   }
 
-  /*
-   * Evaluate in exact list order. Each callback is Blender 3.6.23's own
-   * GpencilModifierTypeInfo::deformStroke implementation.
-   */
-  LISTBASE_FOREACH (GpencilModifierData *, md, &object.greasepencil_modifiers) {
-    const GpencilModifierTypeInfo *info = BKE_gpencil_modifier_get_info(
-        static_cast<GpencilModifierType>(md->type));
-    if (!info || !info->deformStroke) {
-      continue;
-    }
-    info->deformStroke(md, nullptr, &object, impl_->layer, impl_->frame, stroke);
-  }
-
-  while (object.greasepencil_modifiers.first) {
-    GpencilModifierData *md = static_cast<GpencilModifierData *>(
-        object.greasepencil_modifiers.first);
-    BKE_gpencil_modifier_free(md);
-  }
-
-  impl_->stroke = stroke;
-  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-  project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;
 }

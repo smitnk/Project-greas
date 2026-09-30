@@ -185,6 +185,25 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameCount(
   return project_grease_gp_frame_count(from_handle(handle));
 }
 
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameNumbers(JNIEnv *env, jobject, jlong handle)
+{
+  const int capacity = 512;
+  int frames[capacity];
+  const int count = project_grease_gp_frame_numbers(from_handle(handle), frames, capacity);
+  if (count <= 0) return env->NewIntArray(0);
+  jintArray result = env->NewIntArray(count);
+  if (!result) return nullptr;
+  env->SetIntArrayRegion(result, 0, count, frames);
+  return result;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeInterpolateFrame(JNIEnv *, jobject, jlong handle, jint source_frame, jint target_frame, jint result_frame, jfloat factor)
+{
+  return project_grease_gp_interpolate_frame(from_handle(handle), source_frame, target_frame, result_frame, factor) != 0;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameEnd(
     JNIEnv *, jobject, jlong handle)

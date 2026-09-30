@@ -3,6 +3,7 @@ package com.smitnk.projectgrease.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +98,30 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
+@Composable private fun DrawingGuidesOverlay(controller:EditorController){
+    Canvas(Modifier.fillMaxSize()) {
+        if(controller.view.showGrid){
+            val step=controller.view.gridSize.coerceAtLeast(8f)
+            var x=0f
+            while(x<size.width){
+                drawLine(Color(0x33222222),Offset(x,0f),Offset(x,size.height),1f)
+                x+=step
+            }
+            var y=0f
+            while(y<size.height){
+                drawLine(Color(0x33222222),Offset(0f,y),Offset(size.width,y),1f)
+                y+=step
+            }
+        }
+        if(controller.view.showGuides){
+            val gx=size.width*controller.view.guideX
+            val gy=size.height*controller.view.guideY
+            drawLine(Color(0xAAE84F7B),Offset(gx,0f),Offset(gx,size.height),2f)
+            drawLine(Color(0xAAE84F7B),Offset(0f,gy),Offset(size.width,gy),2f)
+        }
+    }
+}
+
 @Composable private fun Home(onNew:()->Unit,onOpen:()->Unit,onSettings:()->Unit){
     Scaffold(topBar={
         Row(Modifier.fillMaxWidth().height(64.dp),verticalAlignment=Alignment.CenterVertically){
@@ -147,6 +173,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     if(state.canvasFocus){
         Box(Modifier.fillMaxSize().background(CanvasBg)){
             viewport()
+            DrawingGuidesOverlay(controller)
             IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
                 Icon(Icons.Default.CloseFullscreen,"Exit canvas")
             }
@@ -175,7 +202,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         }
         Row(Modifier.fillMaxWidth().weight(1f)){
             if(state.showTools)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
-            Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){viewport()}
+            Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
+                viewport()
+                DrawingGuidesOverlay(controller)
+            }
             if(state.showProperties)Properties(controller,::redraw)
         }
         if(state.showTimeline)Timeline(controller,::redraw,{fpsDialog=true})
@@ -209,8 +239,22 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     Column(Modifier.width(210.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(10.dp)){
         Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+thickness.toInt());Slider(thickness, {thickness=it;controller.materials.setThickness(it);redraw()}, valueRange = .5f..100f)
         Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity, {opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()}, valueRange = 0f..1f)
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+            Text("Stabilizer",Modifier.weight(1f))
+            Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it);redraw()})
+        }
+        Text("Spacing "+controller.spacing.toInt())
+        Slider(controller.spacing,{controller.setSpacing(it);redraw()},valueRange=0f..50f)
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+            Text("Grid",Modifier.weight(1f))
+            Switch(checked=controller.view.showGrid,onCheckedChange={controller.view.toggleGrid();redraw()})
+        }
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+            Text("Snapping",Modifier.weight(1f))
+            Switch(checked=controller.view.snapEnabled,onCheckedChange={controller.view.toggleSnapping();redraw()})
+        }
         Button(onClick={if(controller.smoothSelectedStroke()){redraw()}}){Text("Smooth selected stroke")}
-        CapabilityRow("Grid",FeatureId.GRID);CapabilityRow("Snapping",FeatureId.SNAPPING);CapabilityRow("Onion skin",FeatureId.ONION_SKIN)
+        CapabilityRow("Grid",FeatureId.GRID);CapabilityRow("Guides",FeatureId.GUIDES);CapabilityRow("Snapping",FeatureId.SNAPPING);CapabilityRow("Onion skin",FeatureId.ONION_SKIN)
     }
 }
 

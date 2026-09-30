@@ -605,13 +605,31 @@ class EditorController {
             else -> -1
         }
         if (type >= 0) {
-            val ok = GPNative.nativeCreatePrimitive(
+            var created = GPNative.nativeCreatePrimitive(
                 rendererHandle, type,
                 params[0], params[1], params[2], params[3],
                 0f, 6.2831855f, 64,
                 materials.activeMaterial, materials.thickness
             )
-            if (ok) {
+            // Keep final geometry identical to the visible native preview even if
+            // the primitive bridge rejects a modal parameter. This fallback still
+            // commits a real Legacy GP stroke, not a UI-only path.
+            if (!created) {
+                val preview = generatedShapePoints()
+                if (preview.size >= 2) {
+                    val packed = FloatArray(preview.size * 2)
+                    preview.forEachIndexed { i, point ->
+                        packed[i * 2] = point.x
+                        packed[i * 2 + 1] = point.y
+                    }
+                    val cyclic = shapeTool == GreaseTool.RECTANGLE || shapeTool == GreaseTool.CIRCLE
+                    created = GPNative.nativeCreatePolyline(
+                        rendererHandle, packed, preview.size,
+                        materials.activeMaterial, materials.thickness, cyclic
+                    )
+                }
+            }
+            if (created) {
                 selection.selectStroke(native.strokeCount() - 1)
                 history.markEdit(); document.markDirty(); render()
             }

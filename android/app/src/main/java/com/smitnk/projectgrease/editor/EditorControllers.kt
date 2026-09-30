@@ -77,6 +77,8 @@ class NativeEditorBridge {
     fun smoothStroke(index:Int,influence:Float=0.5f,iterations:Int=2) = handle != 0L && GPNative.nativeSmoothStroke(handle,index,influence,iterations)
     fun setOnionSkin(enabled:Boolean,before:Int,after:Int,opacity:Float) = handle != 0L && GPNative.nativeSetOnionSkin(handle,enabled,before,after,opacity)
     fun setMultiframeEditing(enabled:Boolean) = handle != 0L && GPNative.nativeSetMultiframeEditing(handle,enabled)
+    fun applyModifier(strokeIndex:Int,name:String,factor:Float=0.5f,iterations:Int=2):Boolean =
+        handle != 0L && GPNative.nativeApplyBlenderModifier(handle,strokeIndex,name,factor,iterations)
 }
 
 class HistoryController(private val native: NativeEditorBridge) {

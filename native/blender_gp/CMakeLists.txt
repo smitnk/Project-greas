@@ -40,7 +40,16 @@ file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
 # BKE_gpencil_stroke_uniform_subdivide() uses Blender's real BLI heap.
 # Keep this dependency minimal rather than importing the full blenlib target.
 set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
+  # Exact Blender 3.6.23 Legacy GP/BLI dependency closure required by
+  # project_grease_gp_backend.cpp. These are source files, not replacements:
+  # gpencil_geom_legacy.cc supplies the real BKE GP geometry operations;
+  # math_geom.c supplies dist_squared_to_line_segment_v2;
+  # lasso_2d.c supplies BLI_lasso_is_point_inside;
+  # polyfill_2d.c supplies the real fill triangulation primitive.
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
 )
 
 set(PROJECT_GREASE_GP_ENGINE_SOURCES
@@ -48,6 +57,10 @@ set(PROJECT_GREASE_GP_ENGINE_SOURCES
   project_grease_gp_backend.cpp
   project_grease_gp_engine.cpp
   project_grease_legacy_build.cpp
+  # Exact Blender 3.6.23 Legacy GP BKE geometry implementation. This closes
+  # fill triangulation, point deletion, flip, subdivide and close without
+  # reimplementing those algorithms in Project Grease.
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
   ${PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES}
   ${PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES}
 )

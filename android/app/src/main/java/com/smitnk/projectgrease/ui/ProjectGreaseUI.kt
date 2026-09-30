@@ -579,6 +579,21 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=20.dp))
         Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it);redraw()},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=20.dp))
         Button(onClick={if(controller.smoothSelectedStroke()){redraw()}},modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp)){Text("Smooth selected stroke")}
+        Text("Legacy GP modifiers",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
+        listOf("SMOOTH","SIMPLIFY","OFFSET","MIRROR","THICKNESS","TINT","OPACITY","NOISE","LENGTH","TEXTURE").forEach { modifier ->
+            Button(
+                onClick={if(controller.applySelectedModifier(modifier)){redraw()}},
+                modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp),
+                enabled=controller.selection.selectedStroke>=0
+            ){Text(modifier)}
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Multiframe editing",Modifier.weight(1f))
+            Switch(
+                checked=controller.multiframeEditing,
+                onCheckedChange={controller.setMultiframeEditing(it);redraw()}
+            )
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
             Text("Grid",Modifier.weight(1f));Switch(checked=controller.view.showGrid,onCheckedChange={controller.view.toggleGrid();redraw()})
         }

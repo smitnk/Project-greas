@@ -102,17 +102,33 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     const Material *ma=(s->mat_nr>=0&&s->mat_nr<gpd->totcol&&gpd->mat)?gpd->mat[s->mat_nr]:nullptr;
     const MaterialGPencilStyle *style=ma?ma->gp_style:nullptr;
     if(style&&(style->flag&GP_MATERIAL_HIDE))continue;
-    float avg_strength = 1.0f;
+    float avg_strength = 0.0f;
+    float avg_vertex_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     for (int i = 0; i < s->totpoints; ++i) {
       avg_strength += std::max(0.0f, std::min(s->points[i].strength, 1.0f));
+      for (int channel = 0; channel < 4; ++channel) {
+        avg_vertex_color[channel] +=
+            std::max(0.0f, std::min(s->points[i].vert_color[channel], 1.0f));
+      }
     }
-    avg_strength /= float(std::max(1, s->totpoints));
-    float color[4]={g_stroke_color[0],g_stroke_color[1],g_stroke_color[2],
-                    g_stroke_color[3]*alpha*layer->opacity*avg_strength};
+    const float point_count = float(std::max(1, s->totpoints));
+    avg_strength /= point_count;
+    for (float &channel : avg_vertex_color) channel /= point_count;
+    float color[4]={
+        g_stroke_color[0] * avg_vertex_color[0],
+        g_stroke_color[1] * avg_vertex_color[1],
+        g_stroke_color[2] * avg_vertex_color[2],
+        g_stroke_color[3] * alpha * layer->opacity * avg_strength * avg_vertex_color[3]};
     float fill_color[4]={color[0],color[1],color[2],color[3]};
     if(style){
-      color[0]=style->stroke_rgba[0];color[1]=style->stroke_rgba[1];color[2]=style->stroke_rgba[2];color[3]=style->stroke_rgba[3]*alpha*layer->opacity*avg_strength;
-      fill_color[0]=style->fill_rgba[0];fill_color[1]=style->fill_rgba[1];fill_color[2]=style->fill_rgba[2];fill_color[3]=style->fill_rgba[3]*alpha*layer->opacity*avg_strength;
+      color[0]=style->stroke_rgba[0]*avg_vertex_color[0];
+      color[1]=style->stroke_rgba[1]*avg_vertex_color[1];
+      color[2]=style->stroke_rgba[2]*avg_vertex_color[2];
+      color[3]=style->stroke_rgba[3]*alpha*layer->opacity*avg_strength*avg_vertex_color[3];
+      fill_color[0]=style->fill_rgba[0]*avg_vertex_color[0];
+      fill_color[1]=style->fill_rgba[1]*avg_vertex_color[1];
+      fill_color[2]=style->fill_rgba[2]*avg_vertex_color[2];
+      fill_color[3]=style->fill_rgba[3]*alpha*layer->opacity*avg_strength*avg_vertex_color[3];
     }
     if(style==nullptr||((style->flag&GP_MATERIAL_STROKE_SHOW)!=0)){
       if(s->totpoints==1) append_dot(stroke,s[0].points[0],float(s->thickness)*std::max(s->points[0].pressure,0.01f),w,h);

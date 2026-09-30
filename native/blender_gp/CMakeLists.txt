@@ -47,6 +47,13 @@ set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
   # lasso_2d.c supplies BLI_lasso_is_point_inside;
   # polyfill_2d.c supplies the real fill triangulation primitive.
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/makesdna/intern/dna_utils.c"
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"

@@ -15,7 +15,22 @@ struct Vertex { float x; float y; };
 
 GLuint g_program=0, g_vbo=0;
 GLint g_position=-1, g_color=-1;
-float g_stroke_color[4]={1,1,1,1};
+float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
+int g_canvas_width=1280;
+int g_canvas_height=720;
+float g_map_origin_x=0.0f;
+float g_map_origin_y=0.0f;
+float g_map_scale=1.0f;
+void update_canvas_map(int w,int h){
+  const float sx=float(w)/float(std::max(1,g_canvas_width));
+  const float sy=float(h)/float(std::max(1,g_canvas_height));
+  g_map_scale=std::min(sx,sy)*0.92f;
+  const float cw=float(g_canvas_width)*g_map_scale;
+  const float ch=float(g_canvas_height)*g_map_scale;
+  g_map_origin_x=(float(w)-cw)*0.5f;
+  g_map_origin_y=(float(h)-ch)*0.5f;
+}
+
 
 const char *vs_src(){
   return "attribute vec2 a_position; uniform vec4 u_color; varying vec4 v_color; "
@@ -43,16 +58,16 @@ bool ensure_program(){
   glGenBuffers(1,&g_vbo);
   return g_position>=0&&g_color>=0&&g_vbo!=0;
 }
-inline Vertex ndc(float x,float y,int w,int h){return {2.0f*x/float(w)-1.0f,1.0f-2.0f*y/float(h)};}
+inline Vertex ndc(float x,float y,int w,int h){(void)w;(void)h;const float sx=g_map_origin_x+x*g_map_scale;const float sy=g_map_origin_y+y*g_map_scale;return {2.0f*sx/float(std::max(1,w))-1.0f,1.0f-2.0f*sy/float(std::max(1,h))};}
 void append_segment(std::vector<Vertex>&v,const bGPDspoint&a,const bGPDspoint&b,float thickness,int w,int h,float alpha){
   (void)alpha;
   float dx=b.x-a.x,dy=b.y-a.y,len=std::sqrt(dx*dx+dy*dy); if(len<0.001f)return;
-  float half=std::max(0.5f,thickness*0.5f),nx=-dy/len*half,ny=dx/len*half;
+  float half=std::max(0.5f,thickness*0.5f)*g_map_scale,nx=-dy/len*half,ny=dx/len*half;
   Vertex p0=ndc(a.x+nx,a.y+ny,w,h),p1=ndc(a.x-nx,a.y-ny,w,h),p2=ndc(b.x+nx,b.y+ny,w,h),p3=ndc(b.x-nx,b.y-ny,w,h);
   v.insert(v.end(),{p0,p1,p2,p2,p1,p3});
 }
 void append_dot(std::vector<Vertex>&v,const bGPDspoint&p,float thickness,int w,int h){
-  float half=std::max(0.5f,thickness*0.5f);
+  float half=std::max(0.5f,thickness*0.5f)*g_map_scale;
   Vertex p0=ndc(p.x-half,p.y-half,w,h),p1=ndc(p.x+half,p.y-half,w,h),p2=ndc(p.x-half,p.y+half,w,h),p3=ndc(p.x+half,p.y+half,w,h);
   v.insert(v.end(),{p0,p1,p2,p2,p1,p3});
 }
@@ -115,6 +130,17 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
   glClearColor(0.08f,0.08f,0.08f,1.0f);glClear(GL_COLOR_BUFFER_BIT);
+  update_canvas_map(w,h);
+  std::vector<Vertex> canvas;
+  const float x0=g_map_origin_x, y0=g_map_origin_y;
+  const float x1=x0+float(g_canvas_width)*g_map_scale, y1=y0+float(g_canvas_height)*g_map_scale;
+  canvas.insert(canvas.end(),{
+      ndc(0,0,w,h), ndc(g_canvas_width,0,w,h), ndc(0,g_canvas_height,w,h),
+      ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
+  });
+  const float canvas_color[4]={0.96f,0.96f,0.96f,1.0f};
+  draw_vertices(canvas,canvas_color,false);
+  (void)x0; (void)y0; (void)x1; (void)y1;
   for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
     if(layer->flag&GP_LAYER_HIDE)continue;
     bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(layer),frame_number,GP_GETFRAME_USE_PREV);
@@ -229,5 +255,5 @@ extern "C" int project_grease_android_present_pending_stroke(const project_greas
   else for(int i=0;i+1<count;i++){bGPDspoint a={},b={};a.x=points[i].x;a.y=points[i].y;a.pressure=std::max(points[i].pressure,0.01f);b.x=points[i+1].x;b.y=points[i+1].y;b.pressure=std::max(points[i+1].pressure,0.01f);append_segment(v,a,b,thickness*0.5f*(a.pressure+b.pressure),w,h,1.0f);}
   float c[4]={1,1,1,1};draw_vertices(v,c);return glGetError()==GL_NO_ERROR?1:0;
 }
-extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
+extern "C" void project_grease_android_present_set_canvas_size(int width,int height){g_canvas_width=std::max(1,width);g_canvas_height=std::max(1,height);}\nextern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;}

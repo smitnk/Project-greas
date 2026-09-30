@@ -26,6 +26,8 @@ class NativeEditorBridge {
     fun selectLayer(index: Int) = handle != 0L && GPNative.nativeSelectLayer(handle, index)
     fun frameCount() = if (handle != 0L) GPNative.nativeFrameCount(handle) else 0
     fun frameEnd() = if (handle != 0L) GPNative.nativeFrameEnd(handle) else 1
+    fun frameNumbers() = if (handle != 0L) GPNative.nativeFrameNumbers(handle) else intArrayOf()
+    fun interpolateFrame(sourceFrame:Int,targetFrame:Int,resultFrame:Int,factor:Float) = handle != 0L && GPNative.nativeInterpolateFrame(handle,sourceFrame,targetFrame,resultFrame,factor)
     fun selectFrameOrHold(frame:Int) = handle != 0L && GPNative.nativeSelectFrameOrHold(handle,frame)
     fun render() = handle != 0L && GPNative.nativeRender(handle)
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int)=handle != 0L && GPNative.nativeDuplicateFrame(handle,sourceFrame,targetFrame)
@@ -153,6 +155,19 @@ class AnimationController(private val native: NativeEditorBridge) {
         if (native.handle == 0L || targetFrame < 1) return false
         if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
         currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
+    }
+    fun interpolateAt(frame:Int):Boolean {
+        if (native.handle == 0L) return false
+        val keys = native.frameNumbers().sorted()
+        val previous = keys.lastOrNull { it < frame } ?: return false
+        val next = keys.firstOrNull { it > frame } ?: return false
+        val span = (next - previous).coerceAtLeast(1)
+        val factor = (frame - previous).toFloat() / span.toFloat()
+        if (!native.interpolateFrame(previous,next,frame,factor)) return false
+        currentFrame=frame
+        frameCount=native.frameCount().coerceAtLeast(1)
+        timelineEnd=native.frameEnd().coerceAtLeast(1)
+        return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {
         if (native.handle == 0L) return false

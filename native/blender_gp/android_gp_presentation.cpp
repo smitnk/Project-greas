@@ -106,7 +106,7 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     for (int i = 0; i < s->totpoints; ++i) {
       avg_strength += std::max(0.0f, std::min(s->points[i].strength, 1.0f));
     }
-    avg_strength /= float(s->totpoints + 1);
+    avg_strength /= float(std::max(1, s->totpoints));
     float color[4]={g_stroke_color[0],g_stroke_color[1],g_stroke_color[2],
                     g_stroke_color[3]*alpha*layer->opacity*avg_strength};
     float fill_color[4]={color[0],color[1],color[2],color[3]};

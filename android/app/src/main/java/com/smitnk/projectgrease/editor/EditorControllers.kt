@@ -208,6 +208,8 @@ class MaterialController {
 
 class ViewController {
     var zoom=1f; private set
+    var panX=0f; private set
+    var panY=0f; private set
     var showGrid=false; private set
     var showGuides=false; private set
     var snapEnabled=false; private set
@@ -215,7 +217,9 @@ class ViewController {
     var guideX=0.5f; private set
     var guideY=0.5f; private set
     fun zoomBy(delta:Float){zoom=(zoom+delta).coerceIn(0.1f,8f)}
-    fun reset(){zoom=1f}
+    fun setZoom(value:Float){zoom=value.coerceIn(0.1f,8f)}
+    fun panBy(dx:Float,dy:Float){panX+=dx;panY+=dy}
+    fun reset(){zoom=1f;panX=0f;panY=0f}
     fun toggleGrid(){showGrid=!showGrid}
     fun toggleGuides(){showGuides=!showGuides}
     fun toggleSnapping(){snapEnabled=!snapEnabled}
@@ -616,7 +620,13 @@ class EditorController {
         (argb and 255)/255f,
         ((argb ushr 24) and 255)/255f
     )
-    fun render(){if(rendererHandle!=0L)GPNative.nativeRenderEgl(rendererHandle)}
+    fun render(){
+        if(rendererHandle!=0L){
+            GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
+            GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
+            GPNative.nativeRenderEgl(rendererHandle)
+        }
+    }
     fun layerCount() = native.layerCount()
     fun setLayerVisibility(index:Int, visible:Boolean):Boolean {
         val ok=native.setLayerVisibility(index,visible)

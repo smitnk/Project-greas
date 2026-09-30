@@ -1372,7 +1372,7 @@ bool Backend::erase_at(float x, float y, float radius)
           stroke_removed = true;
         }
       }
-    }}
+    }
 
     if (stroke_removed) {
       BKE_gpencil_stroke_delete_tagged_points(

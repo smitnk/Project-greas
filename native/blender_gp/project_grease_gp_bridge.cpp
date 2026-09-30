@@ -180,6 +180,11 @@ int project_grease_gp_delete_layer(ProjectGreaseGPHandle *handle, int index)
 { return ensure_ready(handle) && handle->backend.delete_layer(index) ? 1 : 0; }
 int project_grease_gp_rename_layer(ProjectGreaseGPHandle *handle, int index, const char *name)
 { return ensure_ready(handle) && handle->backend.rename_layer(index, name) ? 1 : 0; }
+int project_grease_gp_reset_document(ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(handle) && handle->backend.reset_document() ? 1 : 0;
+}
+
 int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number)
 {
   return ensure_ready(handle) && handle->backend.create_frame(frame_number) ? 1 : 0;

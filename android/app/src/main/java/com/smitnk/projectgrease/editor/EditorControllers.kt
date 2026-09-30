@@ -203,7 +203,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
 }
 
 class MaterialController {
-    var fillEnabled=true; private set
+    // Closed primitives are outline-only until Fill is explicitly enabled.
+    var fillEnabled=false; private set
     var activeMaterial=0; private set
     var thickness=8f; private set
     var opacity=1f; private set

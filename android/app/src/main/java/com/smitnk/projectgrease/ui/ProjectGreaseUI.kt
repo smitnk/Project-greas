@@ -644,7 +644,19 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Slider(controller.stabilizerFactor,{controller.setStabilizer(true,it);redraw()},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
         Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=20.dp))
         Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it);redraw()},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=20.dp))
-        Button(onClick={if(controller.smoothSelectedStroke()){redraw()}},modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp)){Text("Smooth selected stroke")}
+        Text("Legacy GP sculpt brush",Modifier.padding(horizontal=20.dp,vertical=8.dp),fontWeight=FontWeight.Bold)
+        listOf(
+            com.smitnk.projectgrease.editor.SculptBrush.SMOOTH to "Smooth",
+            com.smitnk.projectgrease.editor.SculptBrush.THICKNESS to "Thickness",
+            com.smitnk.projectgrease.editor.SculptBrush.STRENGTH to "Strength",
+            com.smitnk.projectgrease.editor.SculptBrush.GRAB to "Grab",
+            com.smitnk.projectgrease.editor.SculptBrush.PUSH to "Push"
+        ).forEach { (brush,label) ->
+            Button(
+                onClick={controller.sculpt.select(brush);redraw()},
+                modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)
+            ){Text(label)}
+        }
         Text("Legacy GP modifiers",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
         listOf("SMOOTH","SIMPLIFY","OFFSET","MIRROR","THICKNESS","TINT","OPACITY","NOISE","LENGTH","TEXTURE").forEach { modifier ->
             Button(

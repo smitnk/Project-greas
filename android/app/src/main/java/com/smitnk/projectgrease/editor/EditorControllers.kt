@@ -408,12 +408,22 @@ class EditorController {
         return ok
     }
     fun selectTool(tool:GreaseTool)=tools.select(tool)
-    fun sculptAt(x:Float,y:Float):Boolean {
+    private var sculptGestureChanged = false
+    private fun applySculptPoint(x:Float,y:Float):Boolean {
         if (rendererHandle == 0L) return false
         val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
         val ok = sculpt.apply(x, y, radius)
-        if (ok) { history.markEdit(); document.markDirty() }
+        if (ok) {
+            sculptGestureChanged = true
+            document.markDirty()
+        }
         return ok
+    }
+    fun beginSculpt(x:Float,y:Float):Boolean = applySculptPoint(x,y)
+    fun sculptAt(x:Float,y:Float):Boolean = applySculptPoint(x,y)
+    fun endSculpt() {
+        if (sculptGestureChanged) history.markEdit()
+        sculptGestureChanged = false
     }
     fun selectBrush(preset:BrushPreset) {
         brushes.select(preset)

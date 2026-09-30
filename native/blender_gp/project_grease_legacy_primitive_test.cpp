@@ -74,5 +74,47 @@ int main()
     assert(near(p.back().x, 10.0f) && near(p.back().y, 10.0f));
   }
 
+
+  {
+    const auto p = project_grease::legacy_gp_primitive::bezier(
+        {0.0f, 0.0f}, {0.0f, 10.0f}, {10.0f, 10.0f}, {10.0f, 0.0f}, 5);
+    assert(p.size() == 5);
+    assert(near(p.front().x, 0.0f) && near(p.front().y, 0.0f));
+    assert(near(p[2].x, 5.0f) && near(p[2].y, 7.5f));
+    assert(near(p.back().x, 10.0f) && near(p.back().y, 0.0f));
+  }
+
+  {
+    const std::vector<Point> controls = {{0.0f, 0.0f}, {10.0f, 0.0f}, {10.0f, 10.0f}};
+    const auto p = project_grease::legacy_gp_primitive::polyline(controls, 3);
+    assert(p.size() == 5);
+    assert(near(p.front().x, 0.0f) && near(p.front().y, 0.0f));
+    assert(near(p[2].x, 10.0f) && near(p[2].y, 0.0f));
+    assert(near(p.back().x, 10.0f) && near(p.back().y, 10.0f));
+  }
+
+  {
+    const std::vector<Point> controls = {{0.0f, 0.0f}, {10.0f, 0.0f}, {10.0f, 10.0f}};
+    const auto p = project_grease::legacy_gp_primitive::generate(
+        5, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 0.0f, 3, {}, {}, controls);
+    assert(p.size() == 5);
+    assert(near(p[2].x, 10.0f) && near(p[2].y, 0.0f));
+  }
+
+  {
+    const auto p = project_grease::legacy_gp_primitive::generate(
+        4,
+        {0.0f, 0.0f},
+        {10.0f, 0.0f},
+        0.0f,
+        0.0f,
+        5,
+        {0.0f, 10.0f},
+        {10.0f, 10.0f});
+    assert(p.size() == 5);
+    assert(near(p.front().x, 0.0f) && near(p.front().y, 0.0f));
+    assert(near(p.back().x, 10.0f) && near(p.back().y, 0.0f));
+  }
+
   return 0;
 }

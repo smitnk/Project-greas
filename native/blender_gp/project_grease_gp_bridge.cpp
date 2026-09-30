@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "project_grease_gp_backend.h"
+#include "DNA_gpencil_modifier_types.h"
 #include "project_grease_legacy_primitive.h"
 
 struct ProjectGreaseGPHandle {

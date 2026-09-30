@@ -3768,9 +3768,8 @@ bool Backend::sculpt_at(int tool, float x, float y, float radius, float influenc
 
       switch (tool) {
         case 0: /* Smooth: Blender Legacy GP BKE position smoothing. */
-          changed |= changed = true;
-          BKE_gpencil_stroke_smooth(
-              stroke, i, falloff, 1, true, false, false, false, true, nullptr);
+          changed |= BKE_gpencil_stroke_smooth_point(
+              stroke, i, falloff, 1, false, true, stroke);
           break;
         case 1: /* Thickness: Blender Legacy GP pressure smoothing. */
           changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff, 1, stroke);

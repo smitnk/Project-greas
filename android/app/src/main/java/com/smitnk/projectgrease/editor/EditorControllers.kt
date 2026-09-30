@@ -206,6 +206,60 @@ class MaterialController {
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
 
+enum class GreaseMode { DRAW, EDIT, SCULPT, VERTEX_PAINT, WEIGHT_PAINT }
+
+enum class BrushPreset {
+    PENCIL, PEN, INK, MARKER, AIRBRUSH
+}
+
+class BrushController(private val materials: MaterialController) {
+    var preset = BrushPreset.PENCIL
+        private set
+    var size = materials.thickness
+        private set
+    var strength = materials.opacity
+        private set
+    var pressureCurve = 1f
+        private set
+
+    fun select(value: BrushPreset) {
+        preset = value
+        when (value) {
+            BrushPreset.PENCIL -> apply(4f, 0.80f, 1.15f)
+            BrushPreset.PEN -> apply(7f, 0.95f, 1.0f)
+            BrushPreset.INK -> apply(5f, 1.0f, 0.85f)
+            BrushPreset.MARKER -> apply(14f, 0.75f, 0.9f)
+            BrushPreset.AIRBRUSH -> apply(24f, 0.35f, 0.7f)
+        }
+    }
+
+    fun setSize(value: Float) {
+        size = value.coerceIn(0.5f, 100f)
+        materials.setThickness(size)
+    }
+
+    fun setStrength(value: Float) {
+        strength = value.coerceIn(0f, 1f)
+        materials.setOpacity(strength)
+    }
+
+    fun setPressureCurve(value: Float) {
+        pressureCurve = value.coerceIn(0.25f, 3f)
+    }
+
+    fun pressure(input: Float): Float =
+        input.coerceIn(0f, 1f).let { kotlin.math.pow(it, pressureCurve) }
+
+    private fun apply(newSize: Float, newStrength: Float, curve: Float) {
+        size = newSize
+        strength = newStrength
+        pressureCurve = curve
+        materials.setThickness(size)
+        materials.setOpacity(strength)
+    }
+}
+
+
 class ViewController {
     var zoom=1f; private set
     var panX=0f; private set
@@ -288,6 +342,9 @@ class EditorController {
     val history=HistoryController(native)
     val animation=AnimationController(native)
     val materials=MaterialController()
+    val brushes=BrushController(materials)
+    var mode=GreaseMode.DRAW
+        private set
     val view=ViewController()
     val selection=SelectionController(native)
     val modifiers=ModifierController()
@@ -304,6 +361,19 @@ class EditorController {
     }
     fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
     fun selectTool(tool:GreaseTool)=tools.select(tool)
+    fun setMode(value:GreaseMode):Boolean {
+        val supported = when (value) {
+            GreaseMode.DRAW, GreaseMode.EDIT -> true
+            GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+            GreaseMode.VERTEX_PAINT, GreaseMode.WEIGHT_PAINT -> false
+        }
+        if (!supported) return false
+        mode = value
+        if (value == GreaseMode.EDIT && tools.activeTool == GreaseTool.DRAW) {
+            tools.select(GreaseTool.SELECT)
+        }
+        return true
+    }
     private data class PendingPoint(val x:Float,val y:Float,val pressure:Float,val time:Float)
     private val pendingShapePoints = mutableListOf<PendingPoint>()
     private val pendingLassoPoints = mutableListOf<Pair<Float,Float>>()
@@ -386,7 +456,7 @@ class EditorController {
 
             if (GPNative.nativeAddPointEglRenderer(
                     rendererHandle, px, py, 0f,
-                    pressure.coerceAtLeast(0.01f),
+                    brushes.pressure(pressure).coerceAtLeast(0.01f),
                     materials.opacity, timeSeconds)) {
                 lastEmittedX=px
                 lastEmittedY=py

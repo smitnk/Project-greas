@@ -265,3 +265,13 @@ Source reference: pinned Blender 3.6.23 `source/blender/editors/gpencil_legacy/g
 Review result: the mathematical generation path is source-aligned, but this does **not** yet mean the full Blender primitive operator is complete. The desktop operator still owns modal context, brush/material state, depth projection, control points, frame transfer and auto-merge. Those dependencies must be selectively closed before the Android tool can be marked complete.
 
 Next bundled work remains the real operator lifecycle and fill/editor dependency closure, not another custom shape implementation.
+
+### Fill geometry closure bundle — 2026-09-30
+
+Pinned Blender 3.6.23 `gpencil_fill.c` source review identified a concrete mismatch in the existing focused fill extraction: its dilation was cardinal-only, while Blender's Legacy GP `dilate_shape()` stages cardinal and diagonal candidates before applying them.
+
+- `0848899` aligns the focused dilation and contraction routines with the pinned 3.6.23 algorithms, including staged updates and diagonal dilation candidates.
+- `caaa160` adds regression coverage for the fill outline path with dilation enabled.
+
+This remains an extraction of the Blender Legacy GP fill image algorithm, not a claim that the complete desktop fill operator is ported. The operator still has a larger dependency closure around offscreen rendering, stroke extension/collision, depth projection, layer selection and final stroke transfer.
+

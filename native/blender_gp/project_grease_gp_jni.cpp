@@ -568,6 +568,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSmoothStroke(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSculptAt(
+    JNIEnv *, jobject, jlong handle, jint tool, jfloat x, jfloat y, jfloat radius, jfloat influence)
+{
+  return project_grease_gp_sculpt_at(
+             from_handle(handle), tool, x, y, radius, influence) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyBlenderModifier(
     JNIEnv *env, jobject, jlong handle, jint index, jstring name, jfloat factor, jint iterations)
 {

@@ -8,7 +8,7 @@ class NativeEditorBridge {
     var handle: Long = 0L
         private set
     fun attach(value: Long) { handle = value }
-    fun history.reset() = handle != 0L && GPNative.nativeHistoryReset(handle)
+    fun historyReset() = handle != 0L && GPNative.nativeHistoryReset(handle)
     fun applyEditCommand(command: Int, args: FloatArray = floatArrayOf()) =
         handle != 0L && GPNative.nativeApplyEditCommand(handle, command, args)
     fun historyRecord() = handle != 0L && GPNative.nativeHistoryRecord(handle)
@@ -87,7 +87,7 @@ class HistoryController(private val native: NativeEditorBridge) {
 
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
     fun markEdit(): Boolean = native.historyRecord()
-    fun reset(): Boolean = native.history.reset()
+    fun reset(): Boolean = native.historyReset()
     fun undo(): Boolean = native.historyUndo()
     fun redo(): Boolean = native.historyRedo()
 }
@@ -366,7 +366,7 @@ class EditorController {
         rendererHandle = handle
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
         native.attach(gpHandle)
-        native.history.reset()
+        native.historyReset()
         pushMaterialColor()
         animation.initialize()
         selectedLayer = 0

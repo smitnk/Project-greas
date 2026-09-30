@@ -112,6 +112,7 @@ class Backend {
   bool set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4]);
   bool set_material_visibility(int index, bool visible);
   bool set_material_fill_enabled(int index, bool enabled);
+  bool material_fill_enabled(int index) const;
   bool smooth_stroke(int index, float influence, int iterations);
   // One batched entry point for the real Blender 3.6.23 Legacy GP geometry API.
   // Each operation dispatches directly to Blender's BKE_gpencil_* implementation;

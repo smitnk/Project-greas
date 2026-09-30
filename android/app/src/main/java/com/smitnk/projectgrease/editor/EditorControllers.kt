@@ -386,6 +386,14 @@ class EditorController {
         return ok
     }
     fun selectTool(tool:GreaseTool)=tools.select(tool)
+    fun selectBrush(preset:BrushPreset) {
+        brushes.select(preset)
+        setMaterialColor(materials.colorArgb)
+    }
+    fun setBrushStrength(value:Float) {
+        brushes.setStrength(value)
+        setMaterialColor(materials.colorArgb)
+    }
     fun setMode(value:GreaseMode):Boolean {
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true

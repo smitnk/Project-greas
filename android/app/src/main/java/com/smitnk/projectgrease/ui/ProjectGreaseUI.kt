@@ -351,7 +351,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 BrushPreset.entries.forEach{preset->
                     FilterChip(
                         selected=controller.brushes.preset==preset,
-                        onClick={controller.brushes.select(preset);controller.pushMaterialColor();redraw()},
+                        onClick={controller.selectBrush(preset);redraw()},
                         label={Text(preset.name,fontSize=10.sp)},
                         modifier=Modifier.padding(end=3.dp)
                     )
@@ -372,8 +372,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 Slider(
                     value=controller.brushes.strength,
                     onValueChange={
-                        controller.brushes.setStrength(it)
-                        controller.pushMaterialColor()
+                        controller.setBrushStrength(it)
                         redraw()
                     },
                     valueRange=0f..1f,

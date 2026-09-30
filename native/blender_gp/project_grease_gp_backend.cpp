@@ -2273,7 +2273,7 @@ bool Backend::translate_stroke(int index, float dx, float dy, float dz) {
       int edit_index = 0;
       for (bGPDstroke *edit_stroke = static_cast<bGPDstroke *>(edit_frame->strokes.first);
            edit_stroke; edit_stroke = edit_stroke->next, ++edit_index) {
-        if (edit_index != index || selected_point_count(edit_stroke) == 0) continue;
+        if (edit_index != index || edit_stroke->totpoints <= 0) continue;
         changed = true;
         for (int point_index=0; point_index<edit_stroke->totpoints; ++point_index) {
           bGPDspoint &point=edit_stroke->points[point_index];

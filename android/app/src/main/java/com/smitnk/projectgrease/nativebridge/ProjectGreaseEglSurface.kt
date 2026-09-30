@@ -351,6 +351,8 @@ private class ProjectGreaseDrawingSurfaceView(
                 val pointerIndex = event.findPointerIndex(activePointerId)
                 if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) {
                     controller.endSculpt()
+                } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) {
+                    controller.endErase()
                 } else if (mirrorOpen && pointerIndex >= 0) {
                     val up = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))
                     commitMirror(up.first, up.second)
@@ -368,6 +370,7 @@ private class ProjectGreaseDrawingSurfaceView(
             }
             MotionEvent.ACTION_CANCEL -> {
                 if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) controller.endSculpt()
+                if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) controller.endErase()
                 if (strokeOpen) controller.cancelStroke()
                 resetGestureState()
                 controller.render()
@@ -407,7 +410,7 @@ private class ProjectGreaseDrawingSurfaceView(
         var changed = false
         for (i in 1..samples) {
             val t = i.toFloat() / samples.toFloat()
-            if (controller.eraseAt(sx + dx * t, sy + dy * t, radius)) {
+            if (controller.eraseAt(sx + dx * t, sy + dy * t, radius, false)) {
                 changed = true
             }
         }

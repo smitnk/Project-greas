@@ -120,7 +120,7 @@ private class ProjectGreaseDrawingSurfaceView(
                         controller.render()
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
-                        moveOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        moveOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (moveOpen) {
                             lastMoveX = event.x
                             lastMoveY = event.y
@@ -128,7 +128,7 @@ private class ProjectGreaseDrawingSurfaceView(
                         }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> {
-                        rotateOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        rotateOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (rotateOpen) {
                             val center = controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
@@ -145,7 +145,7 @@ private class ProjectGreaseDrawingSurfaceView(
                         }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.SCALE -> {
-                        scaleOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        scaleOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (scaleOpen) {
                             val center = controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
@@ -164,12 +164,11 @@ private class ProjectGreaseDrawingSurfaceView(
                         }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
-                        mirrorOpen = controller.hitTestAndSelectStroke(event.x, event.y)
+                        mirrorOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (mirrorOpen) {
                             val center = controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
                                 mirrorOpen = false
-        panOpen = false
                             } else {
                                 mirrorCenterX = center[0]
                                 mirrorCenterY = center[1]
@@ -360,6 +359,7 @@ private class ProjectGreaseDrawingSurfaceView(
         rotateOpen = false
         scaleOpen = false
         mirrorOpen = false
+        panOpen = false
         scaleAccumulated = 1f
         lastScaleRadius = 0f
         activePointerId = MotionEvent.INVALID_POINTER_ID

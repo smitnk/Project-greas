@@ -8,6 +8,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.min
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -90,6 +91,9 @@ private class ProjectGreaseDrawingSurfaceView(
     private var mirrorCenterY = 0f
     private var mirrorStartX = 0f
     private var mirrorStartY = 0f
+    private var panOpen = false
+    private var lastPanX = 0f
+    private var lastPanY = 0f
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -102,16 +106,17 @@ private class ProjectGreaseDrawingSurfaceView(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                val start = canvasPoint(event.x, event.y)
                 activePointerId = event.getPointerId(0)
                 when (controller.tools.activeTool) {
                     com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
-                        controller.hitTestAndSelectStroke(event.x, event.y)
+                        controller.hitTestAndSelectStroke(start.first, start.second)
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
-                        controller.eraseAt(event.x, event.y)
+                        controller.eraseAt(start.first, start.second)
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
-                        controller.fillAt(event.x, event.y)
+                        controller.fillAt(start.first, start.second)
                         controller.render()
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
@@ -132,8 +137,8 @@ private class ProjectGreaseDrawingSurfaceView(
                                 rotateCenterX = center[0]
                                 rotateCenterY = center[1]
                                 lastRotateAngle = atan2(
-                                    event.y - rotateCenterY,
-                                    event.x - rotateCenterX
+                                    start.second - rotateCenterY,
+                                    start.first - rotateCenterX
                                 )
                                 controller.render()
                             }
@@ -149,8 +154,8 @@ private class ProjectGreaseDrawingSurfaceView(
                                 scaleCenterX = center[0]
                                 scaleCenterY = center[1]
                                 lastScaleRadius = hypot(
-                                    event.x - scaleCenterX,
-                                    event.y - scaleCenterY
+                                    start.first - scaleCenterX,
+                                    start.second - scaleCenterY
                                 )
                                 scaleAccumulated = 1f
                                 if (lastScaleRadius < 1f) scaleOpen = false
@@ -164,14 +169,20 @@ private class ProjectGreaseDrawingSurfaceView(
                             val center = controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
                                 mirrorOpen = false
+        panOpen = false
                             } else {
                                 mirrorCenterX = center[0]
                                 mirrorCenterY = center[1]
-                                mirrorStartX = event.x
-                                mirrorStartY = event.y
+                                mirrorStartX = start.first
+                                mirrorStartY = start.second
                                 controller.render()
                             }
                         }
+                    }
+                    GreaseTool.PAN -> {
+                        panOpen = true
+                        lastPanX = event.x
+                        lastPanY = event.y
                     }
                     else -> {
                         strokeOpen = controller.beginStroke()
@@ -195,9 +206,22 @@ private class ProjectGreaseDrawingSurfaceView(
                     event.findPointerIndex(activePointerId)
                 } else -1
                 if (pointerIndex >= 0) {
-                    val x = event.getX(pointerIndex)
-                    val y = event.getY(pointerIndex)
+                    val rawX = event.getX(pointerIndex)
+                    val rawY = event.getY(pointerIndex)
+                    val canvas = canvasPoint(rawX, rawY)
+                    val x = canvas.first
+                    val y = canvas.second
                     when {
+                        panOpen -> {
+                            val dx = rawX - lastPanX
+                            val dy = rawY - lastPanY
+                            if (dx != 0f || dy != 0f) {
+                                controller.view.panBy(dx, dy)
+                                lastPanX = rawX
+                                lastPanY = rawY
+                                controller.render()
+                            }
+                        }
                         moveOpen -> {
                             val dx = x - lastMoveX
                             val dy = y - lastMoveY
@@ -261,8 +285,9 @@ private class ProjectGreaseDrawingSurfaceView(
             MotionEvent.ACTION_POINTER_UP -> {
                 val pointerId = event.getPointerId(event.actionIndex)
                 if (pointerId == activePointerId) {
+                    val up = canvasPoint(event.getX(event.actionIndex), event.getY(event.actionIndex))
                     if (mirrorOpen) {
-                        commitMirror(event.getX(event.actionIndex), event.getY(event.actionIndex))
+                        commitMirror(up.first, up.second)
                     } else if (strokeOpen) {
                         if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) {
                             controller.cancelStroke()
@@ -279,7 +304,8 @@ private class ProjectGreaseDrawingSurfaceView(
             MotionEvent.ACTION_UP -> {
                 val pointerIndex = event.findPointerIndex(activePointerId)
                 if (mirrorOpen && pointerIndex >= 0) {
-                    commitMirror(event.getX(pointerIndex), event.getY(pointerIndex))
+                    val up = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))
+                    commitMirror(up.first, up.second)
                 } else if (strokeOpen) {
                     if (pointerIndex >= 0) {
                         addPoint(event, pointerIndex)
@@ -320,6 +346,15 @@ private class ProjectGreaseDrawingSurfaceView(
         }
     }
 
+    private fun canvasPoint(rawX:Float,rawY:Float):Pair<Float,Float>{
+        val cw=controller.document.canvasWidth.coerceAtLeast(1)
+        val ch=controller.document.canvasHeight.coerceAtLeast(1)
+        val fit=min(width.toFloat()/cw.toFloat(),height.toFloat()/ch.toFloat())*0.92f*controller.view.zoom
+        val ox=(width.toFloat()-cw*fit)*0.5f+controller.view.panX
+        val oy=(height.toFloat()-ch*fit)*0.5f+controller.view.panY
+        return ((rawX-ox)/fit).coerceIn(0f,cw.toFloat()) to ((rawY-oy)/fit).coerceIn(0f,ch.toFloat())
+    }
+
     private fun resetGestureState() {
         moveOpen = false
         rotateOpen = false
@@ -333,9 +368,10 @@ private class ProjectGreaseDrawingSurfaceView(
 
     private fun addPoint(event: MotionEvent, pointerIndex: Int) {
         val pressure = event.getPressure(pointerIndex).coerceAtLeast(0.01f)
+        val p = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))
         controller.addStrokePoint(
-            event.getX(pointerIndex),
-            event.getY(pointerIndex),
+            p.first,
+            p.second,
             pressure,
             event.eventTime.toFloat() / 1000f
         )

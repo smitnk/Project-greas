@@ -1,0 +1,26 @@
+name: Extract Blender 3.6.23 Grease Pencil Source
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Project Grease
+        uses: actions/checkout@v4
+
+      - name: Make extractor executable
+        run: chmod +x ./extract_grease_pencil.sh
+
+      - name: Extract Blender 3.6.23 Grease Pencil source
+        env:
+          TAG: v3.6.23
+        run: ./extract_grease_pencil.sh
+
+      - name: Upload extracted TXT package
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-3.6.23-grease-pencil-txt
+          path: blender_3.6.23_grease_pencil_txt/
+          retention-days: 14

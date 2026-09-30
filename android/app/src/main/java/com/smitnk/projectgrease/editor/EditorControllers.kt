@@ -85,6 +85,8 @@ class HistoryController(private val native: NativeEditorBridge) {
 
 class DocumentController {
     var projectName = "Project Grease"
+    var canvasWidth = 1280
+    var canvasHeight = 720
     var dirty = false; private set
     fun markDirty() { dirty = true }
     fun markSaved() { dirty = false }

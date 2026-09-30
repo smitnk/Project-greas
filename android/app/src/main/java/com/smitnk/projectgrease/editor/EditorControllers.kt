@@ -258,7 +258,6 @@ class BrushController(private val materials: MaterialController) {
 
     fun setStrength(value: Float) {
         strength = value.coerceIn(0f, 1f)
-        materials.setOpacity(strength)
     }
 
     fun setPressureCurve(value: Float) {
@@ -883,7 +882,7 @@ class EditorController {
         // alpha unchanged, so the Strength control had no visible effect.
         GPNative.nativeSetStrokeColorEglRenderer(
             rendererHandle,
-            c[0], c[1], c[2], c[3] * materials.opacity
+            c[0], c[1], c[2], c[3] * materials.opacity * brushes.strength
         )
     }
     private fun colorToFloats(argb:Int):FloatArray = floatArrayOf(

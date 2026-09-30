@@ -935,7 +935,6 @@ class EditorController {
         return index >= 0 && selection.selectStroke(index)
     }
     fun eraserRadius():Float = brushes.size.coerceIn(8f, 96f)
-    private fun eraserRadius(): Float = (brushes.size * 1.5f).coerceIn(6f, 48f)
 
     fun eraseAt(x:Float, y:Float, radius:Float = eraserRadius()):Boolean {
         val ok = native.eraseAt(x, y, radius)

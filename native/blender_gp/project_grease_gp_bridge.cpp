@@ -471,6 +471,11 @@ int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, fl
   return ensure_ready(handle) && handle->backend.smooth_stroke(index, influence, iterations) ? 1 : 0;
 }
 
+int project_grease_gp_sculpt_at(ProjectGreaseGPHandle *handle, int tool, float x, float y, float radius, float influence)
+{
+  return ensure_ready(handle) && handle->backend.sculpt_at(tool, x, y, radius, influence) ? 1 : 0;
+}
+
 int project_grease_gp_apply_legacy_geometry_batch(
     ProjectGreaseGPHandle *handle,
     int stroke_index,

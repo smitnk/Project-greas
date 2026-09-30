@@ -190,9 +190,24 @@ class MaterialController {
 class ViewController {
     var zoom=1f; private set
     var showGrid=false; private set
+    var showGuides=false; private set
+    var snapEnabled=false; private set
+    var gridSize=32f; private set
+    var guideX=0.5f; private set
+    var guideY=0.5f; private set
     fun zoomBy(delta:Float){zoom=(zoom+delta).coerceIn(0.1f,8f)}
     fun reset(){zoom=1f}
     fun toggleGrid(){showGrid=!showGrid}
+    fun toggleGuides(){showGuides=!showGuides}
+    fun toggleSnapping(){snapEnabled=!snapEnabled}
+    fun setGridSize(value:Float){gridSize=value.coerceIn(8f,256f)}
+    fun setGuide(x:Float,y:Float){guideX=x.coerceIn(0f,1f);guideY=y.coerceIn(0f,1f)}
+    fun snap(value:Float):Float {
+        if(!snapEnabled) return value
+        val size=gridSize.coerceAtLeast(1f)
+        return kotlin.math.round(value/size)*size
+    }
+    fun snapPoint(x:Float,y:Float):Pair<Float,Float> = snap(x) to snap(y)
 }
 
 class SelectionController(private val native: NativeEditorBridge) {
@@ -269,6 +284,24 @@ class EditorController {
     private data class PendingPoint(val x:Float,val y:Float,val pressure:Float,val time:Float)
     private val pendingShapePoints = mutableListOf<PendingPoint>()
     private val pendingLassoPoints = mutableListOf<Pair<Float,Float>>()
+    private var lastEmittedX = Float.NaN
+    private var lastEmittedY = Float.NaN
+    private var stabilizedX = Float.NaN
+    private var stabilizedY = Float.NaN
+    var stabilizerEnabled = false
+        private set
+    var stabilizerFactor = 0.75f
+        private set
+    var stabilizerRadius = 12f
+        private set
+    var spacing = 0f
+        private set
+    fun setStabilizer(enabled:Boolean, factor:Float=stabilizerFactor, radius:Float=stabilizerRadius) {
+        stabilizerEnabled=enabled
+        stabilizerFactor=factor.coerceIn(0f,1f)
+        stabilizerRadius=radius.coerceIn(0f,200f)
+    }
+    fun setSpacing(value:Float) { spacing=value.coerceIn(0f,100f) }
     private var pendingShapeTool: GreaseTool? = null
 
     fun beginStroke():Boolean {
@@ -277,6 +310,10 @@ class EditorController {
             GreaseTool.DRAW -> {
                 pendingShapePoints.clear()
                 pendingShapeTool = null
+                lastEmittedX = Float.NaN
+                lastEmittedY = Float.NaN
+                stabilizedX = Float.NaN
+                stabilizedY = Float.NaN
                 GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)
             }
             GreaseTool.LASSO -> { pendingLassoPoints.clear(); true }
@@ -293,11 +330,43 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             pendingLassoPoints += x to y
         } else if (tools.activeTool == GreaseTool.DRAW) {
-            GPNative.nativeAddPointEglRenderer(
-                rendererHandle, x, y, 0f,
-                pressure.coerceAtLeast(0.01f),
-                materials.opacity, timeSeconds
-            )
+            var px=x
+            var py=y
+            val snapped=view.snapPoint(px,py)
+            px=snapped.first
+            py=snapped.second
+
+            if (stabilizerEnabled) {
+                if (stabilizedX.isNaN()) {
+                    stabilizedX=px
+                    stabilizedY=py
+                } else {
+                    val dx=px-stabilizedX
+                    val dy=py-stabilizedY
+                    val distance=kotlin.math.sqrt(dx*dx+dy*dy)
+                    if (distance >= stabilizerRadius || lastEmittedX.isNaN()) {
+                        val follow=(1f-stabilizerFactor).coerceIn(0.02f,1f)
+                        stabilizedX += dx*follow
+                        stabilizedY += dy*follow
+                    }
+                }
+                px=stabilizedX
+                py=stabilizedY
+            }
+
+            if (!lastEmittedX.isNaN() && spacing > 0f) {
+                val dx=px-lastEmittedX
+                val dy=py-lastEmittedY
+                if (dx*dx+dy*dy < spacing*spacing) return
+            }
+
+            if (GPNative.nativeAddPointEglRenderer(
+                    rendererHandle, px, py, 0f,
+                    pressure.coerceAtLeast(0.01f),
+                    materials.opacity, timeSeconds)) {
+                lastEmittedX=px
+                lastEmittedY=py
+            }
         } else if (pendingShapeTool != null) {
             pendingShapePoints += PendingPoint(x, y, pressure.coerceAtLeast(0.01f), timeSeconds)
             val preview = generatedShapePoints()
@@ -378,6 +447,10 @@ class EditorController {
         }
         if (tools.activeTool == GreaseTool.DRAW) {
             if (GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
+                lastEmittedX=Float.NaN
+                lastEmittedY=Float.NaN
+                stabilizedX=Float.NaN
+                stabilizedY=Float.NaN
                 history.markEdit(); document.markDirty()
             }
             return
@@ -435,6 +508,10 @@ class EditorController {
         pendingShapePoints.clear()
         pendingShapeTool=null
         pendingLassoPoints.clear()
+        lastEmittedX=Float.NaN
+        lastEmittedY=Float.NaN
+        stabilizedX=Float.NaN
+        stabilizedY=Float.NaN
     }
     fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean {
         if (rendererHandle == 0L || points.size < 3) return false

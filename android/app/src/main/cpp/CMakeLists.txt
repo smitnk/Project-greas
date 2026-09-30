@@ -92,6 +92,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_curve_legacy_extract.cc"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_math_geom_legacy_extract.cc"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_deform_legacy_extract.cc"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_string_legacy_extract.c"
 )
 

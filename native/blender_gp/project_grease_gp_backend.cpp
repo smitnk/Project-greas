@@ -554,6 +554,19 @@ void Backend::shutdown()
   impl_->initialized = false;
 }
 
+bool Backend::reset_document()
+{
+  if (!impl_->initialized) {
+    impl_->last_error = "backend is not initialized";
+    return false;
+  }
+  shutdown();
+  if (!initialize() || !create_document() || !create_layer("Layer 1") || !create_frame(1)) {
+    return false;
+  }
+  return true;
+}
+
 bool Backend::create_document() {
   if (!impl_->initialized) {
     impl_->last_error = "backend is not initialized";

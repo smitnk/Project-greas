@@ -36,8 +36,7 @@ object FeatureRegistry {
     // and Android presentation path are validated.
     private val available = setOf(
         // Core Legacy GP drawing/editing paths validated by native tests.
-        FeatureId.FREEHAND, FeatureId.PRESSURE, FeatureId.ERASER, FeatureId.FILL,
-        FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
+        FeatureId.FREEHAND, FeatureId.PRESSURE, FeatureId.ERASER,
         FeatureId.SELECT, FeatureId.LASSO,
         FeatureId.MOVE, FeatureId.ROTATE, FeatureId.SCALE, FeatureId.MIRROR,
         FeatureId.DUPLICATE, FeatureId.DELETE, FeatureId.SPLIT, FeatureId.SUBDIVIDE, FeatureId.TRIM, FeatureId.CLOSE,
@@ -46,11 +45,11 @@ object FeatureRegistry {
         FeatureId.FRAMES, FeatureId.TIMELINE, FeatureId.ADD_FRAME, FeatureId.DUPLICATE_FRAME,
         FeatureId.DELETE_FRAME, FeatureId.PLAYBACK, FeatureId.PAUSE, FeatureId.LOOP,
         FeatureId.FPS, FeatureId.FRAME_NAVIGATION,
-        FeatureId.ONION_SKIN, FeatureId.ONION_RANGE, FeatureId.ONION_OPACITY, FeatureId.ONION_FADE,
+        FeatureId.ONION_SKIN, FeatureId.ONION_RANGE, FeatureId.ONION_OPACITY,
         // Existing Legacy GP material/style path.
         FeatureId.MATERIALS, FeatureId.SELECT_MATERIAL, FeatureId.STROKE_COLOR,
         FeatureId.THICKNESS, FeatureId.OPACITY,
-        FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING, FeatureId.PRESSURE_CURVE,
+        
         FeatureId.SCULPT, FeatureId.SCULPT_SMOOTH, FeatureId.SCULPT_THICKNESS, FeatureId.SCULPT_STRENGTH,
         FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
@@ -60,6 +59,10 @@ object FeatureRegistry {
         FeatureId.NEW_PROJECT, FeatureId.OPEN_PROJECT, FeatureId.SAVE
     )
     private val inProgress = setOf(
+        // These paths are deliberately kept non-complete until their Blender 3.6.23
+        // Legacy editor implementations are integrated instead of Project Grease geometry.
+        FeatureId.FILL, FeatureId.LINE, FeatureId.RECTANGLE, FeatureId.CIRCLE, FeatureId.ARC, FeatureId.POLYLINE,
+        FeatureId.STABILIZATION, FeatureId.SMOOTHING, FeatureId.SPACING, FeatureId.PRESSURE_CURVE,
         FeatureId.INSERT_FRAME,
         // Legacy GP interpolation currently supports only matched stroke topology;
         // Blender 3.6 interpolation also handles topology differences/pairing.

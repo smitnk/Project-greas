@@ -103,7 +103,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 screen=Screen.EDITOR
             }
             Screen.EDITOR->Editor(controller,state,{state=it},{screen=Screen.HOME},{screen=Screen.SETTINGS},blenderViewport)
-            Screen.SETTINGS->Settings(themeMode,{themeMode=it},{screen=Screen.HOME})
+            Screen.SETTINGS->Settings(controller,themeMode,{themeMode=it},{screen=Screen.HOME})
         }
     }
 }
@@ -341,7 +341,6 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Switch(checked=controller.view.snapEnabled,onCheckedChange={controller.view.toggleSnapping();redraw()})
         }
         Button(onClick={if(controller.smoothSelectedStroke()){redraw()}}){Text("Smooth selected stroke")}
-        CapabilityRow("Grid",FeatureId.GRID);CapabilityRow("Guides",FeatureId.GUIDES);CapabilityRow("Snapping",FeatureId.SNAPPING);CapabilityRow("Onion skin",FeatureId.ONION_SKIN)
     }
 }
 
@@ -480,12 +479,6 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Text("Locked",Modifier.weight(1f))
             Switch(checked=locked,onCheckedChange={locked=it;controller.setLayerLocked(controller.selectedLayer,it);redraw()})
         }
-        CapabilityRow("Visibility",FeatureId.LAYER_VISIBILITY)
-        CapabilityRow("Locking",FeatureId.LAYER_LOCKING)
-        CapabilityRow("Ordering",FeatureId.LAYER_ORDERING)
-        CapabilityRow("Duplication",FeatureId.LAYER_DUPLICATION)
-        CapabilityRow("Deletion",FeatureId.LAYER_DELETION)
-        CapabilityRow("Rename",FeatureId.LAYER_RENAME)
         Spacer(Modifier.height(20.dp))
     }
     if(renameOpen){
@@ -594,6 +587,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 @Composable private fun Settings(
+    controller:EditorController,
     current:ProjectGreaseThemeMode,
     onTheme:(ProjectGreaseThemeMode)->Unit,
     onBack:()->Unit

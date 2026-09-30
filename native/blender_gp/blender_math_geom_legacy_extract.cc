@@ -167,6 +167,26 @@ static int project_grease_isect_line_line_epsilon_v3(
   return 2;
 }
 
+float closest_to_line_segment_v3(
+    float r_close[3],
+    const float p[3],
+    const float l1[3],
+    const float l2[3])
+{
+  float lambda, cp[3];
+  lambda = closest_to_line_v3(cp, p, l1, l2);
+  if (lambda <= 0.0f) {
+    copy_v3_v3(r_close, l1);
+    return 0.0f;
+  }
+  if (lambda >= 1.0f) {
+    copy_v3_v3(r_close, l2);
+    return 1.0f;
+  }
+  copy_v3_v3(r_close, cp);
+  return lambda;
+}
+
 int isect_line_line_v3(
     const float v1[3],
     const float v2[3],

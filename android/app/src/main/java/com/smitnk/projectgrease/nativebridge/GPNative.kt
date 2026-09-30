@@ -58,6 +58,7 @@ object GPNative {
     external fun nativeDuplicateLayer(handle: Long, index: Int): Boolean
     external fun nativeDeleteLayer(handle: Long, index: Int): Boolean
     external fun nativeRenameLayer(handle: Long, index: Int, name: String): Boolean
+    external fun nativeResetDocument(handle: Long): Boolean
     external fun nativeCreateFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeSelectFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeFrameCount(handle: Long): Int

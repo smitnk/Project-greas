@@ -94,6 +94,8 @@ private class ProjectGreaseDrawingSurfaceView(
     private var mirrorStartY = 0f
     private var panOpen = false
     private var lastPanX = 0f
+    private var eraseLastX = Float.NaN
+    private var eraseLastY = Float.NaN
     private var lastPanY = 0f
     private var pinchOpen = false
     private var pinchStartDistance = 0f
@@ -118,6 +120,8 @@ private class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
                         controller.eraseAt(start.first, start.second)
+                        eraseLastX = start.first
+                        eraseLastY = start.second
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
                         controller.fillAt(event.x, event.y)
@@ -248,7 +252,8 @@ private class ProjectGreaseDrawingSurfaceView(
                             }
                         }
                         controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
-                            if (controller.eraseAt(x, y, controller.eraserRadius())) controller.render()
+                            val changed = eraseAlongPath(x, y)
+                            if (changed) controller.render()
                         }
                         moveOpen -> {
                             val dx = x - lastMoveX
@@ -380,6 +385,27 @@ private class ProjectGreaseDrawingSurfaceView(
         }
     }
 
+    private fun eraseAlongPath(x: Float, y: Float): Boolean {
+        val radius = controller.eraserRadius().coerceAtLeast(1f)
+        val sx = if (eraseLastX.isNaN()) x else eraseLastX
+        val sy = if (eraseLastY.isNaN()) y else eraseLastY
+        val dx = x - sx
+        val dy = y - sy
+        val distance = hypot(dx, dy)
+        val step = (radius * 0.35f).coerceAtLeast(2f)
+        val samples = maxOf(1, kotlin.math.ceil(distance / step).toInt())
+        var changed = false
+        for (i in 1..samples) {
+            val t = i.toFloat() / samples.toFloat()
+            if (controller.eraseAt(sx + dx * t, sy + dy * t, radius)) {
+                changed = true
+            }
+        }
+        eraseLastX = x
+        eraseLastY = y
+        return changed
+    }
+
     private fun pointerDistance(event: MotionEvent): Float {
         if (event.pointerCount < 2) return 0f
         val dx = event.getX(0) - event.getX(1)
@@ -402,6 +428,8 @@ private class ProjectGreaseDrawingSurfaceView(
         scaleOpen = false
         mirrorOpen = false
         panOpen = false
+        eraseLastX = Float.NaN
+        eraseLastY = Float.NaN
         pinchOpen = false
         pinchStartDistance = 0f
         pinchStartZoom = controller.view.zoom

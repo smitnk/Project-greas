@@ -34,7 +34,11 @@ class NativeEditorBridge {
     fun render() = handle != 0L && GPNative.nativeRender(handle)
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int)=handle != 0L && GPNative.nativeDuplicateFrame(handle,sourceFrame,targetFrame)
     fun deleteFrame(frameNumber:Int)=handle != 0L && GPNative.nativeDeleteFrame(handle,frameNumber)
+    fun resetDocument() = handle != 0L && GPNative.nativeResetDocument(handle)
     fun createFrame(frame: Int) = handle != 0L && GPNative.nativeCreateFrame(handle, frame)
+    fun beginStroke(material:Int, thickness:Float) = handle != 0L && GPNative.nativeBeginStroke(handle, material, thickness)
+    fun addPoint(point:FloatArray) = handle != 0L && GPNative.nativeAddPoint(handle, point[0], point[1], point[2], point[3], point[4], point[5])
+    fun endStroke() = handle != 0L && GPNative.nativeEndStroke(handle)
     fun selectFrame(frame: Int) = handle != 0L && GPNative.nativeSelectFrame(handle, frame)
     fun strokeCount() = if (handle != 0L) GPNative.nativeStrokeCount(handle) else 0
     fun pointCount() = if (handle != 0L) GPNative.nativePointCount(handle) else 0
@@ -639,6 +643,95 @@ class EditorController {
         if (ok) { if (enabled != onion.enabled) onion.toggle(); onion.setBefore(before); onion.setAfter(after); onion.setOpacity(opacity); render() }
         return ok
     }
+    fun saveDocumentJson():String? {
+        if (native.handle == 0L) return null
+        val root = org.json.JSONObject()
+        root.put("version", 1)
+        root.put("width", document.canvasWidth)
+        root.put("height", document.canvasHeight)
+        root.put("fps", animation.fps)
+        root.put("frame", animation.currentFrame)
+        val layers = org.json.JSONArray()
+        val originalLayer = selectedLayer
+        val originalFrame = animation.currentFrame
+        for (layerIndex in 0 until native.layerCount()) {
+            if (!native.selectLayer(layerIndex)) continue
+            val layerJson = org.json.JSONObject().put("index", layerIndex)
+            val frames = org.json.JSONArray()
+            for (frameNumber in native.frameNumbers()) {
+                if (!native.selectFrame(frameNumber)) continue
+                val frameJson = org.json.JSONObject().put("number", frameNumber)
+                val strokes = org.json.JSONArray()
+                for (strokeIndex in 0 until native.strokeCount()) {
+                    val points = org.json.JSONArray()
+                    var pointIndex = 0
+                    while (true) {
+                        val point = GPNative.nativeGetPoint(native.handle, strokeIndex, pointIndex) ?: break
+                        points.put(org.json.JSONArray().apply { for (v in point) put(v.toDouble()) })
+                        pointIndex++
+                    }
+                    if (points.length() >= 1) strokes.put(org.json.JSONObject().put("points", points))
+                }
+                frameJson.put("strokes", strokes)
+                frames.put(frameJson)
+            }
+            layerJson.put("frames", frames)
+            layers.put(layerJson)
+        }
+        if (native.layerCount() > 0) {
+            native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
+            native.selectFrameOrHold(originalFrame)
+        }
+        native.render()
+        root.put("layers", layers)
+        return root.toString()
+    }
+
+    fun loadDocumentJson(raw:String):Boolean {
+        if (native.handle == 0L) return false
+        val root = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return false
+        if (!native.resetDocument()) return false
+        document.canvasWidth = root.optInt("width", document.canvasWidth).coerceAtLeast(1)
+        document.canvasHeight = root.optInt("height", document.canvasHeight).coerceAtLeast(1)
+        animation.setFps(root.optInt("fps", animation.fps).coerceIn(1,120))
+        val layers = root.optJSONArray("layers") ?: return true
+        for (layerIndex in 0 until layers.length()) {
+            val layerJson = layers.optJSONObject(layerIndex) ?: continue
+            if (layerIndex > 0 && !native.createLayer("Layer " + (layerIndex + 1))) return false
+            if (!native.selectLayer(layerIndex)) return false
+            val frames = layerJson.optJSONArray("frames") ?: continue
+            for (frameIndex in 0 until frames.length()) {
+                val frameJson = frames.optJSONObject(frameIndex) ?: continue
+                val frameNumber = frameJson.optInt("number", 1).coerceAtLeast(1)
+                if (frameIndex == 0) {
+                    if (!native.createFrame(frameNumber) && !native.selectFrame(frameNumber)) return false
+                } else if (!native.createFrame(frameNumber)) {
+                    return false
+                }
+                if (!native.selectFrame(frameNumber)) return false
+                val strokes = frameJson.optJSONArray("strokes") ?: continue
+                for (strokeIndex in 0 until strokes.length()) {
+                    val points = strokes.optJSONObject(strokeIndex)?.optJSONArray("points") ?: continue
+                    if (points.length() == 0) continue
+                    if (!native.beginStroke(0, brushes.size)) return false
+                    for (pointIndex in 0 until points.length()) {
+                        val a = points.optJSONArray(pointIndex) ?: continue
+                        val p = FloatArray(6) { a.optDouble(it, 0.0).toFloat() }
+                        if (!native.addPoint(p)) return false
+                    }
+                    if (!native.endStroke()) return false
+                }
+            }
+        }
+        val targetFrame = root.optInt("frame", 1).coerceAtLeast(1)
+        native.selectFrameOrHold(targetFrame)
+        animation.setFrame(targetFrame)
+        history.reset()
+        document.markSaved()
+        render()
+        return true
+    }
+
     fun setMultiframeEditing(enabled:Boolean):Boolean {
         val ok=native.setMultiframeEditing(enabled)
         if(ok) render()

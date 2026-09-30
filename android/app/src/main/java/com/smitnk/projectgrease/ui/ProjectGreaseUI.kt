@@ -434,7 +434,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 @Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
     Surface(tonalElevation=4.dp){
         Column(Modifier.fillMaxWidth().heightIn(min=120.dp,max=190.dp)){
-            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment=Alignment.CenterVertically
+            ){
                 IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
                 IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
                 IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}

@@ -121,6 +121,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 screen=Screen.EDITOR
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},controller,{screen=Screen.HOME}){
+                controller.resetDocument()
                 controller.document.projectName=name.ifBlank{"Project Grease"}
                 controller.document.canvasWidth=preset.width
                 controller.document.canvasHeight=preset.height

@@ -69,9 +69,14 @@ set(PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES
   "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
 )
 
-set(PROJECT_GREASE_GP_ENGINE_SOURCES
+set(PROJECT_GREASE_GP_ENGINE_C_SOURCES
   ${PROJECT_GREASE_GP_CURVE_FIT_SOURCES}
   ${PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES}
+  "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
+)
+
+set(PROJECT_GREASE_GP_ENGINE_CXX_SOURCES
   project_grease_gp_backend.cpp
   project_grease_gp_engine.cpp
   project_grease_legacy_build.cpp
@@ -81,6 +86,20 @@ set(PROJECT_GREASE_GP_ENGINE_SOURCES
   "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
   ${PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES}
   ${PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES}
+)
+
+set(PROJECT_GREASE_GP_ENGINE_SOURCES
+  ${PROJECT_GREASE_GP_ENGINE_CXX_SOURCES}
+  ${PROJECT_GREASE_GP_ENGINE_C_SOURCES}
+)
+
+# Explicit source-language guard for the Android focused closure.
+# Blender's Legacy GP curve/editor files are C in 3.6.23; forcing LANGUAGE C
+# prevents Android CMake/Ninja from feeding them to clang++ merely because the
+# surrounding target is C++.
+set_source_files_properties(
+  ${PROJECT_GREASE_GP_ENGINE_C_SOURCES}
+  PROPERTIES LANGUAGE C
 )
 
 set(PROJECT_GREASE_GP_INCLUDE_DIRS

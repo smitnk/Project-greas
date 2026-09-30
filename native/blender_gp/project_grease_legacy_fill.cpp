@@ -145,62 +145,87 @@ void set_borders(Image &image, bool transparent)
 
 bool dilate_shape(Image &image)
 {
+  // Source-aligned extraction of Blender 3.6.23 gpencil_fill.c::dilate_shape.
+  // The upstream implementation stages all candidate pixels before applying
+  // them, including diagonal neighbors, to prevent same-pass creep.
   std::vector<int> additions;
-  for (int y = 0; y < image.height(); ++y) {
-    for (int x = 0; x < image.width(); ++x) {
-      const int v = y * image.width() + x;
-      const float *c = pixel(image, v);
-      if (c[1] != 1.0f) {
+  const int max_size = image.width() * image.height() - 1;
+
+  for (int row = 0; row < image.height(); ++row) {
+    int minpixel = image.width() * row;
+    int maxpixel = image.width() * (row + 1) - 1;
+
+    for (int v = maxpixel; v != minpixel; --v) {
+      const float *color = pixel(image, v);
+      if (color[1] != 1.0f) {
         continue;
       }
 
-      const int dx[4] = {-1, 1, 0, 0};
-      const int dy[4] = {0, 0, -1, 1};
-      for (int n = 0; n < 4; ++n) {
-        const int nx = x + dx[n];
-        const int ny = y + dy[n];
-        if (nx < 0 || nx >= image.width() || ny < 0 || ny >= image.height()) {
-          continue;
+      int top = 0;
+      int bottom = 0;
+      int left = 0;
+      int right = 0;
+
+      auto stage = [&](int index, int &slot) {
+        if (index < 0 || index > max_size) {
+          return;
         }
-        const int ni = ny * image.width() + nx;
-        if (pixel(image, ni)[1] != 1.0f) {
-          additions.push_back(ni);
+        if (pixel(image, index)[1] != 1.0f) {
+          additions.push_back(index);
+          slot = index;
         }
-      }
+      };
+
+      stage(v - 1, left);
+      stage(v + 1, right);
+      stage(v + image.width(), top);
+      stage(v - image.width(), bottom);
+
+      if (top && left) stage(top - 1, left);
+      if (top && right) stage(top + 1, right);
+      if (bottom && left) stage(bottom - 1, left);
+      if (bottom && right) stage(bottom + 1, right);
     }
   }
 
-  for (int i : additions) {
-    set_pixel(image, i, 0.0f, 1.0f, 0.0f, 1.0f);
+  for (int index : additions) {
+    set_pixel(image, index, 0.0f, 1.0f, 0.0f, 1.0f);
   }
   return !additions.empty();
 }
 
 bool contract_shape(Image &image)
 {
+  // Source-aligned extraction of Blender 3.6.23 gpencil_fill.c::contract_shape.
   std::vector<int> removals;
-  for (int y = 0; y < image.height(); ++y) {
-    for (int x = 0; x < image.width(); ++x) {
-      const int v = y * image.width() + x;
-      if (pixel(image, v)[1] != 1.0f) {
+  const int max_size = image.width() * image.height() - 1;
+
+  for (int row = 0; row < image.height(); ++row) {
+    int minpixel = image.width() * row;
+    int maxpixel = image.width() * (row + 1) - 1;
+
+    for (int v = maxpixel; v != minpixel; --v) {
+      const float *color = pixel(image, v);
+      if (color[1] != 1.0f) {
         continue;
       }
-      const int dx[4] = {-1, 1, 0, 0};
-      const int dy[4] = {0, 0, -1, 1};
-      for (int n = 0; n < 4; ++n) {
-        const int nx = x + dx[n];
-        const int ny = y + dy[n];
-        if (nx < 0 || nx >= image.width() || ny < 0 || ny >= image.height() ||
-            pixel(image, ny * image.width() + nx)[1] != 1.0f) {
-          removals.push_back(v);
+
+      const int neighbors[4] = {v - 1, v + 1, v + image.width(), v - image.width()};
+      bool clear = false;
+      for (int index : neighbors) {
+        if (index < 0 || index > max_size || pixel(image, index)[1] != 1.0f) {
+          clear = true;
           break;
         }
+      }
+      if (clear) {
+        removals.push_back(v);
       }
     }
   }
 
-  for (int i : removals) {
-    set_pixel(image, i, 0.0f, 0.0f, 0.0f, 0.0f);
+  for (int index : removals) {
+    set_pixel(image, index, 0.0f, 0.0f, 0.0f, 0.0f);
   }
   return !removals.empty();
 }

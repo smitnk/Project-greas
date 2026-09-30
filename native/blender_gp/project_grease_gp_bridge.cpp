@@ -1,5 +1,6 @@
 #include "project_grease_gp_bridge.h"
 
+#include <string>
 #include <vector>
 
 #include "project_grease_gp_backend.h"

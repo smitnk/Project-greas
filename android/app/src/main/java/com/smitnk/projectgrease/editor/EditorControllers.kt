@@ -367,7 +367,7 @@ class EditorController {
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
         native.attach(gpHandle)
         native.historyReset()
-        pushMaterialColor()
+        setMaterialColor(materials.colorArgb)
         animation.initialize()
         selectedLayer = 0
     }
@@ -612,6 +612,7 @@ class EditorController {
                 }
                 if (GPNative.nativeCreatePolyline(rendererHandle, packed, points.size,
                         materials.activeMaterial, materials.thickness, false)) {
+                    selection.selectStroke(native.strokeCount() - 1)
                     history.markEdit(); document.markDirty(); render()
                 }
             }
@@ -758,6 +759,11 @@ class EditorController {
     }
     fun fillAt(x: Float, y: Float): Boolean {
         if (rendererHandle == 0L) return false
+        // Blender Legacy GP Fill creates a closed filled stroke using the active material.
+        // Enable the material's Fill component only when the Fill tool is actually used.
+        if (!materials.fillEnabled) {
+            setMaterialFillEnabled(true)
+        }
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
         return ok

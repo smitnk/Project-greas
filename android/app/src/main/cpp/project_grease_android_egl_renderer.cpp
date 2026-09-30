@@ -264,6 +264,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDestroyEglRenderer(
   delete renderer;
 }
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetGpHandle(
+    JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected) return 0;
+  return static_cast<jlong>(reinterpret_cast<uintptr_t>(renderer->gp_handle));
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAttachSurface(
     JNIEnv *env, jobject, jlong handle, jobject surface)

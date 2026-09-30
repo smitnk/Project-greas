@@ -362,6 +362,12 @@ int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, 
   return ensure_ready(handle) && handle->backend.erase_at(x, y, radius) ? 1 : 0;
 }
 
+int project_grease_gp_soft_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius, float strength)
+{
+  return ensure_ready(handle) &&
+                 handle->backend.soft_erase_at(x, y, radius, strength) ? 1 : 0;
+}
+
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle)
 {
   if (ensure_ready(handle)) handle->backend.clear_selection();

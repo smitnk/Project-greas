@@ -373,7 +373,7 @@ class EditorController {
     fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
     fun resetDocument():Boolean {
         if (rendererHandle == 0L) return false
-        val ok=native.resetDocument()
+        val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
         if(ok){
             selectedLayer=0
             animation.initialize()
@@ -707,7 +707,7 @@ class EditorController {
     fun loadDocumentJson(raw:String):Boolean {
         if (native.handle == 0L) return false
         val root = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return false
-        if (!native.resetDocument()) return false
+        if (!GPNative.nativeResetDocumentEgl(rendererHandle)) return false
         document.canvasWidth = root.optInt("width", document.canvasWidth).coerceAtLeast(1)
         document.canvasHeight = root.optInt("height", document.canvasHeight).coerceAtLeast(1)
         animation.setFps(root.optInt("fps", animation.fps).coerceIn(1,120))

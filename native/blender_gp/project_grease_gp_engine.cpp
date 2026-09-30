@@ -19,7 +19,7 @@ static constexpr EngineFeatureState kEngineFeatures[] = {
     {EngineFeature::Sculpt, false, true},
     {EngineFeature::VertexPaint, false, true},
     {EngineFeature::WeightPaint, false, true},
-    {EngineFeature::Interpolation, true, true},
+    // Phase 2 interpolation adapter is intentionally not advertised as complete:\n    // the current backend still requires matched stroke topology.\n    {EngineFeature::Interpolation, false, true},
     {EngineFeature::Modifiers, false, true},
     {EngineFeature::LineArt, false, true},
     {EngineFeature::Rigging, false, true},

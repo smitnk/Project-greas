@@ -3772,10 +3772,10 @@ bool Backend::sculpt_at(int tool, float x, float y, float radius, float influenc
               stroke, i, falloff, 1, true, false, false, false, true, nullptr);
           break;
         case 1: /* Thickness: Blender Legacy GP pressure smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff);
+          changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff, 1, stroke);
           break;
         case 2: /* Strength: Blender Legacy GP strength smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_strength(stroke, i, falloff);
+          changed |= BKE_gpencil_stroke_smooth_strength(stroke, i, falloff, 1, stroke);
           break;
         case 3: { /* Grab: move real Legacy GP points with brush falloff. */
           point.x += dx * 0.0f + (x - point.x) * falloff;

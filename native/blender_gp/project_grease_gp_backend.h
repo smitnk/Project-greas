@@ -37,7 +37,7 @@ class Backend {
   void shutdown();
 
   // Creates the real Blender legacy GP data objects behind this adapter.
-  bool create_document();
+  bool reset_document();
   bool create_layer(const char* name);
   bool select_layer(int index);
   int layer_count() const;

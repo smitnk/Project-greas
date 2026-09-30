@@ -39,11 +39,25 @@ int main()
     return 4;
   }
 
+  if (!project_grease_gp_soft_erase_at(handle, 0.0f, 0.0f, 64.0f, 0.25f)) {
+    std::fprintf(stderr, "legacy GP soft eraser failed: %s\n",
+                 project_grease_gp_last_error(handle));
+    project_grease_gp_destroy(handle);
+    return 5;
+  }
+  ProjectGreaseGPPoint eraser_point{};
+  if (!project_grease_gp_get_point(handle, 0, 1, &eraser_point) ||
+      eraser_point.strength >= 1.0f) {
+    std::fprintf(stderr, "legacy GP soft eraser strength regression failed\n");
+    project_grease_gp_destroy(handle);
+    return 6;
+  }
+
   if (!project_grease_gp_render(handle)) {
     std::fprintf(stderr, "bridge render failed: %s\n",
                  project_grease_gp_last_error(handle));
     project_grease_gp_destroy(handle);
-    return 5;
+    return 7;
   }
 
   if (!project_grease_gp_create_frame(handle, 2) ||
@@ -53,7 +67,7 @@ int main()
     std::fprintf(stderr, "frame create/delete regression failed: %s\n",
                  project_grease_gp_last_error(handle));
     project_grease_gp_destroy(handle);
-    return 6;
+    return 8;
   }
 
   // Cancellation must discard an open Android stroke instead of committing it.
@@ -65,7 +79,7 @@ int main()
     std::fprintf(stderr, "bridge stroke cancellation failed: %s\n",
                  project_grease_gp_last_error(handle));
     project_grease_gp_destroy(handle);
-    return 7;
+    return 9;
   }
 
   std::puts("Project Grease GP native bridge simulation passed");

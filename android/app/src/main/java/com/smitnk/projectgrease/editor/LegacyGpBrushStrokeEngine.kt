@@ -7,6 +7,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -120,14 +121,14 @@ class LegacyGpBrushStrokeEngine {
 
         val before = buffer.size
         if (settings.synthesizeFastPoints) {
-            emitted += addFakePoints(
+            emitted.addAll(addFakePoints(
                 lastInputX,
                 lastInputY,
                 mx,
                 my,
                 event.pressure,
                 event.timeSeconds
-            )
+            ))
         }
 
         emitted += makePoint(mx, my, event.pressure, event.timeSeconds)
@@ -235,7 +236,7 @@ class LegacyGpBrushStrokeEngine {
             strengthFor(p),
             (absoluteTime - initialTime).coerceAtLeast(0f)
         ).also {
-            buffer += activeSmooth(it)
+            appendProcessed(it)
         }
     }
 

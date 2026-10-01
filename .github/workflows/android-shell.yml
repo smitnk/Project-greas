@@ -19,6 +19,10 @@ on:
       - "tools/android_blender_gp_native_link_probe.sh"
       - ".github/workflows/android-shell.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-shell:
     runs-on: ubuntu-24.04

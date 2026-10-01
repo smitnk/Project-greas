@@ -5,9 +5,9 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * Kotlin execution of the input-side Blender 3.6.23 Legacy GP drawing pipeline.
@@ -224,7 +224,7 @@ class LegacyGpBrushStrokeEngine {
                     p.coerceIn(settings.alphaMin, 1f),
                     strengthFor(p),
                     (absoluteTime - initialTime).coerceAtLeast(0f)
-                ).also { buffer += activeSmooth(it) }
+                ).also { appendProcessed(it) }
             }
         }
 
@@ -288,27 +288,18 @@ class LegacyGpBrushStrokeEngine {
                 settings.drawStrength.coerceIn(0f, 1f),
                 (time - initialTime).coerceAtLeast(0f)
             )
-            buffer += activeSmooth(point)
+            appendProcessed(point)
             out += point
         }
         return out
     }
 
-    private fun activeSmooth(point: StrokePoint): StrokePoint {
-        buffer.add(point)
-        val index = buffer.lastIndex
-        var result = buffer[index]
-        if (settings.activeSmooth <= 0f || index < 2) {
-            buffer.removeAt(index)
-            return result
-        }
-
+    private fun appendProcessed(point: StrokePoint) {
+        buffer += point
+        if (settings.activeSmooth <= 0f || buffer.size < 3) return
         repeat(settings.activeSmoothPasses.coerceIn(1, 3)) { pass ->
             smoothBuffer(settings.activeSmooth * ((3f - pass) / 3f), buffer.lastIndex)
         }
-        result = buffer.last()
-        buffer.removeAt(buffer.lastIndex)
-        return result
     }
 
     private fun smoothBuffer(inf: Float, idx: Int) {

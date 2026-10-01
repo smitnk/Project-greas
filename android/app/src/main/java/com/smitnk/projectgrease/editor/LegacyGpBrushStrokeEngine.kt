@@ -253,7 +253,7 @@ class LegacyGpBrushStrokeEngine {
         toY: Float,
         pressure: Float,
         absoluteTime: Float
-    ) {
+    ): List<StrokePoint> {
         val out = ArrayList<StrokePoint>()
         if (!settings.synthesizeFastPoints || settings.inputSamples == 0) return out
 

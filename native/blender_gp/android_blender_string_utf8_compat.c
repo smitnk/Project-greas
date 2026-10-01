@@ -9,7 +9,8 @@
 #include <string.h>
 #include <wchar.h>
 #include <wctype.h>
-#include <wcwidth.h>
+/* Blender 3.6.23 vendored wcwidth header. */
+#include "../../third_party/blender/extern/wcwidth/wcwidth.h"
 
 #include "../../third_party/blender/source/blender/blenlib/BLI_utildefines.h"
 #include "../../third_party/blender/source/blender/blenlib/BLI_string.h"

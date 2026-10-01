@@ -92,6 +92,12 @@ object GPNative {
     external fun nativeSplitStroke(handle: Long, index: Int, beforeIndex: Int): Boolean
     external fun nativeCreatePrimitive(handle: Long, type: Int, x0: Float, y0: Float, x1: Float, y1: Float, startAngle: Float, endAngle: Float, segments: Int, materialIndex: Int, thickness: Float): Boolean
     external fun nativeGeneratePrimitivePreview(type: Int, x0: Float, y0: Float, x1: Float, y1: Float, startAngle: Float, endAngle: Float, segments: Int): FloatArray?
+    /**
+     * Blender 3.6.23 gpencil_primitive.c geometry (project_grease_blender_primitive.h).
+     * type: ProjectGreasePrimitive id. anchorsXY: start,end[,cp1,cp2] for shapes, or
+     * polyline vertices. edges <= 0 uses Blender's defaults. Returns x,y pairs.
+     */
+    external fun nativeGenerateBlenderPrimitive(type: Int, anchorsXY: FloatArray, edges: Int, flip: Boolean): FloatArray?
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean

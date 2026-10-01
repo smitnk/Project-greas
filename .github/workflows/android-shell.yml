@@ -97,6 +97,12 @@ jobs:
       - name: Import pinned Blender source
         run: bash tools/import_blender_gp.sh
 
+      - name: Verify verbatim Blender regions
+        run: python3 tools/verify_blender_verbatim.py
+
+      - name: Run native primitive tests
+        run: bash tools/run_native_primitive_tests.sh
+
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 

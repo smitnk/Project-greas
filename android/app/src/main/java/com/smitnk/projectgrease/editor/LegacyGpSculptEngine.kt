@@ -224,7 +224,7 @@ class LegacyGpSculptEngine(
             val inf = influence(point, x, y, settings)
             if (inf <= 0f) continue
             val (nx, ny) = LegacyGpSculptMath.push(
-                point.x, point.y, x, y, dx, dy, inf
+                point.x, point.y, dx, dy, inf
             )
             point.x = nx
             point.y = ny

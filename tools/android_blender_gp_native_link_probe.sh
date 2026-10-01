@@ -105,7 +105,13 @@ done
 for src in "${C_SOURCES[@]}"; do
   obj="$OUT/$(printf '%03d' "$idx")_$(basename "$src").o"; idx=$((idx+1))
   echo "=== compile C $src ==="
-  "$CC" "${CFLAGS[@]}" -c "$src" -o "$obj"
+  EXTRA_CFLAGS=()
+  case "${src#$ROOT/}" in
+    native/blender_gp/android_blender_string_compat.c|native/blender_gp/android_blender_string_utf8_compat.c)
+      EXTRA_CFLAGS=(-Wno-sign-conversion -Wno-error=sign-conversion -Wno-error=implicit-int-conversion)
+      ;;
+  esac
+  "$CC" "${CFLAGS[@]}" "${EXTRA_CFLAGS[@]}" -c "$src" -o "$obj"
   OBJECTS+=("$obj")
   rel="${src#"$ROOT/"}"
   OBJECT_FOR_REL["$rel"]="$obj"

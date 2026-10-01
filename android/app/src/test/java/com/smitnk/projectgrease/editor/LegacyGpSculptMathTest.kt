@@ -36,7 +36,7 @@ class LegacyGpSculptMathTest {
 
     @Test
     fun pushUsesRadialDirection() {
-        val point = LegacyGpSculptMath.push(10f, 0f, 0f, 0f, 2f, 4f, 0.5f)
+        val point = LegacyGpSculptMath.push(10f, 0f, 2f, 4f, 0.5f)
         assertEquals(11f, point.first, 0.000001f)
         assertEquals(2f, point.second, 0.000001f)
     }

@@ -129,7 +129,7 @@ done
 echo "=== regression: authoritative symbol-owner map ==="
 SYMBOL_MAP="$ROOT/native/blender_gp/android_gp_symbol_owners.tsv"
 [[ -f "$SYMBOL_MAP" ]] || { echo "Missing symbol-owner map: $SYMBOL_MAP" >&2; exit 2; }
-while IFS=
+while read -r sym owner provenance; do
   [[ -z "$sym" || "$sym" == \#* ]] && continue
   owner_obj="${OBJECT_FOR_REL[$owner]:-}"
   [[ -n "$owner_obj" ]] || { echo "Symbol owner is not in source manifest: $sym -> $owner" >&2; exit 1; }

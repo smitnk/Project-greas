@@ -156,7 +156,7 @@ done < "$SYMBOL_MAP"
 echo "=== link actual Android GP native boundary ==="
 "$CXX" -shared -Wl,--no-undefined -Wl,--gc-sections \
   "${OBJECTS[@]}" \
-  -lGLESv3 -landroid -llog \
+  -lEGL -lGLESv3 -landroid -llog \
   -o "$OUT/libproject_grease_blender_gp_android.so"
 
 echo "Android GP native library link closure passed."

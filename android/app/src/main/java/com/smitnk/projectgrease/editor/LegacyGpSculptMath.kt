@@ -1,7 +1,6 @@
 package com.smitnk.projectgrease.editor
 
 import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.sin
 
 object LegacyGpSculptMath {
@@ -31,16 +30,12 @@ object LegacyGpSculptMath {
     fun push(
         x: Float,
         y: Float,
-        cx: Float,
-        cy: Float,
         deltaX: Float,
         deltaY: Float,
         influence: Float
     ): Pair<Float, Float> {
-        val vx = x - cx
-        val vy = y - cy
-        val length = hypot(vx, vy).coerceAtLeast(0.001f)
-        return x + vx / length * deltaX * influence to
-            y + vy / length * deltaY * influence
+        // Blender 3.6.23 gpencil_sculpt_paint.c uses the same
+        // brush movement vector (dvec) for every affected point.
+        return x + deltaX * influence to y + deltaY * influence
     }
 }

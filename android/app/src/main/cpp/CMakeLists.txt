@@ -131,7 +131,7 @@ set_source_files_properties(
 set_source_files_properties(
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_blender_string_compat.c"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_blender_string_utf8_compat.c"
-    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion;-Wno-error=implicit-int-conversion;-Wno-error"
+    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion;-Wno-error=implicit-int-conversion"
 )
 
 target_compile_options(projectgrease_jni PRIVATE

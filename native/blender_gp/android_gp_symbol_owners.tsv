@@ -1,11 +1,11 @@
 # symbol<TAB>authoritative manifest owner<TAB>provenance
 BKE_curve_calc_coords_axis_len	native/blender_gp/project_grease_legacy_curve_helpers.cc	Blender 3.6.23 source/blender/blenkernel/intern/curve.cc
 BKE_curve_forward_diff_bezier	native/blender_gp/project_grease_legacy_curve_helpers.cc	Blender 3.6.23 source/blender/blenkernel/intern/curve.cc
-minmax_v3v3_v3	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
-interp_v2_v2v2	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
-interp_v3_v3v3	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
-interp_v4_v4v4	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
-angle_normalized_v3v3	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
+minmax_v3v3_v3	native/blender_gp/android_blender_math_vector_compat.c	Blender 3.6.23 blenlib math_vector
+interp_v2_v2v2	native/blender_gp/android_blender_math_vector_compat.c	Blender 3.6.23 blenlib math_vector
+interp_v3_v3v3	native/blender_gp/android_blender_math_vector_compat.c	Blender 3.6.23 blenlib math_vector
+interp_v4_v4v4	native/blender_gp/android_blender_math_vector_compat.c	Blender 3.6.23 blenlib math_vector
+angle_normalized_v3v3	native/blender_gp/android_blender_math_vector_compat.c	Blender 3.6.23 blenlib math_vector
 axis_angle_to_quat	third_party/blender/source/blender/blenlib/intern/math_rotation.c	Blender 3.6.23 blenlib math_rotation
 quat_to_mat3	third_party/blender/source/blender/blenlib/intern/math_rotation.c	Blender 3.6.23 blenlib math_rotation
 mul_qt_v3	third_party/blender/source/blender/blenlib/intern/math_rotation.c	Blender 3.6.23 blenlib math_rotation

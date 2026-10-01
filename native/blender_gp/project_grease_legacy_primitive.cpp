@@ -176,19 +176,21 @@ std::vector<Point> generate(int type,
                              const std::vector<Point>& polyline_points)
 {
   switch (type) {
+    // Match Blender 3.6.23 gpencil_primitive_type[] exactly:
+    // BOX=0, LINE=1, POLYLINE=2, CIRCLE=3, ARC=4, CURVE=5.
     case 0:
-      return line(start, end, segments);
-    case 1:
       return rectangle(start, end, segments == 64 ? 1 : segments);
+    case 1:
+      return line(start, end, segments);
     case 2:
-      return circle(start, end, segments);
-    case 3:
-      return arc(start, end, segments, end_angle < start_angle);
-    case 4:
-      return bezier(start, control1, control2, end, segments);
-    case 5:
       return polyline(polyline_points.empty() ? std::vector<Point>{start, end} : polyline_points,
                       segments);
+    case 3:
+      return circle(start, end, segments);
+    case 4:
+      return arc(start, end, segments, end_angle < start_angle);
+    case 5:
+      return bezier(start, control1, control2, end, segments);
     default:
       return {};
   }

@@ -69,23 +69,14 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_primitive.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
-    # Focused extraction of the exact pinned Blender 3.6.23 ED_gpencil_sbuffer_ensure algorithm.
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_index_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_batch.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_format.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_capabilities.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/listbase.cc"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/memory_usage.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"
 )
 
 set(PROJECT_GREASE_C_SOURCES
@@ -93,11 +84,30 @@ set(PROJECT_GREASE_C_SOURCES
     "${GENERATED_DNA_DIR}/dna.c"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_legacy_runtime_compat.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_legacy.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_guarded_impl.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
 )
+
 add_library(projectgrease_jni SHARED
     ${PROJECT_GREASE_CXX_SOURCES}
     ${PROJECT_GREASE_C_SOURCES}
@@ -111,6 +121,11 @@ target_compile_definitions(projectgrease_jni PRIVATE
     WITH_OPENGL
 )
 
+# Preserve Blender 3.6.23 C source language explicitly in this mixed target.
+set_source_files_properties(
+    ${PROJECT_GREASE_C_SOURCES}
+    PROPERTIES LANGUAGE C
+)
 set_source_files_properties(
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
@@ -118,10 +133,10 @@ set_source_files_properties(
     PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
 )
 set_source_files_properties(
-    PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion"
 )
-set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
-set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c" PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion")
 
 target_compile_options(projectgrease_jni PRIVATE
     -fPIC

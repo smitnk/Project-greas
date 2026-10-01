@@ -27,6 +27,9 @@ target_link_libraries(project_grease_legacy_primitive_test PRIVATE project_greas
 add_executable(project_grease_legacy_input_test project_grease_legacy_input_test.cpp)
 target_link_libraries(project_grease_legacy_input_test PRIVATE m)
 
+add_executable(project_grease_legacy_sculpt_test project_grease_legacy_sculpt_test.cpp)
+target_link_libraries(project_grease_legacy_sculpt_test PRIVATE m)
+
 target_include_directories(project_grease_legacy_fill PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(project_grease_legacy_fill PUBLIC cxx_std_17)
 add_executable(project_grease_legacy_fill_test project_grease_legacy_fill_test.cpp)

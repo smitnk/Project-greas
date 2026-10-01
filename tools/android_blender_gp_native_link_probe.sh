@@ -122,7 +122,7 @@ for obj in "${OBJECTS[@]}"; do
       exit 1
     fi
     SYMBOL_OWNER["$sym"]="$obj"
-  done < <("$LLVM_NM" -g --defined-only "$obj" | awk '{if ($2 ~ /^[A-ZB-DG-RSTVW]$/ && $3 != "") print $2, $3}')
+  done < <("$LLVM_NM" -g --defined-only "$obj" | awk '{if ($2 ~ /^[BCDGRST]$/ && $3 != "") print $2, $3}')
 done
 
 

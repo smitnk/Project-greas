@@ -7,6 +7,7 @@
 
 #include "BLI_math.h"
 #include "BKE_gpencil_geom_legacy.h"
+#include "BKE_brush.h"
 #include "DNA_gpencil_legacy_types.h"
 
 namespace project_grease::legacy_gp_sculpt {
@@ -18,18 +19,17 @@ static float influence(const Context &ctx,
                        float px,
                        float py)
 {
-  const int radius = std::max(1, static_cast<int>(std::lround(
-                                      settings.radius *
-                                      ((settings.brush_alpha > 0.0f) ? 1.0f : 0.0f))));
-  const float dx = static_cast<float>(std::lround(ctx.mouse_x)) - px;
-  const float dy = static_cast<float>(std::lround(ctx.mouse_y)) - py;
-  const float distance = std::sqrt(dx * dx + dy * dy);
-  if (distance > static_cast<float>(radius)) {
-    return 0.0f;
-  }
+  const int radius = std::max(1, static_cast<int>(std::lround(settings.radius)));
+  const int mval_x = static_cast<int>(std::lround(ctx.mouse_x));
+  const int mval_y = static_cast<int>(std::lround(ctx.mouse_y));
+  const int point_x = static_cast<int>(std::lround(px));
+  const int point_y = static_cast<int>(std::lround(py));
+  const float distance = static_cast<float>(
+      std::hypot(static_cast<float>(mval_x - point_x),
+                 static_cast<float>(mval_y - point_y)));
 
   float value = std::max(0.0f, std::min(settings.brush_alpha, 1.0f));
-  if (settings.brush_alpha > 0.0f) {
+  if (settings.pressure > 0.0f) {
     value *= std::max(0.0f, std::min(settings.pressure, 1.0f));
   }
   value *= std::max(0.0f, std::min(1.0f - distance / static_cast<float>(radius), 1.0f));

@@ -8,22 +8,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * Kotlin execution of the input-side Blender 3.6.23 Legacy GP drawing pipeline.
+ * Android execution of the input-side Blender 3.6.23 Legacy GP drawing pipeline.
  *
- * Source-derived stages:
- * - gpencil_stroke_filtermval()
- * - lazy-mouse interpolation
- * - gpencil_add_fake_points()/gpencil_add_arc_points()
- * - gpencil_brush_jitter()
- * - gpencil_brush_angle()
- * - gpencil_smooth_buffer()
- * - normalized stroke time
- *
- * Desktop-only context/depsgraph/RNA/view-depth branches intentionally stay
- * outside this Android engine. Native Blender Legacy GP sbuffer/bGPDstroke
- * remains the authoritative storage and commit path.
+ * The desktop operator owns bContext/RNA/view/depsgraph state which is deliberately
+ * outside Project Grease. The source-derived point-processing semantics below are
+ * kept aligned with gpencil_paint.c while the native Legacy GP sbuffer/stroke remains
+ * authoritative.
  */
 class LegacyGpBrushStrokeEngine {
     data class Settings(
@@ -87,64 +80,87 @@ class LegacyGpBrushStrokeEngine {
 
     fun add(event: InputEvent): List<StrokePoint> {
         if (!active) return emptyList()
-        val emitted = ArrayList<StrokePoint>()
 
         if (buffer.isEmpty()) {
             initialTime = event.timeSeconds
             lastInputX = event.x
             lastInputY = event.y
-            previousPressure = event.pressure.coerceIn(0f, 1f)
+            previousPressure = event.pressure
+                .coerceAtLeast(0f)
+                .coerceAtMost(1f)
             previousTime = event.timeSeconds
-
-            emitted += makePoint(
-                event.x,
-                event.y,
-                event.pressure,
-                event.timeSeconds
+            return listOf(
+                makePoint(
+                    event.x,
+                    event.y,
+                    event.pressure,
+                    event.timeSeconds
+                )
             )
-            return emitted
         }
 
-        var mx = event.x
-        var my = event.y
-        val accepted = filterMval(mx, my)
-        if (!accepted) {
-            return emptyList()
-        }
+        var x = event.x
+        var y = event.y
 
+        /*
+         * Exact gpencil_stroke_filtermval ordering:
+         * 1) lazy-mode filter,
+         * 2) Manhattan filter,
+         * 3) Euclidean filter.
+         *
+         * The Android event coordinates are already float, but Blender converts
+         * the deltas to int before testing thresholds.
+         */
+        if (!filterMval(x, y)) return emptyList()
+
+        /*
+         * Exact lazy-mouse interpolation from gpencil_draw_apply:
+         * interp(current, current, previous, factor).
+         */
         if (settings.lazyEnabled && !settings.disableStabilizer) {
-            val f = settings.smoothStrokeFactor.coerceIn(0f, 1f)
-            mx = mx + (lastInputX - mx) * f
-            my = my + (lastInputY - my) * f
+            val factor = settings.smoothStrokeFactor
+            x = x + (lastInputX - x) * factor
+            y = y + (lastInputY - y) * factor
         }
 
-        val before = buffer.size
+        /*
+         * gpencil_add_fake_points() is performed BEFORE gpencil_draw_apply_event().
+         * It receives the original mouse coordinates; generated points are only
+         * inserted when the exact distance/sample conditions are met.
+         */
+        val emitted = ArrayList<StrokePoint>()
         if (settings.synthesizeFastPoints) {
-            emitted.addAll(addFakePoints(
-                lastInputX,
-                lastInputY,
-                mx,
-                my,
-                event.pressure,
-                event.timeSeconds
-            ))
+            emitted += addArcPointsIfNeeded(
+                currentX = x,
+                currentY = y,
+                pressure = event.pressure,
+                timeSeconds = event.timeSeconds
+            )
         }
 
-        emitted += makePoint(mx, my, event.pressure, event.timeSeconds)
+        emitted += makePoint(x, y, event.pressure, event.timeSeconds)
 
-        lastInputX = event.x
-        lastInputY = event.y
-        previousPressure = event.pressure.coerceIn(0f, 1f)
+        /*
+         * gpencil_draw_apply then stores the current point as the last mouse value.
+         * Keep the accepted/interpolated point for subsequent lazy/angle calculations.
+         */
+        lastInputX = x
+        lastInputY = y
+        previousPressure = event.pressure
+            .coerceAtLeast(0f)
+            .coerceAtMost(1f)
         previousTime = event.timeSeconds
 
-        if (buffer.size - before > 1) {
-            smoothSegment(0.15f, before - 1, buffer.lastIndex)
+        /*
+         * Blender smooths only after fake points were inserted, with five passes
+         * of a fixed 0.15 influence. This mutates the buffered points, so return the
+         * full affected suffix rather than introducing a different smoothing policy.
+         */
+        if (emitted.size > 1) {
+            smoothGeneratedSuffix(0.15f, emitted.size)
         }
 
-        return if (emitted.isEmpty()) emptyList() else {
-            val start = max(0, before)
-            buffer.drop(start)
-        }
+        return emittedFromBufferSuffix(emitted.size)
     }
 
     fun end(): List<StrokePoint> {
@@ -161,23 +177,32 @@ class LegacyGpBrushStrokeEngine {
     fun bufferedPoints(): List<StrokePoint> = buffer.toList()
 
     private fun filterMval(x: Float, y: Float): Boolean {
-        if (buffer.isEmpty()) return true
-        val dx = abs(x - lastInputX)
-        val dy = abs(y - lastInputY)
+        val dx = abs(x - lastInputX).toInt()
+        val dy = abs(y - lastInputY).toInt()
 
         if (settings.lazyEnabled && !settings.disableStabilizer) {
-            val radius = settings.smoothStrokeRadius.coerceAtLeast(0f)
-            if (dx * dx + dy * dy > radius * radius) {
+            if (dx * dx + dy * dy >
+                settings.smoothStrokeRadius * settings.smoothStrokeRadius
+            ) {
                 return true
             }
+
+            /*
+             * Blender keeps the previous mval when inside the lazy radius.
+             * Since the Kotlin event stream uses lastInputX/Y as the authoritative
+             * previous mouse value, there is intentionally no position update here.
+             */
             return false
         }
 
-        if (dx > settings.manhattanThreshold && dy > settings.manhattanThreshold) {
+        if (dx > settings.manhattanThreshold &&
+            dy > settings.manhattanThreshold
+        ) {
             return true
         }
+
         return (dx * dx + dy * dy) >
-            settings.euclideanThreshold.coerceAtLeast(0f).pow2()
+            settings.euclideanThreshold.coerceAtLeast(0f).pow(2f)
     }
 
     private fun makePoint(
@@ -186,174 +211,276 @@ class LegacyGpBrushStrokeEngine {
         inputPressure: Float,
         absoluteTime: Float
     ): StrokePoint {
-        var p = if (settings.usePressure) {
-            inputPressure.coerceIn(0f, 1f).toDouble()
-                .pow(settings.pressureCurve.coerceAtLeast(0.01f).toDouble()).toFloat()
+        var pressure = if (settings.usePressure) {
+            inputPressure
+                .coerceIn(0f, 1f)
+                .toDouble()
+                .pow(settings.pressureCurve.coerceAtLeast(0.01f).toDouble())
+                .toFloat()
         } else {
             1f
         }
 
         if (settings.drawAngleFactor != 0f && buffer.isNotEmpty()) {
             val previous = buffer.last()
-            val movement = atan2(y - previous.y, x - previous.x)
-            val v0x = cos(settings.drawAngle)
-            val v0y = sin(settings.drawAngle)
-            val len = hypot(x - previous.x, y - previous.y)
+            val vx = x - previous.x
+            val vy = y - previous.y
+            val len = hypot(vx, vy)
             if (len > 1e-6f) {
-                val mx = (x - previous.x) / len
-                val my = (y - previous.y) / len
+                val mx = vx / len
+                val my = vy / len
+                val v0x = cos(settings.drawAngle)
+                val v0y = sin(settings.drawAngle)
                 val factor = 1f - abs(v0x * mx + v0y * my)
-                p = ((p - settings.drawAngleFactor * factor) * 0.3f +
-                    previous.pressure * 0.7f)
-                    .coerceIn(settings.alphaMin, 1f)
+                pressure = lerp(
+                    pressure - settings.drawAngleFactor * factor,
+                    previous.pressure,
+                    0.3f
+                ).coerceIn(settings.alphaMin, 1f)
             }
         }
 
-        if (settings.jitter > 0f && buffer.isNotEmpty()) {
+        if (settings.jitter != 0f && buffer.isNotEmpty()) {
             val previous = buffer.last()
             val vx = x - previous.x
             val vy = y - previous.y
             val len = hypot(vx, vy)
             if (len > 1e-6f) {
-                val nx = -vy / len
-                val ny = vx / len
-                val j = nextRandom() * settings.jitter * 10f
-                return StrokePoint(
-                    x + nx * j,
-                    y + ny * j,
-                    p.coerceIn(settings.alphaMin, 1f),
-                    strengthFor(p),
-                    (absoluteTime - initialTime).coerceAtLeast(0f)
-                ).also { appendProcessed(it) }
+                val axisX = 0f
+                val axisY = 1f
+                var mx = vx / len
+                var my = vy / len
+                val angle = atan2(my, mx) - atan2(axisY, axisX)
+                mx *= cos(angle)
+                my *= sin(angle)
+                val jitterAmplitude = nextRandom() * settings.jitter * 10f
+                val point = StrokePoint(
+                    x + mx * jitterAmplitude,
+                    y + my * jitterAmplitude,
+                    pressure.coerceIn(settings.alphaMin, 1f),
+                    strengthFor(pressure),
+                    elapsedTime(absoluteTime)
+                )
+                append(point)
+                return point
             }
         }
 
-        return StrokePoint(
+        val point = StrokePoint(
             x,
             y,
-            p.coerceIn(settings.alphaMin, 1f),
-            strengthFor(p),
-            (absoluteTime - initialTime).coerceAtLeast(0f)
-        ).also {
-            appendProcessed(it)
-        }
+            pressure.coerceIn(settings.alphaMin, 1f),
+            strengthFor(pressure),
+            elapsedTime(absoluteTime)
+        )
+        append(point)
+        return point
     }
 
     private fun strengthFor(pressure: Float): Float {
-        if (!settings.useStrengthPressure) return settings.drawStrength.coerceIn(0f, 1f)
+        if (!settings.useStrengthPressure) {
+            return settings.drawStrength
+        }
         val mapped = pressure.toDouble()
-            .pow(settings.strengthCurve.coerceAtLeast(0.01f).toDouble()).toFloat()
-        return (settings.drawStrength * mapped).coerceIn(0f, 1f)
+            .pow(settings.strengthCurve.coerceAtLeast(0.01f).toDouble())
+            .toFloat()
+        return (
+            settings.drawStrength * mapped
+        ).coerceIn(
+            min(0.1f, settings.drawStrength),
+            1f
+        )
     }
 
-    private fun addFakePoints(
-        fromX: Float,
-        fromY: Float,
-        toX: Float,
-        toY: Float,
+    /**
+     * Exact Blender gpencil_add_arc_points() port for the ordinary (non-guide)
+     * fast-motion case. It uses the previous two buffered points to build the
+     * control vector, rejects angles sharper than 120 degrees, then samples
+     * a quarter-turn arc.
+     */
+    private fun addArcPointsIfNeeded(
+        currentX: Float,
+        currentY: Float,
         pressure: Float,
-        absoluteTime: Float
+        timeSeconds: Float
     ): List<StrokePoint> {
-        val out = ArrayList<StrokePoint>()
-        if (!settings.synthesizeFastPoints || settings.inputSamples == 0) return out
+        if (settings.lazyEnabled && !settings.disableStabilizer) return emptyList()
 
-        val samples = (5 - settings.inputSamples).coerceAtLeast(1)
+        val inputSamples = settings.inputSamples
+        if (inputSamples == 0) return emptyList()
+
+        val samples = 5 - inputSamples + 1
         val minDist = 4f * samples
-        val dist = hypot(toX - fromX, toY - fromY)
-        if (!(dist > 3f && dist > minDist)) return out
+        val dx = currentX - lastInputX
+        val dy = currentY - lastInputY
+        val dist = hypot(dx, dy)
+        if (!(dist > 3f && dist > minDist)) return emptyList()
 
         val slices = (dist / minDist).toInt() + 1
-        if (slices <= 1) return out
+        if (slices <= 1 || buffer.size < 2) return emptyList()
 
-        val controlX = (fromX + toX) * 0.5f
-        val controlY = (fromY + toY) * 0.5f
-        val vx = controlX - fromX
-        val vy = controlY - fromY
-        val perpX = -vy
-        val perpY = vx
-        val scale = if (dist > 1e-6f) min(0.25f * dist, hypot(vx, vy) * 0.75f) / max(hypot(vx, vy), 1e-6f) else 0f
-        val cpX = controlX + perpX * scale
-        val cpY = controlY + perpY * scale
+        val ptBefore = buffer[buffer.lastIndex]
+        val ptPrev = buffer[buffer.lastIndex - 1]
 
-        for (i in 1 until slices) {
-            val t = i.toFloat() / slices.toFloat()
-            val u = 1f - t
-            val x = u * u * fromX + 2f * u * t * cpX + t * t * toX
-            val y = u * u * fromY + 2f * u * t * cpY + t * t * toY
-            val time = previousTime + (absoluteTime - previousTime) * t
+        val vPrevX = ptPrev.x - ptBefore.x
+        val vPrevY = ptPrev.y - ptBefore.y
+        val vHalfX = (currentX - ptPrev.x) * 0.5f
+        val vHalfY = (currentY - ptPrev.y) * 0.5f
+        val dot = vPrevX * vHalfX + vPrevY * vHalfY
+        val lenSq = vPrevX * vPrevX + vPrevY * vPrevY
+        if (lenSq <= 0f) return emptyList()
+
+        val angle = angleBetween(vPrevX, vPrevY, vHalfX, vHalfY)
+        if (angle < Math.toRadians(120.0).toFloat()) return emptyList()
+
+        val projectedPrevX = vPrevX * (dot / lenSq)
+        val projectedPrevY = vPrevY * (dot / lenSq)
+
+        val ctlX = ptPrev.x + projectedPrevX
+        val ctlY = ptPrev.y + projectedPrevY
+
+        val midpointX = (ptPrev.x + currentX) * 0.5f
+        val midpointY = (ptPrev.y + currentY) * 0.5f
+        val cornerX = midpointX - (ctlX - midpointX)
+        val cornerY = midpointY - (ctlY - midpointY)
+
+        val step = (Math.PI / 2.0).toFloat() / (slices + 1)
+        var a = step
+        val out = ArrayList<StrokePoint>(slices - 1)
+
+        var previousForAngle = ptPrev
+        val stepColor = 1f / slices.coerceAtLeast(1)
+
+        for (i in 0 until slices) {
+            val x = cornerX +
+                (currentX - cornerX) * sin(a) +
+                (ptPrev.x - cornerX) * cos(a)
+            val y = cornerY +
+                (currentY - cornerY) * sin(a) +
+                (ptPrev.y - cornerY) * cos(a)
+
+            var interpolatedPressure = ptPrev.pressure
+            if (settings.drawAngleFactor != 0f) {
+                val vx = x - previousForAngle.x
+                val vy = y - previousForAngle.y
+                val len = hypot(vx, vy)
+                if (len > 1e-6f) {
+                    val mx = vx / len
+                    val my = vy / len
+                    val v0x = cos(settings.drawAngle)
+                    val v0y = sin(settings.drawAngle)
+                    val fac = 1f - abs(v0x * mx + v0y * my)
+                    interpolatedPressure = lerp(
+                        interpolatedPressure - settings.drawAngleFactor * fac,
+                        previousForAngle.pressure,
+                        0.3f
+                    )
+                        .coerceIn(ptPrev.pressure * 0.5f, 1f)
+                    previousForAngle = StrokePoint(
+                        x, y, interpolatedPressure, ptPrev.strength, 0f
+                    )
+                }
+            }
+
+            /*
+             * The desktop code copies the previous pressure/strength; time is an
+             * input-bridge addition because the Android event stream needs monotonic
+             * point times for the existing JNI ABI.
+             */
+            val t = (i + 1).toFloat() / slices.toFloat()
+            val time = previousTime + (timeSeconds - previousTime) * t
             val point = StrokePoint(
                 x,
                 y,
-                previousPressure.coerceIn(settings.alphaMin, 1f),
-                settings.drawStrength.coerceIn(0f, 1f),
+                interpolatedPressure.coerceIn(settings.alphaMin, 1f),
+                ptPrev.strength,
                 (time - initialTime).coerceAtLeast(0f)
             )
-            appendProcessed(point)
+            append(point)
             out += point
+            a += step
         }
+
         return out
     }
 
-    private fun appendProcessed(point: StrokePoint) {
-        buffer += point
-        if (settings.activeSmooth <= 0f || buffer.size < 3) return
-        repeat(settings.activeSmoothPasses.coerceIn(1, 3)) { pass ->
-            smoothBuffer(settings.activeSmooth * ((3f - pass) / 3f), buffer.lastIndex)
+    private fun smoothGeneratedSuffix(influence: Float, count: Int) {
+        val end = buffer.lastIndex
+        val start = (end - count + 1).coerceAtLeast(0)
+        if (end - start < 3) return
+
+        repeat(5) {
+            smoothSegment(influence, start, end)
         }
     }
 
-    private fun smoothBuffer(inf: Float, idx: Int) {
-        if (idx < 2 || buffer.size < 3 || inf == 0f) return
-        val steps = if (idx < 3) 3f else 4f
-        val cIndex = idx - 1
-        val indexes = listOfNotNull(
-            if (idx >= 3) idx - 3 else null,
-            if (idx >= 2) idx - 2 else null,
-            if (idx >= 2) idx - 1 else null,
-            idx
-        )
-        val sx = indexes.sumOf { buffer[it].x.toDouble() }.toFloat() / steps
-        val sy = indexes.sumOf { buffer[it].y.toDouble() }.toFloat() / steps
-        val sp = indexes.sumOf { buffer[it].pressure.toDouble() }.toFloat() / steps
-        val ss = indexes.sumOf { buffer[it].strength.toDouble() }.toFloat() / steps
-        val current = buffer[cIndex]
-        val f = inf.coerceIn(0f, 1f)
-        buffer[cIndex] = current.copy(
-            x = current.x + (sx - current.x) * f,
-            y = current.y + (sy - current.y) * f,
-            pressure = current.pressure + (sp - current.pressure) * f,
-            strength = current.strength + (ss - current.strength) * f
-        )
-    }
+    /**
+     * Exact gpencil_smooth_segment() indexing and averaging.
+     */
+    private fun smoothSegment(influence: Float, fromIndex: Int, toIndex: Int) {
+        if (toIndex - fromIndex < 3 || influence == 0f || fromIndex <= 2) return
 
-    private fun smoothSegment(inf: Float, fromIndex: Int, toIndex: Int) {
-        if (toIndex - fromIndex < 3 || inf == 0f || fromIndex <= 2) return
-        for (passIndex in 0 until 5) {
-            for (i in fromIndex..toIndex) {
-                val a = if (i >= 3) buffer[i - 3] else buffer[max(0, i - 1)]
-                val b = if (i >= 2) buffer[i - 2] else buffer[max(0, i - 1)]
-                val c = if (i >= 1) buffer[i - 1] else buffer[i]
-                val d = buffer[i]
-                val sx = (a.x + b.x + c.x + d.x) * 0.25f
-                val sy = (a.y + b.y + c.y + d.y) * 0.25f
-                val sp = (a.pressure + b.pressure + c.pressure + d.pressure) * 0.25f
-                val ss = (a.strength + b.strength + c.strength + d.strength) * 0.25f
-                buffer[cIndexSafe(i)] = c.copy(
-                    x = c.x + (sx - c.x) * inf,
-                    y = c.y + (sy - c.y) * inf,
-                    pressure = c.pressure + (sp - c.pressure) * inf,
-                    strength = c.strength + (ss - c.strength) * inf
-                )
+        val average = 0.25f
+        for (i in fromIndex..toIndex) {
+            val a = if (i >= 3) buffer[i - 3] else null
+            val b = if (i >= 2) buffer[i - 2] else null
+            val c = if (i >= 1) buffer[i - 1] else buffer[i]
+            val d = buffer[i]
+
+            var sx = 0f
+            var sy = 0f
+            var sp = 0f
+            var ss = 0f
+
+            fun add(p: StrokePoint) {
+                sx += p.x * average
+                sy += p.y * average
+                sp += p.pressure * average
+                ss += p.strength * average
             }
+
+            add(a ?: c)
+            add(b ?: c)
+            add(c)
+            add(d)
+
+            val targetIndex = (i - 1).coerceIn(0, buffer.lastIndex)
+            val current = buffer[targetIndex]
+            buffer[targetIndex] = current.copy(
+                x = lerp(current.x, sx, influence),
+                y = lerp(current.y, sy, influence),
+                pressure = lerp(current.pressure, sp, influence),
+                strength = lerp(current.strength, ss, influence)
+            )
         }
     }
 
-    private fun cIndexSafe(index: Int): Int = (index - 1).coerceIn(0, buffer.lastIndex)
+    private fun append(point: StrokePoint) {
+        buffer += point
+    }
+
+    private fun emittedFromBufferSuffix(count: Int): List<StrokePoint> {
+        if (count <= 0) return emptyList()
+        val start = (buffer.size - count).coerceAtLeast(0)
+        return buffer.subList(start, buffer.size).toList()
+    }
+
+    private fun elapsedTime(absoluteTime: Float): Float =
+        (absoluteTime - initialTime).coerceAtLeast(0f)
+
+    private fun lerp(a: Float, b: Float, factor: Float): Float =
+        a + (b - a) * factor
+
+    private fun angleBetween(ax: Float, ay: Float, bx: Float, by: Float): Float {
+        val al = hypot(ax, ay)
+        val bl = hypot(bx, by)
+        if (al <= 1e-6f || bl <= 1e-6f) return 0f
+        val cosine = ((ax * bx + ay * by) / (al * bl)).coerceIn(-1f, 1f)
+        return kotlin.math.acos(cosine)
+    }
 
     private fun nextRandom(): Float {
         rng = rng * 1664525 + 1013904223
         return ((rng ushr 8) and 0x00FFFFFF) / 16777215f * 2f - 1f
     }
-
-    private fun Float.pow2(): Float = this * this
 }

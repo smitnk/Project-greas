@@ -326,20 +326,58 @@ class SelectionController(private val native: NativeEditorBridge) {
 
 class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
 enum class EraserMode { HARD, SOFT, STROKE }
-enum class SculptBrush { SMOOTH, THICKNESS, STRENGTH }
+enum class SculptBrush {
+    SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE
+}
 
 class SculptController(private val native: NativeEditorBridge) {
     var brush = SculptBrush.SMOOTH
         private set
-    fun isAvailable() = FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+
+    private val engine = LegacyGpSculptEngine { native.handle }
+    private val settings = LegacyGpSculptEngine.Settings()
+
+    fun isAvailable() =
+        FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+
     fun select(value: SculptBrush) { brush = value }
-    fun toolId(): Int = when (brush) {
-        SculptBrush.SMOOTH -> 0
-        SculptBrush.THICKNESS -> 1
-        SculptBrush.STRENGTH -> 2
+
+    fun setRadius(value: Float) { settings.radius = value.coerceIn(2f, 300f) }
+
+    fun setStrength(value: Float) { settings.strength = value.coerceIn(0f, 1f) }
+
+    fun setPressureCurve(value: Float) {
+        settings.pressureCurve = value.coerceIn(0.25f, 4f)
     }
-    fun apply(x: Float, y: Float, radius: Float, influence: Float = 0.35f): Boolean =
-        native.handle != 0L && GPNative.nativeSculptAt(native.handle, toolId(), x, y, radius, influence)
+
+    fun setInvert(value: Boolean) { settings.invert = value }
+
+    private fun tool(): LegacyGpSculptEngine.Tool = when (brush) {
+        SculptBrush.SMOOTH -> LegacyGpSculptEngine.Tool.SMOOTH
+        SculptBrush.THICKNESS -> LegacyGpSculptEngine.Tool.THICKNESS
+        SculptBrush.STRENGTH -> LegacyGpSculptEngine.Tool.STRENGTH
+        SculptBrush.GRAB -> LegacyGpSculptEngine.Tool.GRAB
+        SculptBrush.PUSH -> LegacyGpSculptEngine.Tool.PUSH
+        SculptBrush.PINCH -> LegacyGpSculptEngine.Tool.PINCH
+        SculptBrush.TWIST -> LegacyGpSculptEngine.Tool.TWIST
+        SculptBrush.RANDOMIZE -> LegacyGpSculptEngine.Tool.RANDOMIZE
+    }
+
+    fun begin(x: Float, y: Float, radius: Float, pressure: Float = 1f): Boolean {
+        settings.radius = radius.coerceIn(2f, 300f)
+        settings.pressure = pressure.coerceIn(0f, 1f)
+        settings.strength = settings.strength.coerceIn(0f, 1f)
+        return engine.begin(tool(), x, y, settings)
+    }
+
+    fun update(x: Float, y: Float, pressure: Float = 1f): Boolean {
+        settings.pressure = pressure.coerceIn(0f, 1f)
+        return engine.update(x, y, settings)
+    }
+
+    fun end() = engine.end()
+
+    fun cancel() = engine.cancel()
 }
 
 class OnionSkinController {
@@ -418,19 +456,29 @@ class EditorController {
     }
     fun selectTool(tool:GreaseTool)=tools.select(tool)
     private var sculptGestureChanged = false
-    private fun applySculptPoint(x:Float,y:Float):Boolean {
+    private fun applySculptPoint(x:Float,y:Float,pressure:Float=1f):Boolean {
         if (rendererHandle == 0L) return false
         val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
-        val ok = sculpt.apply(x, y, radius)
+        val ok = sculpt.update(x, y, pressure)
         if (ok) {
             sculptGestureChanged = true
             document.markDirty()
         }
         return ok
     }
-    fun beginSculpt(x:Float,y:Float):Boolean = applySculptPoint(x,y)
-    fun sculptAt(x:Float,y:Float):Boolean = applySculptPoint(x,y)
+    fun beginSculpt(x:Float,y:Float,pressure:Float=1f):Boolean {
+        if (rendererHandle == 0L) return false
+        val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
+        val ok = sculpt.begin(x, y, radius, pressure)
+        if (ok) {
+            sculptGestureChanged = true
+            document.markDirty()
+        }
+        return ok
+    }
+    fun sculptAt(x:Float,y:Float,pressure:Float=1f):Boolean = applySculptPoint(x,y,pressure)
     fun endSculpt() {
+        sculpt.end()
         if (sculptGestureChanged) history.markEdit()
         sculptGestureChanged = false
     }

@@ -15,6 +15,7 @@
 #include "../../third_party/blender/source/blender/blenlib/BLI_utildefines.h"
 #include "../../third_party/blender/source/blender/blenlib/BLI_string.h"
 #include "../../third_party/blender/source/blender/blenlib/BLI_string_utf8.h"
+#include "../../third_party/blender/extern/wcwidth/wcwidth.h"
 
 #if defined(__clang__)
 #  pragma clang diagnostic push

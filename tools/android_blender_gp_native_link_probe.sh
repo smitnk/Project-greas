@@ -74,7 +74,8 @@ CXX_SOURCES=()
 C_SOURCES=()
 declare -A SEEN_PATHS
 while IFS='|' read -r lang rel; do
-  [[ -z "$lang" || "$lang" == #* ]] && continue
+  [[ -z "$lang" ]] && continue
+  [[ "$lang" == \#* ]] && continue
   [[ -n "$rel" ]] || { echo "Malformed manifest line: $lang|$rel" >&2; exit 2; }
   if [[ -n "${SEEN_PATHS[$rel]:-}" ]]; then
     echo "Duplicate Android GP source manifest entry: $rel" >&2

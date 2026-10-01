@@ -159,6 +159,7 @@ int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      int material_index,
                                      float thickness);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
+int project_grease_gp_set_point(ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint point);
 
 const char *project_grease_gp_last_error(
     const ProjectGreaseGPHandle *handle);

@@ -566,11 +566,13 @@ class EditorController {
         val tool = pendingShapeTool ?: return emptyList()
         if (tool == GreaseTool.POLYLINE) return p
 
+        // Blender 3.6.23 gpencil_primitive_type:
+        // BOX=0, LINE=1, POLYLINE=2, CIRCLE=3, ARC=4, CURVE=5.
         val type = when (tool) {
-            GreaseTool.LINE -> 0
-            GreaseTool.RECTANGLE -> 1
-            GreaseTool.CIRCLE -> 2
-            GreaseTool.ARC -> 3
+            GreaseTool.RECTANGLE -> 0
+            GreaseTool.LINE -> 1
+            GreaseTool.CIRCLE -> 3
+            GreaseTool.ARC -> 4
             else -> return emptyList()
         }
 
@@ -647,10 +649,10 @@ class EditorController {
         pendingShapeTool = null
         if (shapeTool == null || (shapeTool != GreaseTool.POLYLINE && params.size < 4)) return
         val type = when (shapeTool) {
-            GreaseTool.LINE -> 0
-            GreaseTool.RECTANGLE -> 1
-            GreaseTool.CIRCLE -> 2
-            GreaseTool.ARC -> 3
+            GreaseTool.RECTANGLE -> 0
+            GreaseTool.LINE -> 1
+            GreaseTool.CIRCLE -> 3
+            GreaseTool.ARC -> 4
             else -> -1
         }
         if (type >= 0) {

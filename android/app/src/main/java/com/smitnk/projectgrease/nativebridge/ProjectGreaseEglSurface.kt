@@ -453,7 +453,7 @@ private class ProjectGreaseDrawingSurfaceView(
     }
 
     private fun addPoint(event: MotionEvent, pointerIndex: Int) {
-        val pressure = event.getPressure(pointerIndex).coerceAtLeast(0.01f)
+        val pressure = event.getPressure(pointerIndex).coerceIn(0f, 1f)
         val p = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))
         controller.addStrokePoint(
             p.first,

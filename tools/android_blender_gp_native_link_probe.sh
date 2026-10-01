@@ -21,6 +21,8 @@ CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-c
 OUT="$ROOT/build/android-blender-gp-native-link-probe"
 COMPAT="$ROOT/native/blender_gp/android_compat"
 mkdir -p "$OUT"
+LLVM_NM="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+[[ -x "$LLVM_NM" ]] || { echo "Missing Android LLVM nm: $LLVM_NM" >&2; exit 2; }
 
 INCLUDES=(
   "$COMPAT"
@@ -89,18 +91,23 @@ while IFS='|' read -r lang rel; do
 done < "$MANIFEST"
 
 OBJECTS=()
+declare -A OBJECT_FOR_REL
 idx=0
 for src in "${CXX_SOURCES[@]}"; do
   obj="$OUT/$(printf '%03d' "$idx")_$(basename "$src").o"; idx=$((idx+1))
   echo "=== compile C++ $src ==="
   "$CXX" "${CXXFLAGS[@]}" -c "$src" -o "$obj"
   OBJECTS+=("$obj")
+  rel="${src#"$ROOT/"}"
+  OBJECT_FOR_REL["$rel"]="$obj"
 done
 for src in "${C_SOURCES[@]}"; do
   obj="$OUT/$(printf '%03d' "$idx")_$(basename "$src").o"; idx=$((idx+1))
   echo "=== compile C $src ==="
   "$CC" "${CFLAGS[@]}" -c "$src" -o "$obj"
   OBJECTS+=("$obj")
+  rel="${src#"$ROOT/"}"
+  OBJECT_FOR_REL["$rel"]="$obj"
 done
 
 echo "=== regression: duplicate defined symbols ==="
@@ -115,8 +122,34 @@ for obj in "${OBJECTS[@]}"; do
       exit 1
     fi
     SYMBOL_OWNER["$sym"]="$obj"
-  done < <(llvm-nm -g --defined-only "$obj" | awk '{if ($2 ~ /^[A-ZB-DG-RSTVW]$/ && $3 != "") print $2, $3}')
+  done < <("$LLVM_NM" -g --defined-only "$obj" | awk '{if ($2 ~ /^[A-ZB-DG-RSTVW]$/ && $3 != "") print $2, $3}')
 done
+
+
+echo "=== regression: authoritative symbol-owner map ==="
+SYMBOL_MAP="$ROOT/native/blender_gp/android_gp_symbol_owners.tsv"
+[[ -f "$SYMBOL_MAP" ]] || { echo "Missing symbol-owner map: $SYMBOL_MAP" >&2; exit 2; }
+while IFS=
+"$CXX" -shared -Wl,--no-undefined -Wl,--gc-sections \
+  "${OBJECTS[@]}" \
+  -lGLESv3 -landroid -llog \
+  -o "$OUT/libproject_grease_blender_gp_android.so"
+
+echo "Android GP native library link closure passed."
+\t' read -r sym owner provenance; do
+  [[ -z "$sym" || "$sym" == \#* ]] && continue
+  owner_obj="${OBJECT_FOR_REL[$owner]:-}"
+  [[ -n "$owner_obj" ]] || { echo "Symbol owner is not in source manifest: $sym -> $owner" >&2; exit 1; }
+  if ! "$LLVM_NM" -g --defined-only "$owner_obj" | awk -v s="$sym" '$3 == s {found=1} END {exit(found ? 0 : 1)}'; then
+    echo "Mapped owner does not define symbol: $sym -> $owner ($provenance)" >&2
+    exit 1
+  fi
+  owners=$("$LLVM_NM" -g --defined-only "${OBJECTS[@]}" 2>/dev/null | awk -v s="$sym" '$3 == s {count++} END {print count+0}')
+  if [[ "$owners" -ne 1 ]]; then
+    echo "Symbol ownership regression: $sym is defined by $owners objects" >&2
+    exit 1
+  fi
+done < "$SYMBOL_MAP"
 
 echo "=== link actual Android GP native boundary ==="
 "$CXX" -shared -Wl,--no-undefined -Wl,--gc-sections \

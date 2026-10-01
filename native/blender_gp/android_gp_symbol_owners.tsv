@@ -1,0 +1,23 @@
+# symbol<TAB>authoritative manifest owner<TAB>provenance
+BKE_curve_calc_coords_axis_len	 native/blender_gp/project_grease_legacy_curve_helpers.cc	Blender 3.6.23 source/blender/blenkernel/intern/curve.cc
+BKE_curve_forward_diff_bezier	 native/blender_gp/project_grease_legacy_curve_helpers.cc	Blender 3.6.23 source/blender/blenkernel/intern/curve.cc
+minmax_v3v3_v3	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
+interp_v2_v2v2	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
+interp_v3_v3v3	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
+interp_v4_v4v4	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
+angle_normalized_v3v3	third_party/blender/source/blender/blenlib/intern/math_vector.c	Blender 3.6.23 blenlib math_vector
+axis_angle_to_quat	third_party/blender/source/blender/blenlib/intern/math_rotation.c	Blender 3.6.23 blenlib math_rotation
+quat_to_mat3	third_party/blender/source/blender/blenlib/intern/math_rotation.c	Blender 3.6.23 blenlib math_rotation
+mul_qt_v3	third_party/blender/source/blender/blenlib/intern/math_rotation.c	Blender 3.6.23 blenlib math_rotation
+mul_v3_m3v3	third_party/blender/source/blender/blenlib/intern/math_matrix.c	Blender 3.6.23 blenlib math_matrix
+angle_v3v3v3	third_party/blender/source/blender/blenlib/intern/math_geom.c	Blender 3.6.23 blenlib math_geom
+BKE_gpencil_stroke_update_geometry_from_editcurve	third_party/blender/source/blender/blenkernel/intern/gpencil_curve_legacy.c	Blender 3.6.23 Legacy GP curve source
+BKE_defvert_find_weight	third_party/blender/source/blender/blenkernel/intern/deform.cc	Blender 3.6.23 BKE deform source
+BKE_defvert_ensure_index	third_party/blender/source/blender/blenkernel/intern/deform.cc	Blender 3.6.23 BKE deform source
+_DNA_internal_memcpy	third_party/blender/source/blender/makesdna/intern/dna_utils.c	Blender 3.6.23 DNA source
+_bli_array_reverse	third_party/blender/source/blender/blenlib/intern/array_utils.c	Blender 3.6.23 BLI array source
+BLI_heap_new	third_party/blender/source/blender/blenlib/intern/BLI_heap.c	Blender 3.6.23 BLI heap source
+BLI_heap_insert	third_party/blender/source/blender/blenlib/intern/BLI_heap.c	Blender 3.6.23 BLI heap source
+BLI_heap_pop_min	third_party/blender/source/blender/blenlib/intern/BLI_heap.c	Blender 3.6.23 BLI heap source
+BLI_heap_free	third_party/blender/source/blender/blenlib/intern/BLI_heap.c	Blender 3.6.23 BLI heap source
+ED_gpencil_sbuffer_ensure	native/blender_gp/project_grease_legacy_sbuffer.c	Exact Blender 3.6.23 gpencil_utils.c extraction

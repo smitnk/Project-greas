@@ -80,11 +80,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
@@ -102,6 +98,27 @@ set(PROJECT_GREASE_C_SOURCES
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_guarded_impl.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
 )
+set(PROJECT_GREASE_C_SOURCES
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
+    "${GENERATED_DNA_DIR}/dna.c"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_legacy_runtime_compat.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_legacy.c"
+    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn.c"
+    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_guarded_impl.c"
+    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
+)
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
+    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
+
 
 add_library(projectgrease_jni SHARED
     ${PROJECT_GREASE_CXX_SOURCES}

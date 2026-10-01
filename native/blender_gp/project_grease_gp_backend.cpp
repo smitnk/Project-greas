@@ -2080,12 +2080,9 @@ bool Backend::set_point(int stroke_index,
     dst.pressure = point.pressure;
     dst.strength = point.strength;
     dst.time = point.time;
-    dst.vert_color[0] = point.r;
-    dst.vert_color[1] = point.g;
-    dst.vert_color[2] = point.b;
-    dst.vert_color[3] = point.a;
-    dst.uv_fac = point.uv_fac;
-    dst.uv_rot = point.uv_rot;
+    // Sculpt point writes intentionally preserve Blender-owned vertex-color
+    // and UV state. Kotlin only owns the sculpt attributes it can read/write
+    // through the focused Android contract: position, pressure, strength, time.
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
     std::fprintf(stderr, "[SET] after batch cache dirty\\n");
     project_grease_gp_tag(impl_->gpd);

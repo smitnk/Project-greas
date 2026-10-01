@@ -694,10 +694,6 @@ class EditorController {
         }
         if (tools.activeTool == GreaseTool.DRAW) {
             if (GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
-                lastEmittedX=Float.NaN
-                lastEmittedY=Float.NaN
-                stabilizedX=Float.NaN
-                stabilizedY=Float.NaN
                 history.markEdit(); document.markDirty()
             }
             return
@@ -776,10 +772,6 @@ class EditorController {
         pendingShapePoints.clear()
         pendingShapeTool=null
         pendingLassoPoints.clear()
-        lastEmittedX=Float.NaN
-        lastEmittedY=Float.NaN
-        stabilizedX=Float.NaN
-        stabilizedY=Float.NaN
     }
     fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean {
         if (rendererHandle == 0L || points.size < 3) return false

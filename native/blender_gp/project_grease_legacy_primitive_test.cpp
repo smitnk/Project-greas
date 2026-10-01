@@ -116,5 +116,35 @@ int main()
     assert(near(p.back().x, 10.0f) && near(p.back().y, 0.0f));
   }
 
+  // Blender 3.6.23 gpencil_primitive_type enum:
+  // BOX=0, LINE=1, POLYLINE=2, CIRCLE=3, ARC=4, CURVE=5.
+  {
+    const auto box = project_grease::legacy_gp_primitive::generate(
+        0, {0.0f, 0.0f}, {10.0f, 20.0f}, 0.0f, 0.0f, 1);
+    assert(box.size() == 4);
+
+    const auto line = project_grease::legacy_gp_primitive::generate(
+        1, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 0.0f, 8);
+    assert(line.size() == 8);
+
+    const std::vector<Point> controls = {{0.0f, 0.0f}, {10.0f, 0.0f}, {10.0f, 10.0f}};
+    const auto polyline = project_grease::legacy_gp_primitive::generate(
+        2, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 0.0f, 3, {}, {}, controls);
+    assert(polyline.size() == 5);
+
+    const auto circle = project_grease::legacy_gp_primitive::generate(
+        3, {0.0f, 0.0f}, {20.0f, 10.0f}, 0.0f, 0.0f, 8);
+    assert(circle.size() == 8);
+
+    const auto arc = project_grease::legacy_gp_primitive::generate(
+        4, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 0.0f, 9);
+    assert(arc.size() == 9);
+
+    const auto curve = project_grease::legacy_gp_primitive::generate(
+        5, {0.0f, 0.0f}, {10.0f, 0.0f}, 0.0f, 0.0f, 5,
+        {0.0f, 10.0f}, {10.0f, 10.0f});
+    assert(curve.size() == 5);
+  }
+
   return 0;
 }

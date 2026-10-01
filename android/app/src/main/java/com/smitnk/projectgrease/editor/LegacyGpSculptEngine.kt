@@ -301,13 +301,7 @@ class LegacyGpSculptEngine(
             point.z,
             point.pressure,
             point.strength,
-            point.time,
-            0f,
-            0f,
-            0f,
-            0f,
-            0f,
-            0f
+            point.time
         )
     }
 

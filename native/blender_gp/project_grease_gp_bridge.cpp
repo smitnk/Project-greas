@@ -451,6 +451,30 @@ int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
   return 1;
 }
 
+int project_grease_gp_set_point(ProjectGreaseGPHandle *handle,
+                                int stroke_index,
+                                int point_index,
+                                ProjectGreaseGPPoint point)
+{
+  if (!ensure_ready(handle)) {
+    return 0;
+  }
+  project_grease::gp::StrokePoint native_point{};
+  native_point.x = point.x;
+  native_point.y = point.y;
+  native_point.z = point.z;
+  native_point.pressure = point.pressure;
+  native_point.strength = point.strength;
+  native_point.time = point.time;
+  native_point.r = point.r;
+  native_point.g = point.g;
+  native_point.b = point.b;
+  native_point.a = point.a;
+  native_point.uv_fac = point.uv_fac;
+  native_point.uv_rot = point.uv_rot;
+  return handle->backend.set_point(stroke_index, point_index, native_point) ? 1 : 0;
+}
+
 int project_grease_gp_material_count(const ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;

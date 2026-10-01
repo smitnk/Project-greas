@@ -3566,73 +3566,101 @@ bool Backend::smooth_stroke(int index, float influence, int iterations)
 
 bool Backend::sculpt_at(int tool, float x, float y, float radius, float influence)
 {
-  if (!impl_->frame || radius <= 0.0f || !std::isfinite(x) || !std::isfinite(y)) {
-    impl_->last_error = "invalid Legacy GP sculpt parameters";
+  if (!impl_->frame) {
+    impl_->last_error = "no active frame";
     return false;
   }
-  influence = std::max(0.0f, std::min(influence, 1.0f));
+  return sculpt_update(tool, x, y, x, y, 1.0f, radius, influence, false);
+}
+
+bool Backend::sculpt_begin(int tool, float x, float y, float pressure,
+                           float radius, float strength, bool invert)
+{
+  impl_->stroke_style.thickness = radius;
+  impl_->last_error.clear();
+  if (!impl_->frame) {
+    impl_->last_error = "no active frame";
+    return false;
+  }
+  return sculpt_update(tool, x, y, x, y, pressure, radius, strength, invert);
+}
+
+bool Backend::sculpt_update(int tool, float x, float y, float prev_x, float prev_y,
+                            float pressure, float radius, float strength, bool invert)
+{
+  if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
+      !std::isfinite(x) || !std::isfinite(y) ||
+      !std::isfinite(prev_x) || !std::isfinite(prev_y) ||
+      !std::isfinite(pressure) || !std::isfinite(strength)) {
+    impl_->last_error = "invalid Legacy GP sculpt stroke";
+    return false;
+  }
+
+  legacy_gp_sculpt::Tool sculpt_tool;
+  switch (tool) {
+    case 0: sculpt_tool = legacy_gp_sculpt::Smooth; break;
+    case 1: sculpt_tool = legacy_gp_sculpt::Thickness; break;
+    case 2: sculpt_tool = legacy_gp_sculpt::Strength; break;
+    case 3: sculpt_tool = legacy_gp_sculpt::Grab; break;
+    case 4: sculpt_tool = legacy_gp_sculpt::Push; break;
+    case 5: sculpt_tool = legacy_gp_sculpt::Pinch; break;
+    case 6: sculpt_tool = legacy_gp_sculpt::Twist; break;
+    case 7: sculpt_tool = legacy_gp_sculpt::Randomize; break;
+    default:
+      impl_->last_error = "unknown Legacy GP sculpt brush";
+      return false;
+  }
+
+  legacy_gp_sculpt::Context context{};
+  context.mouse_x = x;
+  context.mouse_y = y;
+  context.prev_x = prev_x;
+  context.prev_y = prev_y;
+  context.delta_x = x - prev_x;
+  context.delta_y = y - prev_y;
+
+  legacy_gp_sculpt::Settings settings{};
+  settings.brush_alpha = std::clamp(strength, 0.0f, 1.0f);
+  settings.pressure = std::clamp(pressure, 0.0f, 1.0f);
+  settings.radius = radius;
+  settings.invert = invert;
+  settings.apply_position = sculpt_tool == legacy_gp_sculpt::Smooth ||
+                             sculpt_tool == legacy_gp_sculpt::Grab ||
+                             sculpt_tool == legacy_gp_sculpt::Push ||
+                             sculpt_tool == legacy_gp_sculpt::Pinch ||
+                             sculpt_tool == legacy_gp_sculpt::Twist ||
+                             sculpt_tool == legacy_gp_sculpt::Randomize;
+  settings.apply_strength = sculpt_tool == legacy_gp_sculpt::Smooth ||
+                             sculpt_tool == legacy_gp_sculpt::Strength ||
+                             sculpt_tool == legacy_gp_sculpt::Randomize;
+  settings.apply_thickness = sculpt_tool == legacy_gp_sculpt::Smooth ||
+                              sculpt_tool == legacy_gp_sculpt::Thickness ||
+                              sculpt_tool == legacy_gp_sculpt::Randomize;
+  settings.apply_uv = sculpt_tool == legacy_gp_sculpt::Smooth ||
+                       sculpt_tool == legacy_gp_sculpt::Randomize;
+
   bool changed = false;
-
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       stroke;
-       stroke = stroke->next) {
-    if (!stroke->points || stroke->totpoints <= 0) {
-      continue;
-    }
-
-    for (int i = 0; i < stroke->totpoints; ++i) {
-      bGPDspoint &point = stroke->points[i];
-      const float dx = point.x - x;
-      const float dy = point.y - y;
-      const float distance = std::sqrt(dx * dx + dy * dy);
-      if (distance > radius) {
-        continue;
-      }
-
-      const float falloff = (1.0f - distance / radius) * influence;
-      if (falloff <= 0.0f) {
-        continue;
-      }
-
-      switch (tool) {
-        case 0: /* Smooth: Blender Legacy GP BKE position smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_point(
-              stroke, i, falloff, 1, false, true, stroke);
-          break;
-        case 1: /* Thickness: Blender Legacy GP pressure smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_thickness(stroke, i, falloff, 1, stroke);
-          break;
-        case 2: /* Strength: Blender Legacy GP strength smoothing. */
-          changed |= BKE_gpencil_stroke_smooth_strength(stroke, i, falloff, 1, stroke);
-          break;
-        case 3: { /* Grab: move real Legacy GP points with brush falloff. */
-          point.x += dx * 0.0f + (x - point.x) * falloff;
-          point.y += dy * 0.0f + (y - point.y) * falloff;
-          changed = true;
-          break;
-        }
-        case 4: { /* Push: move real Legacy GP points away from brush center. */
-          const float length = std::max(distance, 0.001f);
-          point.x += (dx / length) * radius * falloff;
-          point.y += (dy / length) * radius * falloff;
-          changed = true;
-          break;
-        }
-        default:
-          impl_->last_error = "unknown Legacy GP sculpt brush";
-          return false;
-      }
-    }
+  for (bGPDstroke *stroke =
+           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke; stroke = stroke->next) {
+    changed |= legacy_gp_sculpt::apply(
+        impl_->gpd, impl_->frame, stroke, sculpt_tool, context, settings, 2);
   }
 
   if (!changed) {
-    impl_->last_error = "Legacy GP sculpt brush hit no stroke points";
+    impl_->last_error = "Legacy GP sculpt brush hit no editable points";
     return false;
   }
 
   impl_->stroke = nullptr;
   BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::sculpt_end()
+{
   impl_->last_error.clear();
   return true;
 }

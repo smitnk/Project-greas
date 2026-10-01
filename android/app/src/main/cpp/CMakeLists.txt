@@ -69,7 +69,11 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_primitive.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_curve_legacy_extract.cc"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_math_geom_legacy_extract.cc"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_deform_legacy_extract.cc"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_string_legacy_extract.c"
     # Focused extraction of the exact pinned Blender 3.6.23 ED_gpencil_sbuffer_ensure algorithm.
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
@@ -78,6 +82,9 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_format.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_capabilities.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/listbase.cc"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
@@ -86,6 +93,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
@@ -120,7 +128,17 @@ target_compile_definitions(projectgrease_jni PRIVATE
     WITH_OPENGL
 )
 
-set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
+set_source_files_properties(
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
+    PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
+)
+set_source_files_properties(
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
+    PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
+)
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c" PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion")
 

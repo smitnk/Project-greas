@@ -69,13 +69,7 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_primitive.cpp"
     "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_curve_legacy_extract.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_math_geom_legacy_extract.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_deform_legacy_extract.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_string_legacy_extract.c"
     # Focused extraction of the exact pinned Blender 3.6.23 ED_gpencil_sbuffer_ensure algorithm.
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_index_buffer.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_batch.cc"
@@ -99,13 +93,10 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/memory_usage.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_curve_legacy_extract.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_math_geom_legacy_extract.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_deform_legacy_extract.cc"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/blender_string_legacy_extract.c"
 )
 
 set(PROJECT_GREASE_C_SOURCES
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
     "${GENERATED_DNA_DIR}/dna.c"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_legacy_runtime_compat.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"

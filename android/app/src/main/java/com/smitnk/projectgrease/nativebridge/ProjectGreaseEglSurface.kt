@@ -116,7 +116,7 @@ private class ProjectGreaseDrawingSurfaceView(
                 activePointerId = event.getPointerId(0)
                 when (controller.tools.activeTool) {
                     com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
-                        controller.beginSculpt(start.first, start.second)
+                        controller.beginSculpt(start.first, start.second, event.getPressure(0).coerceAtLeast(0.01f))
                         controller.render()
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
@@ -246,7 +246,7 @@ private class ProjectGreaseDrawingSurfaceView(
                     val y = canvas.second
                     when {
                         controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
-                            if (controller.sculptAt(x, y)) controller.render()
+                            if (controller.sculptAt(x, y, event.getPressure(pointerIndex).coerceAtLeast(0.01f))) controller.render()
                         }
                         panOpen -> {
                             val dx = rawX - lastPanX

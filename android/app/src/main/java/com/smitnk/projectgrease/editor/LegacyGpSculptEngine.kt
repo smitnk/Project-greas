@@ -52,6 +52,7 @@ class LegacyGpSculptEngine(
     private var previousY = 0f
     private val cached = ArrayList<Point>()
     private var randomState = 0x6D2B79F5
+    private val affectedStrokes = HashSet<Int>()
 
     fun begin(tool: Tool, x: Float, y: Float, settings: Settings): Boolean {
         val handle = handleProvider()
@@ -66,6 +67,7 @@ class LegacyGpSculptEngine(
         previousY = y
         randomState = seed(x, y)
 
+        affectedStrokes.clear()
         val strokes = GPNative.nativeStrokeCount(handle)
         for (strokeIndex in 0 until strokes) {
             var pointIndex = 0
@@ -74,6 +76,7 @@ class LegacyGpSculptEngine(
                 val dx = p[0] - x
                 val dy = p[1] - y
                 if (hypot(dx, dy) <= settings.radius) {
+                    affectedStrokes += strokeIndex
                     cached += Point(
                         strokeIndex,
                         pointIndex,

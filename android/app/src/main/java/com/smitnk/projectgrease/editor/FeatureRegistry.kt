@@ -51,6 +51,7 @@ object FeatureRegistry {
         FeatureId.THICKNESS, FeatureId.OPACITY,
         
         FeatureId.SCULPT, FeatureId.SCULPT_SMOOTH, FeatureId.SCULPT_THICKNESS, FeatureId.SCULPT_STRENGTH,
+        FeatureId.SCULPT_GRAB, FeatureId.SCULPT_PUSH, FeatureId.SCULPT_PINCH, FeatureId.SCULPT_RANDOMIZE,
         FeatureId.GRID, FeatureId.GUIDES, FeatureId.SNAPPING, FeatureId.PAN, FeatureId.ZOOM, FeatureId.RESET_VIEW,
         FeatureId.LAYERS, FeatureId.LAYER_VISIBILITY, FeatureId.LAYER_LOCKING,
         FeatureId.LAYER_ORDERING, FeatureId.LAYER_DUPLICATION, FeatureId.LAYER_DELETION,

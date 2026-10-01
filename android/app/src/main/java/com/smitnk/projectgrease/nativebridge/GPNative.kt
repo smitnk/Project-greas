@@ -102,9 +102,7 @@ object GPNative {
     external fun nativeSetPoint(
         handle: Long, strokeIndex: Int, pointIndex: Int,
         x: Float, y: Float, z: Float,
-        pressure: Float, strength: Float, time: Float,
-        r: Float, g: Float, b: Float, a: Float,
-        uvFac: Float, uvRot: Float
+        pressure: Float, strength: Float, time: Float
     ): Boolean
     external fun nativeMaterialCount(handle: Long): Int
     external fun nativeCreateMaterial(handle: Long): Boolean

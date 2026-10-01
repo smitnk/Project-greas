@@ -65,6 +65,7 @@ COMMON_FLAGS=(
 )
 CXXFLAGS=("${COMMON_FLAGS[@]}" -std=gnu++17)
 CFLAGS=("${COMMON_FLAGS[@]}" -std=gnu11)
+CFLAGS+=("-DMATH_STANDALONE")
 for inc in "${INCLUDES[@]}"; do
   CXXFLAGS+=("-I$inc")
   CFLAGS+=("-I$inc")

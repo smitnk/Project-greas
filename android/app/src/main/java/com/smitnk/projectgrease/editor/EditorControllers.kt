@@ -552,6 +552,7 @@ class EditorController {
             LegacyGpBrushStrokeEngine.Settings(
                 drawStrength=brushes.strength,
                 usePressure=true,
+                useStrengthPressure=false,
                 pressureCurve=brushes.pressureCurve,
                 inputSamples=legacyInputSamples,
                 lazyEnabled=legacyLazyEnabled,

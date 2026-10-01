@@ -20,8 +20,8 @@ class LegacyGpBrushStrokeEngineTest {
     fun smallMotionUsesManhattanOrEuclideanFilter() {
         val engine = LegacyGpBrushStrokeEngine()
         engine.begin(LegacyGpBrushStrokeEngine.Settings(
-            manhattanThreshold = 2,
-            euclideanThreshold = 4
+            manhattanThreshold = 2f,
+            euclideanThreshold = 4f
         ))
         assertEquals(1, engine.add(LegacyGpBrushStrokeEngine.InputEvent(0f, 0f, 1f, 0f)).size)
         assertTrue(engine.add(LegacyGpBrushStrokeEngine.InputEvent(3f, 3f, 1f, 0.01f)).isNotEmpty())
@@ -57,8 +57,8 @@ class LegacyGpBrushStrokeEngineTest {
         val settings = LegacyGpBrushStrokeEngine.Settings(
             activeSmooth = 1f,
             activeSmoothPasses = 1,
-            manhattanThreshold = 0,
-            euclideanThreshold = 0
+            manhattanThreshold = 0f,
+            euclideanThreshold = 0f
         )
         val engine = LegacyGpBrushStrokeEngine()
         engine.begin(settings)

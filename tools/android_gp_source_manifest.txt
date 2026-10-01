@@ -11,6 +11,7 @@ CXX|native/blender_gp/android_gpu_backend.cpp
 CXX|native/blender_gp/android_gp_presentation.cpp
 CXX|native/blender_gp/project_grease_legacy_fill.cpp
 CXX|native/blender_gp/project_grease_legacy_primitive.cpp
+CXX|native/blender_gp/project_grease_legacy_eraser.cpp
 CXX|third_party/blender/source/blender/draw/intern/draw_cache_impl_gpencil.cc
 CXX|third_party/blender/source/blender/blenkernel/intern/gpencil_geom_legacy.cc
 CXX|third_party/blender/source/blender/blenkernel/intern/deform.cc

@@ -665,7 +665,12 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         listOf(
             com.smitnk.projectgrease.editor.SculptBrush.SMOOTH to "Smooth",
             com.smitnk.projectgrease.editor.SculptBrush.THICKNESS to "Thickness",
-            com.smitnk.projectgrease.editor.SculptBrush.STRENGTH to "Strength"
+            com.smitnk.projectgrease.editor.SculptBrush.STRENGTH to "Strength",
+            com.smitnk.projectgrease.editor.SculptBrush.GRAB to "Grab",
+            com.smitnk.projectgrease.editor.SculptBrush.PUSH to "Push",
+            com.smitnk.projectgrease.editor.SculptBrush.PINCH to "Pinch",
+            com.smitnk.projectgrease.editor.SculptBrush.TWIST to "Twist",
+            com.smitnk.projectgrease.editor.SculptBrush.RANDOMIZE to "Randomize"
         ).forEach { (brush,label) ->
             Button(
                 onClick={controller.sculpt.select(brush);redraw()},

@@ -28,9 +28,9 @@ C|build/blender-dna/dna.c
 C|third_party/blender/source/blender/makesdna/intern/dna_utils.c
 C|native/blender_gp/android_legacy_runtime_compat.c
 C|third_party/blender/source/blender/blenlib/intern/array_utils.c
-C|third_party/blender/source/blender/blenlib/intern/math_vector.c
-C|third_party/blender/source/blender/blenlib/intern/math_matrix.c
-C|third_party/blender/source/blender/blenlib/intern/math_rotation.c
+C|native/blender_gp/android_blender_math_vector_compat.c
+C|native/blender_gp/android_blender_math_matrix_compat.c
+C|native/blender_gp/android_blender_math_rotation_compat.c
 C|third_party/blender/source/blender/blenlib/intern/math_geom.c
 C|third_party/blender/source/blender/blenlib/intern/lasso_2d.c
 C|third_party/blender/source/blender/blenlib/intern/polyfill_2d.c

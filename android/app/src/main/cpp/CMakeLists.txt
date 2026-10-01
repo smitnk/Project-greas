@@ -131,7 +131,7 @@ set_source_files_properties(
 set_source_files_properties(
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
-    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion"
+    PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion;-Wno-error=implicit-int-conversion"
 )
 
 target_compile_options(projectgrease_jni PRIVATE

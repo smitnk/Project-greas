@@ -496,14 +496,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPoint(
     JNIEnv *, jobject, jlong handle, jint stroke_index, jint point_index,
-    jfloat x, jfloat y, jfloat z, jfloat pressure, jfloat strength, jfloat time,
-    jfloat r, jfloat g, jfloat b, jfloat a, jfloat uv_fac, jfloat uv_rot)
+    jfloat x, jfloat y, jfloat z, jfloat pressure, jfloat strength, jfloat time)
 {
   ProjectGreaseGPPoint point{};
   point.x = x; point.y = y; point.z = z;
   point.pressure = pressure; point.strength = strength; point.time = time;
-  point.r = r; point.g = g; point.b = b; point.a = a;
-  point.uv_fac = uv_fac; point.uv_rot = uv_rot;
   return project_grease_gp_set_point(
       from_handle(handle), stroke_index, point_index, point) != 0;
 }

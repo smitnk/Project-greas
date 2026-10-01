@@ -30,6 +30,7 @@ INCLUDES=(
   "$BLENDER/source/blender"
   "$BLENDER/source"
   "$BLENDER/source/blender/blenlib"
+  "$BLENDER/extern/wcwidth"
   "$BLENDER/extern/curve_fit_nd"
   "$BLENDER/source/blender/gpu"
   "$BLENDER/source/blender/gpu/intern"

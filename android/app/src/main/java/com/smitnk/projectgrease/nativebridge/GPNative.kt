@@ -99,6 +99,13 @@ object GPNative {
     external fun nativeApplyEditCommand(handle: Long, command: Int, args: FloatArray = floatArrayOf()): Boolean
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
+    external fun nativeSetPoint(
+        handle: Long, strokeIndex: Int, pointIndex: Int,
+        x: Float, y: Float, z: Float,
+        pressure: Float, strength: Float, time: Float,
+        r: Float, g: Float, b: Float, a: Float,
+        uvFac: Float, uvRot: Float
+    ): Boolean
     external fun nativeMaterialCount(handle: Long): Int
     external fun nativeCreateMaterial(handle: Long): Boolean
     external fun nativeSetMaterialColors(handle: Long, index: Int, stroke: FloatArray, fill: FloatArray): Boolean

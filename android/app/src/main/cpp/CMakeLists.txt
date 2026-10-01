@@ -76,9 +76,6 @@ set(PROJECT_GREASE_CXX_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_format.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_capabilities.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/listbase.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
@@ -126,8 +123,6 @@ set_source_files_properties(
     PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
 )
 set_source_files_properties(
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
     PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
 )
 set_source_files_properties("${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c" PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE)

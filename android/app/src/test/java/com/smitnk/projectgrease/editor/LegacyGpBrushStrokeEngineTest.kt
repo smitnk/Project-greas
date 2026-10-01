@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 class LegacyGpBrushStrokeEngineTest {
     @Test
@@ -17,7 +18,7 @@ class LegacyGpBrushStrokeEngineTest {
     }
 
     @Test
-    fun smallMotionUsesManhattanOrEuclideanFilter() {
+    fun smallMotionUsesBlenderManhattanAndEuclideanFilter() {
         val engine = LegacyGpBrushStrokeEngine()
         engine.begin(LegacyGpBrushStrokeEngine.Settings(
             manhattanThreshold = 2,
@@ -43,17 +44,81 @@ class LegacyGpBrushStrokeEngineTest {
     }
 
     @Test
-    fun fastMotionAddsIntermediateSamples() {
+    fun fastMotionUsesLegacyArcOnlyForThreePlusBufferedPoints() {
         val engine = LegacyGpBrushStrokeEngine()
-        engine.begin(LegacyGpBrushStrokeEngine.Settings(inputSamples = 4))
+        engine.begin(LegacyGpBrushStrokeEngine.Settings(
+            inputSamples = 4,
+            manhattanThreshold = 0,
+            euclideanThreshold = 0f
+        ))
         engine.add(LegacyGpBrushStrokeEngine.InputEvent(0f, 0f, 1f, 0f))
-        val out = engine.add(LegacyGpBrushStrokeEngine.InputEvent(30f, 0f, 1f, 0.1f))
+        engine.add(LegacyGpBrushStrokeEngine.InputEvent(10f, 0f, 1f, 0.03f))
+        val out = engine.add(LegacyGpBrushStrokeEngine.InputEvent(40f, 0f, 1f, 0.1f))
+        assertTrue(out.isNotEmpty())
+        assertEquals(40f, out.last().x, 0.0001f)
         assertTrue(out.size > 1)
-        assertEquals(30f, out.last().x, 0.0001f)
     }
 
     @Test
-    fun activeSmoothingUsesFourPointWindow() {
+    fun straightFastStrokeDoesNotIntroducePerpendicularBend() {
+        val engine = LegacyGpBrushStrokeEngine()
+        engine.begin(LegacyGpBrushStrokeEngine.Settings(
+            inputSamples = 4,
+            manhattanThreshold = 0,
+            euclideanThreshold = 0f
+        ))
+        engine.add(LegacyGpBrushStrokeEngine.InputEvent(0f, 0f, 1f, 0f))
+        engine.add(LegacyGpBrushStrokeEngine.InputEvent(10f, 0f, 1f, 0.03f))
+        val out = engine.add(LegacyGpBrushStrokeEngine.InputEvent(40f, 0f, 1f, 0.1f))
+        assertTrue(out.isNotEmpty())
+        assertTrue(out.dropLast(1).all { abs(it.y) < 0.0001f })
+    }
+
+    @Test
+    fun pressureOneStaysOneWithoutPressureModifiers() {
+        val engine = LegacyGpBrushStrokeEngine()
+        engine.begin(LegacyGpBrushStrokeEngine.Settings(
+            drawStrength = 1f,
+            usePressure = true,
+            pressureCurve = 1f,
+            manhattanThreshold = 0,
+            euclideanThreshold = 0f
+        ))
+        val points = listOf(
+            LegacyGpBrushStrokeEngine.InputEvent(0f, 0f, 1f, 0f),
+            LegacyGpBrushStrokeEngine.InputEvent(5f, 0f, 1f, 0.01f),
+            LegacyGpBrushStrokeEngine.InputEvent(10f, 0f, 1f, 0.02f),
+            LegacyGpBrushStrokeEngine.InputEvent(15f, 0f, 1f, 0.03f)
+        ).flatMap(engine::add)
+        assertTrue(points.isNotEmpty())
+        points.forEach {
+            assertEquals(1f, it.pressure, 0.0001f)
+            assertEquals(1f, it.strength, 0.0001f)
+        }
+    }
+
+    @Test
+    fun changingPressureChangesOnlyPressureWhenStrengthPressureDisabled() {
+        val engine = LegacyGpBrushStrokeEngine()
+        engine.begin(LegacyGpBrushStrokeEngine.Settings(
+            drawStrength = 0.8f,
+            usePressure = true,
+            useStrengthPressure = false,
+            pressureCurve = 1f,
+            manhattanThreshold = 0,
+            euclideanThreshold = 0f
+        ))
+        val points = listOf(
+            LegacyGpBrushStrokeEngine.InputEvent(0f, 0f, 0.5f, 0f),
+            LegacyGpBrushStrokeEngine.InputEvent(5f, 0f, 0.25f, 0.01f)
+        ).flatMap(engine::add)
+        assertEquals(0.5f, points.first().pressure, 0.0001f)
+        assertEquals(0.25f, points.last().pressure, 0.0001f)
+        points.forEach { assertEquals(0.8f, it.strength, 0.0001f) }
+    }
+
+    @Test
+    fun activeSmoothingMatchesLegacyFivePassSegmentContract() {
         val settings = LegacyGpBrushStrokeEngine.Settings(
             activeSmooth = 1f,
             activeSmoothPasses = 1,

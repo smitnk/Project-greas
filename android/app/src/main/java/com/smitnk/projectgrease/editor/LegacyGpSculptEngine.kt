@@ -1,12 +1,9 @@
 package com.smitnk.projectgrease.editor
 
 import com.smitnk.projectgrease.nativebridge.GPNative
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -129,17 +126,13 @@ class LegacyGpSculptEngine(
 
     private fun influence(p: Point, x: Float, y: Float, settings: Settings): Float {
         val distance = hypot(p.x - x, p.y - y)
-        if (distance > settings.radius || settings.radius <= 0f) return 0f
-
-        var value = settings.strength.coerceIn(0f, 1f)
-        value *= settings.pressure.coerceIn(0f, 1f)
-
-        // Blender's brush curve is evaluated in normalized radius space.
-        // The Android brush curve is represented by the same monotonic
-        // falloff contract rather than using a UI-only stroke substitute.
-        val linear = (1f - distance / settings.radius).coerceIn(0f, 1f)
-        value *= linear.pow(settings.pressureCurve.coerceIn(0.25f, 4f))
-        return value
+        return LegacyGpSculptMath.influence(
+            settings.strength,
+            settings.pressure,
+            distance,
+            settings.radius,
+            settings.pressureCurve
+        )
     }
 
     private fun smooth(handle: Long, x: Float, y: Float, settings: Settings): Boolean {
@@ -230,11 +223,11 @@ class LegacyGpSculptEngine(
         for (point in cached) {
             val inf = influence(point, x, y, settings)
             if (inf <= 0f) continue
-            val vx = point.x - x
-            val vy = point.y - y
-            val length = max(0.001f, hypot(vx, vy))
-            point.x += vx / length * dx * inf
-            point.y += vy / length * dy * inf
+            val (nx, ny) = LegacyGpSculptMath.push(
+                point.x, point.y, x, y, dx, dy, inf
+            )
+            point.x = nx
+            point.y = ny
             changed = changed or write(handle, point)
         }
         return changed
@@ -245,10 +238,11 @@ class LegacyGpSculptEngine(
         for (point in cached) {
             val inf = influence(point, x, y, settings)
             if (inf <= 0f) continue
-            val signed = if (settings.invert) -inf else inf
-            val factor = (1f - signed * signed).coerceAtLeast(0f)
-            point.x = x + (point.x - x) * factor
-            point.y = y + (point.y - y) * factor
+            val (nx, ny) = LegacyGpSculptMath.pinch(
+                point.x, point.y, x, y, inf, settings.invert
+            )
+            point.x = nx
+            point.y = ny
             changed = changed or write(handle, point)
         }
         return changed
@@ -259,13 +253,11 @@ class LegacyGpSculptEngine(
         for (point in cached) {
             val inf = influence(point, x, y, settings)
             if (inf <= 0f) continue
-            val angle = (if (settings.invert) -1f else 1f) * inf * PI.toFloat() / 180f
-            val dx = point.x - x
-            val dy = point.y - y
-            val c = cos(angle)
-            val s = sin(angle)
-            point.x = x + dx * c - dy * s
-            point.y = y + dx * s + dy * c
+            val (nx, ny) = LegacyGpSculptMath.twist(
+                point.x, point.y, x, y, inf, settings.invert
+            )
+            point.x = nx
+            point.y = ny
             changed = changed or write(handle, point)
         }
         return changed
@@ -327,6 +319,4 @@ class LegacyGpSculptEngine(
         return ((randomState ushr 8) and 0x00FFFFFF) / 16777215f * 2f - 1f
     }
 
-    private fun Float.pow(exponent: Float): Float =
-        kotlin.math.exp(kotlin.math.ln(coerceAtLeast(0.000001f)) * exponent)
 }

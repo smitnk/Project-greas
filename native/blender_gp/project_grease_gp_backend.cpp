@@ -2084,9 +2084,7 @@ bool Backend::set_point(int stroke_index,
     // and UV state. Kotlin only owns the sculpt attributes it can read/write
     // through the focused Android contract: position, pressure, strength, time.
     BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-    std::fprintf(stderr, "[SET] after batch cache dirty\\n");
     project_grease_gp_tag(impl_->gpd);
-    std::fprintf(stderr, "[SET] after gp tag\\n");
     impl_->stroke = stroke;
     impl_->last_error.clear();
     return true;

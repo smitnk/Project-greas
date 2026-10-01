@@ -52,7 +52,7 @@ int main()
 
   {
     const auto p = project_grease::legacy_gp_primitive::generate(
-        0, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 6.2831855f, 8);
+        1, {0.0f, 0.0f}, {10.0f, 10.0f}, 0.0f, 6.2831855f, 8);
     assert(p.size() == 8);
     assert(near(p.front().x, 0.0f) && near(p.front().y, 0.0f));
     assert(near(p.back().x, 10.0f) && near(p.back().y, 10.0f));

@@ -129,8 +129,8 @@ set_source_files_properties(
     PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
 )
 set_source_files_properties(
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_blender_string_compat.c"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_blender_string_utf8_compat.c"
     PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion;-Wno-error=sign-conversion;-Wno-error=implicit-int-conversion;-Wno-error"
 )
 

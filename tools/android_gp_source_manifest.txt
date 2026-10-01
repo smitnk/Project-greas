@@ -36,8 +36,8 @@ C|third_party/blender/source/blender/blenlib/intern/lasso_2d.c
 C|third_party/blender/source/blender/blenlib/intern/polyfill_2d.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_memarena.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_heap.c
-C|third_party/blender/source/blender/blenlib/intern/string.c
-C|third_party/blender/source/blender/blenlib/intern/string_utf8.c
+C|native/blender_gp/android_blender_string_compat.c
+C|native/blender_gp/android_blender_string_utf8_compat.c
 C|third_party/blender/source/blender/blenlib/intern/string_utils.c
 C|third_party/blender/source/blender/blenkernel/intern/gpencil_curve_legacy.c
 C|third_party/blender/source/blender/blenkernel/intern/gpencil_legacy.c

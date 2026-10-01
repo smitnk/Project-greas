@@ -9,12 +9,12 @@ object LegacyGpSculptMath {
         val linear = (1f - distance / radius).coerceIn(0f, 1f)
         return strength.coerceIn(0f, 1f) *
             pressure.coerceIn(0f, 1f) *
-            kotlin.math.exp(kotlin.math.ln(linear.coerceAtLeast(0.000001f)) * curve.coerceIn(0.25f, 4f))
+            linear.powClamped(curve) 
     }
 
     fun pinch(x: Float, y: Float, cx: Float, cy: Float, influence: Float, invert: Boolean): Pair<Float, Float> {
-        val signed = if (invert) -influence else influence
-        val factor = (1f - signed * signed).coerceAtLeast(0f)
+        val inf = influence / 5f
+        val factor = if (invert) 1f + inf * inf else 1f - inf * inf
         return cx + (x - cx) * factor to cy + (y - cy) * factor
     }
 
@@ -27,15 +27,10 @@ object LegacyGpSculptMath {
         return cx + dx * c - dy * s to cy + dx * s + dy * c
     }
 
-    fun push(
-        x: Float,
-        y: Float,
-        deltaX: Float,
-        deltaY: Float,
-        influence: Float
-    ): Pair<Float, Float> {
-        // Blender 3.6.23 gpencil_sculpt_paint.c uses the same
-        // brush movement vector (dvec) for every affected point.
+    fun push(x: Float, y: Float, deltaX: Float, deltaY: Float, influence: Float): Pair<Float, Float> {
         return x + deltaX * influence to y + deltaY * influence
     }
+
+    private fun Float.powClamped(power: Float): Float =
+        kotlin.math.exp(kotlin.math.ln(coerceAtLeast(0.000001f)) * power.coerceAtLeast(0f))
 }

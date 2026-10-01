@@ -14,9 +14,7 @@ on:
     paths:
       - "android/**"
       - "native/blender_gp/**"
-      - "tools/import_blender_gp.sh"
-      - "tools/android_blender_gp_generate_dna.sh"
-      - "tools/android_blender_gp_native_link_probe.sh"
+      - "tools/**"
       - ".github/workflows/android-shell.yml"
 
 concurrency:

@@ -26,15 +26,15 @@ target_link_libraries(project_grease_legacy_fill_test PRIVATE project_grease_leg
 # These are the actual Blender 3.6.23 Legacy GP editor/modifier sources from the pinned legacy directories.
 # They are compiled into the focused Project Grease native closure instead
 # of importing Blender's desktop application targets.
-file(GLOB PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES CONFIGURE_DEPENDS
-  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/*.cc"
+# Explicitly enumerate only the Legacy GP sources used by the focused Android
+# backend. Do not glob the whole desktop editor/modifier directories: those
+# directories contain RNA/window-manager/object dependencies outside this port.
+set(PROJECT_GREASE_BLENDER_GP_EDITOR_SOURCES
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_legacy.c"
+  "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_paint.c"
 )
-file(GLOB PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES CONFIGURE_DEPENDS
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/*.cc"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/*.c"
-  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/*.cc"
+set(PROJECT_GREASE_BLENDER_GP_MODIFIER_SOURCES
+  "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/MOD_gpencillegacy.c"
 )
 
 # Exact Blender 3.6.23 external curve-fitting implementation used by

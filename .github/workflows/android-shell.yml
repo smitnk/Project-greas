@@ -100,6 +100,10 @@ jobs:
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 
+      - name: Run Android unit tests
+        working-directory: android
+        run: gradle :app:testDebugUnitTest --no-daemon
+
       - name: Build Android GP application
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon

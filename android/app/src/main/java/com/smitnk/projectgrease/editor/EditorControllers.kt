@@ -459,6 +459,8 @@ class EditorController {
     private fun applySculptPoint(x:Float,y:Float,pressure:Float=1f):Boolean {
         if (rendererHandle == 0L) return false
         val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
+        sculpt.setStrength(brushes.strength)
+        sculpt.setPressureCurve(brushes.pressureCurve)
         val ok = sculpt.update(x, y, pressure)
         if (ok) {
             sculptGestureChanged = true
@@ -469,6 +471,8 @@ class EditorController {
     fun beginSculpt(x:Float,y:Float,pressure:Float=1f):Boolean {
         if (rendererHandle == 0L) return false
         val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
+        sculpt.setStrength(brushes.strength)
+        sculpt.setPressureCurve(brushes.pressureCurve)
         val ok = sculpt.begin(x, y, radius, pressure)
         if (ok) {
             sculptGestureChanged = true

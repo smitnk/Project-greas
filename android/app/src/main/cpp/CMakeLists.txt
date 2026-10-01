@@ -57,56 +57,48 @@ set(BLENDER_INCLUDE_DIRS
     "${GENERATED_DNA_DIR}"
 )
 
-set(PROJECT_GREASE_CXX_SOURCES
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
-    project_grease_android_jni_smoke.cpp
-    project_grease_android_egl_renderer.cpp
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_backend.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_bridge.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_jni.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_presentation.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_fill.cpp"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_primitive.cpp"
-    "${BLENDER_SOURCE_DIR}/source/blender/draw/intern/draw_cache_impl_gpencil.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_geom_legacy.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_buffer.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_index_buffer.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_batch.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_vertex_format.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern/gpu_capabilities.cc"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/listbase.cc"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/leak_detector.cc"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/memory_usage.cc"
+set(PROJECT_GREASE_CXX_SOURCES)
+set(PROJECT_GREASE_C_SOURCES)
+set(PROJECT_GREASE_SOURCE_MANIFEST
+    "${PROJECT_GREASE_ROOT}/tools/android_gp_source_manifest.txt"
 )
+if(NOT EXISTS "${PROJECT_GREASE_SOURCE_MANIFEST}")
+    message(FATAL_ERROR "Android GP source manifest is missing: ${PROJECT_GREASE_SOURCE_MANIFEST}")
+endif()
 
-set(PROJECT_GREASE_C_SOURCES
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_legacy_sbuffer.c"
-    "${GENERATED_DNA_DIR}/dna.c"
-    "${PROJECT_GREASE_ROOT}/native/blender_gp/android_legacy_runtime_compat.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/array_utils.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_geom.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/lasso_2d.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/polyfill_2d.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_memarena.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/BLI_heap.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_legacy.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_corners_detect.c"
-    "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/generic_heap.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blentranslation/intern/blt_translation.c"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn.c"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_guarded_impl.c"
-    "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
-)
+file(STRINGS "${PROJECT_GREASE_SOURCE_MANIFEST}" PROJECT_GREASE_SOURCE_LINES)
+foreach(source_line IN LISTS PROJECT_GREASE_SOURCE_LINES)
+    string(STRIP "${source_line}" source_line)
+    if(source_line STREQUAL "" OR source_line MATCHES "^#")
+        continue()
+    endif()
+    string(REPLACE "|" ";" source_parts "${source_line}")
+    list(LENGTH source_parts source_part_count)
+    if(NOT source_part_count EQUAL 2)
+        message(FATAL_ERROR "Malformed Android GP source manifest line: ${source_line}")
+    endif()
+    list(GET source_parts 0 source_lang)
+    list(GET source_parts 1 source_rel)
+    set(source_abs "${PROJECT_GREASE_ROOT}/${source_rel}")
+    if(NOT EXISTS "${source_abs}")
+        message(FATAL_ERROR "Android GP source manifest entry does not exist: ${source_rel}")
+    endif()
+    if(source_lang STREQUAL "CXX")
+        list(APPEND PROJECT_GREASE_CXX_SOURCES "${source_abs}")
+    elseif(source_lang STREQUAL "C")
+        list(APPEND PROJECT_GREASE_C_SOURCES "${source_abs}")
+    else()
+        message(FATAL_ERROR "Unknown Android GP source language '${source_lang}' for ${source_rel}")
+    endif()
+endforeach()
+
+set(PROJECT_GREASE_ALL_SOURCES ${PROJECT_GREASE_CXX_SOURCES} ${PROJECT_GREASE_C_SOURCES})
+list(LENGTH PROJECT_GREASE_ALL_SOURCES PROJECT_GREASE_ALL_COUNT_BEFORE)
+list(REMOVE_DUPLICATES PROJECT_GREASE_ALL_SOURCES)
+list(LENGTH PROJECT_GREASE_ALL_SOURCES PROJECT_GREASE_ALL_COUNT_AFTER)
+if(NOT PROJECT_GREASE_ALL_COUNT_BEFORE EQUAL PROJECT_GREASE_ALL_COUNT_AFTER)
+    message(FATAL_ERROR "Duplicate source path in Android GP source manifest")
+endif()
 
 add_library(projectgrease_jni SHARED
     ${PROJECT_GREASE_CXX_SOURCES}

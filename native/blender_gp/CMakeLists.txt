@@ -12,8 +12,11 @@ endif()
 
 add_library(project_grease_legacy_fill STATIC project_grease_legacy_fill.cpp)
 add_library(project_grease_legacy_primitive STATIC project_grease_legacy_primitive.cpp)
+add_library(project_grease_legacy_eraser STATIC project_grease_legacy_eraser.cpp)
 
 target_include_directories(project_grease_legacy_primitive PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(project_grease_legacy_eraser PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${BLENDER_SOURCE_DIR}/source/blender")
+target_compile_features(project_grease_legacy_eraser PUBLIC cxx_std_17)
 target_compile_features(project_grease_legacy_primitive PUBLIC cxx_std_17)
 add_executable(project_grease_legacy_primitive_test project_grease_legacy_primitive_test.cpp)
 target_link_libraries(project_grease_legacy_primitive_test PRIVATE project_grease_legacy_primitive)
@@ -134,13 +137,13 @@ if(TARGET bf_draw)
   target_compile_features(project_grease_blender_gp PUBLIC cxx_std_17)
   target_compile_definitions(project_grease_blender_gp PRIVATE WITH_OPENGL WITH_LINEART)
 
-  target_link_libraries(project_grease_gp_bridge PRIVATE project_grease_blender_gp project_grease_legacy_fill project_grease_legacy_primitive)
+  target_link_libraries(project_grease_gp_bridge PRIVATE project_grease_blender_gp project_grease_legacy_fill project_grease_legacy_primitive project_grease_legacy_eraser)
   target_include_directories(project_grease_gp_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_features(project_grease_gp_bridge PUBLIC cxx_std_17)
 
   target_link_libraries(project_grease_blender_gp PRIVATE
     bf_draw bf_gpu bf_intern_ghost
-    project_grease_legacy_fill project_grease_legacy_primitive
+    project_grease_legacy_fill project_grease_legacy_primitive project_grease_legacy_eraser
   )
 
   add_executable(project_grease_gp_bridge_simulation gp_bridge_simulation_test.cpp)

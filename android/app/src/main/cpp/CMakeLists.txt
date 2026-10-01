@@ -58,6 +58,7 @@ set(BLENDER_INCLUDE_DIRS
 )
 
 set(PROJECT_GREASE_CXX_SOURCES
+    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
     project_grease_android_jni_smoke.cpp
     project_grease_android_egl_renderer.cpp
     "${PROJECT_GREASE_ROOT}/native/blender_gp/project_grease_gp_backend.cpp"
@@ -95,7 +96,6 @@ set(PROJECT_GREASE_C_SOURCES
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utf8.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/string_utils.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_legacy.c"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd/intern/curve_fit_cubic.c"
@@ -125,6 +125,10 @@ target_compile_definitions(projectgrease_jni PRIVATE
 set_source_files_properties(
     ${PROJECT_GREASE_C_SOURCES}
     PROPERTIES LANGUAGE C
+)
+set_source_files_properties(
+    "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
+    PROPERTIES LANGUAGE CXX
 )
 set_source_files_properties(
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"

@@ -9,6 +9,7 @@
  * does not pull the full Curve BKE object implementation.
  */
 
+#include "BKE_curve.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
 

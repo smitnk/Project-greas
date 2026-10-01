@@ -130,6 +130,21 @@ echo "=== regression: authoritative symbol-owner map ==="
 SYMBOL_MAP="$ROOT/native/blender_gp/android_gp_symbol_owners.tsv"
 [[ -f "$SYMBOL_MAP" ]] || { echo "Missing symbol-owner map: $SYMBOL_MAP" >&2; exit 2; }
 while IFS=
+  [[ -z "$sym" || "$sym" == \#* ]] && continue
+  owner_obj="${OBJECT_FOR_REL[$owner]:-}"
+  [[ -n "$owner_obj" ]] || { echo "Symbol owner is not in source manifest: $sym -> $owner" >&2; exit 1; }
+  if ! "$LLVM_NM" -g --defined-only "$owner_obj" | awk -v s="$sym" '$3 == s {found=1} END {exit(found ? 0 : 1)}'; then
+    echo "Mapped owner does not define symbol: $sym -> $owner ($provenance)" >&2
+    exit 1
+  fi
+  owners=$("$LLVM_NM" -g --defined-only "${OBJECTS[@]}" 2>/dev/null | awk -v s="$sym" '$3 == s {count++} END {print count+0}')
+  if [[ "$owners" -ne 1 ]]; then
+    echo "Symbol ownership regression: $sym is defined by $owners objects" >&2
+    exit 1
+  fi
+done < "$SYMBOL_MAP"
+
+echo "=== link actual Android GP native boundary ==="
 "$CXX" -shared -Wl,--no-undefined -Wl,--gc-sections \
   "${OBJECTS[@]}" \
   -lGLESv3 -landroid -llog \

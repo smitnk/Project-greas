@@ -98,8 +98,6 @@ set(PROJECT_GREASE_C_SOURCES
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_guarded_impl.c"
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
 )
-set(PROJECT_GREASE_C_SOURCES
-
 add_library(projectgrease_jni SHARED
     ${PROJECT_GREASE_CXX_SOURCES}
     ${PROJECT_GREASE_C_SOURCES}

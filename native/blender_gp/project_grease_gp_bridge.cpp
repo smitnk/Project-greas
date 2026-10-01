@@ -466,12 +466,6 @@ int project_grease_gp_set_point(ProjectGreaseGPHandle *handle,
   native_point.pressure = point.pressure;
   native_point.strength = point.strength;
   native_point.time = point.time;
-  native_point.r = point.r;
-  native_point.g = point.g;
-  native_point.b = point.b;
-  native_point.a = point.a;
-  native_point.uv_fac = point.uv_fac;
-  native_point.uv_rot = point.uv_rot;
   return handle->backend.set_point(stroke_index, point_index, native_point) ? 1 : 0;
 }
 

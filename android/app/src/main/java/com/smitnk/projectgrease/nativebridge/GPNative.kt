@@ -100,6 +100,16 @@ object GPNative {
      * polyline vertices. edges <= 0 uses Blender's defaults. Returns x,y pairs.
      */
     external fun nativeGenerateBlenderPrimitive(type: Int, anchorsXY: FloatArray, edges: Int, flip: Boolean): FloatArray?
+    // Scene-lite (project_grease_scene_lite.h): 3D reference scene for Line Art; its own handle.
+    external fun nativeSceneLiteCreate(): Long
+    external fun nativeSceneLiteFree(handle: Long)
+    external fun nativeSceneLiteClear(handle: Long)
+    external fun nativeSceneLiteLoadObj(handle: Long, text: ByteArray): Int
+    /** objects, vertices, triangles, edges, loose edges */
+    external fun nativeSceneLiteStats(handle: Long): IntArray?
+    external fun nativeSceneLiteSetCamera(handle: Long, params: FloatArray): Boolean
+    /** x0, y0, x1, y1 per visible mesh edge, Line Art frame-buffer coordinates (-1..1). */
+    external fun nativeSceneLiteProjectEdges(handle: Long): FloatArray?
     // Annotations (project_grease_annotations.h): command ids PG_ANNOT_CMD_* of project_grease_gp_bridge.h.
     external fun nativeAnnotationCommand(handle: Long, command: Int, args: FloatArray?): Int
     /** r, g, b, a, thickness (px), visible (1/0); null without a document. */

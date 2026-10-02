@@ -117,6 +117,9 @@ jobs:
       - name: Run native annotation tests
         run: bash tools/run_native_annotation_tests.sh
 
+      - name: Run native Scene-lite tests (Line Art batch 1)
+        run: bash tools/run_native_scene_lite_tests.sh
+
       - name: Run native document-state tests
         run: bash tools/run_native_document_state_tests.sh
 
@@ -231,14 +234,17 @@ jobs:
           dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
           for text in (b"Insert blank keyframe", b"Clean duplicate frames", b"Select random 50%", b"Vertex color levels x0.8",
                        b"Confirm curve", b"Curve", b"Template", b"Storyboard", b"2D Animation", b"Import SVG", b"Trace image",
-                       b"Trace bright areas", b"Annotate", b"Erase notes", b"Clear annotations", b"Include annotations"):
+                       b"Trace bright areas", b"Annotate", b"Erase notes", b"Clear annotations", b"Include annotations",
+                       b"3D reference (Line Art)", b"Import OBJ", b"Clear reference", b"Orthographic scale"):
               assert text in dex, "APK lacks the UI entry " + text.decode()
           for text in (b"Blender curve geometry", b"DIFFERENCE FROM BLENDER", b"GPENCIL_OT_blank_frame_add", b"separate annotation bGPdata"):
               assert text in dex, "APK lacks the registry text " + text.decode()
+          assert b"BATCH 1 OF 3 ONLY" in dex, "APK lacks the Line Art batch 1 registry entry"
+          assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
-          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive"):
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges"):
               owners = [name for name, data in libs.items() if sym in data]
               assert owners, "no native library exports " + sym.decode()
               print(sym.decode(), "in", owners)

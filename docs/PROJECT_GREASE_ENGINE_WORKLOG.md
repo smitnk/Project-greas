@@ -284,3 +284,30 @@ This remains an extraction of the Blender Legacy GP fill image algorithm, not a 
 - Thickness, Opacity, Tint, Hue/Saturation and Length reuse the per-stroke functions of `project_grease_blender_edit.c` (the code that mirrors `deformStroke()`); Smooth, Simplify, Subdivide, Offset and Noise carry the pinned Blender `deformStroke()` bodies as `BEGIN/END VERBATIM` regions (checked by `tools/verify_blender_verbatim.py`) with documented adapted glue. Offset and Noise run in an object-space view of the canvas (y flipped; Noise in units of 100 px) and use Blender's `BLI_hash_*` / `BLI_halton_*` (`rand.cc`, `noise.c`).
 - Not supported: vertex-group weights, layer/material/pass filters, custom intensity curves; onion-skin ghosts are drawn unmodified.
 - Tests: `tools/run_native_modifier_stack_tests.sh` (links the real pinned BKE code; compares Offset and Noise results with an independent Python reference), `ModifierStackTest`, `ProjectDocumentRoundTripTest`.
+
+
+## Line Art batch 1 — Scene-lite (approved architecture change) — 2026-10-02
+
+The user approved SPEC_LINE_ART_ARCHITECTURE: an opt-in "Scene-lite" module beside the 2D GP
+backend, because Blender's Line Art reads evaluated meshes, objects and a camera that Project Grease
+otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the 2D path does not use it.
+
+- `native/blender_gp/project_grease_scene_lite.{h,c}`: objects (name, world matrix, line art usage)
+  with MeshLite (vertices; triangles keeping their polygon and material; unique edges with their two
+  adjacent triangles and loose / material-boundary / non-manifold / polygon-diagonal flags, plus
+  slots for sharp / seam / freestyle marks), a Wavefront OBJ loader (o/g, v, f with any index form,
+  l, usemtl; Y-up -> Z-up like Blender's importer) and a camera.
+- Camera math is Blender's: `BKE_camera_sensor_size/fit`, `focallength_to_fov`,
+  `lineart_matrix_perspective_44d` / `lineart_matrix_ortho_44d` are verbatim file-local copies
+  (verify_blender_verbatim.py, 5 new regions); the glue reproduces the camera part of
+  `lineart_main_load_geometries()` / `lineart_main_init()` (normalized camera axes, sensor fit,
+  shift adjusted for the fit, fb = ndc - 2 * shift).
+- Host test `tools/run_native_scene_lite_tests.sh` (ASan/UBSan): OBJ parsing and edges of a
+  two-material cube and a loose polyline; frame edges at d * tan(fov / 2) for landscape/portrait
+  fits, orthographic corners, shift, camera scale ignored.
+- Android: JNI `nativeSceneLite*` (own handle), `ReferenceScene` / `ReferenceCamera`,
+  More > "3D reference (Line Art)" (Import OBJ, clear, perspective/orthographic, lens, ortho scale,
+  orbit, elevation, distance, shift) and a wireframe of the mesh edges over the canvas.
+- LINE_ART is IN_PROGRESS with "BATCH 1 OF 3 ONLY": no lines are generated, the reference is not
+  saved. Next: batch 2 (lineart_cpu triangle/edge buffer and occlusion, compared with reference
+  output exported from desktop Blender 3.6.23), then batch 3 (chaining, strokes, UI).

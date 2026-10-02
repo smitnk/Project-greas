@@ -480,6 +480,8 @@ class EditorController {
     var selectedLayer = 0
         private set
     val tools=ToolController()
+    /** 3D reference scene for Line Art (Scene-lite): OBJ meshes + camera, previewed as a wireframe. */
+    val reference=ReferenceScene()
     val document=DocumentController()
     val history=HistoryController(native)
     val animation=AnimationController(native) { render() }

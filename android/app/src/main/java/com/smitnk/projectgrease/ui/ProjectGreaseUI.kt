@@ -40,7 +40,7 @@ import com.smitnk.projectgrease.editor.EraserMode
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 private val presets=listOf(
@@ -321,6 +321,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Box(Modifier.fillMaxSize().background(CanvasBg)){
             viewport()
             DrawingGuidesOverlay(controller)
+            ReferenceOverlay(controller,refresh)
             CurveHandlesOverlay(controller,overlayTick,::redraw)
             IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
                 Icon(Icons.Default.CloseFullscreen,"Exit canvas")
@@ -354,6 +355,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
                 viewport()
                 DrawingGuidesOverlay(controller)
+                ReferenceOverlay(controller,refresh)
                 CurveHandlesOverlay(controller,overlayTick,::redraw)
             }
             if(state.showProperties)Properties(controller,::redraw)
@@ -368,7 +370,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.MATERIALS->MaterialsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.ONION->OnionSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.ADVANCED->AdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
-        Sheet.MORE->MoreSheet(controller,{sheet=Sheet.NONE},onSettings,::redraw)
+        Sheet.MORE->MoreSheet(controller,{sheet=Sheet.NONE},onSettings,::redraw,{sheet=Sheet.REFERENCE})
+        Sheet.REFERENCE->ReferenceSheet(controller,context,{sheet=Sheet.NONE},::redraw)
         Sheet.NONE->Unit
     }
 }
@@ -1085,8 +1088,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit){
+@Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit,onReference:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Edit actions",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        ListItem(headlineContent={Text("3D reference (Line Art)")},supportingContent={Text("Import OBJ meshes and set the camera Line Art will use")},modifier=Modifier.clickable{onReference()})
         ListItem(headlineContent={Text("Move selected stroke")},modifier=Modifier.clickable{controller.translateSelectedStroke(20f,20f);redraw()})
         ListItem(headlineContent={Text("Rotate selected stroke 90°")},modifier=Modifier.clickable{controller.rotateSelectedStroke((Math.PI/2.0).toFloat());redraw()})
         ListItem(headlineContent={Text("Scale selected stroke 110%")},modifier=Modifier.clickable{controller.scaleSelectedStroke(1.1f,1.1f);redraw()})

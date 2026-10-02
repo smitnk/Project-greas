@@ -10,7 +10,10 @@
 #include "BKE_gpencil_legacy.h"
 #include "BLI_lasso_2d.h"
 #include "BLI_listbase.h"
+#include "DNA_meshdata_types.h"
 #include "project_grease_blender_edit.h"
+
+int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
 /* ---- stand-ins ---------------------------------------------------------------- */
 static int geometry_updates = 0;
@@ -716,6 +719,28 @@ static void test_structure_operators(void)
   CHECK(pg_gp_edit_dispatch(g4, NULL, PG_EDIT_CMD_DISSOLVE, dz, 0) == 0, "dissolve needs a type");
 }
 
+
+static void test_dissolve_keeps_weights_aligned(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDframe *f = add_frame(add_layer(gpd, 0));
+  bGPDstroke *d = add_stroke(f, 4, 0, 0, 0, 10, 0);
+  d->dvert = calloc(4, sizeof(MDeformVert));
+  for (int i = 0; i < 4; i++) {
+    d->dvert[i].totweight = 1;
+    d->dvert[i].dw = calloc(1, sizeof(MDeformWeight));
+    d->dvert[i].dw->weight = (float)i / 10.0f; /* weight tags the original index */
+  }
+  select_points(gpd, d, (1u << 1) | (1u << 2));
+  const int frees_before = pg_test_mem_free_count;
+  CHECK(pg_gp_dissolve(gpd, NULL, PG_DISSOLVE_POINTS) == 1 && d->totpoints == 2, "weighted stroke is dissolved, not skipped");
+  CHECK(pg_test_mem_free_count - frees_before == 2, "the weights of both removed points are freed (no leak)");
+  CHECK(NEAR(d->dvert[0].dw->weight, 0.0f) && NEAR(d->dvert[1].dw->weight, 0.3f), "weights stay with their points");
+  for (int i = 0; i < 2; i++) free(d->dvert[i].dw);
+  free(d->dvert);
+  d->dvert = NULL;
+}
+
 int main(void)
 {
   test_pick();
@@ -733,6 +758,7 @@ int main(void)
   test_stroke_operators();
   test_stroke_operator_edges();
   test_structure_operators();
+  test_dissolve_keeps_weights_aligned();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

@@ -626,6 +626,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     )
                 }
             }
+            Text("Color picker",Modifier.padding(horizontal=20.dp))
+            BlenderColorPicker(controller.materials.colorArgb,{controller.setMaterialColor(it);redraw()})
+            Spacer(Modifier.height(12.dp))
             Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp))
             Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},valueRange=.5f..100f)
             Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
@@ -746,8 +749,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         ListItem(headlineContent={Text("Scale selected stroke 110%")},modifier=Modifier.clickable{controller.scaleSelectedStroke(1.1f,1.1f);redraw()})
         ListItem(headlineContent={Text("Mirror selected stroke X")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(true,false);redraw()})
         ListItem(headlineContent={Text("Mirror selected stroke Y")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(false,true);redraw()})
-        ListItem(headlineContent={Text("Delete selected stroke")},modifier=Modifier.clickable{controller.deleteSelectedStroke();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Duplicate selected stroke")},modifier=Modifier.clickable{controller.duplicateSelectedStroke();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Delete selection")},modifier=Modifier.clickable{if(!controller.deleteSelectedStrokes())controller.deleteSelectedStroke();redraw();onDismiss()})
+        ListItem(headlineContent={Text("Duplicate selection")},modifier=Modifier.clickable{if(!controller.duplicateSelection())controller.duplicateSelectedStroke();redraw();onDismiss()})
         ListItem(headlineContent={Text("Split selected stroke at point 3")},modifier=Modifier.clickable{controller.splitSelectedStroke(2);redraw();onDismiss()})
         ListItem(headlineContent={Text("Subdivide selected stroke")},modifier=Modifier.clickable{controller.subdivideSelectedStroke(1);redraw();onDismiss()})
         ListItem(headlineContent={Text("Close selected stroke")},modifier=Modifier.clickable{controller.closeSelectedStroke();redraw();onDismiss()})

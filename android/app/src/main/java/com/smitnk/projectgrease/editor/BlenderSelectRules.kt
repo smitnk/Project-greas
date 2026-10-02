@@ -188,4 +188,12 @@ object ProjectGreaseSelect {
         if (mode !in PAINT_STROKE..PAINT_BOTH || !finite(factor) || !finite(r, g) || !finite(b)) return null
         return Command(CMD_MOD_TINT, floatArrayOf(mode.toFloat(), factor, r, g, b))
     }
+
+    // MOD_gpencil_legacy_color.c (Hue/Saturation). Defaults: hue 0.5 (no shift), saturation 1, value 1.
+    const val CMD_MOD_COLOR = 44
+
+    fun colorModifier(mode: Int, hue: Float = 0.5f, saturation: Float = 1f, value: Float = 1f): Command? {
+        if (mode !in MODIFY_BOTH..MODIFY_FILL || !finite(hue, saturation) || !finite(value)) return null
+        return Command(CMD_MOD_COLOR, floatArrayOf(mode.toFloat(), hue, saturation, value))
+    }
 }

@@ -689,7 +689,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             "Opacity 100%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 1f, normalize = true) },
             "Lengthen ends 10%" to { controller.applyLengthModifier(0.1f, 0.1f) },
             "Shorten ends 10%" to { controller.applyLengthModifier(-0.1f, -0.1f) },
-            "Tint 50% (current color)" to { controller.applyTintModifier(0.5f) }
+            "Tint 50% (current color)" to { controller.applyTintModifier(0.5f) },
+            "Hue shift +30°" to { controller.applyColorModifier(hue = 0.5f + 1f / 12f) },
+            "Desaturate 50%" to { controller.applyColorModifier(saturation = 0.5f) },
+            "Darken 20%" to { controller.applyColorModifier(value = 0.8f) }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

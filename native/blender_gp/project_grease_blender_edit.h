@@ -42,9 +42,17 @@ enum {
   /* args: mode, start, end, overshoot, use_curvature, point_density, segment_influence,
    * max_angle, invert_curvature */
   PG_EDIT_CMD_MOD_LENGTH = 42,
+  PG_EDIT_CMD_MOD_TINT = 43, /* args: vertex_mode, factor, r, g, b */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 42
+#define PG_EDIT_CMD_LAST 43
+
+/* eGp_Vertex_Mode */
+enum { PG_PAINT_MODE_STROKE = 0, PG_PAINT_MODE_FILL = 1, PG_PAINT_MODE_BOTH = 2 };
+
+/* MOD_gpencil_legacy_tint.c deformStroke(), uniform type, no vertex group or curve. */
+int pg_gp_mod_tint(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
+                   int vertex_mode, float factor, const float rgb[3]);
 
 /* eLengthGpencil_Type */
 enum { PG_LENGTH_RELATIVE = 0, PG_LENGTH_ABSOLUTE = 1 };

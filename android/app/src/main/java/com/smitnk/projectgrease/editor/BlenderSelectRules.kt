@@ -177,4 +177,15 @@ object ProjectGreaseSelect {
         return Command(CMD_MOD_LENGTH, floatArrayOf(mode.toFloat(), start, end, overshoot, flag(useCurvature),
             pointDensity, segmentInfluence, maxAngle, flag(invertCurvature)))
     }
+
+    // MOD_gpencil_legacy_tint.c, uniform type (gradient needs a scene object)
+    const val CMD_MOD_TINT = 43
+    const val PAINT_STROKE = 0
+    const val PAINT_FILL = 1
+    const val PAINT_BOTH = 2
+
+    fun tintModifier(mode: Int, factor: Float, r: Float, g: Float, b: Float): Command? {
+        if (mode !in PAINT_STROKE..PAINT_BOTH || !finite(factor) || !finite(r, g) || !finite(b)) return null
+        return Command(CMD_MOD_TINT, floatArrayOf(mode.toFloat(), factor, r, g, b))
+    }
 }

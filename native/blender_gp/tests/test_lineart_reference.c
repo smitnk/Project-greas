@@ -131,8 +131,12 @@ static int compare_scene(const char *ref_dir, char **f)
 
   PGLineartSegment *seg = NULL;
   const int n = pg_lineart_compute(scene, &st, &seg);
-  SegList ours = {0}, theirs = {0};
+  SegList ours = {0}, theirs = {0}, all = {0};
   for (int i = 0; i < n; i++) {
+    push(&all, seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1);
+    all.v[all.n - 1].object = seg[i].object_index;
+    all.v[all.n - 1].type = seg[i].edge_type;
+    all.v[all.n - 1].occlusion = seg[i].occlusion;
     if (seg[i].occlusion < 0 || seg[i].occlusion > st.level_end) continue;
     push(&ours, seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1);
     ours.v[ours.n - 1].object = seg[i].object_index;
@@ -150,6 +154,7 @@ static int compare_scene(const char *ref_dir, char **f)
     printf("FAIL: reference scene %s: no Blender output at %s\n", f[0], path);
     pg_lite_scene_free(scene);
     free(ours.v);
+    free(all.v);
     return 1;
   }
 
@@ -161,7 +166,21 @@ static int compare_scene(const char *ref_dir, char **f)
     for (int k = 0; k < 2; k++) {
       if (fabs(px[k]) > 1.0 || fabs(py[k]) > 1.0) continue; /* outside the frame */
       a_total++;
-      a_hit += nearest(&ours, px[k], py[k]) <= TOLERANCE;
+      if (nearest(&ours, px[k], py[k]) <= TOLERANCE) {
+        a_hit++;
+      }
+      else if (a_total - a_hit <= 40) {
+        /* Diagnostics: where Blender draws something we do not report as visible. */
+        int best = -1;
+        double bd = 1e30;
+        for (int j = 0; j < all.n; j++) {
+          const double d = dist_point_seg(px[k], py[k], &all.v[j]);
+          if (d < bd) { bd = d; best = j; }
+        }
+        printf("        Blender sample not ours: (%.4f, %.4f) nearest of all ours %.4f away: object %d type 0x%x occlusion %d\n",
+               px[k], py[k], bd, best >= 0 ? all.v[best].object : -9, best >= 0 ? all.v[best].type : 0,
+               best >= 0 ? all.v[best].occlusion : -1);
+      }
     }
   }
   /* ours -> Blender: samples along our visible segments. */
@@ -186,12 +205,7 @@ static int compare_scene(const char *ref_dir, char **f)
              s->object, s->type, s->occlusion, s->x0, s->y0, s->x1, s->y1, seg_total - seg_hit, seg_total);
     }
   }
-  for (int i = 0; i < theirs.n && i < 400; i++) {
-    const Seg *s = &theirs.v[i];
-    if (nearest(&ours, s->x1, s->y1) > TOLERANCE) {
-      printf("        Blender point not ours: (%.4f, %.4f)\n", s->x1, s->y1);
-    }
-  }
+
   const double ca = a_total ? (double)a_hit / a_total : 1.0;
   const double cb = b_total ? (double)b_hit / b_total : 1.0;
   const int ok = ca >= MIN_COVERAGE && cb >= MIN_COVERAGE && (a_total > 0) == (b_total > 0);
@@ -199,6 +213,7 @@ static int compare_scene(const char *ref_dir, char **f)
          ok ? "  ok  " : "FAIL: ", f[0], strokes, ours.n, ca, cb);
   free(ours.v);
   free(theirs.v);
+  free(all.v);
   pg_lite_scene_free(scene);
   return ok ? 0 : 1;
 }

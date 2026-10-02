@@ -661,12 +661,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var exportOpen by remember{mutableStateOf(false)}
     if(exportOpen)ExportDialog(controller,context,{exportOpen=false;onDismiss()})
     val importSvg=rememberSvgImport(controller,context,onDismiss)
+    var traceOpen by remember{mutableStateOf(false)}
+    if(traceOpen)TraceImageDialog(controller,context,{traceOpen=false;onDismiss()})
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Project",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("Open project")},modifier=Modifier.clickable{onDismiss()})
         ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Save as")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Export")},modifier=Modifier.clickable{exportOpen=true})
         ListItem(headlineContent={Text("Import SVG")},supportingContent={Text("Shapes become strokes on the active layer")},modifier=Modifier.clickable{importSvg()})
+        ListItem(headlineContent={Text("Trace image")},supportingContent={Text("Outlines of an image become filled strokes on a new layer")},modifier=Modifier.clickable{traceOpen=true})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});ListItem(headlineContent={Text("Close editor")},modifier=Modifier.clickable{onDismiss();onExit()});Spacer(Modifier.height(20.dp))}
 }
 

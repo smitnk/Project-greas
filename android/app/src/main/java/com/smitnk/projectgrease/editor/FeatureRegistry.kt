@@ -32,7 +32,7 @@ enum class FeatureId {
     NOISE, DASH, OUTLINE, THICKNESS_MODIFIER, COLOR_MODIFIER, DEFORM, GENERATE,
     ADVANCED_INTERPOLATION, LAYER_MASKS, MULTIFRAME, ADVANCED_ONION_SKIN, VISUAL_EFFECTS, LINE_ART,
     NEW_PROJECT, OPEN_PROJECT, SAVE, SAVE_AS, EXPORT, EXPORT_PNG, EXPORT_GIF, EXPORT_ANIMATION,
-    PROJECT_SETTINGS, IMPORT_SVG
+    PROJECT_SETTINGS, IMPORT_SVG, TRACE_IMAGE
 }
 
 data class FeatureCapability(
@@ -215,7 +215,8 @@ object FeatureRegistry {
         FeatureId.EXPORT_GIF to missing("No export pipeline."),
         FeatureId.EXPORT_ANIMATION to missing("No export pipeline."),
         FeatureId.PROJECT_SETTINGS to missing("Only app settings exist; no per-project settings."),
-        FeatureId.IMPORT_SVG to wired("Project > Import SVG (Storage Access Framework): path/polyline/polygon/line/rect/circle/ellipse become strokes on the active layer/frame, curves flattened (SvgImport); viewBox fitted into the canvas keeping aspect; one material slot per distinct stroke/fill color pair (existing slots reused); thickness = stroke-width, cyclic = closed, fill on when the shape has a fill. No transforms, arcs (straight to end point), gradients or CSS. $DEVICE")
+        FeatureId.IMPORT_SVG to wired("Project > Import SVG (Storage Access Framework): path/polyline/polygon/line/rect/circle/ellipse become strokes on the active layer/frame, curves flattened (SvgImport); viewBox fitted into the canvas keeping aspect; one material slot per distinct stroke/fill color pair (existing slots reused); thickness = stroke-width, cyclic = closed, fill on when the shape has a fill. No transforms, arcs (straight to end point), gradients or CSS. $DEVICE"),
+        FeatureId.TRACE_IMAGE to wired("Project > Trace image: threshold (0.5), trace bright areas, tolerance (0.6 px); each outline becomes a closed filled stroke on a new \"Trace\" layer scaled to the canvas, in the active color. DIFFERENCE FROM BLENDER: Blender's Trace Image uses potrace (curve fitting, turd size, corner threshold); Project Grease uses pixel-edge outline tracing + Douglas-Peucker (ImageTrace), so outlines are polygonal. Images are subsampled to <= 1024 px. $DEVICE")
     )
 
     /** Ids that have an explicit entry (the test requires this to equal every FeatureId). */

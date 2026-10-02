@@ -17,6 +17,17 @@ struct Vertex { float x; float y; };
 
 GLuint g_program=0, g_vbo=0;
 GLint g_position=-1, g_color=-1;
+// Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
+GLuint g_mask_program=0;
+GLint g_mask_color=-1, g_mask_sampler=-1, g_mask_size=-1;
+GLuint g_mask_fbo=0, g_mask_tex=0;
+int g_mask_w=0, g_mask_h=0;
+GLuint g_active_mask_tex=0;   // non-zero while a masked layer is drawn
+int g_active_w=1, g_active_h=1;
+// DRAW_REVEALAGE multiplies the target by (1 - alpha) (mask buffer, Blender's "revealage" buffer);
+// DRAW_INVERT replaces the target by 1 - target.
+enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT };
+DrawMode g_draw_mode=DRAW_NORMAL;
 float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
 int g_canvas_width=1280;
 int g_canvas_height=720;
@@ -44,6 +55,10 @@ const char *vs_src(){
 const char *fs_src(){
   return "precision mediump float; varying vec4 v_color; void main(){gl_FragColor=v_color;}";
 }
+const char *mask_fs_src(){
+  return "precision mediump float; varying vec4 v_color; uniform sampler2D u_mask; uniform vec2 u_size; "
+         "void main(){float m=texture2D(u_mask,gl_FragCoord.xy/u_size).r;gl_FragColor=vec4(v_color.rgb,v_color.a*m);}";
+}
 GLuint compile_shader(GLenum type,const char *src){
   GLuint s=glCreateShader(type); if(!s) return 0;
   glShaderSource(s,1,&src,nullptr); glCompileShader(s);
@@ -62,6 +77,37 @@ bool ensure_program(){
   g_position=glGetAttribLocation(g_program,"a_position"); g_color=glGetUniformLocation(g_program,"u_color");
   glGenBuffers(1,&g_vbo);
   return g_position>=0&&g_color>=0&&g_vbo!=0;
+}
+bool ensure_mask_program(){
+  if(g_mask_program) return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,mask_fs_src());
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  g_mask_program=glCreateProgram(); glAttachShader(g_mask_program,vs); glAttachShader(g_mask_program,fs);
+  glBindAttribLocation(g_mask_program,0,"a_position"); glLinkProgram(g_mask_program);
+  glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_mask_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_mask_program);g_mask_program=0;return false;}
+  g_mask_color=glGetUniformLocation(g_mask_program,"u_color");
+  g_mask_sampler=glGetUniformLocation(g_mask_program,"u_mask");
+  g_mask_size=glGetUniformLocation(g_mask_program,"u_size");
+  return g_mask_color>=0&&g_mask_sampler>=0&&g_mask_size>=0;
+}
+bool ensure_mask_target(int w,int h){
+  if(g_mask_fbo&&g_mask_w==w&&g_mask_h==h) return true;
+  if(g_mask_tex){glDeleteTextures(1,&g_mask_tex);g_mask_tex=0;}
+  if(g_mask_fbo){glDeleteFramebuffers(1,&g_mask_fbo);g_mask_fbo=0;}
+  glGenTextures(1,&g_mask_tex);glBindTexture(GL_TEXTURE_2D,g_mask_tex);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+  glGenFramebuffers(1,&g_mask_fbo);
+  GLint prev=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev);
+  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,g_mask_tex,0);
+  const bool complete=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
+  glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev);glBindTexture(GL_TEXTURE_2D,0);
+  g_mask_w=w;g_mask_h=h;
+  return complete;
 }
 inline Vertex ndc(float x,float y,int w,int h){(void)w;(void)h;const float sx=g_map_origin_x+x*g_map_scale;const float sy=g_map_origin_y+y*g_map_scale;return {2.0f*sx/float(std::max(1,w))-1.0f,1.0f-2.0f*sy/float(std::max(1,h))};}
 void append_segment(std::vector<Vertex>&v,const bGPDspoint&a,const bGPDspoint&b,float thickness,int w,int h,float alpha){
@@ -86,14 +132,24 @@ void append_fill(std::vector<Vertex>&v,const bGPDstroke*s,int w,int h){
 }
 void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=true){
   if(v.empty())return;
-  glUseProgram(g_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL&&g_mask_program!=0;
+  const GLuint program=masked?g_mask_program:g_program;
+  const GLint color_loc=masked?g_mask_color:g_color;
+  glUseProgram(program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  if(masked){
+    glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
+    glUniform1i(g_mask_sampler,0);glUniform2f(g_mask_size,float(g_active_w),float(g_active_h));
+  }
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(Vertex)),v.data(),GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray((GLuint)g_position);
   glVertexAttribPointer((GLuint)g_position,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
-  glUniform4f(g_color,color[0],color[1],color[2],color[3]);
-  if(blend){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);}
+  glUniform4f(color_loc,color[0],color[1],color[2],color[3]);
+  if(g_draw_mode==DRAW_REVEALAGE){glEnable(GL_BLEND);glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);}
+  else if(g_draw_mode==DRAW_INVERT){glEnable(GL_BLEND);glBlendFunc(GL_ONE_MINUS_DST_COLOR,GL_ZERO);}
+  else if(blend){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);}
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
-  if(blend)glDisable(GL_BLEND);
+  if(blend||g_draw_mode!=DRAW_NORMAL)glDisable(GL_BLEND);
+  if(masked){glBindTexture(GL_TEXTURE_2D,0);}
   glDisableVertexAttribArray((GLuint)g_position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
 void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
@@ -188,6 +244,58 @@ extern "C" void project_grease_android_set_frame_evaluator(FrameEvaluator fn,voi
   g_frame_evaluator=fn;g_frame_evaluator_user=user;
 }
 
+namespace {
+// A layer is masked when it has GP_LAYER_USE_MASK and at least one valid mask entry: a layer other
+// than itself that is visible, with an entry that is not hidden (gpencil_cache_utils.c).
+const bGPDlayer_Mask* valid_mask_entry(const bGPdata* gpd,const bGPDlayer* layer,const bGPDlayer* mask_layer){
+  if(!mask_layer||mask_layer==layer||(mask_layer->flag&GP_LAYER_HIDE))return nullptr;
+  const bGPDlayer_Mask* entry=BKE_gpencil_layer_mask_named_get(const_cast<bGPDlayer*>(layer),mask_layer->info);
+  (void)gpd;
+  if(!entry||(entry->flag&GP_MASK_HIDE))return nullptr;
+  return entry;
+}
+bool layer_is_masked(const bGPdata* gpd,const bGPDlayer* layer){
+  if(!(layer->flag&GP_LAYER_USE_MASK)||layer->mask_layers.first==nullptr)return false;
+  for(const bGPDlayer* m=static_cast<const bGPDlayer*>(gpd->layers.first);m;m=m->next){
+    if(valid_mask_entry(gpd,layer,m))return true;
+  }
+  return false;
+}
+void draw_invert_pass(int w,int h){
+  (void)w;(void)h;
+  const std::vector<Vertex> quad={{-1,-1},{1,-1},{-1,1},{-1,1},{1,-1},{1,1}};
+  const float white[4]={1,1,1,1};
+  g_draw_mode=DRAW_INVERT;draw_vertices(quad,white,false);g_draw_mode=DRAW_NORMAL;
+}
+// Renders the opacity mask of `layer` into the offscreen target and returns its texture (0 when
+// there is nothing to mask with). gpencil_engine.c gpencil_draw_mask(): the buffer starts at 1
+// ("revealage"), every mask layer multiplies it by (1 - alpha), an inverted entry flips the buffer
+// before it is drawn, and the result is flipped back to an opacity mask, so masks combine as a union.
+GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_number,int w,int h){
+  if(!ensure_mask_program()||!ensure_mask_target(w,h))return 0;
+  GLint prev_fbo=0,vp[4]={0,0,0,0};
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev_fbo);glGetIntegerv(GL_VIEWPORT,vp);
+  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);glViewport(0,0,w,h);
+  bool cleared=false,inverted=false;
+  for(const bGPDlayer* m=static_cast<const bGPDlayer*>(gpd->layers.first);m;m=m->next){
+    const bGPDlayer_Mask* entry=valid_mask_entry(gpd,layer,m);
+    if(!entry)continue;
+    const bool invert=(entry->flag&GP_MASK_INVERT)!=0;
+    if(invert!=inverted){if(cleared)draw_invert_pass(w,h);inverted=!inverted;}
+    if(!cleared){cleared=true;glClearColor(1,1,1,1);glClear(GL_COLOR_BUFFER_BIT);}
+    const bGPDframe* frame=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(m),frame_number,GP_GETFRAME_USE_PREV);
+    if(!frame)continue;
+    const bGPDframe* shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,m,frame,frame_number):frame;
+    g_draw_mode=DRAW_REVEALAGE;
+    draw_frame(gpd,m,shown?shown:frame,w,h,1.0f);
+    g_draw_mode=DRAW_NORMAL;
+  }
+  if(cleared&&!inverted)draw_invert_pass(w,h);
+  glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev_fbo);glViewport(vp[0],vp[1],vp[2],vp[3]);
+  return cleared?g_mask_tex:0;
+}
+} // namespace
+
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
@@ -207,6 +315,11 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     if(layer->flag&GP_LAYER_HIDE)continue;
     bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(layer),frame_number,GP_GETFRAME_USE_PREV);
     if(!current)continue;
+    // Layers without masks keep the direct path; a masked layer is multiplied by its mask texture.
+    if(layer_is_masked(gpd,layer)){
+      g_active_mask_tex=render_layer_mask(gpd,layer,frame_number,w,h);
+      g_active_w=w;g_active_h=h;
+    }
     if(layer->onion_flag&GP_LAYER_ONIONSKIN){
       const float base=std::max(0.0f,std::min(gpd->onion_factor,1.0f));
       int steps=std::max(0,(int)layer->gstep);
@@ -222,6 +335,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     }
     const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
     draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
+    g_active_mask_tex=0;
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
   draw_sbuffer(gpd, 1.0f, w, h);
@@ -334,4 +448,6 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom,flo
   g_view_pan_y=pan_y;
 }
 extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
-extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;}
+extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
+  if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
+  g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;}

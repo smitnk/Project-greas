@@ -629,6 +629,7 @@ void Backend::shutdown()
         MEM_freeN(frame);
         frame = next_frame;
       }
+      BKE_gpencil_free_layer_masks(layer);
       MEM_freeN(layer);
       layer = next_layer;
     }
@@ -724,6 +725,7 @@ bool Backend::reset_document()
         MEM_freeN(frame);
         frame = next_frame;
       }
+      BKE_gpencil_free_layer_masks(layer);
       MEM_freeN(layer);
       layer = next_layer;
     }
@@ -971,8 +973,19 @@ bool Backend::rename_layer(int index, const char* name)
 {
   bGPDlayer *layer = layer_at(impl_->gpd, index);
   if (!layer || !name || !name[0]) { impl_->last_error = "invalid layer rename"; return false; }
+  char old_name[sizeof(layer->info)];
+  std::memcpy(old_name, layer->info, sizeof(old_name));
   std::strncpy(layer->info, name, sizeof(layer->info) - 1);
   layer->info[sizeof(layer->info) - 1] = '\0';
+  /* Masks refer to layers by name: follow the rename. */
+  LISTBASE_FOREACH (bGPDlayer *, other, &impl_->gpd->layers) {
+    LISTBASE_FOREACH (bGPDlayer_Mask *, mask, &other->mask_layers) {
+      if (std::strncmp(mask->name, old_name, sizeof(mask->name)) == 0) {
+        std::strncpy(mask->name, layer->info, sizeof(mask->name) - 1);
+        mask->name[sizeof(mask->name) - 1] = '\0';
+      }
+    }
+  }
   project_grease_gp_tag(impl_->gpd);
   return true;
 }
@@ -1047,7 +1060,8 @@ int Backend::frame_numbers(int *out_frames, int capacity) const
   return count;
 }
 
-bool Backend::interpolate_frame(int source_frame, int target_frame, int result_frame, float factor)
+bool Backend::interpolate_frame(int source_frame, int target_frame, int result_frame, float factor,
+                                int easing_type, int easing_mode)
 {
   if (!impl_->layer || source_frame < 1 || target_frame < 1 || result_frame < 1 ||
       result_frame == source_frame || result_frame == target_frame) {
@@ -1068,6 +1082,9 @@ bool Backend::interpolate_frame(int source_frame, int target_frame, int result_f
     impl_->last_error = "interpolation factor must be in range 0..1";
     return false;
   }
+
+  /* Blender's default "back" overshoot (BLI_easing_back_ease_*: 1.70158). */
+  factor = pg_gp_interpolate_easing(easing_type, easing_mode, factor, 1.70158f);
 
   bGPDframe *result = BKE_gpencil_frame_duplicate(source, true);
   if (!result) {
@@ -3703,6 +3720,89 @@ bool Backend::modifier_apply(int layer_index, int modifier_index)
   stack->erase(stack->begin() + modifier_index);
   impl_->stack_revision++;
   BKE_gpencil_stats_update(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::layer_use_mask(int layer_index) const
+{
+  const bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  return layer != nullptr && (layer->flag & GP_LAYER_USE_MASK) != 0;
+}
+
+bool Backend::set_layer_use_mask(int layer_index, bool enabled)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  if (!layer) { impl_->last_error = "layer index out of range"; return false; }
+  if (enabled) layer->flag |= GP_LAYER_USE_MASK;
+  else layer->flag &= ~GP_LAYER_USE_MASK;
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::mask_count(int layer_index) const
+{
+  const bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  return layer ? BLI_listbase_count(&layer->mask_layers) : 0;
+}
+
+bool Backend::mask_add(int layer_index, int mask_layer_index)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  bGPDlayer *mask_layer = layer_at(impl_->gpd, mask_layer_index);
+  if (!layer || !mask_layer || layer == mask_layer) {
+    impl_->last_error = "invalid mask layer";
+    return false;
+  }
+  if (BKE_gpencil_layer_mask_named_get(layer, mask_layer->info) != nullptr) {
+    impl_->last_error = "layer is already a mask";
+    return false;
+  }
+  BKE_gpencil_layer_mask_add(layer, mask_layer->info);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+static bGPDlayer_Mask *mask_at(bGPDlayer *layer, int index)
+{
+  return layer && index >= 0
+             ? static_cast<bGPDlayer_Mask *>(BLI_findlink(&layer->mask_layers, index))
+             : nullptr;
+}
+
+bool Backend::mask_remove(int layer_index, int mask_index)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  bGPDlayer_Mask *mask = mask_at(layer, mask_index);
+  if (!mask) { impl_->last_error = "mask index out of range"; return false; }
+  BKE_gpencil_layer_mask_remove(layer, mask);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::mask_get(int layer_index, int mask_index, char *name, int name_capacity, int *flags) const
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  const bGPDlayer_Mask *mask = mask_at(layer, mask_index);
+  if (!mask) return false;
+  if (name && name_capacity > 0) {
+    std::strncpy(name, mask->name, static_cast<size_t>(name_capacity) - 1);
+    name[name_capacity - 1] = '\0';
+  }
+  if (flags) *flags = ((mask->flag & GP_MASK_HIDE) ? 1 : 0) | ((mask->flag & GP_MASK_INVERT) ? 2 : 0);
+  return true;
+}
+
+bool Backend::mask_set_flags(int layer_index, int mask_index, int flags)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  bGPDlayer_Mask *mask = mask_at(layer, mask_index);
+  if (!mask) { impl_->last_error = "mask index out of range"; return false; }
+  mask->flag = static_cast<short>(((flags & 1) ? GP_MASK_HIDE : 0) | ((flags & 2) ? GP_MASK_INVERT : 0));
   project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;

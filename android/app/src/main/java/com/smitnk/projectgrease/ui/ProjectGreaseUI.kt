@@ -597,6 +597,41 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+/** Mask list of the selected layer: it is drawn only where the union of its mask layers has coverage. */
+@Composable private fun LayerMaskSection(controller:EditorController,redraw:()->Unit){
+    val layer=controller.selectedLayer
+    var tick by remember{mutableStateOf(0)}
+    var addMenu by remember{mutableStateOf(false)}
+    val masks=remember(tick,layer,controller.layerCount()){controller.layerMasks(layer)}
+    val useMask=remember(tick,layer){controller.layerUsesMask(layer)}
+    fun changed(ok:Boolean){if(ok){tick++;redraw()}}
+    Text("Masks",Modifier.padding(horizontal=12.dp,vertical=8.dp),fontWeight=FontWeight.Bold)
+    Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
+        Text("Use mask",Modifier.weight(1f))
+        Switch(checked=useMask,onCheckedChange={changed(controller.setLayerUsesMask(it,layer))})
+    }
+    masks.forEachIndexed{index,mask->
+        Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=3.dp)){
+            Text(mask.name,fontWeight=FontWeight.Bold)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+                Text("Invert",Modifier.padding(end=6.dp));Switch(checked=mask.inverted,onCheckedChange={changed(controller.setLayerMaskFlags(index,mask.hidden,it,layer))})
+                Spacer(Modifier.width(10.dp))
+                Text("Hide",Modifier.padding(end=6.dp));Switch(checked=mask.hidden,onCheckedChange={changed(controller.setLayerMaskFlags(index,it,mask.inverted,layer))})
+                TextButton(onClick={changed(controller.removeLayerMask(index,layer))}){Text("Remove")}
+            }
+        }
+    }
+    val candidates=(0 until controller.layerCount()).filter{it!=layer && masks.none{m->m.name==controller.layerName(it)}}
+    Box(Modifier.padding(horizontal=12.dp)){
+        Button(onClick={addMenu=true},enabled=candidates.isNotEmpty(),modifier=Modifier.fillMaxWidth()){Text("Add mask layer")}
+        DropdownMenu(expanded=addMenu,onDismissRequest={addMenu=false}){
+            candidates.forEach{index->
+                DropdownMenuItem(text={Text(controller.layerName(index))},onClick={addMenu=false;changed(controller.addLayerMask(index,layer))})
+            }
+        }
+    }
+}
+
 @Composable private fun LayersSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     // Switch and name state come from the native layer, not from fixed defaults, and are re-read
     // whenever the selected layer or the layer list changes.
@@ -607,6 +642,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var renameOpen by remember{mutableStateOf(false)}
     var renameText by remember(layerKey){mutableStateOf(layerState?.name?.takeIf{it.isNotBlank()} ?: ("Layer "+(controller.selectedLayer+1)))}
     ModalBottomSheet(onDismissRequest=onDismiss){
+      Column(Modifier.verticalScroll(rememberScrollState())){
         Text("Layers",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         Text(layerState?.name?.takeIf{it.isNotBlank()} ?: ("Layer "+(controller.selectedLayer+1)),Modifier.padding(horizontal=20.dp))
         Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
@@ -627,7 +663,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Text("Locked",Modifier.weight(1f))
             Switch(checked=locked,onCheckedChange={locked=it;controller.setLayerLocked(controller.selectedLayer,it);redraw()})
         }
+        LayerMaskSection(controller,redraw)
         Spacer(Modifier.height(20.dp))
+      }
     }
     if(renameOpen){
         AlertDialog(
@@ -944,6 +982,29 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 modifier=Modifier.padding(horizontal=16.dp)
             )
             Button(onClick={controller.animation.togglePlayback()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text(if(controller.animation.playing)"Pause" else "Play")}
+            Text("In-between easing",Modifier.padding(horizontal=16.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
+            var easingTick by remember{mutableStateOf(0)}
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
+                listOf("Linear","Quad","Cubic","Quart","Quint","Sine","Expo","Circ","Back","Bounce").forEachIndexed{type,label->
+                    FilterChip(
+                        selected=controller.animation.easingType==type,
+                        onClick={controller.animation.setEasing(type,controller.animation.easingMode);easingTick++},
+                        label={Text(label,fontSize=10.sp)},
+                        modifier=Modifier.padding(end=3.dp)
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
+                listOf("In","Out","In-Out").forEachIndexed{mode,label->
+                    FilterChip(
+                        selected=controller.animation.easingMode==mode,
+                        enabled=controller.animation.easingType!=0,
+                        onClick={controller.animation.setEasing(controller.animation.easingType,mode);easingTick++},
+                        label={Text(label,fontSize=10.sp)},
+                        modifier=Modifier.padding(end=3.dp)
+                    )
+                }
+            }
             Button(onClick={controller.animation.interpolateAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Button(onClick={controller.view.reset();controller.render()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Reset canvas view")}

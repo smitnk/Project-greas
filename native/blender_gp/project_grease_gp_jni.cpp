@@ -200,6 +200,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFrameNumbers(JNIEnv *e
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeInterpolateFrameEased(JNIEnv *, jobject, jlong handle, jint source_frame, jint target_frame, jint result_frame, jfloat factor, jint easing_type, jint easing_mode)
+{
+  return project_grease_gp_interpolate_frame_eased(from_handle(handle), source_frame, target_frame, result_frame, factor, easing_type, easing_mode) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeInterpolateFrame(JNIEnv *, jobject, jlong handle, jint source_frame, jint target_frame, jint result_frame, jfloat factor)
 {
   return project_grease_gp_interpolate_frame(from_handle(handle), source_frame, target_frame, result_frame, factor) != 0;
@@ -599,6 +605,61 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerOpacity(
     JNIEnv *, jobject, jlong handle, jint index, jfloat opacity)
 {
   return project_grease_gp_set_layer_opacity(from_handle(handle), index, opacity) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLayerUseMask(JNIEnv *, jobject, jlong handle, jint layer)
+{
+  return project_grease_gp_layer_use_mask(from_handle(handle), layer) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerUseMask(JNIEnv *, jobject, jlong handle, jint layer, jboolean enabled)
+{
+  return project_grease_gp_set_layer_use_mask(from_handle(handle), layer, enabled ? 1 : 0) != 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaskCount(JNIEnv *, jobject, jlong handle, jint layer)
+{
+  return project_grease_gp_mask_count(from_handle(handle), layer);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaskAdd(JNIEnv *, jobject, jlong handle, jint layer, jint mask_layer)
+{
+  return project_grease_gp_mask_add(from_handle(handle), layer, mask_layer) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaskRemove(JNIEnv *, jobject, jlong handle, jint layer, jint index)
+{
+  return project_grease_gp_mask_remove(from_handle(handle), layer, index) != 0;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaskName(JNIEnv *env, jobject, jlong handle, jint layer, jint index)
+{
+  char name[128] = {};
+  int flags = 0;
+  if (!project_grease_gp_mask_get(from_handle(handle), layer, index, name, sizeof(name), &flags)) return nullptr;
+  return env->NewStringUTF(name);
+}
+
+/* bit 0 hidden, bit 1 inverted; -1 when the entry does not exist. */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaskFlags(JNIEnv *, jobject, jlong handle, jint layer, jint index)
+{
+  char name[128] = {};
+  int flags = 0;
+  if (!project_grease_gp_mask_get(from_handle(handle), layer, index, name, sizeof(name), &flags)) return -1;
+  return flags;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaskSetFlags(JNIEnv *, jobject, jlong handle, jint layer, jint index, jint flags)
+{
+  return project_grease_gp_mask_set_flags(from_handle(handle), layer, index, flags) != 0;
 }
 
 extern "C" JNIEXPORT jint JNICALL

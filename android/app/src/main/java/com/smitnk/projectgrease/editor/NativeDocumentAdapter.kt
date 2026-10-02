@@ -87,6 +87,27 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             native.modifierSetEnabled(layer, index, record.enabled)
     }
 
+    override fun layerUseMask(layer: Int) = native.layerUseMask(layer)
+
+    override fun layerMasks(layer: Int): List<MaskRecord> =
+        (0 until native.maskCount(layer)).mapNotNull { index ->
+            val name = native.maskName(layer, index) ?: return@mapNotNull null
+            val flags = native.maskFlags(layer, index).takeIf { it >= 0 } ?: return@mapNotNull null
+            MaskRecord(name, (flags and 1) != 0, (flags and 2) != 0)
+        }
+
+    override fun restoreLayerMasks(layer: Int, useMask: Boolean, masks: List<MaskRecord>): Boolean {
+        for (mask in masks) {
+            // A name that no layer has any more (hand-edited file) is dropped, not an error.
+            val maskLayer = (0 until native.layerCount()).firstOrNull { native.layerName(it) == mask.name } ?: continue
+            if (maskLayer == layer || !native.maskAdd(layer, maskLayer)) continue
+            val index = native.maskCount(layer) - 1
+            val flags = (if (mask.hidden) 1 else 0) or (if (mask.inverted) 2 else 0)
+            if (flags != 0 && !native.maskSetFlags(layer, index, flags)) return false
+        }
+        return native.setLayerUseMask(layer, useMask)
+    }
+
     override fun createMaterial() = native.createMaterial()
 
     override fun applyMaterialRecord(index: Int, record: MaterialRecord) =

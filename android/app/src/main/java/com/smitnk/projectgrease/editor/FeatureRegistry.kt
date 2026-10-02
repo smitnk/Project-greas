@@ -30,7 +30,7 @@ enum class FeatureId {
     STROKE_TEXTURES, FILL_TEXTURES, TEXTURE_SETTINGS, TEXTURE_SCALE, TEXTURE_OPACITY,
     STROKE_EFFECTS, FILL_EFFECTS, MODIFIERS, MODIFIER_ORDERING,
     NOISE, DASH, OUTLINE, THICKNESS_MODIFIER, COLOR_MODIFIER, DEFORM, GENERATE,
-    ADVANCED_INTERPOLATION, MULTIFRAME, ADVANCED_ONION_SKIN, VISUAL_EFFECTS, LINE_ART,
+    ADVANCED_INTERPOLATION, LAYER_MASKS, MULTIFRAME, ADVANCED_ONION_SKIN, VISUAL_EFFECTS, LINE_ART,
     NEW_PROJECT, OPEN_PROJECT, SAVE, SAVE_AS, EXPORT, EXPORT_PNG, EXPORT_GIF, EXPORT_ANIMATION,
     PROJECT_SETTINGS
 }
@@ -139,7 +139,7 @@ object FeatureRegistry {
         FeatureId.FPS to wired("$DEVICE"),
         FeatureId.FRAME_NAVIGATION to wired("$DEVICE"),
         FeatureId.KEYFRAME to wired("A frame is a keyframe once created. $DEVICE"),
-        FeatureId.INTERPOLATION to wired("Linear interpolation only for matching stroke and point counts; Blender's pairing/easing not ported. $DEVICE"),
+        FeatureId.INTERPOLATION to wired("In-between frames for matching stroke and point counts with Blender's easing (Linear, Quad..Bounce; In/Out/In-Out) applied to the factor before mixing; Back uses the default overshoot, Elastic is not ported, and Blender's stroke pairing for unequal counts is not. $DEVICE"),
         FeatureId.ONION_SKIN to wired("Sets Legacy GP onion flags; ghost rendering in the Android presentation not inspected. $DEVICE"),
         FeatureId.ONION_RANGE to wired("Sets layer gstep/gstep_next; ghost rendering not inspected. $DEVICE"),
         FeatureId.ONION_OPACITY to wired("Sets gpd->onion_factor; ghost rendering not inspected. $DEVICE"),
@@ -200,6 +200,7 @@ object FeatureRegistry {
         FeatureId.STROKE_EFFECTS to blocked("Shader effects need the full DRW pipeline."),
         FeatureId.FILL_EFFECTS to blocked("Shader effects need the full DRW pipeline."),
         FeatureId.VISUAL_EFFECTS to blocked("Shader effects need the full DRW pipeline."),
+        FeatureId.LAYER_MASKS to wired("Per-layer mask list with use-mask, invert and hide; the GLES presentation draws a masked layer through an offscreen opacity mask (union of mask layers, Blender's revealage/invert sequence). Pixel-tested on a software GLES2 context, not on a device; onion-skin ghosts of a masked layer are masked too; the fill tool and export ignore masks. $DEVICE"),
         FeatureId.ADVANCED_INTERPOLATION to missing("Blender's sequence interpolation is not ported."),
         FeatureId.ADVANCED_ONION_SKIN to missing("Mode/keyframe-type options not exposed."),
         FeatureId.LINE_ART to blocked("Needs a minimal scene/object/depsgraph closure that is not established."),

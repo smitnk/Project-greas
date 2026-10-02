@@ -63,7 +63,11 @@ class Backend {
   int frame_count() const;
   int frame_end() const;
   int frame_numbers(int *out_frames, int capacity) const;
-  bool interpolate_frame(int source_frame, int target_frame, int result_frame, float factor);
+  // `factor` is the linear position between the frames; it is eased with
+  // pg_gp_interpolate_easing(easing_type, easing_mode, factor) (PG_EASE_*, default Linear) before the
+  // points are mixed, as gpencil_interpolate.c does.
+  bool interpolate_frame(int source_frame, int target_frame, int result_frame, float factor,
+                         int easing_type = 0, int easing_mode = 0);
   bool duplicate_frame(int source_frame, int target_frame);
   bool delete_frame(int frame_number);
   int stroke_count() const;
@@ -129,6 +133,19 @@ class Backend {
   // Restores a stroke exactly as saved: no paint-stage smoothing, selection untouched.
   bool add_stroke(const StrokePoint* points, int count, const PGStrokeInfo& info);
   bool get_layer_info(int index, PGLayerInfo* out) const;
+
+  // Layer masks (bGPDlayer::mask_layers, GP_LAYER_USE_MASK, GP_MASK_INVERT/GP_MASK_HIDE): a masked
+  // layer is drawn only where the union of its mask layers has coverage (inverted entries: where
+  // they have none), as gpencil_engine.c gpencil_draw_mask() does. Masks refer to layers by name.
+  bool layer_use_mask(int layer_index) const;
+  bool set_layer_use_mask(int layer_index, bool enabled);
+  int mask_count(int layer_index) const;
+  // Adds the layer `mask_layer_index` (not the layer itself, no duplicates) to the mask list.
+  bool mask_add(int layer_index, int mask_layer_index);
+  bool mask_remove(int layer_index, int mask_index);
+  // Name of the mask entry (empty when out of range) and its flags (bit 0 hidden, bit 1 inverted).
+  bool mask_get(int layer_index, int mask_index, char* name, int name_capacity, int* flags) const;
+  bool mask_set_flags(int layer_index, int mask_index, int flags);
 
   // Live (non-destructive) per-layer modifier stack, see project_grease_modifier_stack.h. The stack
   // is document state: strokes are never modified until modifier_apply().

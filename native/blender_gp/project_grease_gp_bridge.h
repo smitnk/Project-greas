@@ -73,6 +73,8 @@ int project_grease_gp_frame_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_frame_numbers(const ProjectGreaseGPHandle *handle, int *out_frames, int capacity);
 int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor);
+/* easing_type/easing_mode: PG_EASE_* of project_grease_blender_edit.h */
+int project_grease_gp_interpolate_frame_eased(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor, int easing_type, int easing_mode);
 int project_grease_gp_duplicate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame);
 int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index);
@@ -175,6 +177,15 @@ int project_grease_gp_get_point_color(const ProjectGreaseGPHandle *handle,
                                       float out_rgba[4]);
 int project_grease_gp_get_layer_info(const ProjectGreaseGPHandle *handle, int index, PGLayerInfo *out);
 int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index, float opacity);
+/* Layer masks (names refer to layers; flags: bit 0 hidden, bit 1 inverted). */
+int project_grease_gp_layer_use_mask(const ProjectGreaseGPHandle *handle, int layer_index);
+int project_grease_gp_set_layer_use_mask(ProjectGreaseGPHandle *handle, int layer_index, int enabled);
+int project_grease_gp_mask_count(const ProjectGreaseGPHandle *handle, int layer_index);
+int project_grease_gp_mask_add(ProjectGreaseGPHandle *handle, int layer_index, int mask_layer_index);
+int project_grease_gp_mask_remove(ProjectGreaseGPHandle *handle, int layer_index, int mask_index);
+int project_grease_gp_mask_get(const ProjectGreaseGPHandle *handle, int layer_index, int mask_index, char *name, int name_capacity, int *flags);
+int project_grease_gp_mask_set_flags(ProjectGreaseGPHandle *handle, int layer_index, int mask_index, int flags);
+
 /* Live per-layer modifier stack (project_grease_modifier_stack.h). */
 int project_grease_gp_modifier_count(const ProjectGreaseGPHandle *handle, int layer_index);
 int project_grease_gp_modifier_add(ProjectGreaseGPHandle *handle, int layer_index, int type); /* index or -1 */

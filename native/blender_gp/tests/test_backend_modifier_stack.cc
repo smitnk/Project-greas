@@ -197,6 +197,60 @@ int main()
   f0 = static_cast<bGPDframe *>(layer0->frames.first);
   CHECK(std::fabs(first_x(f0) - x_before) < 1e-3f);
 
+  /* --- interpolation easing: Quad In at t = 0.5 places points 25% of the way --- */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f); /* frame 1: x = 0, 20, 40, 60, 80 */
+    CHECK(b.create_frame(10));
+    add_line(b, 100.0f, 0.0f); /* frame 10: x = 100 ... */
+    CHECK(b.interpolate_frame(1, 10, 3, 0.5f, 1 /* Quad */, 0 /* In */));
+    bGPDlayer *lay = b.active_layer_data();
+    bGPDframe *f3 = nullptr;
+    for (bGPDframe *f = static_cast<bGPDframe *>(lay->frames.first); f; f = f->next) {
+      if (f->framenum == 3) f3 = f;
+    }
+    CHECK(f3 != nullptr);
+    if (f3) {
+      CHECK(std::fabs(first_x(f3) - 25.0f) < 1e-3f);
+    }
+    CHECK(b.interpolate_frame(1, 10, 4, 0.5f)); /* default Linear: halfway */
+    for (bGPDframe *f = static_cast<bGPDframe *>(lay->frames.first); f; f = f->next) {
+      if (f->framenum == 4) CHECK(std::fabs(first_x(f) - 50.0f) < 1e-3f);
+    }
+    CHECK(b.interpolate_frame(1, 10, 5, 0.5f, 1, 1 /* Quad Out */));
+    for (bGPDframe *f = static_cast<bGPDframe *>(lay->frames.first); f; f = f->next) {
+      if (f->framenum == 5) CHECK(std::fabs(first_x(f) - 75.0f) < 1e-3f);
+    }
+  }
+
+  /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */
+  {
+    CHECK(b.reset_document());
+    CHECK(b.create_layer("B") && b.create_layer("C"));
+    CHECK(b.layer_count() == 3 && b.mask_count(0) == 0 && !b.layer_use_mask(0));
+    CHECK(!b.mask_add(0, 0) && !b.mask_add(0, 9)); /* not itself, not a missing layer */
+    CHECK(b.mask_add(2, 0) && b.mask_add(2, 1) && !b.mask_add(2, 1)); /* no duplicates */
+    CHECK(b.mask_count(2) == 2);
+    char name[128];
+    int flags = -1;
+    CHECK(b.mask_get(2, 0, name, sizeof(name), &flags) && std::strcmp(name, "Layer 1") == 0 && flags == 0);
+    CHECK(b.mask_set_flags(2, 1, 3) && b.mask_get(2, 1, name, sizeof(name), &flags) && flags == 3);
+    CHECK(!b.mask_set_flags(2, 5, 1) && !b.mask_get(2, 5, name, sizeof(name), &flags));
+    CHECK(b.set_layer_use_mask(2, true) && b.layer_use_mask(2));
+    CHECK(b.rename_layer(1, "Renamed")); /* masks follow a rename */
+    CHECK(b.mask_get(2, 1, name, sizeof(name), &flags) && std::strcmp(name, "Renamed") == 0);
+    CHECK(b.duplicate_layer(2)); /* the copy has the same masks */
+    CHECK(b.layer_count() == 4 && b.mask_count(3) == 2 && b.layer_use_mask(3));
+    CHECK(b.history_reset());
+    CHECK(b.delete_layer(1)); /* deleting a mask layer removes the references to it */
+    CHECK(b.layer_count() == 3 && b.mask_count(1) == 1 && b.mask_count(2) == 1);
+    CHECK(b.history_record());
+    CHECK(b.history_undo()); /* undo restores the layer and its references */
+    CHECK(b.layer_count() == 4 && b.mask_count(2) == 2 && b.mask_count(3) == 2);
+    CHECK(b.mask_remove(3, 0) && b.mask_count(3) == 1);
+    CHECK(!b.mask_remove(3, 4));
+  }
+
   /* --- reset clears every stack --- */
   CHECK(b.reset_document());
   CHECK(b.layer_count() == 1 && b.modifier_count(0) == 0);

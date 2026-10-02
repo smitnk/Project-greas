@@ -128,6 +128,17 @@ jobs:
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 
+      - name: Install software GLES (Mesa EGL) for the render tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libegl-dev libgles2 libgles-dev libegl-mesa0 libgl1-mesa-dri
+
+      - name: Run native render tests (software GLES2)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+          PG_REQUIRE_GL: "1"
+        run: bash tools/run_native_render_tests.sh
+
       - name: Run native modifier stack tests
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
@@ -173,7 +184,7 @@ jobs:
           import zipfile
           apk = zipfile.ZipFile("android/app/build/outputs/apk/debug/app-debug.apk")
           dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
-          for text in (b"Mirror copy (X+Y)", b"Select by vertex color", b"Extrude ends", b"Resample (8 px)", b"Thickness x2 by weight"):
+          for text in (b"Add mask layer", b"In-between easing", b"Mirror copy (X+Y)", b"Select by vertex color", b"Extrude ends", b"Resample (8 px)", b"Thickness x2 by weight"):
               assert text in dex, "APK lacks the UI entry " + text.decode()
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"

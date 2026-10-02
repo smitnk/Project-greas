@@ -13,7 +13,9 @@ private class FakeDocument : DocumentNative {
     class Layer(
         var record: LayerRecord,
         val frames: MutableList<Frame> = mutableListOf(),
-        val modifiers: MutableList<ModifierRecord> = mutableListOf()
+        val modifiers: MutableList<ModifierRecord> = mutableListOf(),
+        var useMask: Boolean = false,
+        val masks: MutableList<MaskRecord> = mutableListOf()
     )
 
     val layers = mutableListOf(Layer(LayerRecord("GP_Layer", true, false, 1f)))
@@ -42,6 +44,18 @@ private class FakeDocument : DocumentNative {
     override fun materialCount() = materials.size
     override fun materialRecord(index: Int) = materials.getOrNull(index)
 
+    override fun layerUseMask(layer: Int) = layers.getOrNull(layer)?.useMask ?: false
+    override fun layerMasks(layer: Int) = layers.getOrNull(layer)?.masks?.toList() ?: emptyList()
+    /** Mirrors the native rule: a mask must name another existing layer, unknown names are dropped. */
+    override fun restoreLayerMasks(layer: Int, useMask: Boolean, masks: List<MaskRecord>): Boolean {
+        val target = layers.getOrNull(layer) ?: return false
+        for (mask in masks) {
+            if (mask.name == target.record.name || layers.none { it.record.name == mask.name }) continue
+            target.masks.add(mask)
+        }
+        target.useMask = useMask
+        return true
+    }
     override fun modifierCount(layer: Int) = layers.getOrNull(layer)?.modifiers?.size ?: 0
     override fun modifierRecord(layer: Int, index: Int) = layers.getOrNull(layer)?.modifiers?.getOrNull(index)
     override fun addModifier(layer: Int, record: ModifierRecord): Boolean {
@@ -127,6 +141,12 @@ class ProjectDocumentRoundTripTest {
         doc.addModifier(0, ModifierRecord(ModifierType.OFFSET, true, FloatArray(ModifierSpecs.paramCount(ModifierType.OFFSET)) { 0.25f * it - 1f }))
         doc.addModifier(0, ModifierRecord(ModifierType.NOISE, false, FloatArray(ModifierSpecs.paramCount(ModifierType.NOISE)) { 0.5f + it }))
         doc.addModifier(2, ModifierRecord(ModifierType.SMOOTH, true, floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f)))
+
+        // masks: "Colors" is masked by "Sketch" (inverted) and "Inks" (hidden); "Inks" has the flag off
+        doc.layers[2].useMask = true
+        doc.layers[2].masks.add(MaskRecord("Sketch", hidden = false, inverted = true))
+        doc.layers[2].masks.add(MaskRecord("Inks", hidden = true, inverted = false))
+        doc.layers[1].masks.add(MaskRecord("Sketch")) // a mask list with use-mask off still round-trips
         return doc
     }
 
@@ -147,6 +167,9 @@ class ProjectDocumentRoundTripTest {
             assertEquals("layer $li locked", el.record.locked, al.record.locked)
             assertEquals("layer $li opacity", el.record.opacity, al.record.opacity, 0f)
             assertEquals("layer $li frames", el.frames.map { it.number }, al.frames.map { it.number })
+            assertEquals("layer $li use mask", el.useMask, al.useMask)
+            assertEquals("layer $li masks", el.masks.map { Triple(it.name, it.hidden, it.inverted) },
+                al.masks.map { Triple(it.name, it.hidden, it.inverted) })
             assertEquals("layer $li modifier count", el.modifiers.size, al.modifiers.size)
             el.modifiers.forEachIndexed { mi, em ->
                 val am = al.modifiers[mi]
@@ -213,6 +236,36 @@ class ProjectDocumentRoundTripTest {
         assertTrue(restored.layers[1].modifiers.isEmpty())
         assertEquals(listOf(ModifierType.SMOOTH), restored.layers[2].modifiers.map { it.type })
         assertArrayEquals(floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f), restored.layers[2].modifiers[0].params, 0f)
+    }
+
+    @Test
+    fun layerMasksSurviveARoundTripAndRefOnlyLaterLayers() {
+        val restored = load(save(sampleDocument()))
+        assertTrue(restored.layers[2].useMask)
+        assertEquals(listOf("Sketch" to true, "Inks" to false), restored.layers[2].masks.map { it.name to it.inverted })
+        assertEquals(listOf(false, true), restored.layers[2].masks.map { it.hidden })
+        assertFalse(restored.layers[1].useMask)
+        assertEquals(1, restored.layers[1].masks.size)
+        // a file whose first layer names a LATER layer as its mask: resolved after all layers exist
+        val raw = """{"version":4,"layers":[
+            {"index":0,"name":"Top","visible":true,"locked":false,"opacity":1,"frames":[],"useMask":true,
+             "masks":[{"name":"Below","invert":true},{"name":"Gone"},{"name":"Top"}]},
+            {"index":1,"name":"Below","visible":true,"locked":false,"opacity":1,"frames":[]}]}"""
+        val doc = load(raw)
+        assertEquals(listOf("Below"), doc.layers[0].masks.map { it.name }) // unknown and self references dropped
+        assertTrue(doc.layers[0].masks[0].inverted)
+        assertTrue(doc.layers[0].useMask)
+    }
+
+    @Test
+    fun layersWithoutMasksWriteNoMaskKeysAndOldFilesHaveNone() {
+        val plain = FakeDocument().apply { createFrame(1) }
+        val layer = org.json.JSONObject(save(plain)).getJSONArray("layers").getJSONObject(0)
+        assertFalse(layer.has("masks") || layer.has("useMask"))
+        val v3 = """{"version":3,"layers":[{"index":0,"name":"A","visible":true,"locked":false,"opacity":1,"frames":[]}]}"""
+        val doc = load(v3)
+        assertFalse(doc.layers[0].useMask)
+        assertTrue(doc.layers[0].masks.isEmpty())
     }
 
     @Test

@@ -29,7 +29,8 @@ class NativeEditorBridge : ModifierNative {
     fun frameCount() = if (handle != 0L) GPNative.nativeFrameCount(handle) else 0
     fun frameEnd() = if (handle != 0L) GPNative.nativeFrameEnd(handle) else 1
     fun frameNumbers() = if (handle != 0L) GPNative.nativeFrameNumbers(handle) else intArrayOf()
-    fun interpolateFrame(sourceFrame:Int,targetFrame:Int,resultFrame:Int,factor:Float) = handle != 0L && GPNative.nativeInterpolateFrame(handle,sourceFrame,targetFrame,resultFrame,factor)
+    fun interpolateFrame(sourceFrame:Int,targetFrame:Int,resultFrame:Int,factor:Float,easingType:Int=0,easingMode:Int=0) =
+        handle != 0L && GPNative.nativeInterpolateFrameEased(handle,sourceFrame,targetFrame,resultFrame,factor,easingType,easingMode)
     fun selectFrameOrHold(frame:Int) = handle != 0L && GPNative.nativeSelectFrameOrHold(handle,frame)
     fun render() = handle != 0L && GPNative.nativeRender(handle)
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int)=handle != 0L && GPNative.nativeDuplicateFrame(handle,sourceFrame,targetFrame)
@@ -75,6 +76,14 @@ class NativeEditorBridge : ModifierNative {
     fun layerInfo(index: Int) = if (handle != 0L) GPNative.nativeGetLayerInfo(handle, index) else null
     fun layerName(index: Int) = if (handle != 0L) GPNative.nativeGetLayerName(handle, index) else null
     fun setLayerOpacity(index: Int, opacity: Float) = handle != 0L && GPNative.nativeSetLayerOpacity(handle, index, opacity)
+    fun layerUseMask(layer: Int) = handle != 0L && GPNative.nativeLayerUseMask(handle, layer)
+    fun setLayerUseMask(layer: Int, enabled: Boolean) = handle != 0L && GPNative.nativeSetLayerUseMask(handle, layer, enabled)
+    fun maskCount(layer: Int) = if (handle != 0L) GPNative.nativeMaskCount(handle, layer) else 0
+    fun maskAdd(layer: Int, maskLayer: Int) = handle != 0L && GPNative.nativeMaskAdd(handle, layer, maskLayer)
+    fun maskRemove(layer: Int, index: Int) = handle != 0L && GPNative.nativeMaskRemove(handle, layer, index)
+    fun maskName(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeMaskName(handle, layer, index) else null
+    fun maskFlags(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeMaskFlags(handle, layer, index) else -1
+    fun maskSetFlags(layer: Int, index: Int, flags: Int) = handle != 0L && GPNative.nativeMaskSetFlags(handle, layer, index, flags)
     override fun modifierCount(layer: Int) = if (handle != 0L) GPNative.nativeModifierCount(handle, layer) else 0
     override fun modifierAdd(layer: Int, type: Int) = if (handle != 0L) GPNative.nativeModifierAdd(handle, layer, type) else -1
     override fun modifierRemove(layer: Int, index: Int) = handle != 0L && GPNative.nativeModifierRemove(handle, layer, index)
@@ -197,6 +206,15 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     }
     fun frameNumbers(): IntArray = native.frameNumbers()
 
+    /** Interpolation easing (Blender's gpencil_interpolate easing): type Linear..Bounce, mode In/Out/In-Out. */
+    var easingType = ProjectGreaseSelect.EASE_LINEAR
+        private set
+    var easingMode = ProjectGreaseSelect.EASE_IN
+        private set
+    fun setEasing(type:Int, mode:Int) {
+        if (type in ProjectGreaseSelect.EASE_LINEAR..ProjectGreaseSelect.EASE_BOUNCE) easingType = type
+        if (mode in ProjectGreaseSelect.EASE_IN..ProjectGreaseSelect.EASE_IN_OUT) easingMode = mode
+    }
     fun interpolateAt(frame:Int):Boolean {
         if (native.handle == 0L) return false
         val keys = native.frameNumbers().sorted()
@@ -204,7 +222,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         val next = keys.firstOrNull { it > frame } ?: return false
         val span = (next - previous).coerceAtLeast(1)
         val factor = (frame - previous).toFloat() / span.toFloat()
-        if (!native.interpolateFrame(previous,next,frame,factor)) return false
+        if (!native.interpolateFrame(previous,next,frame,factor,easingType,easingMode)) return false
         currentFrame=frame
         frameCount=native.frameCount().coerceAtLeast(1)
         timelineEnd=native.frameEnd().coerceAtLeast(1)
@@ -902,6 +920,25 @@ class EditorController {
 
     /** Layer state as the native document holds it; null when there is no such layer. */
     fun layerState(index:Int = selectedLayer):LayerRecord? = NativeDocumentAdapter(native).layerRecord(index)
+
+    // ---- Layer masks (the layer is drawn only where its mask layers have coverage) ----
+    fun layerName(index:Int):String = native.layerName(index) ?: ("Layer "+(index+1))
+    fun layerMasks(layer:Int = selectedLayer):List<MaskRecord> = NativeDocumentAdapter(native).layerMasks(layer)
+    fun layerUsesMask(layer:Int = selectedLayer):Boolean = native.layerUseMask(layer)
+    private fun maskChanged(ok:Boolean):Boolean {
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun setLayerUsesMask(enabled:Boolean, layer:Int = selectedLayer) = maskChanged(native.setLayerUseMask(layer, enabled))
+    fun addLayerMask(maskLayer:Int, layer:Int = selectedLayer):Boolean {
+        val ok = native.maskAdd(layer, maskLayer)
+        // Adding a first mask turns the mask on, as picking a mask layer in Blender's UI does.
+        if (ok && !native.layerUseMask(layer)) native.setLayerUseMask(layer, true)
+        return maskChanged(ok)
+    }
+    fun removeLayerMask(index:Int, layer:Int = selectedLayer) = maskChanged(native.maskRemove(layer, index))
+    fun setLayerMaskFlags(index:Int, hidden:Boolean, inverted:Boolean, layer:Int = selectedLayer) =
+        maskChanged(native.maskSetFlags(layer, index, (if (hidden) 1 else 0) or (if (inverted) 2 else 0)))
 
     fun setMultiframeEditing(enabled:Boolean):Boolean {
         val ok=native.setMultiframeEditing(enabled)

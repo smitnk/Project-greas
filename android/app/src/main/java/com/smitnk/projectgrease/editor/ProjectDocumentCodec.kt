@@ -26,6 +26,9 @@ class StrokeRecord(
 
 class LayerRecord(val name: String, val visible: Boolean, val locked: Boolean, val opacity: Float)
 
+/** One entry of a layer's mask list: [name] is the mask layer (masks refer to layers by name). */
+class MaskRecord(val name: String, val hidden: Boolean = false, val inverted: Boolean = false)
+
 /** One palette entry; colors are straight RGBA in 0..1. */
 class MaterialRecord(
     val stroke: FloatArray,
@@ -60,6 +63,12 @@ interface DocumentNative {
     fun modifierRecord(layer: Int, index: Int): ModifierRecord? = null
     /** Appends a modifier to the layer's stack exactly as recorded (type, enabled flag, parameters). */
     fun addModifier(layer: Int, record: ModifierRecord): Boolean = true
+
+    /** Layer masks (version 4 files): use-mask flag and the mask list, which refers to layers by name. */
+    fun layerUseMask(layer: Int): Boolean = false
+    fun layerMasks(layer: Int): List<MaskRecord> = emptyList()
+    /** Called after every layer exists and is named, so the names in [masks] can be resolved. */
+    fun restoreLayerMasks(layer: Int, useMask: Boolean, masks: List<MaskRecord>): Boolean = true
 }
 
 class ParsedFrame(val number: Int, val strokes: List<StrokeRecord>)
@@ -68,7 +77,9 @@ class ParsedLayer(
     val record: LayerRecord?,
     val frames: List<ParsedFrame>,
     /** The layer's modifier stack; empty for files before version 4. */
-    val modifiers: List<ModifierRecord> = emptyList()
+    val modifiers: List<ModifierRecord> = emptyList(),
+    val useMask: Boolean = false,
+    val masks: List<MaskRecord> = emptyList()
 )
 class ParsedDocument(
     val version: Int,
@@ -129,6 +140,13 @@ object ProjectDocumentCodec {
             layerJson.put("frames", frames)
             val modifiers = (0 until native.modifierCount(layerIndex)).mapNotNull { native.modifierRecord(layerIndex, it) }
             if (modifiers.isNotEmpty()) layerJson.put("modifiers", ModifierStackJson.toJson(modifiers))
+            val masks = native.layerMasks(layerIndex)
+            if (masks.isNotEmpty() || native.layerUseMask(layerIndex)) {
+                layerJson.put("useMask", native.layerUseMask(layerIndex))
+                layerJson.put("masks", JSONArray().apply {
+                    for (mask in masks) put(JSONObject().put("name", mask.name).put("hidden", mask.hidden).put("invert", mask.inverted))
+                })
+            }
             layers.put(layerJson)
         }
         root.put("layers", layers)
@@ -190,6 +208,12 @@ object ProjectDocumentCodec {
                 if (!native.addModifier(layerIndex, modifier)) return false
             }
         }
+        // Masks name other layers, so they are restored once every layer exists and has its name.
+        for ((layerIndex, layer) in layers.withIndex()) {
+            if (layer.useMask || layer.masks.isNotEmpty()) {
+                if (!native.restoreLayerMasks(layerIndex, layer.useMask, layer.masks)) return false
+            }
+        }
         return true
     }
 
@@ -205,7 +229,15 @@ object ProjectDocumentCodec {
                 opacity = json.optDouble("opacity", 1.0).toFloat()
             )
         } else null
-        return ParsedLayer(record, frames, ModifierStackJson.fromJson(json.optJSONArray("modifiers")))
+        val masks = json.optJSONArray("masks")?.let { array ->
+            (0 until array.length()).mapNotNull { index ->
+                array.optJSONObject(index)?.takeIf { it.optString("name", "").isNotEmpty() }?.let {
+                    MaskRecord(it.getString("name"), it.optBoolean("hidden", false), it.optBoolean("invert", false))
+                }
+            }
+        } ?: emptyList()
+        return ParsedLayer(record, frames, ModifierStackJson.fromJson(json.optJSONArray("modifiers")),
+            json.optBoolean("useMask", false), masks)
     }
 
     private fun parseFrame(json: JSONObject): ParsedFrame {

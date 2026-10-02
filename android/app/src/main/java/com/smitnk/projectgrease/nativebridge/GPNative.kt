@@ -68,6 +68,8 @@ object GPNative {
     external fun nativeFrameEnd(handle: Long): Int
     external fun nativeFrameNumbers(handle: Long): IntArray
     external fun nativeInterpolateFrame(handle: Long, sourceFrame: Int, targetFrame: Int, resultFrame: Int, factor: Float): Boolean
+    // easingType/easingMode are PG_EASE_* (see ProjectGreaseSelect.EASE_*)
+    external fun nativeInterpolateFrameEased(handle: Long, sourceFrame: Int, targetFrame: Int, resultFrame: Int, factor: Float, easingType: Int, easingMode: Int): Boolean
     external fun nativeSelectFrameOrHold(handle: Long, frameNumber: Int): Boolean
     external fun nativeDuplicateFrame(handle: Long, sourceFrame: Int, targetFrame: Int): Boolean
     external fun nativeDeleteFrame(handle: Long, frameNumber: Int): Boolean
@@ -122,6 +124,15 @@ object GPNative {
     external fun nativeGetLayerInfo(handle: Long, index: Int): FloatArray?
     external fun nativeGetLayerName(handle: Long, index: Int): String?
     external fun nativeSetLayerOpacity(handle: Long, index: Int, opacity: Float): Boolean
+    // Layer masks: names refer to layers; flags bit 0 = hidden, bit 1 = inverted (-1 = no such entry).
+    external fun nativeLayerUseMask(handle: Long, layer: Int): Boolean
+    external fun nativeSetLayerUseMask(handle: Long, layer: Int, enabled: Boolean): Boolean
+    external fun nativeMaskCount(handle: Long, layer: Int): Int
+    external fun nativeMaskAdd(handle: Long, layer: Int, maskLayer: Int): Boolean
+    external fun nativeMaskRemove(handle: Long, layer: Int, index: Int): Boolean
+    external fun nativeMaskName(handle: Long, layer: Int, index: Int): String?
+    external fun nativeMaskFlags(handle: Long, layer: Int, index: Int): Int
+    external fun nativeMaskSetFlags(handle: Long, layer: Int, index: Int, flags: Int): Boolean
     // Live modifier stack of a layer (project_grease_modifier_stack.h). nativeModifierGet returns
     // [type, enabled, params...]; nativeModifierSetParams takes the bare params array.
     external fun nativeModifierCount(handle: Long, layer: Int): Int

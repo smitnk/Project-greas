@@ -533,6 +533,44 @@ int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index
   return ensure_ready(handle) && handle->backend.set_layer_opacity(index, opacity) ? 1 : 0;
 }
 
+int project_grease_gp_layer_use_mask(const ProjectGreaseGPHandle *handle, int layer_index)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) && handle->backend.layer_use_mask(layer_index) ? 1 : 0;
+}
+
+int project_grease_gp_set_layer_use_mask(ProjectGreaseGPHandle *handle, int layer_index, int enabled)
+{
+  return ensure_ready(handle) && handle->backend.set_layer_use_mask(layer_index, enabled != 0) ? 1 : 0;
+}
+
+int project_grease_gp_mask_count(const ProjectGreaseGPHandle *handle, int layer_index)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) ? handle->backend.mask_count(layer_index) : 0;
+}
+
+int project_grease_gp_mask_add(ProjectGreaseGPHandle *handle, int layer_index, int mask_layer_index)
+{
+  return ensure_ready(handle) && handle->backend.mask_add(layer_index, mask_layer_index) ? 1 : 0;
+}
+
+int project_grease_gp_mask_remove(ProjectGreaseGPHandle *handle, int layer_index, int mask_index)
+{
+  return ensure_ready(handle) && handle->backend.mask_remove(layer_index, mask_index) ? 1 : 0;
+}
+
+int project_grease_gp_mask_get(const ProjectGreaseGPHandle *handle, int layer_index, int mask_index, char *name, int name_capacity, int *flags)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) &&
+                 handle->backend.mask_get(layer_index, mask_index, name, name_capacity, flags)
+             ? 1
+             : 0;
+}
+
+int project_grease_gp_mask_set_flags(ProjectGreaseGPHandle *handle, int layer_index, int mask_index, int flags)
+{
+  return ensure_ready(handle) && handle->backend.mask_set_flags(layer_index, mask_index, flags) ? 1 : 0;
+}
+
 int project_grease_gp_modifier_count(const ProjectGreaseGPHandle *handle, int layer_index)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) {
@@ -772,6 +810,15 @@ int project_grease_gp_frame_numbers(const ProjectGreaseGPHandle *handle, int *ou
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.frame_numbers(out_frames, capacity);
 }
+int project_grease_gp_interpolate_frame_eased(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor, int easing_type, int easing_mode)
+{
+  return ensure_ready(handle) &&
+                 handle->backend.interpolate_frame(source_frame, target_frame, result_frame, factor,
+                                                   easing_type, easing_mode)
+             ? 1
+             : 0;
+}
+
 int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor)
 {
   return ensure_ready(handle) && handle->backend.interpolate_frame(source_frame, target_frame, result_frame, factor) ? 1 : 0;

@@ -32,7 +32,7 @@ enum class FeatureId {
     NOISE, DASH, OUTLINE, THICKNESS_MODIFIER, COLOR_MODIFIER, DEFORM, GENERATE,
     ADVANCED_INTERPOLATION, LAYER_MASKS, MULTIFRAME, ADVANCED_ONION_SKIN, VISUAL_EFFECTS, LINE_ART,
     NEW_PROJECT, OPEN_PROJECT, SAVE, SAVE_AS, EXPORT, EXPORT_PNG, EXPORT_GIF, EXPORT_ANIMATION,
-    PROJECT_SETTINGS
+    PROJECT_SETTINGS, IMPORT_SVG
 }
 
 data class FeatureCapability(
@@ -214,7 +214,8 @@ object FeatureRegistry {
         FeatureId.EXPORT_PNG to missing("Only SVG and PDF are exported; no raster pipeline."),
         FeatureId.EXPORT_GIF to missing("No export pipeline."),
         FeatureId.EXPORT_ANIMATION to missing("No export pipeline."),
-        FeatureId.PROJECT_SETTINGS to missing("Only app settings exist; no per-project settings.")
+        FeatureId.PROJECT_SETTINGS to missing("Only app settings exist; no per-project settings."),
+        FeatureId.IMPORT_SVG to wired("Project > Import SVG (Storage Access Framework): path/polyline/polygon/line/rect/circle/ellipse become strokes on the active layer/frame, curves flattened (SvgImport); viewBox fitted into the canvas keeping aspect; one material slot per distinct stroke/fill color pair (existing slots reused); thickness = stroke-width, cyclic = closed, fill on when the shape has a fill. No transforms, arcs (straight to end point), gradients or CSS. $DEVICE")
     )
 
     /** Ids that have an explicit entry (the test requires this to equal every FeatureId). */

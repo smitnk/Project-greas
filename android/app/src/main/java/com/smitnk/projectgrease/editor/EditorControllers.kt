@@ -1252,6 +1252,67 @@ class EditorController {
         return true
     }
 
+    /**
+     * Adds planned strokes (StrokeImport) to the active frame as one undo step: first the new
+     * material slots, then each stroke through the same polyline path as the primitives. With
+     * [newLayer] the strokes go to a new layer of that name, otherwise to the active layer.
+     * Returns the number of strokes created.
+     */
+    fun importStrokes(plan:StrokeImport.Plan, newLayer:String? = null):Int {
+        if (native.handle == 0L || plan.strokes.isEmpty()) return 0
+        if (newLayer != null) {
+            if (!native.createLayer(newLayer)) return 0
+            selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)
+            native.createFrame(animation.currentFrame)
+            native.selectFrameOrHold(animation.currentFrame)
+        } else if (native.frameCount() == 0) {
+            native.createFrame(animation.currentFrame)
+        }
+        for (m in plan.newMaterials) {
+            val index = native.materialCount()
+            if (!native.createMaterial()) break
+            native.setMaterialColors(index, m.stroke, m.fill)
+            native.setMaterialFillEnabled(index, m.fillEnabled)
+        }
+        var created = 0
+        for (s in plan.strokes) {
+            if (s.material >= native.materialCount()) continue
+            if (GPNative.nativeCreatePolyline(native.handle, s.xy, s.xy.size / 2, s.material, s.thickness, s.cyclic)) created++
+        }
+        if (created > 0 || newLayer != null) {
+            animation.initialize()
+            animation.setFrame(animation.currentFrame)
+            history.markEdit(); document.markDirty(); render()
+        }
+        return created
+    }
+
+    private fun existingMaterials():List<MaterialRecord> {
+        val adapter = NativeDocumentAdapter(native)
+        return (0 until native.materialCount()).map { adapter.materialRecord(it) ?: MaterialRecord(FloatArray(4), FloatArray(4), true, false) }
+    }
+
+    /** Import SVG: every shape becomes a stroke on the active layer/frame; the viewBox is fitted into the canvas. */
+    fun importSvg(svg:String):Int {
+        val sources = StrokeImport.fromSvg(SvgImport.parse(svg))
+        val box = StrokeImport.svgViewBox(svg) ?: StrokeImport.bounds(sources) ?: return 0
+        val fit = StrokeImport.fit(box[0], box[1], box[2], box[3], document.canvasWidth, document.canvasHeight)
+        return importStrokes(StrokeImport.plan(sources, fit, existingMaterials()))
+    }
+
+    /**
+     * Trace image: outlines of the thresholded image become closed, filled strokes on a new
+     * "Trace" layer, scaled to the canvas, in the active color.
+     */
+    fun traceImage(argb:IntArray, width:Int, height:Int, threshold:Float, traceBright:Boolean, tolerance:Float):Int {
+        if (width <= 0 || height <= 0 || argb.size < width * height) return 0
+        val outlines = ImageTrace.trace(ImageTrace.mask(argb, width, height, threshold, traceBright), width, height, tolerance, 3)
+        val color = materials.colorArgb or (0xFF shl 24)
+        val sources = outlines.map { StrokeImport.Source(it, true, color, color, 1f) }
+        val fit = StrokeImport.fit(0f, 0f, width.toFloat(), height.toFloat(), document.canvasWidth, document.canvasHeight)
+        return importStrokes(StrokeImport.plan(sources, fit, existingMaterials()), newLayer = "Trace")
+    }
+
     fun createLayer(name:String):Boolean {
         val ok = native.createLayer(name)
         if (ok) {

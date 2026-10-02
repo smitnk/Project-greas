@@ -115,7 +115,10 @@ object GPNative {
     //   layer info    [visible, locked, opacity]
     //   material info [strokeRGBA(4), fillRGBA(4), visible, fillEnabled]
     external fun nativeGetStrokeInfo(handle: Long, strokeIndex: Int): FloatArray?
-    external fun nativeAddStroke(handle: Long, points: FloatArray, count: Int, info: FloatArray): Boolean
+    //   point color   [r, g, b, a]  (bGPDspoint.vert_color; alpha 0 = no vertex color)
+    // nativeAddStroke: points = 6 floats per point, pointColors = 4 floats per point.
+    external fun nativeAddStroke(handle: Long, points: FloatArray, count: Int, info: FloatArray, pointColors: FloatArray): Boolean
+    external fun nativeGetPointColor(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
     external fun nativeGetLayerInfo(handle: Long, index: Int): FloatArray?
     external fun nativeGetLayerName(handle: Long, index: Int): String?
     external fun nativeSetLayerOpacity(handle: Long, index: Int, opacity: Float): Boolean

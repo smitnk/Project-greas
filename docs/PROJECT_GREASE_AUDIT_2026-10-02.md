@@ -95,7 +95,7 @@ All rows: Build/APK = CI green; Device = NOT VERIFIED.
 | Modifier stack ordering | NOT_IMPLEMENTED | needs an object-level stack |
 | Shader effects | BLOCKED | needs DRW pipeline |
 | Line Art | BLOCKED | needs scene/object/depsgraph closure not established |
-| New/Open/Save | IN_PROGRESS | round-trips strokes (material, thickness, cyclic, fill), layer state and the palette (defect 6, fixed); point vertex colors, per-point weights and onion settings are not saved |
+| New/Open/Save | IN_PROGRESS | round-trips strokes (material, thickness, cyclic, fill), per-point and fill vertex colors, layer state and the palette (defect 6, fixed; format v3); per-point deform weights and onion settings are not saved |
 | Save as, Export PNG/GIF/animation | NOT_IMPLEMENTED | no pipeline |
 
 ## Device validation checklist (only you can produce this evidence)

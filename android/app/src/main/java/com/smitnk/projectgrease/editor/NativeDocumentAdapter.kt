@@ -20,7 +20,8 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         val points = ArrayList<FloatArray>()
         while (true) {
             val point = native.getPoint(index, points.size) ?: break
-            points.add(point)
+            val color = native.pointColor(index, points.size) ?: FloatArray(4)
+            points.add(point.copyOf(StrokeRecord.POINT_SIZE).also { System.arraycopy(color, 0, it, 6, 4) })
         }
         if (points.isEmpty()) return null
         val info = native.strokeInfo(index)
@@ -61,12 +62,17 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
 
     override fun addStroke(record: StrokeRecord): Boolean {
         val flat = FloatArray(record.points.size * 6)
-        record.points.forEachIndexed { i, p -> System.arraycopy(p, 0, flat, i * 6, 6) }
+        val colors = FloatArray(record.points.size * 4)
+        record.points.forEachIndexed { i, p ->
+            System.arraycopy(p, 0, flat, i * 6, 6)
+            // Points built without vertex color (6 values) keep the zero default.
+            if (p.size >= StrokeRecord.POINT_SIZE) System.arraycopy(p, 6, colors, i * 4, 4)
+        }
         val info = floatArrayOf(
             record.materialIndex.toFloat(), record.thickness, if (record.cyclic) 1f else 0f, record.fillOpacity,
             record.fillColor[0], record.fillColor[1], record.fillColor[2], record.fillColor[3]
         )
-        return native.addStroke(flat, record.points.size, info)
+        return native.addStroke(flat, record.points.size, info, colors)
     }
 
     override fun createMaterial() = native.createMaterial()

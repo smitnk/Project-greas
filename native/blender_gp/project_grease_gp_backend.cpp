@@ -3363,11 +3363,9 @@ bool Backend::add_stroke(const StrokePoint *points, int count, const PGStrokeInf
     dst.pressure = std::max(0.0f, src.pressure);
     dst.strength = std::max(0.0f, std::min(src.strength, 1.0f));
     dst.time = src.time;
-    // Same default as create_polyline(): zero alpha = no vertex color.
-    dst.vert_color[0] = 0.0f;
-    dst.vert_color[1] = 0.0f;
-    dst.vert_color[2] = 0.0f;
-    dst.vert_color[3] = 0.0f;
+    // Restore the saved vertex color; a zero default is "no vertex color" (see create_polyline()).
+    const float rgba[4] = {src.r, src.g, src.b, src.a};
+    pg_doc_point_color_apply(&dst, rgba);
   }
 
   pg_doc_stroke_info_apply(stroke, &info);

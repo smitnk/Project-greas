@@ -54,6 +54,26 @@ int pg_doc_stroke_info_apply(bGPDstroke *gps, const PGStrokeInfo *info)
   return 1;
 }
 
+int pg_doc_point_color_get(const bGPDspoint *pt, float r_rgba[4])
+{
+  if (pt == NULL || r_rgba == NULL) {
+    return 0;
+  }
+  memcpy(r_rgba, pt->vert_color, 4 * sizeof(float));
+  return 1;
+}
+
+int pg_doc_point_color_apply(bGPDspoint *pt, const float rgba[4])
+{
+  if (pt == NULL || rgba == NULL) {
+    return 0;
+  }
+  for (int c = 0; c < 4; c++) {
+    pt->vert_color[c] = clamp01(rgba[c]);
+  }
+  return 1;
+}
+
 int pg_doc_layer_info_get(const bGPDlayer *gpl, PGLayerInfo *r_info)
 {
   if (gpl == NULL || r_info == NULL) {

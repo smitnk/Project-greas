@@ -206,8 +206,8 @@ object FeatureRegistry {
 
         // ---- persistence and export ----------------------------------------------------
         FeatureId.NEW_PROJECT to wired("Creates a document with one layer and frame. $DEVICE"),
-        FeatureId.OPEN_PROJECT to wired("Restores points, stroke material/thickness/cyclic/fill, layer name/visibility/lock/opacity and the material palette (round-trip tested); version-1 files load with the old defaults. $DEVICE"),
-        FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores (format version 2). $DEVICE"),
+        FeatureId.OPEN_PROJECT to wired("Restores points (incl. vertex color), stroke material/thickness/cyclic/fill (incl. fill vertex color), layer name/visibility/lock/opacity and the material palette (round-trip tested); older files load with the old defaults and no vertex color. $DEVICE"),
+        FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores (format version 3). $DEVICE"),
         FeatureId.SAVE_AS to missing("The menu item just saves."),
         FeatureId.EXPORT to missing("The menu shows 'Export pipeline is not connected yet'."),
         FeatureId.EXPORT_PNG to missing("No export pipeline."),

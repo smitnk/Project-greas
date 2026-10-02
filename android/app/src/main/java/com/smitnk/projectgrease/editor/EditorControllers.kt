@@ -69,8 +69,9 @@ class NativeEditorBridge {
     fun splitStroke(index: Int, beforeIndex: Int) = handle != 0L && GPNative.nativeSplitStroke(handle, index, beforeIndex)
     fun getPoint(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPoint(handle, stroke, point) else null
     fun strokeInfo(stroke: Int) = if (handle != 0L) GPNative.nativeGetStrokeInfo(handle, stroke) else null
-    fun addStroke(points: FloatArray, count: Int, info: FloatArray) =
-        handle != 0L && GPNative.nativeAddStroke(handle, points, count, info)
+    fun addStroke(points: FloatArray, count: Int, info: FloatArray, pointColors: FloatArray) =
+        handle != 0L && GPNative.nativeAddStroke(handle, points, count, info, pointColors)
+    fun pointColor(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPointColor(handle, stroke, point) else null
     fun layerInfo(index: Int) = if (handle != 0L) GPNative.nativeGetLayerInfo(handle, index) else null
     fun layerName(index: Int) = if (handle != 0L) GPNative.nativeGetLayerName(handle, index) else null
     fun setLayerOpacity(index: Int, opacity: Float) = handle != 0L && GPNative.nativeSetLayerOpacity(handle, index, opacity)

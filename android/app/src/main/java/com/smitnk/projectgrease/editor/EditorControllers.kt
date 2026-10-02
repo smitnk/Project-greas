@@ -164,11 +164,15 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     var loop = true; private set
     var frameCount = 1; private set
     var timelineEnd = 1; private set
+    /** Scene end frame (a template's frame_end); the timeline shows at least this many frames. 0 = none. */
+    var sceneEnd = 0; private set
+    fun setSceneEnd(value:Int) { sceneEnd = value.coerceIn(0, 100000); timelineEnd = endFrame() }
+    private fun endFrame() = maxOf(native.frameEnd(), sceneEnd).coerceAtLeast(1)
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
             if (!playing || native.handle == 0L) return
-            val end = native.frameEnd().coerceAtLeast(1)
+            val end = endFrame()
             timelineEnd = end
             var next = currentFrame + 1
             if (next > end) {
@@ -191,7 +195,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             native.selectFrameOrHold(1)
             currentFrame = 1
             frameCount = native.frameCount().coerceAtLeast(1)
-            timelineEnd = native.frameEnd().coerceAtLeast(1)
+            timelineEnd = endFrame()
         }
     }
     fun setFrame(value: Int): Boolean {
@@ -200,7 +204,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (!native.selectFrameOrHold(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = native.frameEnd().coerceAtLeast(1)
+        timelineEnd = endFrame()
         return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
@@ -209,19 +213,19 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (native.selectFrame(target)) {
             currentFrame = target
             frameCount = native.frameCount().coerceAtLeast(1)
-            timelineEnd = native.frameEnd().coerceAtLeast(1)
+            timelineEnd = endFrame()
             return true
         }
         if (!native.createFrame(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = native.frameEnd().coerceAtLeast(1)
+        timelineEnd = endFrame()
         return true
     }
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int):Boolean {
         if (native.handle == 0L || targetFrame < 1) return false
         if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
-        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
+        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=endFrame(); return true
     }
     fun frameNumbers(): IntArray = native.frameNumbers()
     /** Re-reads frame count/end and re-selects the current frame (or its hold) after native frame edits. */
@@ -246,7 +250,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (!native.interpolateFrame(previous,next,frame,factor,easingType,easingMode)) return false
         currentFrame=frame
         frameCount=native.frameCount().coerceAtLeast(1)
-        timelineEnd=native.frameEnd().coerceAtLeast(1)
+        timelineEnd=endFrame()
         return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {
@@ -260,7 +264,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         native.selectFrameOrHold(target)
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = native.frameEnd().coerceAtLeast(1)
+        timelineEnd = endFrame()
         return true
     }
 
@@ -506,6 +510,7 @@ class EditorController {
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
         if(ok){
             selectedLayer=0
+            animation.setSceneEnd(0)
             animation.initialize()
             history.reset()
             document.markDirty()
@@ -990,7 +995,7 @@ class EditorController {
         val originalFrame = animation.currentFrame
         val json = ProjectDocumentCodec.encode(
             NativeDocumentAdapter(native),
-            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame
+            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd
         )
         if (native.layerCount() > 0) {
             native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
@@ -1007,6 +1012,7 @@ class EditorController {
         document.canvasWidth = (parsed.width ?: document.canvasWidth).coerceAtLeast(1)
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
         animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
+        animation.setSceneEnd(parsed.frameEnd)
         if (!ProjectDocumentCodec.restore(parsed, NativeDocumentAdapter(native), brushes.size)) return false
         if (parsed.layers == null) return true
         syncActiveMaterial(parsed.materials.firstOrNull())
@@ -1207,6 +1213,45 @@ class EditorController {
         if(ok){history.markEdit();document.markDirty();render()}
         return ok
     }
+    /**
+     * Fills a freshly reset document from a template (GreaseTemplates): layers bottom to top, one
+     * material slot per template material (stroke color, fill enabled when it has a fill color),
+     * fps and the scene end frame. The top layer and material 0 end up active.
+     */
+    fun applyTemplate(template:GreaseTemplates.Template):Boolean {
+        if (native.handle == 0L || template.layers.isEmpty()) return false
+        if (native.layerCount() == 0) {
+            if (!native.createLayer(template.layers[0])) return false
+        } else {
+            native.renameLayer(0, template.layers[0])
+        }
+        native.selectLayer(0)
+        if (native.frameCount() == 0) native.createFrame(1)
+        for (name in template.layers.drop(1)) {
+            if (!native.createLayer(name)) return false
+            native.createFrame(1)
+        }
+        template.materials.forEachIndexed { i, m ->
+            while (native.materialCount() <= i) if (!native.createMaterial()) return false
+            val stroke = colorToFloats(m.stroke)
+            val fill = m.fill?.let { colorToFloats(it) } ?: stroke
+            native.setMaterialColors(i, stroke, fill)
+            native.setMaterialFillEnabled(i, m.fill != null)
+        }
+        selectedLayer = native.layerCount() - 1
+        native.selectLayer(selectedLayer)
+        animation.setFps(template.fps)
+        animation.initialize()
+        animation.setSceneEnd(template.endFrame)
+        materials.select(0)
+        template.materials.firstOrNull()?.let { materials.setColor(it.stroke) }
+        pushMaterialColor()
+        history.reset()
+        document.markDirty()
+        render()
+        return true
+    }
+
     fun createLayer(name:String):Boolean {
         val ok = native.createLayer(name)
         if (ok) {

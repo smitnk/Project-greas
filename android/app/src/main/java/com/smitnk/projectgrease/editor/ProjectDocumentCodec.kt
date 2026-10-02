@@ -103,6 +103,8 @@ class ParsedDocument(
     val fps: Int?,
     val frame: Int,
     val materials: List<MaterialRecord>,
+    /** Scene end frame; 0 when the file has none (older files). */
+    val frameEnd: Int = 0,
     val vertexGroups: List<String> = emptyList(),
     val activeVertexGroup: Int = -1,
     /** null when the file has no "layers" key at all. */
@@ -121,13 +123,14 @@ object ProjectDocumentCodec {
     const val VERSION = 5
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
-    fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int): String {
+    fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0): String {
         val root = JSONObject()
         root.put("version", VERSION)
         root.put("width", width)
         root.put("height", height)
         root.put("fps", fps)
         root.put("frame", frame)
+        if (frameEnd > 0) root.put("frameEnd", frameEnd)
 
         val materials = JSONArray()
         for (i in 0 until native.materialCount()) {
@@ -195,6 +198,7 @@ object ProjectDocumentCodec {
             fps = if (root.has("fps")) root.optInt("fps") else null,
             frame = root.optInt("frame", 1),
             materials = materials,
+            frameEnd = root.optInt("frameEnd", 0).coerceAtLeast(0),
             vertexGroups = root.optJSONArray("vertexGroups")?.let { a ->
                 (0 until a.length()).map { a.optString(it, "").ifEmpty { "Group" } }
             } ?: emptyList(),

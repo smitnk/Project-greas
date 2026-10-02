@@ -206,7 +206,7 @@ object FeatureRegistry {
         FeatureId.LINE_ART to blocked("Needs a minimal scene/object/depsgraph closure that is not established."),
 
         // ---- persistence and export ----------------------------------------------------
-        FeatureId.NEW_PROJECT to wired("Creates a document with one layer and frame. $DEVICE"),
+        FeatureId.NEW_PROJECT to wired("New Project offers the 2D Animation / Blank / Storyboard templates (GreaseTemplates): layers bottom to top, material slots with stroke color and fill on/off, fps and scene end frame (saved as frameEnd). Material names are not stored (no native name API). $DEVICE"),
         FeatureId.OPEN_PROJECT to wired("Restores points (incl. vertex color), stroke material/thickness/cyclic/fill (incl. fill vertex color), layer name/visibility/lock/opacity and the material palette (round-trip tested); older files load with the old defaults and no vertex color. $DEVICE"),
         FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores, including each layer's modifier stack (format version 4). $DEVICE"),
         FeatureId.SAVE_AS to missing("The menu item just saves."),

@@ -32,6 +32,7 @@ import com.smitnk.projectgrease.editor.FeatureId
 import com.smitnk.projectgrease.editor.FeatureRegistry
 import com.smitnk.projectgrease.editor.FeatureState
 import com.smitnk.projectgrease.editor.GreaseTool
+import com.smitnk.projectgrease.editor.GreaseTemplates
 import com.smitnk.projectgrease.editor.GreaseMode
 import com.smitnk.projectgrease.editor.BrushPreset
 import com.smitnk.projectgrease.editor.EraserMode
@@ -79,6 +80,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var screen by remember{mutableStateOf(Screen.HOME)}
     var name by remember{mutableStateOf("Project Grease")}
     var preset by remember{mutableStateOf(presets[1])}
+    var templateId by remember{mutableStateOf("2d_animation")}
     var state by remember{mutableStateOf(GreaseUiState())}
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
@@ -122,15 +124,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 projectStore.loadDocument(record.name)?.let { controller.loadDocumentJson(it) }
                 screen=Screen.EDITOR
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
-            Screen.NEW->NewProject(name,{name=it},preset,{preset=it},controller,{screen=Screen.HOME}){
+            Screen.NEW->NewProject(name,{name=it},preset,{preset=it},templateId,{templateId=it},controller,{screen=Screen.HOME}){
                 controller.resetDocument()
                 controller.document.projectName=name.ifBlank{"Project Grease"}
                 controller.document.canvasWidth=preset.width
                 controller.document.canvasHeight=preset.height
                 controller.animation.setFps(preset.fps)
                 controller.createFrame(1)
+                // Layers, material slots, fps and end frame come from the chosen template.
+                GreaseTemplates.byId(templateId)?.let { controller.applyTemplate(it) }
                 controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName,it) }
-                val record=ProjectRecord(controller.document.projectName,preset.width,preset.height,preset.fps,System.currentTimeMillis())
+                val record=ProjectRecord(controller.document.projectName,preset.width,preset.height,controller.animation.fps,System.currentTimeMillis())
                 projectStore.upsert(record)
                 projects=projectStore.load()
                 state=state.copy(projectName=controller.document.projectName)
@@ -262,10 +266,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
-@Composable private fun NewProject(name:String,onName:(String)->Unit,preset:Preset,onPreset:(Preset)->Unit,controller:EditorController,onBack:()->Unit,onCreate:()->Unit){
+@Composable private fun NewProject(name:String,onName:(String)->Unit,preset:Preset,onPreset:(Preset)->Unit,templateId:String,onTemplate:(String)->Unit,controller:EditorController,onBack:()->Unit,onCreate:()->Unit){
     Scaffold(topBar={TopAppBar(title={Text("New Project")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}})}){pad->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)){
             OutlinedTextField(name,onName,Modifier.fillMaxWidth(),label={Text("Project name")});Spacer(Modifier.height(16.dp))
+            Text("Template",color=Accent,fontWeight=FontWeight.Bold)
+            GreaseTemplates.ALL.forEach{t->ListItem(headlineContent={Text(t.title)},
+                supportingContent={Text(t.layers.joinToString(" · ")+" • "+t.materials.size+" materials • "+t.fps+" FPS • end "+t.endFrame)},
+                trailingContent={if(t.id==templateId)Icon(Icons.Default.Check,null,tint=Accent)},modifier=Modifier.clickable{onTemplate(t.id)})}
+            Spacer(Modifier.height(16.dp))
             Text("Canvas presets",color=Accent,fontWeight=FontWeight.Bold)
             presets.forEach{p->ListItem(headlineContent={Text(p.name)},supportingContent={Text(p.width.toString()+" × "+p.height+" • "+p.fps+" FPS")},
                 trailingContent={if(p==preset)Icon(Icons.Default.Check,null,tint=Accent)},modifier=Modifier.clickable{onPreset(p);controller.animation.setFps(p.fps)})}

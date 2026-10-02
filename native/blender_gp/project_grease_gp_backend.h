@@ -3,6 +3,11 @@
 #include <cstdint>
 #include "project_grease_legacy_sculpt.h"
 
+// Blender DNA types, declared at global scope so the accessors below name the
+// real C structs and not types of project_grease::gp.
+struct bGPdata;
+struct bGPDlayer;
+
 namespace project_grease::gp {
 
 struct StrokePoint {
@@ -222,6 +227,11 @@ class Backend {
   bool render();
 
   const char* last_error() const;
+
+  // Raw Legacy GP document and active layer for focused editor operators
+  // (Blender selection port). Valid until the document is reset or shut down.
+  bGPdata* document_data() const;
+  bGPDlayer* active_layer_data() const;
 
   // Opaque implementation storage.
   struct Impl;

@@ -555,6 +555,20 @@ class EditorController {
         if (value > 0f) legacyEuclideanThreshold=value
     }
 
+    /** Active smoothing of the Legacy GP brush (0 = off, 1 = strongest). */
+    fun setActiveSmooth(value:Float) { legacyActiveSmooth = value.coerceIn(0f, 1f) }
+
+    private fun sendBrushPoints(points:List<LegacyGpBrushStrokeEngine.StrokePoint>) {
+        points.forEach { point ->
+            GPNative.nativeAddPointEglRenderer(
+                rendererHandle, point.x, point.y, 0f,
+                point.pressure.coerceAtLeast(TouchInputRules.MIN_NATIVE_PRESSURE),
+                point.strength.coerceAtLeast(0f),
+                point.time
+            )
+        }
+    }
+
     private fun beginLegacyBrushStroke() {
         brushStrokeEngine.begin(
             LegacyGpBrushStrokeEngine.Settings(
@@ -613,14 +627,7 @@ class EditorController {
                     snapped.first, snapped.second, pressure.coerceIn(0f,1f), timeSeconds
                 )
             )
-            emitted.forEach { point ->
-                GPNative.nativeAddPointEglRenderer(
-                    rendererHandle, point.x, point.y, 0f,
-                    point.pressure.coerceAtLeast(0.01f),
-                    point.strength.coerceAtLeast(0f),
-                    point.time
-                )
-            }
+            sendBrushPoints(emitted)
         } else if (tools.activeTool == GreaseTool.POLYLINE) {
             val snapped=view.snapPoint(x,y)
             polylineLastX = snapped.first
@@ -715,22 +722,15 @@ class EditorController {
     fun endStroke(){
         if (rendererHandle == 0L) return
         if (tools.activeTool == GreaseTool.LASSO) {
-            if (pendingLassoPoints.size >= 3 && native.handle != 0L) {
-                val packed = FloatArray(pendingLassoPoints.size * 2)
-                pendingLassoPoints.forEachIndexed { i, p ->
-                    packed[i * 2] = p.first
-                    packed[i * 2 + 1] = p.second
-                }
-                val selected = GPNative.nativeLassoSelect(native.handle, packed, pendingLassoPoints.size, false)
-                if (selected > 0) {
-                    history.markEdit()
-                    document.markDirty()
-                }
-            }
+            val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
+            runSelectCommand(ProjectGreaseSelect.lasso(selectOp, selectMode, noose))
             return
         }
         if (tools.activeTool == GreaseTool.DRAW) {
+            // The engine holds back the newest points (Blender edits them in place); flush them
+            // into the native buffer before the stroke is committed.
+            sendBrushPoints(brushStrokeEngine.end())
             if (GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
                 history.markEdit(); document.markDirty()
             }
@@ -758,6 +758,7 @@ class EditorController {
 
     fun cancelStroke(){
         if (rendererHandle != 0L && tools.activeTool == GreaseTool.DRAW) {
+            brushStrokeEngine.cancel()
             GPNative.nativeCancelStrokeEglRenderer(rendererHandle)
         }
         pendingShapePoints.clear()
@@ -773,21 +774,51 @@ class EditorController {
             showPrimitivePreview(null)
         }
     }
-    fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean {
-        if (native.handle == 0L || points.size < 3) return false
-        val packed = FloatArray(points.size * 2)
-        points.forEachIndexed { i, p ->
-            packed[i * 2] = p.first
-            packed[i * 2 + 1] = p.second
-        }
-        val count = GPNative.nativeLassoSelect(native.handle, packed, points.size, false)
-        if (count > 0) {
+    fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean =
+        runSelectCommand(ProjectGreaseSelect.lasso(selectOp, selectMode, points))
+
+    // ---- Blender 3.6.23 Legacy GP selection (native/blender_gp/project_grease_blender_select.c) ----
+    // Point vs. stroke select mode and the eSelectOp used by lasso/box/circle selection.
+    var selectMode = ProjectGreaseSelect.MODE_POINT
+        private set
+    var selectOp = ProjectGreaseSelect.OP_SET
+        private set
+    fun setSelectMode(value:Int):Boolean {
+        if (!ProjectGreaseSelect.isValidMode(value)) return false
+        selectMode = value
+        return true
+    }
+    fun setSelectOp(value:Int):Boolean {
+        if (!ProjectGreaseSelect.isValidOp(value)) return false
+        selectOp = value
+        return true
+    }
+
+    /** Runs a native selection command; selection changes are undoable like Blender's operators. */
+    private fun runSelectCommand(command:ProjectGreaseSelect.Command?):Boolean {
+        if (command == null || native.handle == 0L) return false
+        val changed = native.applyEditCommand(command.id, command.args)
+        if (changed) {
             history.markEdit()
             document.markDirty()
             render()
         }
-        return count > 0
+        return changed
     }
+    fun selectAll(action:Int = ProjectGreaseSelect.ACTION_SELECT) = runSelectCommand(ProjectGreaseSelect.all(action))
+    fun deselectAll() = selectAll(ProjectGreaseSelect.ACTION_DESELECT)
+    fun invertSelection() = selectAll(ProjectGreaseSelect.ACTION_INVERT)
+    fun selectLinked() = runSelectCommand(ProjectGreaseSelect.linked())
+    fun selectAlternate(unselectEnds:Boolean=false) = runSelectCommand(ProjectGreaseSelect.alternate(unselectEnds))
+    fun selectMore() = runSelectCommand(ProjectGreaseSelect.more())
+    fun selectLess() = runSelectCommand(ProjectGreaseSelect.less())
+    fun selectLastPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false) =
+        runSelectCommand(ProjectGreaseSelect.last(onlySelectedStrokes, extend))
+    fun selectBox(x0:Float, y0:Float, x1:Float, y1:Float) =
+        runSelectCommand(ProjectGreaseSelect.box(selectOp, selectMode, x0, y0, x1, y1))
+    /** One dab of a circle-select gesture; only the first dab of a SET gesture replaces the selection. */
+    fun selectCircleAt(x:Float, y:Float, radius:Float, isFirst:Boolean) =
+        runSelectCommand(ProjectGreaseSelect.circle(selectOp, selectMode, x, y, radius, isFirst))
 
     fun fillSelectedStroke():Boolean {
         val i=selection.selectedStroke
@@ -1055,21 +1086,12 @@ class EditorController {
         if(ok){history.markEdit();document.markDirty();selection.clear();render()}
         return ok
     }
-    fun selectFirstPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false):Boolean {
-        val ok=native.applyEditCommand(8, floatArrayOf(if(onlySelectedStrokes) 1f else 0f, if(extend) 1f else 0f))
-        if(ok){document.markDirty();render()}
-        return ok
-    }
-    fun selectGroupedByLayer():Boolean {
-        val ok=native.applyEditCommand(9, floatArrayOf(0f))
-        if(ok){document.markDirty();render()}
-        return ok
-    }
-    fun selectGroupedByMaterial():Boolean {
-        val ok=native.applyEditCommand(9, floatArrayOf(1f))
-        if(ok){document.markDirty();render()}
-        return ok
-    }
+    fun selectFirstPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false):Boolean =
+        runSelectCommand(ProjectGreaseSelect.first(onlySelectedStrokes, extend))
+    fun selectGroupedByLayer():Boolean =
+        runSelectCommand(ProjectGreaseSelect.grouped(ProjectGreaseSelect.GROUP_LAYER))
+    fun selectGroupedByMaterial():Boolean =
+        runSelectCommand(ProjectGreaseSelect.grouped(ProjectGreaseSelect.GROUP_MATERIAL))
     fun moveSelectedStroke(dx:Float,dy:Float):Boolean {
         val i=selection.selectedStroke
         if(i<0) return false

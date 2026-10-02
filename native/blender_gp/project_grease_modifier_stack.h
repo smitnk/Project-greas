@@ -28,7 +28,8 @@
  *   - The seed hashes Blender mixes in are the object name (PG_MOD_OBJECT_NAME) and the modifier
  *     name (pg_mod_name()).
  *   - Noise depends on time: it is evaluated with the current frame number.
- * Vertex-group weights and custom curves are not supported (weight is 1 everywhere).
+ * Vertex-group weights are honoured by the Thickness entry only (use_vgroup/vgroup/invert); every other
+ * entry, and custom curves, use weight 1 everywhere.
  */
 #pragma once
 
@@ -63,7 +64,8 @@ enum {
 
 /* Parameter indices per type. Booleans are 0/1, enums and counts are stored as floats. */
 enum { /* THICKNESS (MOD_gpencil_legacy_thick.c) */
-  PG_P_THICK_NORMALIZE = 0, PG_P_THICK_THICKNESS = 1, PG_P_THICK_FACTOR = 2, PG_P_THICK_COUNT = 3 };
+  PG_P_THICK_NORMALIZE = 0, PG_P_THICK_THICKNESS = 1, PG_P_THICK_FACTOR = 2,
+  PG_P_THICK_USE_VGROUP = 3, PG_P_THICK_VGROUP = 4, PG_P_THICK_INVERT_VGROUP = 5, PG_P_THICK_COUNT = 6 };
 enum { /* OPACITY: modify_color is PG_MODIFY_COLOR_* */
   PG_P_OPACITY_MODIFY = 0, PG_P_OPACITY_FACTOR = 1, PG_P_OPACITY_NORMALIZE = 2,
   PG_P_OPACITY_HARDNESS = 3, PG_P_OPACITY_COUNT = 4 };

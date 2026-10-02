@@ -6,3 +6,4 @@
 extern int pg_test_mem_free_count;
 #define MEM_freeN(p) free(p)
 #define MEM_SAFE_FREE(v) do { if (v) { pg_test_mem_free_count++; free(v); (v) = NULL; } } while (0)
+#define MEM_callocN(size, name) calloc(1, (size))

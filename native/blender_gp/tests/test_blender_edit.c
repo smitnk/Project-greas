@@ -12,6 +12,7 @@
 #include "BLI_listbase.h"
 #include "DNA_meshdata_types.h"
 #include "project_grease_blender_edit.h"
+#include "project_grease_blender_edit2.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -125,6 +126,22 @@ void BKE_gpencil_stroke_join(bGPDstroke *a, bGPDstroke *b, bool leave_gaps, bool
   memcpy(p + a->totpoints, b->points, sizeof(bGPDspoint) * (size_t)b->totpoints);
   free(a->points); a->points = p; a->totpoints += b->totpoints;
   join_calls++;
+}
+
+static int simplify_calls = 0, sample_calls = 0;
+void BKE_gpencil_stroke_simplify_fixed(bGPdata *gpd, bGPDstroke *gps)
+{
+  (void)gpd; simplify_calls++;
+  /* stand-in: keep every second point (Blender removes alternate points, keeping the ends) */
+  int keep = 0;
+  for (int i = 0; i < gps->totpoints; i++) if (i % 2 == 0 || i == gps->totpoints - 1) gps->points[keep++] = gps->points[i];
+  gps->totpoints = keep;
+}
+bool BKE_gpencil_stroke_sample(bGPdata *gpd, bGPDstroke *gps, float dist, bool select, float sharp_threshold)
+{
+  (void)gpd; (void)gps; (void)select; (void)sharp_threshold;
+  sample_calls++;
+  return dist > 0.0f;
 }
 
 /* ---- fixtures ------------------------------------------------------------------ */
@@ -816,6 +833,157 @@ static void test_vertex_paint(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_VERTEX_PAINT, args, 10) == 0, "vertex paint needs 11 args");
 }
 
+static void test_easing(void)
+{
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_LINEAR, PG_EASE_IN, 0.3f, 1.70158f), 0.3f), "linear");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_QUAD, PG_EASE_IN, 0.5f, 0), 0.25f), "quad in");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_QUAD, PG_EASE_OUT, 0.5f, 0), 0.75f), "quad out");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_CUBIC, PG_EASE_IN_OUT, 0.25f, 0), 0.0625f), "cubic in-out first half");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_CUBIC, PG_EASE_IN_OUT, 0.75f, 0), 0.9375f), "cubic in-out second half");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_SINE, PG_EASE_IN, 0.5f, 0), 1.0f - cosf((float)M_PI_4)), "sine in");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_EXPO, PG_EASE_IN, 0.0f, 0), 0.0f), "expo in at 0");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_CIRC, PG_EASE_IN, 0.6f, 0), 0.2f), "circ in: 1 - sqrt(1 - 0.36)");
+  CHECK(pg_gp_interpolate_easing(PG_EASE_BACK, PG_EASE_IN, 0.2f, 1.70158f) < 0.0f, "back overshoots below 0 on ease-in");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_BOUNCE, PG_EASE_OUT, 1.0f, 0), 1.0f), "bounce ends at 1");
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_BOUNCE, PG_EASE_OUT, 0.5f, 0), 0.765625f), "bounce out at 0.5 (Penner)");
+  for (int type = PG_EASE_LINEAR; type <= PG_EASE_BOUNCE; type++)
+    for (int mode = 0; mode < 3; mode++) {
+      CHECK(NEAR(pg_gp_interpolate_easing(type, mode, 0.0f, 1.70158f), 0.0f), "every curve starts at 0");
+      CHECK(NEAR(pg_gp_interpolate_easing(type, mode, 1.0f, 1.70158f), 1.0f), "every curve ends at 1");
+    }
+  CHECK(NEAR(pg_gp_interpolate_easing(PG_EASE_QUAD, PG_EASE_IN, 2.0f, 0), 1.0f), "t is clamped");
+}
+
+static void test_mirror_copy(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 2, 0, 10, 20, 10, 0); /* (10,20) (20,20) */
+  bGPDstroke *b = add_stroke(f, 2, 0, 0, 90, 10, 0);
+  select_points(gpd, a, 3);
+  CHECK(pg_gp_mirror_copy(gpd, NULL, 1, 0, 50, 0) == 1 && stroke_count(f) == 3, "mirror X adds one copy");
+  CHECK(a->next != b && NEAR(a->next->points[0].x, 90) && NEAR(a->next->points[1].x, 80) && NEAR(a->next->points[0].y, 20),
+        "copy reflected across x = 50, right after the original");
+  CHECK(sel_mask(a->next) == 0 && sel_mask(a) == 3, "original stays selected, copy does not");
+  CHECK(NEAR(a->points[0].x, 10), "original unchanged");
+  pg_gp_mirror_copy(gpd, NULL, 1, 1, 50, 50);
+  CHECK(stroke_count(f) == 6, "both axes add three copies (X, Y, XY)");
+  CHECK(pg_gp_mirror_copy(gpd, NULL, 0, 0, 0, 0) == 0, "no axis, no copies");
+}
+
+static void test_weight_paint(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 5, 0, 0, 0, 10, 0); /* x = 0..40 */
+  CHECK(pg_gp_weight_paint(gpd, NULL, 0, 20, 0, 20, 1.0f, 1.0f) == 1 && a->dvert != NULL, "weights allocated on first paint");
+  CHECK(NEAR(a->dvert[2].dw[0].weight, 1.0f) && NEAR(a->dvert[1].dw[0].weight, 0.5f), "draw weight with smooth falloff");
+  CHECK(a->dvert[0].totweight == 0 && a->dvert[4].totweight == 0, "points outside the brush get no weight entry");
+  pg_gp_weight_paint(gpd, NULL, 3, 20, 0, 20, 1.0f, 0.25f);
+  CHECK(a->dvert[2].totweight == 2 && a->dvert[2].dw[1].def_nr == 3 && NEAR(a->dvert[2].dw[1].weight, 0.25f), "second group added beside the first");
+  pg_gp_weight_paint(gpd, NULL, 0, 20, 0, 20, 1.0f, 0.0f);
+  CHECK(NEAR(a->dvert[2].dw[0].weight, 0.0f) && NEAR(a->dvert[2].dw[1].weight, 0.25f), "painting group 0 leaves group 3");
+  CHECK(pg_gp_weight_paint(gpd, NULL, -1, 20, 0, 20, 1, 1) == 0, "invalid group");
+  const float args[6] = {0, 20, 0, 20, 1, 1};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_WEIGHT_PAINT, args, 6) == 1, "dispatch weight paint");
+  for (int i = 0; i < a->totpoints; i++) free(a->dvert[i].dw);
+  free(a->dvert); a->dvert = NULL;
+}
+
+
+static MDeformVert *weights(int n, const float *w)
+{
+  MDeformVert *dv = calloc((size_t)n, sizeof(MDeformVert));
+  for (int i = 0; i < n; i++) {
+    if (w[i] < 0.0f) continue; /* no entry for group 0 */
+    dv[i].totweight = 1;
+    dv[i].dw = calloc(1, sizeof(MDeformWeight));
+    dv[i].dw->def_nr = 0;
+    dv[i].dw->weight = w[i];
+  }
+  return dv;
+}
+
+static void test_point_weight(void)
+{
+  const float w[2] = {0.25f, -1.0f};
+  MDeformVert *dv = weights(2, w);
+  CHECK(NEAR(pg_gp_modifier_point_weight(NULL, 0, -1), 1.0f), "no group: weight 1");
+  CHECK(NEAR(pg_gp_modifier_point_weight(&dv[0], 0, 0), 0.25f), "weight of the group");
+  CHECK(pg_gp_modifier_point_weight(&dv[1], 0, 0) < 0.0f, "point not in the group is skipped");
+  CHECK(pg_gp_modifier_point_weight(&dv[0], 1, 0) < 0.0f, "inverted: points in the group are skipped");
+  CHECK(NEAR(pg_gp_modifier_point_weight(&dv[1], 1, 0), 1.0f), "inverted: points outside count fully");
+  CHECK(pg_gp_modifier_point_weight(NULL, 0, 0) < 0.0f && NEAR(pg_gp_modifier_point_weight(NULL, 1, 0), 1.0f),
+        "stroke without weights: skipped, or full when inverted");
+  free(dv[0].dw); free(dv);
+}
+
+static void test_thickness_vgroup(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDstroke *a = add_stroke(add_frame(l), 3, 0, 0, 0, 10, 0);
+  for (int i = 0; i < 3; i++) a->points[i].pressure = 1.0f;
+  const float w[3] = {1.0f, 0.5f, -1.0f};
+  a->dvert = weights(3, w);
+  select_points(gpd, a, 7);
+  CHECK(pg_gp_mod_thickness_vgroup(gpd, NULL, 0, 0, 0, 0, 2.0f) == 1, "weighted thickness");
+  CHECK(NEAR(a->points[0].pressure, 2.0f) && NEAR(a->points[1].pressure, 1.5f) && NEAR(a->points[2].pressure, 1.0f),
+        "full weight doubles, half weight goes halfway, ungrouped point untouched");
+  pg_gp_mod_thickness_vgroup(gpd, NULL, 0, 1, 0, 0, 0.5f);
+  CHECK(NEAR(a->points[2].pressure, 0.5f) && NEAR(a->points[0].pressure, 2.0f), "inverted group affects only the others");
+  const float args[5] = {0, 0, 0, 0, 1.0f};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT2_CMD_MOD_THICKNESS_VGROUP, args, 5) == 0, "factor 1 changes nothing (routed through edit.c)");
+  for (int i = 0; i < 2; i++) free(a->dvert[i].dw);
+  free(a->dvert); a->dvert = NULL;
+}
+
+static void test_edit2_operators(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 5, 0, 0, 0, 10, 0);
+  /* select vertex color: red-ish points */
+  a->points[0].vert_color[0] = 1; a->points[0].vert_color[3] = 1;                                 /* red, hue 0 */
+  a->points[1].vert_color[0] = 1; a->points[1].vert_color[2] = 0.2f; a->points[1].vert_color[3] = 1; /* hue ~0.97 */
+  a->points[2].vert_color[1] = 1; a->points[2].vert_color[3] = 1;                                 /* green */
+  const float red[3] = {1, 0, 0};
+  CHECK(pg_gp_select_vertex_color(gpd, NULL, red, 0.05f, 0) == 1, "select vertex color");
+  CHECK(sel_mask(a) == 3 && (a->flag & GP_STROKE_SELECT), "similar hues across the 0/1 wrap selected, green and unpainted not");
+
+  /* normalize thickness/opacity on selected points */
+  CHECK(pg_gp_stroke_normalize(gpd, NULL, 0, 0.3f) == 1 && NEAR(a->points[1].pressure, 0.3f) && NEAR(a->points[2].pressure, 0.0f),
+        "normalize thickness of selected points only");
+  pg_gp_stroke_normalize(gpd, NULL, 1, 2.0f);
+  CHECK(NEAR(a->points[0].strength, 1.0f), "opacity clamps to 1");
+  CHECK(pg_gp_stroke_normalize(gpd, NULL, 3, 1.0f) == 0, "invalid mode");
+
+  /* simplify fixed and sample call Blender's functions on selected strokes */
+  simplify_calls = 0;
+  CHECK(pg_gp_stroke_simplify_fixed(gpd, NULL, 2) == 1 && simplify_calls == 2 && a->totpoints == 2, "simplify fixed twice");
+  bGPDstroke *b = add_stroke(f, 6, 0, 0, 50, 10, 0);
+  sample_calls = 0;
+  CHECK(pg_gp_stroke_sample(gpd, NULL, 5.0f, 0.1f) == 1 && sample_calls == 1, "sample only the selected stroke");
+  CHECK(pg_gp_stroke_sample(gpd, NULL, 0.0f, 0.1f) == 0, "zero length rejected");
+
+  /* extrude both ends of a selected stroke */
+  select_points(gpd, a, 0); select_points(gpd, b, (1u << 0) | (1u << 5));
+  geometry_updates = 0;
+  CHECK(pg_gp_extrude(gpd, NULL) == 1 && b->totpoints == 8, "extrude adds a point at each selected end");
+  CHECK(sel_mask(b) == ((1u << 0) | (1u << 7)) && NEAR(b->points[7].x, 50) && NEAR(b->points[0].x, 0),
+        "new end points are selected at the old end positions; old ends deselected");
+  CHECK(geometry_updates == 1 && a->totpoints == 2, "only the changed stroke updated; unselected stroke untouched");
+  b->flag |= GP_STROKE_CYCLIC;
+  CHECK(pg_gp_extrude(gpd, NULL) == 0, "closed strokes have no ends to extrude");
+
+  const float sv[5] = {1, 0, 0, 0.05f, 1};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT2_CMD_SELECT_VCOLOR, sv, 4) == 0, "select vcolor needs 5 args");
+  CHECK(pg_gp_edit_dispatch(gpd, l, 66, NULL, 0) == 0, "unknown id beyond the range");
+}
+
 int main(void)
 {
   test_pick();
@@ -835,6 +1003,12 @@ int main(void)
   test_structure_operators();
   test_dissolve_keeps_weights_aligned();
   test_vertex_paint();
+  test_easing();
+  test_mirror_copy();
+  test_weight_paint();
+  test_point_weight();
+  test_thickness_vgroup();
+  test_edit2_operators();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

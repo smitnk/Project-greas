@@ -1225,6 +1225,39 @@ class EditorController {
         return changed
     }
     fun endVertexPaint() { if (vertexPaintChanged) history.markEdit(); vertexPaintChanged = false }
+    /** Mirror modifier as copies, about the selection median (Blender uses the object origin). */
+    fun mirrorSelectionCopy(axisX:Boolean, axisY:Boolean):Boolean {
+        val pivot = selectionPivot() ?: return false
+        return runSelectCommand(ProjectGreaseSelect.mirrorCopy(axisX, axisY, pivot[0], pivot[1]))
+    }
+    // ---- Weight Paint: one undo step per drag ----
+    var weightPaintGroup = 0
+        private set
+    var weightPaintValue = 1f
+        private set
+    private var weightPaintChanged = false
+    fun setWeightPaintGroup(group:Int) { if (group >= 0) weightPaintGroup = group }
+    fun setWeightPaintValue(value:Float) { weightPaintValue = value.coerceIn(0f, 1f) }
+    fun weightPaintDab(x:Float, y:Float, pressure:Float=1f):Boolean {
+        if (native.handle == 0L) return false
+        val cmd = ProjectGreaseSelect.weightPaint(weightPaintGroup, x, y, brushes.size.coerceAtLeast(1f),
+            (brushes.strength * pressure).coerceIn(0f, 1f), weightPaintValue) ?: return false
+        val changed = native.applyEditCommand(cmd.id, cmd.args)
+        if (changed) { weightPaintChanged = true; document.markDirty(); render() }
+        return changed
+    }
+    fun endWeightPaint() { if (weightPaintChanged) history.markEdit(); weightPaintChanged = false }
+    fun applyThicknessModifierWithWeights(factor:Float, invert:Boolean=false) =
+        runSelectCommand(ProjectGreaseSelect.thicknessModifierVGroup(weightPaintGroup, invert, factor))
+    fun selectByVertexColor(threshold:Float=0.05f, extend:Boolean=false):Boolean {
+        val argb = materials.colorArgb
+        return runSelectCommand(ProjectGreaseSelect.selectVertexColor(((argb shr 16) and 0xFF)/255f,
+            ((argb shr 8) and 0xFF)/255f, (argb and 0xFF)/255f, threshold, extend))
+    }
+    fun normalizeSelection(mode:Int, value:Float) = runSelectCommand(ProjectGreaseSelect.normalize(mode, value))
+    fun simplifySelectionFixed(steps:Int=1) = runSelectCommand(ProjectGreaseSelect.simplifyFixed(steps))
+    fun sampleSelection(length:Float) = runSelectCommand(ProjectGreaseSelect.sample(length))
+    fun extrudeSelection() = runSelectCommand(ProjectGreaseSelect.extrude())
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}

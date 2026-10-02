@@ -799,7 +799,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             "Dissolve between" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_BETWEEN) },
             "Dissolve unselected" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_UNSELECT) },
             "Split selection" to { controller.splitSelection() },
-            "Join selected strokes" to { controller.joinSelection() }
+            "Join selected strokes" to { controller.joinSelection() },
+            "Mirror copy (X)" to { controller.mirrorSelectionCopy(true, false) },
+            "Mirror copy (Y)" to { controller.mirrorSelectionCopy(false, true) },
+            "Mirror copy (X+Y)" to { controller.mirrorSelectionCopy(true, true) },
+            "Thickness x2 by weight" to { controller.applyThicknessModifierWithWeights(2f) },
+            "Select by vertex color" to { controller.selectByVertexColor() },
+            "Normalize thickness" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_THICKNESS, 1f) },
+            "Normalize opacity" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_OPACITY, 1f) },
+            "Simplify (fixed)" to { controller.simplifySelectionFixed() },
+            "Resample (8 px)" to { controller.sampleSelection(8f) },
+            "Extrude ends" to { controller.extrudeSelection() }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

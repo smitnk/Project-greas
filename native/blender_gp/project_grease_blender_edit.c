@@ -40,6 +40,7 @@
 #include "BKE_gpencil_legacy.h"
 
 #include "project_grease_blender_edit.h"
+#include "project_grease_blender_edit2.h"
 
 #define PGE_V2D_IS_CLIPPED 12000
 #define GP_SELECTMODE_STROKE 1
@@ -570,6 +571,12 @@ static float pge_interpf(float target, float origin, float t)
 
 int pg_gp_modstroke_thickness(bGPDstroke *gps, int normalize, int thickness, float thickness_fac)
 {
+  return pg_gp_modstroke_thickness_vgroup(gps, -1, 0, normalize, thickness, thickness_fac);
+}
+
+int pg_gp_modstroke_thickness_vgroup(bGPDstroke *gps, int def_nr, int invert, int normalize,
+                                     int thickness, float thickness_fac)
+{
   if (gps == NULL || gps->points == NULL || !isfinite(thickness_fac)) {
     return 0;
   }
@@ -577,7 +584,13 @@ int pg_gp_modstroke_thickness(bGPDstroke *gps, int normalize, int thickness, flo
   const float stroke_thickness_inv = 1.0f / (float)(gps->thickness > 1 ? gps->thickness : 1) /* max_ii */;
   for (int i = 0; i < gps->totpoints; i++) {
     bGPDspoint *pt = &gps->points[i];
-    const float weight = 1.0f; /* no vertex group */
+    /* get_modifier_point_weight(): def_nr -1 is "no vertex group" (weight 1); points outside the
+     * group (or inside it when inverted) are skipped. */
+    const MDeformVert *dvert = gps->dvert != NULL ? &gps->dvert[i] : NULL;
+    const float weight = pg_gp_modifier_point_weight(dvert, invert != 0, def_nr);
+    if (weight < 0.0f) {
+      continue;
+    }
     const float curvef = 1.0f; /* no custom curve */
     float target;
     if (normalize) {
@@ -1471,6 +1484,140 @@ int pg_gp_vertex_paint(bGPdata *gpd, const bGPDlayer *only_layer, const PGVertex
   PGE_EDITABLE_STROKES_END;
   return changed;
 }
+
+/* ---------------------------------------------------------------------------------------- */
+/* Interpolation easing: Robert Penner's equations as used by blenlib/intern/easing.c with  */
+/* begin = 0, change = 1, duration = 1.                                                      */
+
+static float pge_bounce_out(float t)
+{
+  if (t < (1.0f / 2.75f)) return 7.5625f * t * t;
+  if (t < (2.0f / 2.75f)) { t -= (1.5f / 2.75f); return 7.5625f * t * t + 0.75f; }
+  if (t < (2.5f / 2.75f)) { t -= (2.25f / 2.75f); return 7.5625f * t * t + 0.9375f; }
+  t -= (2.625f / 2.75f);
+  return 7.5625f * t * t + 0.984375f;
+}
+
+static float pge_ease_in(int type, float t, float back)
+{
+  switch (type) {
+    case PG_EASE_QUAD: return t * t;
+    case PG_EASE_CUBIC: return t * t * t;
+    case PG_EASE_QUART: return t * t * t * t;
+    case PG_EASE_QUINT: return t * t * t * t * t;
+    case PG_EASE_SINE: return 1.0f - cosf(t * (float)M_PI_2);
+    case PG_EASE_EXPO: return (t == 0.0f) ? 0.0f : powf(2.0f, 10.0f * (t - 1.0f));
+    case PG_EASE_CIRC: return 1.0f - sqrtf(1.0f - t * t);
+    case PG_EASE_BACK: return t * t * ((back + 1.0f) * t - back);
+    case PG_EASE_BOUNCE: return 1.0f - pge_bounce_out(1.0f - t);
+    default: return t;
+  }
+}
+
+float pg_gp_interpolate_easing(int type, int mode, float t, float back)
+{
+  if (!isfinite(t)) return 0.0f;
+  t = pge_clampf(t, 0.0f, 1.0f);
+  if (type <= PG_EASE_LINEAR || type > PG_EASE_BOUNCE) return t;
+  switch (mode) {
+    case PG_EASE_IN: return pge_ease_in(type, t, back);
+    case PG_EASE_OUT: return 1.0f - pge_ease_in(type, 1.0f - t, back);
+    case PG_EASE_IN_OUT:
+      return (t < 0.5f) ? 0.5f * pge_ease_in(type, 2.0f * t, back) :
+                          1.0f - 0.5f * pge_ease_in(type, 2.0f - 2.0f * t, back);
+    default: return t;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------- */
+/* Mirror (symmetry) baked as copies (MOD_gpencil_legacy_mirror.c generates mirrored         */
+/* duplicates per enabled axis; here the "object origin" is the given canvas pivot).         */
+
+static bGPDstroke *pge_mirrored_copy(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *src, bGPDstroke *after,
+                                     bool mx, bool my, float px, float py)
+{
+  bGPDstroke *dup = BKE_gpencil_stroke_duplicate(src, true, true);
+  if (dup == NULL) return NULL;
+  for (int i = 0; i < dup->totpoints; i++) {
+    if (mx) dup->points[i].x = 2.0f * px - dup->points[i].x;
+    if (my) dup->points[i].y = 2.0f * py - dup->points[i].y;
+    dup->points[i].flag &= ~GP_SPOINT_SELECT;
+  }
+  dup->flag &= ~GP_STROKE_SELECT;
+  pge_insert_after(&gpf->strokes, (Link *)after, (Link *)dup);
+  BKE_gpencil_stroke_geometry_update(gpd, dup);
+  return dup;
+}
+
+int pg_gp_mirror_copy(bGPdata *gpd, const bGPDlayer *only_layer, int axis_x, int axis_y,
+                      float pivot_x, float pivot_y)
+{
+  if (gpd == NULL || (!axis_x && !axis_y) || !isfinite(pivot_x) || !isfinite(pivot_y)) return 0;
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->points == NULL) continue;
+    /* copies go after the original; the iterator already saved the original's next */
+    bGPDstroke *last = gps;
+    bGPDstroke *made;
+    if (axis_x && (made = pge_mirrored_copy(gpd, gpf, gps, last, true, false, pivot_x, pivot_y))) last = made;
+    if (axis_y && (made = pge_mirrored_copy(gpd, gpf, gps, last, false, true, pivot_x, pivot_y))) last = made;
+    if (axis_x && axis_y) pge_mirrored_copy(gpd, gpf, gps, last, true, true, pivot_x, pivot_y);
+    changed = 1;
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+/* ---------------------------------------------------------------------------------------- */
+/* Weight Paint "Draw" (gpencil_weight_paint.c brush_draw_apply): weight moves toward the    */
+/* target by the brush influence (same smooth falloff as Vertex Paint).                      */
+
+static MDeformWeight *pge_defvert_ensure_index(MDeformVert *dv, int def_nr)
+{
+  for (int i = 0; i < dv->totweight; i++) {
+    if ((int)dv->dw[i].def_nr == def_nr) return &dv->dw[i];
+  }
+  MDeformWeight *dw = MEM_callocN(sizeof(MDeformWeight) * (size_t)(dv->totweight + 1), "pg_defvert");
+  if (dw == NULL) return NULL;
+  if (dv->dw != NULL) {
+    memcpy(dw, dv->dw, sizeof(MDeformWeight) * (size_t)dv->totweight);
+    MEM_freeN(dv->dw);
+  }
+  dv->dw = dw;
+  dv->dw[dv->totweight].def_nr = (unsigned int)def_nr;
+  dv->dw[dv->totweight].weight = 0.0f;
+  return &dv->dw[dv->totweight++];
+}
+
+int pg_gp_weight_paint(bGPdata *gpd, const bGPDlayer *only_layer, int def_nr, float x, float y,
+                       float radius, float strength, float target)
+{
+  if (gpd == NULL || def_nr < 0 || !isfinite(x) || !isfinite(y) || !(radius > 0.0f) ||
+      !isfinite(strength) || !isfinite(target))
+  {
+    return 0;
+  }
+  const PGVertexPaint brush = {PG_VPAINT_DRAW, x, y, radius, strength, {0, 0, 0}, PG_PAINT_MODE_STROKE, 0, 0};
+  const float goal = pge_clampf(target, 0.0f, 1.0f);
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (gps->points == NULL || gps->totpoints == 0) continue;
+    for (int i = 0; i < gps->totpoints; i++) {
+      const float f = pge_vpaint_influence(&brush, gps->points[i].x, gps->points[i].y);
+      if (f <= 0.0f) continue;
+      if (gps->dvert == NULL) { /* BKE_gpencil_dvert_ensure() */
+        gps->dvert = MEM_callocN(sizeof(MDeformVert) * (size_t)gps->totpoints, "gp_stroke_weights");
+        if (gps->dvert == NULL) break;
+      }
+      MDeformWeight *dw = pge_defvert_ensure_index(&gps->dvert[i], def_nr);
+      if (dw == NULL) continue;
+      dw->weight = pge_clampf(dw->weight + (goal - dw->weight) * f, 0.0f, 1.0f);
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -1617,8 +1764,17 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
       changed = pg_gp_vertex_paint(gpd, scope, &vp);
       break;
     }
+    case PG_EDIT_CMD_MIRROR_COPY:
+      if (arg_count < 4) return 0;
+      changed = pg_gp_mirror_copy(gpd, scope, args[0] != 0.0f, args[1] != 0.0f, args[2], args[3]);
+      break;
+    case PG_EDIT_CMD_WEIGHT_PAINT:
+      if (arg_count < 6) return 0;
+      changed = pg_gp_weight_paint(gpd, scope, (int)lroundf(args[0]), args[1], args[2], args[3], args[4], args[5]);
+      break;
     default:
-      return 0;
+      /* ids 58..65: project_grease_blender_edit2.c (tags the cache itself) */
+      return pg_gp_edit2_dispatch(gpd, active_layer, command, args, arg_count);
   }
 
   if (changed) {

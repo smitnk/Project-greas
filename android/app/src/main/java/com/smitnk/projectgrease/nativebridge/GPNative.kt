@@ -122,6 +122,16 @@ object GPNative {
     external fun nativeGetLayerInfo(handle: Long, index: Int): FloatArray?
     external fun nativeGetLayerName(handle: Long, index: Int): String?
     external fun nativeSetLayerOpacity(handle: Long, index: Int, opacity: Float): Boolean
+    // Live modifier stack of a layer (project_grease_modifier_stack.h). nativeModifierGet returns
+    // [type, enabled, params...]; nativeModifierSetParams takes the bare params array.
+    external fun nativeModifierCount(handle: Long, layer: Int): Int
+    external fun nativeModifierAdd(handle: Long, layer: Int, type: Int): Int
+    external fun nativeModifierRemove(handle: Long, layer: Int, index: Int): Boolean
+    external fun nativeModifierMove(handle: Long, layer: Int, from: Int, to: Int): Boolean
+    external fun nativeModifierSetEnabled(handle: Long, layer: Int, index: Int, enabled: Boolean): Boolean
+    external fun nativeModifierSetParams(handle: Long, layer: Int, index: Int, params: FloatArray): Boolean
+    external fun nativeModifierGet(handle: Long, layer: Int, index: Int): FloatArray?
+    external fun nativeModifierApply(handle: Long, layer: Int, index: Int): Boolean
     external fun nativeGetMaterialInfo(handle: Long, index: Int): FloatArray?
     external fun nativeMaterialCount(handle: Long): Int
     external fun nativeCreateMaterial(handle: Long): Boolean

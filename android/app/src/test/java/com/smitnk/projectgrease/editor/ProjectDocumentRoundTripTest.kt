@@ -10,7 +10,11 @@ import org.junit.Test
 /** In-memory stand-in for the native document, with the same starting state (layer 0, material 0). */
 private class FakeDocument : DocumentNative {
     class Frame(val number: Int, val strokes: MutableList<StrokeRecord> = mutableListOf())
-    class Layer(var record: LayerRecord, val frames: MutableList<Frame> = mutableListOf())
+    class Layer(
+        var record: LayerRecord,
+        val frames: MutableList<Frame> = mutableListOf(),
+        val modifiers: MutableList<ModifierRecord> = mutableListOf()
+    )
 
     val layers = mutableListOf(Layer(LayerRecord("GP_Layer", true, false, 1f)))
     val materials = mutableListOf(MaterialRecord(floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 0f, 0f, 1f), true, false))
@@ -37,6 +41,14 @@ private class FakeDocument : DocumentNative {
     override fun strokeRecord(index: Int) = frame?.strokes?.getOrNull(index)
     override fun materialCount() = materials.size
     override fun materialRecord(index: Int) = materials.getOrNull(index)
+
+    override fun modifierCount(layer: Int) = layers.getOrNull(layer)?.modifiers?.size ?: 0
+    override fun modifierRecord(layer: Int, index: Int) = layers.getOrNull(layer)?.modifiers?.getOrNull(index)
+    override fun addModifier(layer: Int, record: ModifierRecord): Boolean {
+        val target = layers.getOrNull(layer) ?: return false
+        target.modifiers.add(record)
+        return true
+    }
 
     override fun createLayer(name: String): Boolean {
         if (failCreateLayer) return false
@@ -110,6 +122,11 @@ class ProjectDocumentRoundTripTest {
         doc.createLayer("Colors")
         doc.createFrame(2)
         doc.applyLayerRecord(2, LayerRecord("Colors", true, true, 0.125f))
+
+        // live modifier stacks: two on layer 0 (the second disabled), one on layer 2, none on layer 1
+        doc.addModifier(0, ModifierRecord(ModifierType.OFFSET, true, FloatArray(ModifierSpecs.paramCount(ModifierType.OFFSET)) { 0.25f * it - 1f }))
+        doc.addModifier(0, ModifierRecord(ModifierType.NOISE, false, FloatArray(ModifierSpecs.paramCount(ModifierType.NOISE)) { 0.5f + it }))
+        doc.addModifier(2, ModifierRecord(ModifierType.SMOOTH, true, floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f)))
         return doc
     }
 
@@ -130,6 +147,13 @@ class ProjectDocumentRoundTripTest {
             assertEquals("layer $li locked", el.record.locked, al.record.locked)
             assertEquals("layer $li opacity", el.record.opacity, al.record.opacity, 0f)
             assertEquals("layer $li frames", el.frames.map { it.number }, al.frames.map { it.number })
+            assertEquals("layer $li modifier count", el.modifiers.size, al.modifiers.size)
+            el.modifiers.forEachIndexed { mi, em ->
+                val am = al.modifiers[mi]
+                assertEquals("layer $li modifier $mi type", em.type, am.type)
+                assertEquals("layer $li modifier $mi enabled", em.enabled, am.enabled)
+                assertArrayEquals("layer $li modifier $mi params", em.params, am.params, 0f)
+            }
             el.frames.forEachIndexed { fi, ef ->
                 val af = al.frames[fi]
                 assertEquals("layer $li frame ${ef.number} stroke count", ef.strokes.size, af.strokes.size)
@@ -179,6 +203,40 @@ class ProjectDocumentRoundTripTest {
         assertEquals(1080, parsed.height)
         assertEquals(24, parsed.fps)
         assertEquals(1, parsed.frame)
+    }
+
+    @Test
+    fun theModifierStackOfEachLayerSurvivesARoundTripInOrder() {
+        val restored = load(save(sampleDocument()))
+        assertEquals(listOf(ModifierType.OFFSET, ModifierType.NOISE), restored.layers[0].modifiers.map { it.type })
+        assertEquals(listOf(true, false), restored.layers[0].modifiers.map { it.enabled })
+        assertTrue(restored.layers[1].modifiers.isEmpty())
+        assertEquals(listOf(ModifierType.SMOOTH), restored.layers[2].modifiers.map { it.type })
+        assertArrayEquals(floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f), restored.layers[2].modifiers[0].params, 0f)
+    }
+
+    @Test
+    fun layersWithoutModifiersWriteNoStackAndOldFilesLoadWithAnEmptyStack() {
+        val plain = FakeDocument().apply { createFrame(1) }
+        val layer = org.json.JSONObject(save(plain)).getJSONArray("layers").getJSONObject(0)
+        assertFalse(layer.has("modifiers"))
+        // a version 3 file (written before the stack existed)
+        val v3 = """{"version":3,"layers":[{"index":0,"name":"A","visible":true,"locked":false,"opacity":1,
+            "frames":[{"number":1,"strokes":[{"material":0,"thickness":3,"cyclic":false,"fillOpacity":1,
+            "fillColor":[0,0,0,0],"points":[[1,2,0,1,1,0],[3,4,0,1,1,0.5]]}]}]}]}"""
+        val doc = load(v3)
+        assertTrue(doc.layers[0].modifiers.isEmpty())
+        assertEquals(2, doc.layers[0].frames[0].strokes[0].points.size)
+    }
+
+    @Test
+    fun unknownModifierTypesInAFileAreDropped() {
+        val raw = """{"version":4,"layers":[{"index":0,"frames":[],"modifiers":[
+            {"type":99,"enabled":true,"params":[1]},{"type":${ModifierType.SUBDIV},"enabled":false,"params":[2,1]},{"enabled":true}]}]}"""
+        val doc = load(raw)
+        assertEquals(listOf(ModifierType.SUBDIV), doc.layers[0].modifiers.map { it.type })
+        assertFalse(doc.layers[0].modifiers[0].enabled)
+        assertArrayEquals(floatArrayOf(2f, 1f), doc.layers[0].modifiers[0].params, 0f)
     }
 
     @Test

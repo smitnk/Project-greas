@@ -3880,11 +3880,11 @@ bool Backend::apply_blender_modifier(int index, int modifier_type, float factor,
   }
 
   /*
-   * This adapter deliberately does NOT emulate Blender's modifier stack.
-   * Only operations with a direct Blender 3.6.23 Legacy GP BKE implementation
-   * are exposed here. Real object-level modifier evaluation remains outside the
-   * focused Android closure until its actual Blender dependency graph can be
-   * brought in without replacing it with custom code.
+   * This one-shot path does not evaluate Blender's object modifier stack: only operations with a
+   * direct Blender 3.6.23 Legacy GP BKE implementation are exposed here. The live, non-destructive
+   * per-layer stack is a separate Project Grease structure (project_grease_modifier_stack.c,
+   * Backend::modifier_*) that calls the same BKE functions and the verbatim deformStroke() bodies;
+   * it needs no Depsgraph or Object.
    */
   const float amount = std::max(0.0f, factor);
   switch (modifier_type) {

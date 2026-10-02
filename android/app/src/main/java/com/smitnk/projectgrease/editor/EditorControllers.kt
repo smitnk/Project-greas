@@ -4,7 +4,7 @@ import kotlin.math.pow
 
 import com.smitnk.projectgrease.nativebridge.GPNative
 
-class NativeEditorBridge {
+class NativeEditorBridge : ModifierNative {
     var handle: Long = 0L
         private set
     fun attach(value: Long) { handle = value }
@@ -75,6 +75,16 @@ class NativeEditorBridge {
     fun layerInfo(index: Int) = if (handle != 0L) GPNative.nativeGetLayerInfo(handle, index) else null
     fun layerName(index: Int) = if (handle != 0L) GPNative.nativeGetLayerName(handle, index) else null
     fun setLayerOpacity(index: Int, opacity: Float) = handle != 0L && GPNative.nativeSetLayerOpacity(handle, index, opacity)
+    override fun modifierCount(layer: Int) = if (handle != 0L) GPNative.nativeModifierCount(handle, layer) else 0
+    override fun modifierAdd(layer: Int, type: Int) = if (handle != 0L) GPNative.nativeModifierAdd(handle, layer, type) else -1
+    override fun modifierRemove(layer: Int, index: Int) = handle != 0L && GPNative.nativeModifierRemove(handle, layer, index)
+    override fun modifierMove(layer: Int, from: Int, to: Int) = handle != 0L && GPNative.nativeModifierMove(handle, layer, from, to)
+    override fun modifierSetEnabled(layer: Int, index: Int, enabled: Boolean) =
+        handle != 0L && GPNative.nativeModifierSetEnabled(handle, layer, index, enabled)
+    override fun modifierSetParams(layer: Int, index: Int, params: FloatArray) =
+        handle != 0L && GPNative.nativeModifierSetParams(handle, layer, index, params)
+    override fun modifierGet(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeModifierGet(handle, layer, index) else null
+    override fun modifierApply(layer: Int, index: Int) = handle != 0L && GPNative.nativeModifierApply(handle, layer, index)
     fun materialInfo(index: Int) = if (handle != 0L) GPNative.nativeGetMaterialInfo(handle, index) else null
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
@@ -979,6 +989,27 @@ class EditorController {
         }
     }
     fun layerCount() = native.layerCount()
+
+    // Live modifier stack of the selected layer (see ModifierStack.kt). Every change is an undo step
+    // and redraws; parameter drags call setModifierParam(commit = false) and commitModifierEdit() once.
+    fun modifiers(layer:Int=selectedLayer):List<ModifierRecord> = ModifierStackCommands.list(native,layer)
+    private fun modifierChanged(ok:Boolean):Boolean {
+        if(ok){history.markEdit();document.markDirty();render()}
+        return ok
+    }
+    fun addModifier(type:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.add(native,layer,type)>=0)
+    fun removeModifier(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.remove(native,layer,index))
+    fun moveModifier(index:Int,delta:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.moveBy(native,layer,index,delta))
+    fun setModifierEnabled(index:Int,enabled:Boolean,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.setEnabled(native,layer,index,enabled))
+    fun setModifierParam(index:Int,paramIndex:Int,value:Float,commit:Boolean=true,layer:Int=selectedLayer):Boolean {
+        val ok=ModifierStackCommands.setParam(native,layer,index,paramIndex,value)
+        if(ok){ if(commit){history.markEdit()}; document.markDirty(); render() }
+        return ok
+    }
+    fun commitModifierEdit():Boolean = history.markEdit()
+    /** Bakes the modifier into the layer's strokes (all frames) and removes it from the stack. */
+    fun applyLayerModifier(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.apply(native,layer,index))
+
     fun setLayerVisibility(index:Int, visible:Boolean):Boolean {
         val ok=native.setLayerVisibility(index,visible)
         if(ok){history.markEdit();document.markDirty();render()}

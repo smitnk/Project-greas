@@ -188,13 +188,13 @@ object FeatureRegistry {
         FeatureId.SNAPPING to wired("Snaps input points to the grid size in canvas units. $DEVICE"),
 
         // ---- modifiers and effects -----------------------------------------------------
-        FeatureId.MODIFIERS to wired("Only Smooth, Simplify and Subdivide, applied destructively to one stroke; not a non-destructive stack. $DEVICE"),
-        FeatureId.MODIFIER_ORDERING to missing("No modifier stack object."),
-        FeatureId.NOISE to missing("Modifier source not traced yet."),
+        FeatureId.MODIFIERS to wired("Live per-layer stack (Advanced sheet) of Thickness, Opacity, Tint, Hue/Saturation, Length, Smooth, Simplify, Subdivide, Offset and Noise; Apply bakes one into the strokes. No vertex-group/layer/material/pass filters or custom curves; Build, Dash, Outline, Mirror, Array and the other modifiers are not ported. Onion-skin ghosts and fill-tool hit tests use the unmodified strokes. $DEVICE"),
+        FeatureId.MODIFIER_ORDERING to wired("The stack order is the evaluation order (Up/Down in the Advanced sheet); order, enable/disable and apply-equals-live are host-tested. $DEVICE"),
+        FeatureId.NOISE to wired("Noise deformStroke() ported from MOD_gpencil_legacy_noise.c with Blender's BLI_hash seeds, evaluated with the current frame; mapped to canvas units (see project_grease_modifier_stack.h); no vertex group or curve. $DEVICE"),
         FeatureId.DASH to missing("Modifier source not traced yet."),
         FeatureId.OUTLINE to missing("Modifier source not traced yet."),
-        FeatureId.THICKNESS_MODIFIER to wired("Thickness modifier baked into selected strokes (MOD_gpencil_legacy_thick.c, no vertex groups/curve); Opacity modifier likewise. No live stack. $DEVICE"),
-        FeatureId.COLOR_MODIFIER to missing("Modifier source not traced yet."),
+        FeatureId.THICKNESS_MODIFIER to wired("Thickness (MOD_gpencil_legacy_thick.c) and Opacity modifiers as live stack entries; no vertex groups/curve. $DEVICE"),
+        FeatureId.COLOR_MODIFIER to wired("Tint and Hue/Saturation modifiers as live stack entries (no vertex groups/curve). $DEVICE"),
         FeatureId.DEFORM to missing("Modifier source not traced yet."),
         FeatureId.GENERATE to missing("Generators are outside the focused closure."),
         FeatureId.STROKE_EFFECTS to blocked("Shader effects need the full DRW pipeline."),
@@ -207,7 +207,7 @@ object FeatureRegistry {
         // ---- persistence and export ----------------------------------------------------
         FeatureId.NEW_PROJECT to wired("Creates a document with one layer and frame. $DEVICE"),
         FeatureId.OPEN_PROJECT to wired("Restores points (incl. vertex color), stroke material/thickness/cyclic/fill (incl. fill vertex color), layer name/visibility/lock/opacity and the material palette (round-trip tested); older files load with the old defaults and no vertex color. $DEVICE"),
-        FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores (format version 3). $DEVICE"),
+        FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores, including each layer's modifier stack (format version 4). $DEVICE"),
         FeatureId.SAVE_AS to missing("The menu item just saves."),
         FeatureId.EXPORT to missing("The menu shows 'Export pipeline is not connected yet'."),
         FeatureId.EXPORT_PNG to missing("No export pipeline."),

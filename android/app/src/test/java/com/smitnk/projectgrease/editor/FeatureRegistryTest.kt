@@ -72,8 +72,10 @@ class FeatureRegistryTest {
         assertFalse(FeatureRegistry.capability(FeatureId.OPEN_PROJECT).limitation.contains("LOSSY"))
         // Export is a toast, not a pipeline.
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT).state)
-        // Only three modifiers exist and there is no stack.
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
+        // The live modifier stack exists but has no device evidence; Dash and Outline are still not ported.
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
+        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.DASH).state)
+        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.OUTLINE).state)
         assertEquals(AuditStatus.BLOCKED, FeatureRegistry.capability(FeatureId.LINE_ART).audit)
     }
 

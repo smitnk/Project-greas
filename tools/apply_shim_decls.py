@@ -6,6 +6,8 @@ SHIM = ROOT / "native/blender_gp/tests/select_shim/BKE_gpencil_geom_legacy.h"
 DECLS = [
     "void BKE_gpencil_stroke_flip(bGPDstroke *gps);",
     "bGPDstroke *BKE_gpencil_stroke_duplicate(bGPDstroke *gps_src, bool dup_points, bool dup_curve);",
+    "void BKE_gpencil_stroke_simplify_fixed(bGPdata *gpd, bGPDstroke *gps);",
+    "bool BKE_gpencil_stroke_sample(bGPdata *gpd, bGPDstroke *gps, float dist, bool select, float sharp_threshold);",
     "void BKE_gpencil_stroke_join(bGPDstroke *gps_a, bGPDstroke *gps_b, bool leave_gaps, bool fit_thickness, bool smooth, bool auto_flip);",
 ]
 text = SHIM.read_text(encoding="utf-8")
@@ -47,3 +49,9 @@ for name, body in NEW_FILES.items():
     else:
         path.write_text(body, encoding="utf-8")
         print("created shim:", name)
+
+MEM = SHIM_DIR / "MEM_guardedalloc.h"
+mem = MEM.read_text(encoding="utf-8")
+if "MEM_callocN" not in mem:
+    MEM.write_text(mem.rstrip("\n") + "\n#define MEM_callocN(size, name) calloc(1, (size))\n", encoding="utf-8")
+    print("added: MEM_callocN")

@@ -71,7 +71,7 @@ object ModifierSpecs {
 
     /** Number of parameters per type: PG_P_*_COUNT in project_grease_modifier_stack.h. */
     fun paramCount(type: Int) = when (type) {
-        ModifierType.THICKNESS -> 3
+        ModifierType.THICKNESS -> 6
         ModifierType.OPACITY -> 4
         ModifierType.TINT -> 5
         ModifierType.COLOR -> 4
@@ -89,7 +89,8 @@ object ModifierSpecs {
     /** The parameters the 2D canvas UI offers (Offset/Noise z and x/y rotation stay at 0). */
     fun specs(type: Int): List<ParamSpec> = when (type) {
         ModifierType.THICKNESS -> listOf(
-            b(0, "Normalize thickness"), n(1, "Thickness", 0f, 500f), f(2, "Factor", 0f, 5f)
+            b(0, "Normalize thickness"), n(1, "Thickness", 0f, 500f), f(2, "Factor", 0f, 5f),
+            b(3, "Use vertex group"), n(4, "Vertex group", 0f, 255f), b(5, "Invert vertex group")
         )
         ModifierType.OPACITY -> listOf(
             e(0, "Apply to", "Stroke and fill", "Stroke", "Fill", "Hardness"),

@@ -117,7 +117,7 @@ class ModifierStackTest {
         // too few values are zero-padded, too many are cut
         val short = ModifierStackPacking.pack(ModifierRecord(ModifierType.SUBDIV, true, floatArrayOf(3f)))
         assertArrayEquals(floatArrayOf(ModifierType.SUBDIV.toFloat(), 1f, 3f, 0f), short, 0f)
-        assertEquals(3, ModifierStackPacking.paramsFor(ModifierType.THICKNESS, FloatArray(24) { 1f }).size)
+        assertEquals(6, ModifierStackPacking.paramsFor(ModifierType.THICKNESS, FloatArray(24) { 1f }).size)
         // malformed arrays
         assertNull(ModifierStackPacking.unpack(null))
         assertNull(ModifierStackPacking.unpack(floatArrayOf(1f)))

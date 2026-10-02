@@ -254,4 +254,55 @@ object ProjectGreaseSelect {
         if (!finite(x, y) || !finite(radius, strength) || radius <= 0f || !finite(r, g) || !finite(b) || !finite(dx, dy)) return null
         return Command(CMD_VERTEX_PAINT, floatArrayOf(brush.toFloat(), x, y, radius, strength, r, g, b, target.toFloat(), dx, dy))
     }
+
+    // Mirror modifier baked as copies, Weight Paint draw, interpolation easing ids
+    const val CMD_MIRROR_COPY = 56
+    const val CMD_WEIGHT_PAINT = 57
+    const val EASE_LINEAR = 0
+    const val EASE_QUAD = 1
+    const val EASE_CUBIC = 2
+    const val EASE_QUART = 3
+    const val EASE_QUINT = 4
+    const val EASE_SINE = 5
+    const val EASE_EXPO = 6
+    const val EASE_CIRC = 7
+    const val EASE_BACK = 8
+    const val EASE_BOUNCE = 9
+    const val EASE_IN = 0
+    const val EASE_OUT = 1
+    const val EASE_IN_OUT = 2
+
+    fun mirrorCopy(axisX: Boolean, axisY: Boolean, pivotX: Float, pivotY: Float): Command? {
+        if ((!axisX && !axisY) || !finite(pivotX, pivotY)) return null
+        return Command(CMD_MIRROR_COPY, floatArrayOf(flag(axisX), flag(axisY), pivotX, pivotY))
+    }
+    fun weightPaint(group: Int, x: Float, y: Float, radius: Float, strength: Float, weight: Float): Command? {
+        if (group < 0 || !finite(x, y) || !finite(radius, strength) || !finite(weight) || radius <= 0f) return null
+        return Command(CMD_WEIGHT_PAINT, floatArrayOf(group.toFloat(), x, y, radius, strength, weight))
+    }
+
+    // project_grease_blender_edit2.h
+    const val CMD_MOD_THICKNESS_VGROUP = 58
+    const val CMD_SELECT_VCOLOR = 59
+    const val CMD_NORMALIZE = 60
+    const val CMD_SIMPLIFY_FIXED = 61
+    const val CMD_SAMPLE = 62
+    const val CMD_EXTRUDE = 63
+    const val NORMALIZE_THICKNESS = 0
+    const val NORMALIZE_OPACITY = 1
+
+    fun thicknessModifierVGroup(group: Int, invert: Boolean, factor: Float, normalize: Boolean = false, thickness: Int = 0): Command? {
+        if (group < -1 || thickness < 0 || !finite(factor)) return null
+        return Command(CMD_MOD_THICKNESS_VGROUP, floatArrayOf(group.toFloat(), flag(invert), flag(normalize), thickness.toFloat(), factor))
+    }
+    fun selectVertexColor(r: Float, g: Float, b: Float, threshold: Float, extend: Boolean = false): Command? {
+        if (!finite(r, g) || !finite(b, threshold) || threshold < 0f) return null
+        return Command(CMD_SELECT_VCOLOR, floatArrayOf(r, g, b, threshold, flag(extend)))
+    }
+    fun normalize(mode: Int, value: Float): Command? =
+        if ((mode == NORMALIZE_THICKNESS || mode == NORMALIZE_OPACITY) && finite(value)) Command(CMD_NORMALIZE, floatArrayOf(mode.toFloat(), value)) else null
+    fun simplifyFixed(steps: Int): Command? = if (steps in 1..100) Command(CMD_SIMPLIFY_FIXED, floatArrayOf(steps.toFloat())) else null
+    fun sample(length: Float, sharpThreshold: Float = 0.1f): Command? =
+        if (finite(length, sharpThreshold) && length > 0f) Command(CMD_SAMPLE, floatArrayOf(length, sharpThreshold)) else null
+    fun extrude() = Command(CMD_EXTRUDE, FloatArray(0))
 }

@@ -13,6 +13,7 @@
 #include "BKE_gpencil_legacy.h"
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
+#include "DNA_meshdata_types.h"
 #include "MEM_guardedalloc.h"
 #include "project_grease_modifier_stack.h"
 
@@ -244,6 +245,48 @@ static void test_apply_all_frames()
   free_doc(d);
 }
 
+/* Thickness with a vertex group: weights live on the strokes (dvert), so the evaluated copy and
+ * Apply on the original agree, and points outside the group are skipped. */
+static Doc make_pair_doc(int strokes);
+static void test_thickness_vertex_group()
+{
+  Doc d = make_pair_doc(1);
+  bGPDstroke *s = static_cast<bGPDstroke *>(d.f1->strokes.first);
+  s->dvert = static_cast<MDeformVert *>(MEM_callocN(sizeof(MDeformVert) * 2, "test dvert"));
+  for (int i = 0; i < 2; i++) {
+    s->points[i].pressure = 1.0f;
+  }
+  s->dvert[0].dw = static_cast<MDeformWeight *>(MEM_callocN(sizeof(MDeformWeight), "test dw"));
+  s->dvert[0].totweight = 1;
+  s->dvert[0].dw[0].def_nr = 2;
+  s->dvert[0].dw[0].weight = 0.5f; /* point 1 has no weight in group 2 */
+  PGModEntry e = entry(PG_MOD_THICKNESS);
+  e.params[PG_P_THICK_NORMALIZE] = 0;
+  e.params[PG_P_THICK_FACTOR] = 3.0f;
+  e.params[PG_P_THICK_USE_VGROUP] = 1;
+  e.params[PG_P_THICK_VGROUP] = 2;
+  auto live = eval(d, &e, 1, 1);
+  CHECK(near(live[0][0].v[3], 2.0f)); /* interp(3, 1, 0.5) */
+  CHECK(near(live[0][1].v[3], 1.0f)); /* outside the group: untouched */
+  e.params[PG_P_THICK_INVERT_VGROUP] = 1;
+  auto inv = eval(d, &e, 1, 1);
+  CHECK(near(inv[0][0].v[3], 1.0f) && near(inv[0][1].v[3], 3.0f)); /* inverted: the other points */
+  e.params[PG_P_THICK_INVERT_VGROUP] = 0;
+  e.params[PG_P_THICK_VGROUP] = 7; /* a group nobody is in: nothing changes */
+  auto none = eval(d, &e, 1, 1);
+  CHECK(near(none[0][0].v[3], 1.0f) && near(none[0][1].v[3], 1.0f));
+  e.params[PG_P_THICK_VGROUP] = 2;
+  e.params[PG_P_THICK_USE_VGROUP] = 0; /* group off: every point */
+  auto all = eval(d, &e, 1, 1);
+  CHECK(near(all[0][0].v[3], 3.0f) && near(all[0][1].v[3], 3.0f));
+  e.params[PG_P_THICK_USE_VGROUP] = 1;
+  const auto before = eval(d, &e, 1, 1);
+  CHECK(pg_mod_apply(d.gpd, d.gpl, &e, 1) == 1);
+  CHECK(same(before, snapshot(d.f1)));
+  /* the weights are freed with the stroke by free_doc (BKE_gpencil_free_stroke) */
+  free_doc(d);
+}
+
 static void test_offset_noise_determinism()
 {
   Doc d = make_doc();
@@ -356,6 +399,7 @@ int main()
   test_order();
   test_apply_equals_live();
   test_apply_all_frames();
+  test_thickness_vertex_group();
   test_offset_noise_determinism();
   test_offset_mapping();
   test_golden_offset_noise();

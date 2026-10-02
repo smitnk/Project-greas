@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
-SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c")
+SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit2.c")
 INC=(-I"$ROOT/native/blender_gp/tests/select_shim" -I"$ROOT/native/blender_gp")
 WARN=(-Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
 cc -std=gnu11 "${WARN[@]}" "${INC[@]}" "${SRC[@]}" -lm -o "$OUT/test_edit"

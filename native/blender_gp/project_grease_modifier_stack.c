@@ -178,6 +178,9 @@ void pg_mod_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_THICK_NORMALIZE] = pgm_flag(p[PG_P_THICK_NORMALIZE]);
       p[PG_P_THICK_THICKNESS] = pgm_int(p[PG_P_THICK_THICKNESS], 0.0f, 32767.0f);
       p[PG_P_THICK_FACTOR] = pgm_clamp(p[PG_P_THICK_FACTOR], 0.0f, 100.0f);
+      p[PG_P_THICK_USE_VGROUP] = pgm_flag(p[PG_P_THICK_USE_VGROUP]);
+      p[PG_P_THICK_VGROUP] = pgm_int(p[PG_P_THICK_VGROUP], 0.0f, 1023.0f);
+      p[PG_P_THICK_INVERT_VGROUP] = pgm_flag(p[PG_P_THICK_INVERT_VGROUP]);
       break;
     case PG_MOD_OPACITY:
       p[PG_P_OPACITY_MODIFY] = pgm_int(p[PG_P_OPACITY_MODIFY], PG_MODIFY_COLOR_BOTH, PG_MODIFY_COLOR_HARDNESS);
@@ -757,8 +760,12 @@ int pg_mod_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstrok
   const float *p = e->params;
   switch (e->type) {
     case PG_MOD_THICKNESS:
-      return pg_gp_modstroke_thickness(gps, p[PG_P_THICK_NORMALIZE] != 0.0f,
-                                       (int)p[PG_P_THICK_THICKNESS], p[PG_P_THICK_FACTOR]);
+      /* The optional vertex group: weights stay with the strokes (dvert), so evaluation on the
+       * copies and Apply on the originals see the same weights. */
+      return pg_gp_modstroke_thickness_vgroup(
+          gps, p[PG_P_THICK_USE_VGROUP] != 0.0f ? (int)p[PG_P_THICK_VGROUP] : -1,
+          p[PG_P_THICK_INVERT_VGROUP] != 0.0f, p[PG_P_THICK_NORMALIZE] != 0.0f,
+          (int)p[PG_P_THICK_THICKNESS], p[PG_P_THICK_FACTOR]);
     case PG_MOD_OPACITY:
       return pg_gp_modstroke_opacity(gps, (int)p[PG_P_OPACITY_MODIFY], p[PG_P_OPACITY_FACTOR],
                                      p[PG_P_OPACITY_NORMALIZE] != 0.0f, p[PG_P_OPACITY_HARDNESS]);

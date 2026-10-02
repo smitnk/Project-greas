@@ -58,9 +58,11 @@ enum {
   PG_EDIT_CMD_JOIN = 54,         /* args: leave_gaps */
   /* args: brush, x, y, radius, strength, r, g, b, target (PG_PAINT_MODE_*), dx, dy */
   PG_EDIT_CMD_VERTEX_PAINT = 55,
+  PG_EDIT_CMD_MIRROR_COPY = 56,  /* args: axis_x, axis_y, pivot_x, pivot_y */
+  PG_EDIT_CMD_WEIGHT_PAINT = 57, /* args: def_nr, x, y, radius, strength, target_weight */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 55
+#define PG_EDIT_CMD_LAST 65 /* 58..65 live in project_grease_blender_edit2.c */
 
 /* GPENCIL_OT_dissolve types */
 enum { PG_DISSOLVE_POINTS = 0, PG_DISSOLVE_BETWEEN = 1, PG_DISSOLVE_UNSELECT = 2 };
@@ -129,6 +131,25 @@ int pg_gp_mod_thickness(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
 int pg_gp_mod_opacity(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
                       int modify_color, float factor, int normalize, float hardness);
 
+/* eBezTriple_Easing / interpolation easing types used by gpencil_interpolate.c */
+enum {
+  PG_EASE_LINEAR = 0, PG_EASE_QUAD, PG_EASE_CUBIC, PG_EASE_QUART, PG_EASE_QUINT,
+  PG_EASE_SINE, PG_EASE_EXPO, PG_EASE_CIRC, PG_EASE_BACK, PG_EASE_BOUNCE,
+};
+enum { PG_EASE_IN = 0, PG_EASE_OUT = 1, PG_EASE_IN_OUT = 2 };
+
+/* Interpolation factor for t in 0..1 (BLI_easing_*_ease_in/out/in_out(t, 0, 1, 1)).
+ * `back` is the overshoot of the Back type (Blender default 1.70158). Returns t when unknown. */
+float pg_gp_interpolate_easing(int type, int mode, float t, float back);
+
+/* Mirror modifier baked as copies: selected strokes are duplicated and mirrored about the pivot. */
+int pg_gp_mirror_copy(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
+                      int axis_x, int axis_y, float pivot_x, float pivot_y);
+
+/* Weight Paint "Draw" dab: moves the def_nr weight of points under the brush toward `target`. */
+int pg_gp_weight_paint(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int def_nr,
+                       float x, float y, float radius, float strength, float target);
+
 /* eGP_Vertex_SculptTool (DNA_brush_enums.h) */
 enum {
   PG_VPAINT_DRAW = 0,
@@ -153,6 +174,9 @@ int pg_gp_vertex_paint(struct bGPdata *gpd, const struct bGPDlayer *only_layer, 
  * given stroke regardless of selection or layer state; the pg_gp_mod_* functions above call them
  * for each selected stroke. Return 1 when the stroke may have changed, 0 otherwise. */
 int pg_gp_modstroke_thickness(struct bGPDstroke *gps, int normalize, int thickness, float thickness_fac);
+/* Same with a vertex group (def_nr -1 = none), see pg_gp_modifier_point_weight(). */
+int pg_gp_modstroke_thickness_vgroup(struct bGPDstroke *gps, int def_nr, int invert, int normalize,
+                                     int thickness, float thickness_fac);
 int pg_gp_modstroke_opacity(struct bGPDstroke *gps, int modify_color, float factor, int normalize,
                             float hardness);
 int pg_gp_modstroke_tint(struct bGPdata *gpd, struct bGPDstroke *gps, int vertex_mode, float factor,

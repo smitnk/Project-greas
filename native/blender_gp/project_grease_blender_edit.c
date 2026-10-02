@@ -1105,6 +1105,142 @@ int pg_gp_snap_to_grid(bGPdata *gpd, const bGPDlayer *only_layer, float grid)
   PGE_EDITABLE_STROKES_END;
   return changed;
 }
+
+/* ---------------------------------------------------------------------------------------- */
+/* Point/stroke structure operators (behaviour of the named 3.6.23 operators, using BKE).    */
+
+static bool pge_any_point_selected(const bGPDstroke *gps)
+{
+  for (int i = 0; i < gps->totpoints; i++) {
+    if (gps->points[i].flag & GP_SPOINT_SELECT) return true;
+  }
+  return false;
+}
+
+/* Copy `gps`, keep only its selected points (each selected run becomes its own stroke through
+ * BKE_gpencil_stroke_delete_tagged_points), insert after `gps`, and return the first copy. */
+static bGPDstroke *pge_copy_selected_runs(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps)
+{
+  bGPDstroke *dup = BKE_gpencil_stroke_duplicate(gps, true, true);
+  if (dup == NULL) {
+    return NULL;
+  }
+  pge_insert_after(&gpf->strokes, (Link *)gps, (Link *)dup);
+  for (int i = 0; i < dup->totpoints; i++) {
+    if (dup->points[i].flag & GP_SPOINT_SELECT) dup->points[i].flag &= ~GP_SPOINT_TAG;
+    else dup->points[i].flag |= GP_SPOINT_TAG;
+  }
+  bGPDstroke *next = dup->next;
+  bool any_tag = false;
+  for (int i = 0; i < dup->totpoints; i++) any_tag |= (dup->points[i].flag & GP_SPOINT_TAG) != 0;
+  if (any_tag) {
+    BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, dup, next, GP_SPOINT_TAG, false, false, 0);
+  }
+  /* copies (now between gps and next) end up selected */
+  bGPDstroke *first = gps->next != next ? gps->next : NULL;
+  for (bGPDstroke *c = first; c && c != next; c = c->next) {
+    c->flag |= GP_STROKE_SELECT;
+    for (int i = 0; i < c->totpoints; i++) c->points[i].flag |= GP_SPOINT_SELECT;
+    BKE_gpencil_stroke_geometry_update(gpd, c);
+  }
+  return first;
+}
+
+int pg_gp_duplicate(bGPdata *gpd, const bGPDlayer *only_layer)
+{
+  if (gpd == NULL) return 0;
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->points == NULL || !pge_any_point_selected(gps)) continue;
+    if (pge_copy_selected_runs(gpd, gpf, gps) != NULL) {
+      /* deselect the original, select the duplicate */
+      for (int i = 0; i < gps->totpoints; i++) gps->points[i].flag &= ~GP_SPOINT_SELECT;
+      gps->flag &= ~GP_STROKE_SELECT;
+      BKE_gpencil_stroke_select_index_reset(gps);
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+int pg_gp_dissolve(bGPdata *gpd, const bGPDlayer *only_layer, int type)
+{
+  if (gpd == NULL || type < PG_DISSOLVE_POINTS || type > PG_DISSOLVE_UNSELECT) return 0;
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->points == NULL || gps->dvert != NULL) continue;
+    int first = -1, last = -1;
+    for (int i = 0; i < gps->totpoints; i++) {
+      if (gps->points[i].flag & GP_SPOINT_SELECT) { if (first < 0) first = i; last = i; }
+    }
+    if (first < 0) continue;
+    int keep = 0;
+    for (int i = 0; i < gps->totpoints; i++) {
+      const bool sel = (gps->points[i].flag & GP_SPOINT_SELECT) != 0;
+      bool remove;
+      switch (type) {
+        case PG_DISSOLVE_POINTS: remove = sel; break;
+        case PG_DISSOLVE_BETWEEN: remove = !sel && i > first && i < last; break;
+        default: remove = !sel; break;
+      }
+      if (!remove) gps->points[keep++] = gps->points[i];
+    }
+    if (keep == gps->totpoints) continue;
+    changed = 1;
+    if (keep <= 0) {
+      /* nothing left: delete the stroke */
+      BLI_remlink(&gpf->strokes, gps);
+      BKE_gpencil_free_stroke(gps);
+      continue;
+    }
+    gps->totpoints = keep;
+    BKE_gpencil_stroke_sync_selection(gpd, gps);
+    BKE_gpencil_stroke_geometry_update(gpd, gps);
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+int pg_gp_split(bGPdata *gpd, const bGPDlayer *only_layer)
+{
+  if (gpd == NULL) return 0;
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->points == NULL || !pge_any_point_selected(gps)) continue;
+    bool all = true;
+    for (int i = 0; i < gps->totpoints; i++) all &= (gps->points[i].flag & GP_SPOINT_SELECT) != 0;
+    if (all) continue; /* nothing to split off */
+    if (pge_copy_selected_runs(gpd, gpf, gps) == NULL) continue;
+    /* remove the selected points from the original (it may split into several strokes) */
+    BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, gps, gps->next, GP_SPOINT_SELECT, false, false, 0);
+    changed = 1;
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+int pg_gp_join(bGPdata *gpd, const bGPDlayer *only_layer, int leave_gaps)
+{
+  if (gpd == NULL) return 0;
+  int changed = 0;
+  bGPDstroke *target = NULL;
+  bGPDframe *target_frame = NULL;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->points == NULL) continue;
+    if (target == NULL) { target = gps; target_frame = gpf; continue; }
+    if (gpf != target_frame) continue; /* joins stay within one frame */
+    BKE_gpencil_stroke_join(target, gps, leave_gaps != 0, true, false, true);
+    BLI_remlink(&gpf->strokes, gps);
+    BKE_gpencil_free_stroke(gps);
+    changed = 1;
+  }
+  PGE_EDITABLE_STROKES_END;
+  if (changed) {
+    BKE_gpencil_stroke_geometry_update(gpd, target);
+  }
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -1230,6 +1366,19 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
     case PG_EDIT_CMD_SNAP_GRID:
       if (arg_count < 1) return 0;
       changed = pg_gp_snap_to_grid(gpd, scope, args[0]);
+      break;
+    case PG_EDIT_CMD_DUPLICATE:
+      changed = pg_gp_duplicate(gpd, scope);
+      break;
+    case PG_EDIT_CMD_DISSOLVE:
+      if (arg_count < 1) return 0;
+      changed = pg_gp_dissolve(gpd, scope, (int)lroundf(args[0]));
+      break;
+    case PG_EDIT_CMD_SPLIT:
+      changed = pg_gp_split(gpd, scope);
+      break;
+    case PG_EDIT_CMD_JOIN:
+      changed = pg_gp_join(gpd, scope, arg_count >= 1 && args[0] != 0.0f);
       break;
     default:
       return 0;

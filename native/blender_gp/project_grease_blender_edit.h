@@ -51,9 +51,25 @@ enum {
   PG_EDIT_CMD_FLIP = 48,         /* args: - */
   PG_EDIT_CMD_CYCLIC = 49,       /* args: type (PG_CYCLIC_*) */
   PG_EDIT_CMD_SNAP_GRID = 50,    /* args: grid size */
+  PG_EDIT_CMD_DUPLICATE = 51,    /* args: - */
+  PG_EDIT_CMD_DISSOLVE = 52,     /* args: type (PG_DISSOLVE_*) */
+  PG_EDIT_CMD_SPLIT = 53,        /* args: - */
+  PG_EDIT_CMD_JOIN = 54,         /* args: leave_gaps */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 50
+#define PG_EDIT_CMD_LAST 54
+
+/* GPENCIL_OT_dissolve types */
+enum { PG_DISSOLVE_POINTS = 0, PG_DISSOLVE_BETWEEN = 1, PG_DISSOLVE_UNSELECT = 2 };
+
+/* GPENCIL_OT_duplicate: each run of selected points becomes a new selected stroke. */
+int pg_gp_duplicate(struct bGPdata *gpd, const struct bGPDlayer *only_layer);
+/* GPENCIL_OT_dissolve: remove points without splitting the stroke. */
+int pg_gp_dissolve(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int type);
+/* GPENCIL_OT_stroke_split: selected points move to new strokes. */
+int pg_gp_split(struct bGPdata *gpd, const struct bGPDlayer *only_layer);
+/* GPENCIL_OT_stroke_join (JOIN): selected strokes merge into the first selected one. */
+int pg_gp_join(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int leave_gaps);
 
 /* GPENCIL_OT_stroke_arrange directions */
 enum { PG_ARRANGE_TOP = 0, PG_ARRANGE_UP = 1, PG_ARRANGE_DOWN = 2, PG_ARRANGE_BOTTOM = 3 };

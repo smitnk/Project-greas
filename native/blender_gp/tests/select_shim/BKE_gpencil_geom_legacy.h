@@ -17,3 +17,5 @@ bool BKE_gpencil_stroke_stretch(bGPDstroke *gps, float dist, float overshoot_fac
 bool BKE_gpencil_stroke_shrink(bGPDstroke *gps, float dist, short mode);
 float BKE_gpencil_stroke_length(const bGPDstroke *gps, bool use_3d);
 void BKE_gpencil_stroke_flip(bGPDstroke *gps);
+bGPDstroke *BKE_gpencil_stroke_duplicate(bGPDstroke *gps_src, bool dup_points, bool dup_curve);
+void BKE_gpencil_stroke_join(bGPDstroke *gps_a, bGPDstroke *gps_b, bool leave_gaps, bool fit_thickness, bool smooth, bool auto_flip);

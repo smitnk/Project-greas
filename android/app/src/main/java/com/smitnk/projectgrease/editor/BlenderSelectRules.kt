@@ -224,4 +224,19 @@ object ProjectGreaseSelect {
         if (type in CYCLIC_CLOSE..CYCLIC_TOGGLE) Command(CMD_CYCLIC, floatArrayOf(type.toFloat())) else null
     fun snapToGrid(grid: Float): Command? =
         if (finite(grid) && grid > 0f) Command(CMD_SNAP_GRID, floatArrayOf(grid)) else null
+
+    // GPENCIL_OT_duplicate / dissolve / stroke_split / stroke_join
+    const val CMD_DUPLICATE = 51
+    const val CMD_DISSOLVE = 52
+    const val CMD_SPLIT = 53
+    const val CMD_JOIN = 54
+    const val DISSOLVE_POINTS = 0
+    const val DISSOLVE_BETWEEN = 1
+    const val DISSOLVE_UNSELECT = 2
+
+    fun duplicate() = Command(CMD_DUPLICATE, FloatArray(0))
+    fun dissolve(type: Int): Command? =
+        if (type in DISSOLVE_POINTS..DISSOLVE_UNSELECT) Command(CMD_DISSOLVE, floatArrayOf(type.toFloat())) else null
+    fun split() = Command(CMD_SPLIT, FloatArray(0))
+    fun join(leaveGaps: Boolean = false) = Command(CMD_JOIN, floatArrayOf(flag(leaveGaps)))
 }

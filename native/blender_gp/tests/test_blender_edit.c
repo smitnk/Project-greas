@@ -100,6 +100,30 @@ void BKE_gpencil_stroke_flip(bGPDstroke *gps)
   }
 }
 
+
+bGPDstroke *BKE_gpencil_stroke_duplicate(bGPDstroke *src, bool dup_points, bool dup_curve)
+{
+  (void)dup_curve;
+  bGPDstroke *d = malloc(sizeof(bGPDstroke));
+  *d = *src;
+  d->next = d->prev = NULL;
+  if (dup_points) {
+    d->points = malloc(sizeof(bGPDspoint) * (size_t)(src->totpoints > 0 ? src->totpoints : 1));
+    memcpy(d->points, src->points, sizeof(bGPDspoint) * (size_t)src->totpoints);
+  }
+  return d;
+}
+static int join_calls = 0;
+void BKE_gpencil_stroke_join(bGPDstroke *a, bGPDstroke *b, bool leave_gaps, bool fit_thickness, bool smooth, bool auto_flip)
+{
+  (void)leave_gaps; (void)fit_thickness; (void)smooth; (void)auto_flip;
+  bGPDspoint *p = malloc(sizeof(bGPDspoint) * (size_t)(a->totpoints + b->totpoints));
+  memcpy(p, a->points, sizeof(bGPDspoint) * (size_t)a->totpoints);
+  memcpy(p + a->totpoints, b->points, sizeof(bGPDspoint) * (size_t)b->totpoints);
+  free(a->points); a->points = p; a->totpoints += b->totpoints;
+  join_calls++;
+}
+
 /* ---- fixtures ------------------------------------------------------------------ */
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s (line %d)\n", msg, __LINE__); failures++; } } while (0)
@@ -621,6 +645,77 @@ static void test_stroke_operator_edges(void)
   CHECK(!(two->flag & GP_STROKE_CYCLIC), "strokes with fewer than 3 points are not closed");
 }
 
+
+static void test_structure_operators(void)
+{
+  /* duplicate: two runs of selected points -> stand-in keeps them as one compacted copy */
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 5, 0, 0, 0, 10, 0);
+  bGPDstroke *b = add_stroke(f, 3, 0, 0, 50, 10, 0);
+  select_points(gpd, a, (1u << 1) | (1u << 2));
+  CHECK(pg_gp_duplicate(gpd, NULL) == 1, "duplicate");
+  CHECK(stroke_count(f) == 3 && a->next != b, "copy inserted right after the original");
+  bGPDstroke *copy = a->next;
+  CHECK(copy->totpoints == 2 && NEAR(copy->points[0].x, 10) && NEAR(copy->points[1].x, 20), "copy holds only the selected points");
+  CHECK(sel_mask(copy) == 3 && (copy->flag & GP_STROKE_SELECT), "the copy is selected");
+  CHECK(sel_mask(a) == 0 && !(a->flag & GP_STROKE_SELECT) && a->totpoints == 5, "original kept and deselected");
+  CHECK(sel_mask(b) == 0, "unselected stroke untouched");
+
+  /* dissolve points */
+  bGPdata *g2 = make_gpd();
+  bGPDframe *f2 = add_frame(add_layer(g2, 0));
+  bGPDstroke *d = add_stroke(f2, 5, 0, 0, 0, 10, 0);
+  select_points(g2, d, (1u << 1) | (1u << 3));
+  geometry_updates = 0;
+  CHECK(pg_gp_dissolve(g2, NULL, PG_DISSOLVE_POINTS) == 1 && d->totpoints == 3, "dissolve removes selected points");
+  CHECK(NEAR(d->points[0].x, 0) && NEAR(d->points[1].x, 20) && NEAR(d->points[2].x, 40) && stroke_count(f2) == 1,
+        "remaining points stay in one stroke (no split)");
+  CHECK(geometry_updates == 1, "geometry refreshed");
+  /* dissolve between: first and last selected kept, unselected inside removed */
+  bGPDstroke *e = add_stroke(f2, 5, 0, 0, 20, 10, 0);
+  select_points(g2, e, (1u << 0) | (1u << 3));
+  pg_gp_dissolve(g2, NULL, PG_DISSOLVE_BETWEEN);
+  CHECK(e->totpoints == 3 && NEAR(e->points[1].x, 30) && NEAR(e->points[2].x, 40), "between removes the unselected points in the range");
+  /* dissolve unselected */
+  select_points(g2, e, 1u << 1);
+  pg_gp_dissolve(g2, NULL, PG_DISSOLVE_UNSELECT);
+  CHECK(e->totpoints == 1 && NEAR(e->points[0].x, 30), "unselect keeps only selected points");
+  /* everything selected and dissolved -> stroke deleted */
+  select_points(g2, e, 1);
+  pg_gp_dissolve(g2, NULL, PG_DISSOLVE_POINTS);
+  CHECK(stroke_count(f2) == 1, "a stroke with no points left is deleted");
+  CHECK(pg_gp_dissolve(g2, NULL, 7) == 0, "invalid dissolve type");
+
+  /* split: selected points move to a new stroke, the original loses them */
+  bGPdata *g3 = make_gpd();
+  bGPDframe *f3 = add_frame(add_layer(g3, 0));
+  bGPDstroke *s = add_stroke(f3, 4, 0, 0, 0, 10, 0);
+  select_points(g3, s, (1u << 2) | (1u << 3));
+  CHECK(pg_gp_split(g3, NULL) == 1 && stroke_count(f3) == 2, "split creates a stroke");
+  CHECK(s->totpoints == 2 && NEAR(s->points[1].x, 10), "original keeps the unselected points");
+  CHECK(s->next->totpoints == 2 && NEAR(s->next->points[0].x, 20) && sel_mask(s->next) == 3, "new stroke has the selected points, selected");
+  select_points(g3, s, 3);
+  select_points(g3, s->next, 0);
+  CHECK(pg_gp_split(g3, NULL) == 0, "a fully selected stroke is not split");
+
+  /* join */
+  bGPdata *g4 = make_gpd();
+  bGPDframe *f4 = add_frame(add_layer(g4, 0));
+  bGPDstroke *j1 = add_stroke(f4, 2, 0, 0, 0, 10, 0);
+  bGPDstroke *j2 = add_stroke(f4, 3, 0, 0, 20, 10, 0);
+  bGPDstroke *j3 = add_stroke(f4, 2, 0, 0, 40, 10, 0);
+  select_points(g4, j1, 3); select_points(g4, j3, 3);
+  join_calls = 0;
+  CHECK(pg_gp_join(g4, NULL, 0) == 1 && join_calls == 1, "join merges selected strokes");
+  CHECK(stroke_count(f4) == 2 && f4->strokes.first == j1 && j1->next == j2 && j1->totpoints == 4, "into the first selected; unselected stays");
+  CHECK(pg_gp_join(g4, NULL, 0) == 0, "a single selected stroke has nothing to join");
+
+  const float dz[1] = {PG_DISSOLVE_POINTS};
+  CHECK(pg_gp_edit_dispatch(g4, NULL, PG_EDIT_CMD_DISSOLVE, dz, 0) == 0, "dissolve needs a type");
+}
+
 int main(void)
 {
   test_pick();
@@ -637,6 +732,7 @@ int main(void)
   test_color_modifier();
   test_stroke_operators();
   test_stroke_operator_edges();
+  test_structure_operators();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

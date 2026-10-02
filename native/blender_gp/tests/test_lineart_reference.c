@@ -23,7 +23,7 @@
 #define SAMPLE_STEP 0.004  /* sampling step along our segments */
 #define MIN_COVERAGE 0.99
 
-typedef struct Seg { double x0, y0, x1, y1; } Seg;
+typedef struct Seg { double x0, y0, x1, y1; int object, type, occlusion; } Seg;
 typedef struct SegList { Seg *v; int n, cap; } SegList;
 
 static void push(SegList *l, double x0, double y0, double x1, double y1)
@@ -32,7 +32,7 @@ static void push(SegList *l, double x0, double y0, double x1, double y1)
     l->cap = l->cap ? l->cap * 2 : 256;
     l->v = realloc(l->v, sizeof(Seg) * (size_t)l->cap);
   }
-  l->v[l->n++] = (Seg){x0, y0, x1, y1};
+  l->v[l->n++] = (Seg){x0, y0, x1, y1, -1, 0, 0};
 }
 
 static double dist_point_seg(double px, double py, const Seg *s)
@@ -135,6 +135,9 @@ static int compare_scene(const char *ref_dir, char **f)
   for (int i = 0; i < n; i++) {
     if (seg[i].occlusion < 0 || seg[i].occlusion > st.level_end) continue;
     push(&ours, seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1);
+    ours.v[ours.n - 1].object = seg[i].object_index;
+    ours.v[ours.n - 1].type = seg[i].edge_type;
+    ours.v[ours.n - 1].occlusion = seg[i].occlusion;
   }
   pg_lineart_free_segments(seg);
 
@@ -167,12 +170,26 @@ static int compare_scene(const char *ref_dir, char **f)
     const Seg *s = &ours.v[i];
     const double l = hypot(s->x1 - s->x0, s->y1 - s->y0);
     const int steps = (int)(l / SAMPLE_STEP) + 1;
+    int seg_total = 0, seg_hit = 0;
     for (int k = 0; k <= steps; k++) {
       const double t = (double)k / steps;
       const double x = s->x0 + (s->x1 - s->x0) * t, y = s->y0 + (s->y1 - s->y0) * t;
       if (fabs(x) > 1.0 || fabs(y) > 1.0) continue;
-      b_total++;
-      b_hit += nearest(&theirs, x, y) <= TOLERANCE;
+      seg_total++;
+      seg_hit += nearest(&theirs, x, y) <= TOLERANCE;
+    }
+    b_total += seg_total;
+    b_hit += seg_hit;
+    if (seg_hit < seg_total) {
+      /* Diagnostics: which of our visible segments Blender does not draw. */
+      printf("        not in Blender: object %d type 0x%x occlusion %d (%.4f, %.4f)-(%.4f, %.4f) %d/%d samples\n",
+             s->object, s->type, s->occlusion, s->x0, s->y0, s->x1, s->y1, seg_total - seg_hit, seg_total);
+    }
+  }
+  for (int i = 0; i < theirs.n && i < 400; i++) {
+    const Seg *s = &theirs.v[i];
+    if (nearest(&ours, s->x1, s->y1) > TOLERANCE) {
+      printf("        Blender point not ours: (%.4f, %.4f)\n", s->x1, s->y1);
     }
   }
   const double ca = a_total ? (double)a_hit / a_total : 1.0;

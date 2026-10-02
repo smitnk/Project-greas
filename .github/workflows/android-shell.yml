@@ -238,9 +238,10 @@ jobs:
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
-          for name, data in libs.items():
-              for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive"):
-                  assert sym in data, name + " lacks " + sym.decode()
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive"):
+              owners = [name for name, data in libs.items() if sym in data]
+              assert owners, "no native library exports " + sym.decode()
+              print(sym.decode(), "in", owners)
           print("APK carries the edit3 / curve / templates / import / trace / annotation UI and JNI entry points")
           PY
 

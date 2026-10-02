@@ -860,9 +860,9 @@ static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
   ld->conf.shift_y /= (1 + ld->conf.overscan);
 
   ld->conf.crease_threshold = cos(M_PI - lmd->crease_threshold);
-  ld->conf.chaining_image_threshold = 0.001f;
-  ld->conf.angle_splitting_threshold = 0.0f;
-  ld->conf.chain_smooth_tolerance = 0.0f;
+  ld->conf.chaining_image_threshold = lmd->chaining_image_threshold;
+  ld->conf.angle_splitting_threshold = lmd->angle_splitting_threshold;
+  ld->conf.chain_smooth_tolerance = lmd->chain_smooth_tolerance;
 
   ld->conf.fuzzy_intersections = (lmd->calculation_flags & LRT_INTERSECTION_AS_CONTOUR) != 0;
   ld->conf.fuzzy_everything = (lmd->calculation_flags & LRT_EVERYTHING_AS_CONTOUR) != 0;
@@ -928,12 +928,14 @@ static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
 }
 
 //@@ MOD_lineart_compute_feature_lines
-/* MOD_lineart_compute_feature_lines() up to and including the occlusion stage (chaining and GP
- * output are batch 3). Returns the LineartData for pg_lineart_compute() to read; nullptr when the
- * scene has no geometry in view. */
+/* MOD_lineart_compute_feature_lines() on Scene-lite. With do_chains false it stops after the
+ * occlusion stage (pg_lineart_compute() reads the edge segments); with do_chains true it continues
+ * through enclosed shapes, chaining, splitting, connecting, smoothing, trimming, angle splitting
+ * and the depth offset into cached_result->chains, as in Blender. */
 static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
                                                  const PGLineartSettings *lmd,
-                                                 LineartCache **cached_result)
+                                                 LineartCache **cached_result,
+                                                 bool do_chains = false)
 {
   LineartData *ld;
 
@@ -991,7 +993,133 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
   /* Occlusion is work-and-wait. This call will not return before work is completed. */
   lineart_main_occlusion_begin(ld);
 
+  if (!do_chains) {
+    return ld;
+  }
+
+  lineart_main_make_enclosed_shapes(ld, nullptr);
+
+  lineart_main_remove_unused_lines_from_tiles(ld);
+
+  /* Chaining is all single threaded. See lineart_chain.c
+   * In this particular call, only lines that are geometrically connected (share the _exact_
+   * same end point) will be chained together. */
+  MOD_lineart_chain_feature_lines(ld);
+
+  /* We are unable to take care of occlusion if we only connect end points, so here we do a
+   * spit, where the splitting point could be any cut in e->segments. */
+  MOD_lineart_chain_split_for_fixed_occlusion(ld);
+
+  /* Then we connect chains based on the _proximity_ of their end points in image space, here's
+   * the place threshold value gets involved. */
+  MOD_lineart_chain_connect(ld);
+
+  if (ld->conf.chain_smooth_tolerance > FLT_EPSILON) {
+    /* Keeping UI range of 0-1 for ease of read while scaling down the actual value for best
+     * effective range in image-space (Coordinate only goes from -1 to 1). This value is
+     * somewhat arbitrary, but works best for the moment. */
+    MOD_lineart_smooth_chains(ld, ld->conf.chain_smooth_tolerance / 50);
+  }
+
+  if (ld->conf.use_image_boundary_trimming) {
+    MOD_lineart_chain_clip_at_border(ld);
+  }
+
+  if (ld->conf.angle_splitting_threshold > FLT_EPSILON) {
+    MOD_lineart_chain_split_angle(ld, ld->conf.angle_splitting_threshold);
+  }
+
+  /* enable_stroke_depth_offset is true for the modifier's evaluation. */
+  if (lmd->stroke_depth_offset > FLT_EPSILON) {
+    /* LRT_GPENCIL_OFFSET_TOWARDS_CUSTOM_CAMERA needs a custom camera object: not supported. */
+    MOD_lineart_chain_offset_towards_camera(ld, lmd->stroke_depth_offset, false);
+  }
+
+  /* shadow_use_silhouette is off (no light objects). */
+
+  /* Finally transfer the result list into cache. */
+  memcpy(&(*cached_result)->chains, &ld->chains, sizeof(ListBase));
+
+  /* At last, we need to clear flags so we don't confuse GPencil generation calls. */
+  MOD_lineart_chain_clear_picked_flag(*cached_result);
+
+  MOD_lineart_finalize_chains(ld);
+
   return ld;
+}
+
+//@@ lineart_gpencil_generate
+/* lineart_gpencil_generate() writing Project Grease strokes instead of GP strokes. The source is
+ * the whole scene (no object / collection source), and there are no material masks, intersection
+ * masks, shadow selection, silhouette filter or vertex groups in Scene-lite, so the filters that
+ * remain are the original's picked / type / level checks and the two-point minimum. Points keep
+ * eci->gpos (the GP object is at the origin, so gp_obmat_inverse is the identity) and eci->pos. */
+static void lineart_gpencil_generate(LineartCache *cache,
+                                     const PGSceneLite *scene,
+                                     int level_start,
+                                     int level_end,
+                                     int types,
+                                     PGLineartStrokes *out)
+{
+  if (cache == nullptr) {
+    return;
+  }
+
+  int enabled_types = cache->all_enabled_edge_types;
+
+  /* two passes: count, then fill */
+  for (int pass = 0; pass < 2; pass++) {
+    int stroke_i = 0, point_i = 0;
+    LISTBASE_FOREACH (LineartEdgeChain *, ec, &cache->chains) {
+
+      if (ec->picked) {
+        continue;
+      }
+      if (!(ec->type & (types & enabled_types))) {
+        continue;
+      }
+      if (ec->level > level_end || ec->level < level_start) {
+        continue;
+      }
+
+      const int count = MOD_lineart_chain_count(ec);
+      if (count < 2) {
+        continue;
+      }
+
+      if (pass == 1) {
+        PGLineartStroke &s = out->strokes[stroke_i];
+        s.first = point_i;
+        s.point_count = count;
+        s.edge_type = ec->type;
+        s.level = ec->level;
+        s.object_index = -1;
+        for (int i = 0; i < scene->totobject; i++) {
+          if (ec->object_ref == reinterpret_cast<const Object *>(&scene->objects[i])) {
+            s.object_index = i;
+          }
+        }
+        int i;
+        LISTBASE_FOREACH_INDEX (LineartEdgeChainItem *, eci, &ec->chain, i) {
+          copy_v3_v3(&out->world[(point_i + i) * 3], eci->gpos);
+          out->image[(point_i + i) * 2] = eci->pos[0];
+          out->image[(point_i + i) * 2 + 1] = eci->pos[1];
+        }
+      }
+      stroke_i++;
+      point_i += count;
+    }
+    if (pass == 0) {
+      out->stroke_count = stroke_i;
+      out->point_count = point_i;
+      out->strokes = static_cast<PGLineartStroke *>(malloc(sizeof(PGLineartStroke) * size_t(stroke_i > 0 ? stroke_i : 1)));
+      out->world = static_cast<float *>(malloc(sizeof(float) * 3 * size_t(point_i > 0 ? point_i : 1)));
+      out->image = static_cast<float *>(malloc(sizeof(float) * 2 * size_t(point_i > 0 ? point_i : 1)));
+      if (!out->strokes || !out->world || !out->image) {
+        return;
+      }
+    }
+  }
 }
 
 //@@ epilogue
@@ -1006,6 +1134,12 @@ void pg_lineart_settings_default(PGLineartSettings *s)
   s->crease_threshold = DEG2RADF(140.0f);
   s->overscan = 0.1f;
   s->level_end = 0;
+  s->level_start = 0;
+  s->chaining_image_threshold = 0.001f;
+  s->chain_smooth_tolerance = 0.0f;
+  s->angle_splitting_threshold = 0.0f;
+  s->stroke_depth_offset = 0.05f;
+  s->stroke_types = LRT_EDGE_FLAG_ALL_TYPE;
 }
 
 static int pg_lineart_object_index(const PGSceneLite *scene, const void *object_ref)
@@ -1083,4 +1217,42 @@ int pg_lineart_compute(const PGSceneLite *scene,
 void pg_lineart_free_segments(PGLineartSegment *segments)
 {
   free(segments);
+}
+
+int pg_lineart_compute_strokes(const PGSceneLite *scene,
+                               const PGLineartSettings *settings,
+                               PGLineartStrokes *r_strokes)
+{
+  std::memset(r_strokes, 0, sizeof(*r_strokes));
+  if (!scene || !settings || scene->width < 1 || scene->height < 1) {
+    return -1;
+  }
+  LineartCache *lc = nullptr;
+  LineartData *ld = pg_lineart_compute_occlusion(scene, settings, &lc, true);
+  if (!ld) {
+    MOD_lineart_clear_cache(&lc);
+    return -1;
+  }
+  lineart_gpencil_generate(lc, scene, settings->level_start, settings->level_end,
+                           settings->stroke_types, r_strokes);
+  const bool ok = r_strokes->strokes && r_strokes->world && r_strokes->image;
+  lineart_destroy_render_data_keep_init(ld);
+  MEM_freeN(ld);
+  MOD_lineart_clear_cache(&lc);
+  if (!ok) {
+    pg_lineart_free_strokes(r_strokes);
+    return -1;
+  }
+  return r_strokes->stroke_count;
+}
+
+void pg_lineart_free_strokes(PGLineartStrokes *strokes)
+{
+  if (!strokes) {
+    return;
+  }
+  free(strokes->strokes);
+  free(strokes->world);
+  free(strokes->image);
+  std::memset(strokes, 0, sizeof(*strokes));
 }

@@ -112,6 +112,8 @@ object GPNative {
     external fun nativeSceneLiteProjectEdges(handle: Long): FloatArray?
     /** Line Art (default settings, occlusion levels 0..levelEnd): x0, y0, x1, y1, occlusion, edge type per segment. */
     external fun nativeSceneLiteLineArt(handle: Long, levelEnd: Int): FloatArray?
+    /** Line Art strokes: [count, { pointCount, edgeType, level, x0, y0, ... }] in frame-buffer coordinates. */
+    external fun nativeSceneLiteLineArtStrokes(handle: Long, levelEnd: Int): FloatArray?
     // Annotations (project_grease_annotations.h): command ids PG_ANNOT_CMD_* of project_grease_gp_bridge.h.
     external fun nativeAnnotationCommand(handle: Long, command: Int, args: FloatArray?): Int
     /** r, g, b, a, thickness (px), visible (1/0); null without a document. */

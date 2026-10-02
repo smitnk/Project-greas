@@ -4,7 +4,8 @@
  * feature-line detection, near/far clipping, triangle intersections, bounding-area acceleration
  * and occlusion, run on the meshes and camera of a PGSceneLite. The result is every feature edge
  * cut into segments with their occlusion level, in Line Art frame-buffer coordinates (-1..1).
- * Chaining and GP stroke output are batch 3. Shadow / light contour features are not supported.
+ * pg_lineart_compute_strokes() continues through Blender's chaining (lineart_chain.c) and the
+ * filtering of lineart_gpencil_generate() to strokes. Shadow / light contour are not supported.
  */
 #pragma once
 
@@ -22,6 +23,12 @@ typedef struct PGLineartSettings {
   float crease_threshold;  /* radians, default DEG2RAD(140) */
   float overscan;          /* default 0.1 */
   int level_end;           /* highest occlusion level computed (default 0) */
+  int level_start;         /* lowest occlusion level turned into strokes (default 0) */
+  float chaining_image_threshold;  /* default 0.001 */
+  float chain_smooth_tolerance;    /* default 0 */
+  float angle_splitting_threshold; /* radians, default 0 (no split) */
+  float stroke_depth_offset;       /* default 0.05 (towards the camera) */
+  int stroke_types;        /* edge types turned into strokes (default: all enabled types) */
 } PGLineartSettings;
 
 void pg_lineart_settings_default(PGLineartSettings *settings);
@@ -41,6 +48,30 @@ typedef struct PGLineartSegment {
 int pg_lineart_compute(const struct PGSceneLite *scene, const PGLineartSettings *settings,
                        PGLineartSegment **r_segments);
 void pg_lineart_free_segments(PGLineartSegment *segments);
+
+/* Line Art strokes: the chains that lineart_gpencil_generate() would write as GP strokes, with
+ * every point in world space (eci->gpos, after the depth offset) and in frame-buffer coordinates
+ * (eci->pos). */
+typedef struct PGLineartStroke {
+  int first;        /* index of the first point in PGLineartStrokes::world / ::image */
+  int point_count;
+  int edge_type;    /* LRT_EDGE_FLAG_* of the chain */
+  int level;        /* occlusion level */
+  int object_index; /* index in PGSceneLite::objects, -1 when none (intersections) */
+} PGLineartStroke;
+
+typedef struct PGLineartStrokes {
+  PGLineartStroke *strokes;
+  int stroke_count;
+  float *world; /* x, y, z per point */
+  float *image; /* x, y per point (-1..1) */
+  int point_count;
+} PGLineartStrokes;
+
+/* Returns the stroke count (0 is valid), -1 on failure. Free with pg_lineart_free_strokes(). */
+int pg_lineart_compute_strokes(const struct PGSceneLite *scene, const PGLineartSettings *settings,
+                               PGLineartStrokes *r_strokes);
+void pg_lineart_free_strokes(PGLineartStrokes *strokes);
 
 #ifdef __cplusplus
 }

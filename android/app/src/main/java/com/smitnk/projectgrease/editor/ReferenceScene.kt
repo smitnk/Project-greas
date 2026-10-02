@@ -129,6 +129,29 @@ class ReferenceScene {
             return out.toFloatArray()
         }
 
+        /** Parses nativeSceneLiteLineArtStrokes output into canvas-space polylines. */
+        fun parseStrokes(raw: FloatArray, canvasW: Int, canvasH: Int): List<FloatArray> {
+            if (raw.isEmpty()) return emptyList()
+            val count = raw[0].toInt()
+            val out = ArrayList<FloatArray>(count.coerceAtLeast(0))
+            var k = 1
+            repeat(count) {
+                if (k + 3 > raw.size) return out
+                val points = raw[k].toInt()
+                k += 3
+                if (points < 0 || k + points * 2 > raw.size) return out
+                out += FloatArray(points * 2).also { xy ->
+                    for (p in 0 until points) {
+                        val c = ReferenceCamera.fbToCanvas(raw[k + p * 2], raw[k + p * 2 + 1], canvasW, canvasH)
+                        xy[p * 2] = c.first
+                        xy[p * 2 + 1] = c.second
+                    }
+                }
+                k += points * 2
+            }
+            return out
+        }
+
         fun toCanvas(fb: FloatArray, canvasW: Int, canvasH: Int): FloatArray {
             val out = FloatArray(fb.size)
             var i = 0
@@ -140,6 +163,17 @@ class ReferenceScene {
             }
             return out
         }
+    }
+
+    /**
+     * Line Art strokes (Blender's chains) in canvas coordinates, one FloatArray of x, y pairs per
+     * stroke; levelEnd 1 also returns lines hidden behind one surface. Empty when nothing is in view.
+     */
+    fun lineArtStrokes(canvasW: Int, canvasH: Int, levelEnd: Int = 0): List<FloatArray> {
+        val h = ensure()
+        if (h == 0L) return emptyList()
+        GPNative.nativeSceneLiteSetCamera(h, camera.params(canvasW, canvasH))
+        return parseStrokes(GPNative.nativeSceneLiteLineArtStrokes(h, levelEnd) ?: return emptyList(), canvasW, canvasH)
     }
 
     fun release() {

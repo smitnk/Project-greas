@@ -172,8 +172,74 @@ static void test_loose_and_empty(void)
   pg_lite_scene_free(s);
 }
 
+static void test_strokes(void)
+{
+  PGSceneLite *s = scene_with(CUBE);
+  PGLineartSettings st;
+  pg_lineart_settings_default(&st);
+  st.stroke_depth_offset = 0.0f;
+  PGLineartStrokes out;
+  const int n = pg_lineart_compute_strokes(s, &st, &out);
+  CHECK(n > 0 && n == out.stroke_count, "cube: chained strokes");
+  int points = 0, on_edges = 1;
+  for (int i = 0; i < out.stroke_count; i++) {
+    CHECK(out.strokes[i].point_count >= 2 && out.strokes[i].level == 0 && out.strokes[i].object_index == 0, "stroke shape");
+    points += out.strokes[i].point_count;
+  }
+  /* every point is on a cube edge: two of its coordinates are +-1 */
+  for (int p = 0; p < out.point_count; p++) {
+    int ones = 0;
+    for (int k = 0; k < 3; k++) ones += fabs(fabs(out.world[p * 3 + k]) - 1.0f) < 1e-4f;
+    if (ones < 2) on_edges = 0;
+    if (fabs(out.image[p * 2]) > 1.0f || fabs(out.image[p * 2 + 1]) > 1.0f) on_edges = 0;
+  }
+  CHECK(points == out.point_count && on_edges, "stroke points lie on cube edges, inside the frame");
+  /* the 9 visible edges are chained into fewer, longer strokes */
+  CHECK(out.stroke_count < 9, "edges are chained");
+  printf("  strokes: cube -> %d strokes, %d points\n", out.stroke_count, out.point_count);
+  pg_lineart_free_strokes(&out);
+
+  /* level 0..1: hidden edges become strokes too */
+  st.level_end = 1;
+  PGLineartStrokes all;
+  pg_lineart_compute_strokes(s, &st, &all);
+  int hidden = 0;
+  for (int i = 0; i < all.stroke_count; i++) hidden += all.strokes[i].level == 1;
+  CHECK(hidden > 0, "hidden-line strokes at level 1");
+  pg_lineart_free_strokes(&all);
+
+  /* stroke type filter: crease only */
+  st.level_end = 0;
+  st.stroke_types = CREASE;
+  PGLineartStrokes creases;
+  pg_lineart_compute_strokes(s, &st, &creases);
+  for (int i = 0; i < creases.stroke_count; i++) CHECK(creases.strokes[i].edge_type & CREASE, "only crease strokes");
+  pg_lineart_free_strokes(&creases);
+
+  /* depth offset moves points towards the camera */
+  pg_lineart_settings_default(&st);
+  PGLineartStrokes off;
+  pg_lineart_compute_strokes(s, &st, &off);
+  const float *cam = s->camera.matrix_world[3];
+  float d_off = 0, d_none = 0;
+  st.stroke_depth_offset = 0.0f;
+  PGLineartStrokes none;
+  pg_lineart_compute_strokes(s, &st, &none);
+  if (off.point_count > 0 && none.point_count > 0) {
+    for (int k = 0; k < 3; k++) {
+      d_off += (off.world[k] - cam[k]) * (off.world[k] - cam[k]);
+      d_none += (none.world[k] - cam[k]) * (none.world[k] - cam[k]);
+    }
+  }
+  CHECK(off.point_count > 0 && sqrtf(d_off) < sqrtf(d_none), "stroke depth offset");
+  pg_lineart_free_strokes(&off);
+  pg_lineart_free_strokes(&none);
+  pg_lite_scene_free(s);
+}
+
 int main(int argc, char **argv)
 {
+  test_strokes();
   test_cube();
   test_occluder_cuts_lines();
   test_intersections();

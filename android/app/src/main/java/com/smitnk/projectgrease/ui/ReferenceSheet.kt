@@ -26,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +75,8 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
     var tick by remember { mutableIntStateOf(0) }
     @Suppress("UNUSED_VARIABLE") val observed = tick
     var camera by remember { mutableStateOf(reference.camera) }
+    var lineThickness by remember { mutableFloatStateOf(3f) }
+    var includeHidden by remember { mutableStateOf(false) }
     fun apply(value: com.smitnk.projectgrease.editor.ReferenceCamera) {
         camera = value
         reference.setCamera(value, cw, ch)
@@ -93,7 +96,7 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
             Text("3D reference (Line Art)", style = MaterialTheme.typography.headlineSmall)
             val s = reference.stats()
             Text("${s[0]} objects • ${s[1]} vertices • ${s[2]} triangles • ${s[3]} edges (${s[4]} loose)")
-            Text("Line Art preview shows its visible lines (feature lines + occlusion); turning them into strokes comes next.",
+            Text("Preview Line Art's visible lines, then generate them as strokes on a new layer of the current frame.",
                 style = MaterialTheme.typography.bodySmall)
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { picker.launch(arrayOf("model/obj", "text/plain", "application/octet-stream", "*/*")) }) { Text("Import OBJ") }
@@ -113,6 +116,18 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
                 }
                 Switch(reference.lineArtPreview, { reference.setLineArtPreview(it, cw, ch); tick++; redraw() })
             }
+            Text("Line Art strokes", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
+            Text("Line thickness %.0f px".format(lineThickness))
+            Slider(lineThickness, { lineThickness = it }, valueRange = 1f..20f)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Include hidden lines (occlusion level 1)", Modifier.weight(1f))
+                Switch(includeHidden, { includeHidden = it })
+            }
+            Button(onClick = {
+                val n = controller.generateLineArt(lineThickness, includeHidden)
+                toast(context, if (n > 0) "Line Art: $n strokes on layer \"Line Art\"" else "No Line Art lines in view")
+                redraw()
+            }, enabled = !reference.isEmpty) { Text("Generate Line Art strokes") }
             Text("Camera", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !camera.orthographic, onClick = { apply(camera.copy(orthographic = false)) }, label = { Text("Perspective") })

@@ -102,6 +102,110 @@ static int load_reference(const char *path, const double vp[4][4], double sx, do
   return 1;
 }
 
+/* Blender strokes in world space: points (x, y, z) and per-stroke [first, count). */
+typedef struct WorldStrokes { float *pts; int npts, cap; int *first, *count; int n, scap; } WorldStrokes;
+
+static int load_world_strokes(const char *path, WorldStrokes *w)
+{
+  FILE *f = fopen(path, "r");
+  if (!f) return 0;
+  char line[256];
+  while (fgets(line, sizeof(line), f)) {
+    int c;
+    float co[3];
+    if (line[0] == '#') continue;
+    if (sscanf(line, "stroke %d", &c) == 1) {
+      if (w->n == w->scap) {
+        w->scap = w->scap ? w->scap * 2 : 64;
+        w->first = realloc(w->first, sizeof(int) * (size_t)w->scap);
+        w->count = realloc(w->count, sizeof(int) * (size_t)w->scap);
+      }
+      w->first[w->n] = w->npts;
+      w->count[w->n] = 0;
+      w->n++;
+    }
+    else if (w->n > 0 && sscanf(line, "%f %f %f", &co[0], &co[1], &co[2]) == 3) {
+      if (w->npts == w->cap) {
+        w->cap = w->cap ? w->cap * 2 : 256;
+        w->pts = realloc(w->pts, sizeof(float) * 3 * (size_t)w->cap);
+      }
+      memcpy(&w->pts[w->npts * 3], co, sizeof(co));
+      w->npts++;
+      w->count[w->n - 1]++;
+    }
+  }
+  fclose(f);
+  return 1;
+}
+
+/* Largest point distance between two equally long point runs, forward or reversed (best of both). */
+static double stroke_distance(const float *a, const float *b, int n)
+{
+  double fwd = 0, rev = 0;
+  for (int i = 0; i < n; i++) {
+    double df = 0, dr = 0;
+    for (int k = 0; k < 3; k++) {
+      df += (a[i * 3 + k] - b[i * 3 + k]) * (a[i * 3 + k] - b[i * 3 + k]);
+      dr += (a[i * 3 + k] - b[(n - 1 - i) * 3 + k]) * (a[i * 3 + k] - b[(n - 1 - i) * 3 + k]);
+    }
+    if (df > fwd) fwd = df;
+    if (dr > rev) rev = dr;
+  }
+  return sqrt(fwd < rev ? fwd : rev);
+}
+
+#define STROKE_TOLERANCE 1e-3 /* world units */
+
+/* Strokes: every Blender stroke must equal one of ours point for point (forward or reversed). */
+static int compare_strokes(const char *ref_dir, const char *name, const PGSceneLite *scene, const PGLineartSettings *base)
+{
+  PGLineartSettings st = *base;
+  st.stroke_depth_offset = 0.0f; /* as in blender_reference.py */
+  PGLineartStrokes ours;
+  if (pg_lineart_compute_strokes(scene, &st, &ours) < 0) {
+    printf("FAIL: strokes %s: compute failed\n", name);
+    return 1;
+  }
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/%s.txt", ref_dir, name);
+  WorldStrokes w = {0};
+  load_world_strokes(path, &w);
+  char *used = calloc((size_t)(ours.stroke_count > 0 ? ours.stroke_count : 1), 1);
+  int matched = 0;
+  for (int i = 0; i < w.n; i++) {
+    int found = -1;
+    for (int j = 0; j < ours.stroke_count && found < 0; j++) {
+      if (used[j] || ours.strokes[j].point_count != w.count[i]) continue;
+      if (stroke_distance(&w.pts[w.first[i] * 3], &ours.world[ours.strokes[j].first * 3], w.count[i]) <= STROKE_TOLERANCE) {
+        found = j;
+      }
+    }
+    if (found >= 0) {
+      used[found] = 1;
+      matched++;
+    }
+    else {
+      const float *p = &w.pts[w.first[i] * 3];
+      printf("        Blender stroke %d (%d points, from %.4f %.4f %.4f) has no equal stroke of ours\n", i, w.count[i], p[0], p[1], p[2]);
+    }
+  }
+  for (int j = 0; j < ours.stroke_count; j++) {
+    if (!used[j]) {
+      const float *p = &ours.world[ours.strokes[j].first * 3];
+      printf("        our stroke %d (%d points, type 0x%x, level %d, from %.4f %.4f %.4f) is not in Blender's output\n", j,
+             ours.strokes[j].point_count, ours.strokes[j].edge_type, ours.strokes[j].level, p[0], p[1], p[2]);
+    }
+  }
+  const int ok = matched == w.n && matched == ours.stroke_count;
+  printf("%s strokes   %-16s Blender %3d / ours %3d strokes, %d identical\n", ok ? "  ok  " : "FAIL: ", name, w.n, ours.stroke_count, matched);
+  free(used);
+  free(w.pts);
+  free(w.first);
+  free(w.count);
+  pg_lineart_free_strokes(&ours);
+  return ok ? 0 : 1;
+}
+
 static int compare_scene(const char *ref_dir, char **f)
 {
   /* name obj camera lens ortho_scale yaw pitch distance shift_x shift_y width height level_end */
@@ -214,11 +318,12 @@ static int compare_scene(const char *ref_dir, char **f)
   const int ok = ca >= MIN_COVERAGE && cb >= MIN_COVERAGE && (a_total > 0) == (b_total > 0);
   printf("%s reference %-16s Blender %3d strokes / ours %4d visible segments: Blender->ours %.4f, ours->Blender %.4f\n",
          ok ? "  ok  " : "FAIL: ", f[0], strokes, ours.n, ca, cb);
+  const int strokes_failed = compare_strokes(ref_dir, f[0], scene, &st);
   free(ours.v);
   free(theirs.v);
   free(all.v);
   pg_lite_scene_free(scene);
-  return ok ? 0 : 1;
+  return (ok ? 0 : 1) + strokes_failed;
 }
 
 int pg_lineart_reference_compare(const char *ref_dir)

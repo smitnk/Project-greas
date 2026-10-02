@@ -1377,6 +1377,20 @@ class EditorController {
         return (0 until native.materialCount()).map { adapter.materialRecord(it) ?: MaterialRecord(FloatArray(4), FloatArray(4), true, false) }
     }
 
+    /**
+     * Line Art from the 3D reference (ReferenceScene): Blender's Line Art strokes, mapped to the canvas,
+     * become strokes on a new "Line Art" layer at the current frame, in the active color.
+     * Returns the stroke count.
+     */
+    fun generateLineArt(thickness:Float = 3f, includeHidden:Boolean = false):Int {
+        val strokes = reference.lineArtStrokes(document.canvasWidth, document.canvasHeight, if (includeHidden) 1 else 0)
+        if (strokes.isEmpty()) return 0
+        val color = materials.colorArgb or (0xFF shl 24)
+        val sources = strokes.map { xy -> StrokeImport.Source((0 until xy.size / 2).map { floatArrayOf(xy[it * 2], xy[it * 2 + 1]) }, false, color, null, thickness) }
+        val fit = StrokeImport.fit(0f, 0f, document.canvasWidth.toFloat(), document.canvasHeight.toFloat(), document.canvasWidth, document.canvasHeight)
+        return importStrokes(StrokeImport.plan(sources, fit, existingMaterials()), newLayer = "Line Art")
+    }
+
     /** Import SVG: every shape becomes a stroke on the active layer/frame; the viewBox is fitted into the canvas. */
     fun importSvg(svg:String):Int {
         val sources = StrokeImport.fromSvg(SvgImport.parse(svg))

@@ -145,7 +145,7 @@ jobs:
       - name: Generate Blender 3.6.23 Line Art reference output
         run: bash tools/lineart_reference/run_blender_reference.sh build/lineart-reference
 
-      - name: Run native Line Art tests (Blender 3.6.23 core on Scene-lite, compared with Blender)
+      - name: Run native Line Art tests (Blender 3.6.23 Line Art on Scene-lite, lines and strokes compared with Blender)
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
           LINEART_REFERENCE_DIR: build/lineart-reference
@@ -254,13 +254,14 @@ jobs:
               assert text in dex, "APK lacks the UI entry " + text.decode()
           for text in (b"Blender curve geometry", b"DIFFERENCE FROM BLENDER", b"GPENCIL_OT_blank_frame_add", b"separate annotation bGPdata"):
               assert text in dex, "APK lacks the registry text " + text.decode()
-          assert b"BATCH 2 OF 3" in dex, "APK lacks the Line Art batch 2 registry entry"
+          assert b"BATCH 3 OF 3" in dex, "APK lacks the Line Art batch 3 registry entry"
+          assert b"Generate Line Art strokes" in dex, "APK lacks the Line Art stroke button"
           assert b"Line Art preview" in dex, "APK lacks the Line Art preview switch"
           assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
-          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt"):
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes"):
               owners = [name for name, data in libs.items() if sym in data]
               assert owners, "no native library exports " + sym.decode()
               print(sym.decode(), "in", owners)

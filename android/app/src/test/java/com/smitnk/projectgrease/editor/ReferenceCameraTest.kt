@@ -30,4 +30,16 @@ class ReferenceCameraTest {
         val c = ReferenceScene.toCanvas(visible, 200, 100)
         assertEquals(0f, c[0], 0f); assertEquals(0f, c[1], 0f); assertEquals(100f, c[2], 0f); assertEquals(100f, c[3], 0f)
     }
+
+    @Test
+    fun lineArtStrokesParse() {
+        // two strokes: 3 points (contour, level 0) and 2 points (crease, level 1)
+        val raw = floatArrayOf(2f, 3f, 2f, 0f, -1f, 1f, 0f, 0f, 1f, -1f, 2f, 4f, 1f, 0f, 1f, 1f, 1f)
+        val s = ReferenceScene.parseStrokes(raw, 200, 100)
+        assertEquals(2, s.size)
+        assertEquals(6, s[0].size); assertEquals(4, s[1].size)
+        assertEquals(0f, s[0][0], 0f); assertEquals(0f, s[0][1], 0f)
+        assertEquals(200f, s[0][4], 0f); assertEquals(100f, s[0][5], 0f)
+        assertEquals(0, ReferenceScene.parseStrokes(floatArrayOf(5f, 9f), 10, 10).size)
+    }
 }

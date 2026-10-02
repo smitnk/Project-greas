@@ -338,3 +338,28 @@ otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the
   Blender's strokes and our visible segments in frame-buffer space (tolerance 0.002).
 - Android: JNI `nativeSceneLiteLineArt`; the 3D reference sheet has a "Line Art preview" switch that
   draws Line Art's visible lines instead of the mesh wireframe. LINE_ART stays IN_PROGRESS ("BATCH 2 OF 3").
+
+
+## Line Art batch 3 — chaining and strokes — 2026-10-02
+
+- The pinned `lineart_chain.c` is compiled unmodified (Android manifest + host test). The Scene-lite
+  `MOD_lineart_compute_feature_lines` continues after occlusion exactly as Blender's: enclosed shapes
+  (no shadows: no-op), unused-line removal, `MOD_lineart_chain_feature_lines`,
+  `..._split_for_fixed_occlusion`, `..._connect`, smoothing / border trimming / angle splitting when
+  enabled, the depth offset towards the camera, cache transfer, `clear_picked_flag`, `finalize_chains`.
+- `lineart_gpencil_generate` is replaced (generator section) by a version that keeps the original's
+  picked / type / level / two-point filters and writes `PGLineartStrokes` (world `gpos` and image
+  `pos` per point) instead of GP strokes; the remaining filters (object / collection source,
+  material & intersection masks, shadow selection, silhouettes, vertex groups) have no Scene-lite
+  data. `pg_lineart_compute_strokes()` is the API; settings gained level_start, chaining threshold,
+  smoothing, angle split, depth offset and stroke types (Blender defaults).
+- Tests: cube -> 3 chained strokes on its edges, hidden-line strokes at level 1, type filter, depth
+  offset. CI: every Blender 3.6.23 stroke of every reference scene must equal one of ours point for
+  point (world space, 1e-3, forward or reversed) and the counts must match.
+- Batch 2 follow-ups found by the Blender comparison: edges the chainer skips (no type left /
+  CHAIN_PICKED after culling or `lineart_main_discard_out_of_frame_edges`) are no longer reported;
+  the axis-aligned reference scene was made non-degenerate.
+- Android: JNI `nativeSceneLiteLineArtStrokes`; 3D reference sheet: line thickness, "include hidden
+  lines", "Generate Line Art strokes" -> strokes on a new "Line Art" layer at the current frame,
+  in the active color (image-space points mapped to the canvas). LINE_ART stays IN_PROGRESS:
+  unverified on device, no shadows / material settings / collections / per-frame re-bake.

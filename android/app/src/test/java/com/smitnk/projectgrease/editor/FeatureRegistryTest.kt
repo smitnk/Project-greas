@@ -78,12 +78,12 @@ class FeatureRegistryTest {
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.DASH).state)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.OUTLINE).state)
-        // Line Art: Scene-lite and the Line Art core (batch 2) are in, but no GP strokes are generated
-        // yet, so it must stay IN_PROGRESS, unverified, and say so.
+        // Line Art: all three batches are in (strokes are generated) but nothing is device-verified and
+        // shadows / material settings / collections are missing, so it stays IN_PROGRESS and says so.
         val lineArt = FeatureRegistry.capability(FeatureId.LINE_ART)
         assertEquals(AuditStatus.IN_PROGRESS, lineArt.audit)
         assertFalse(lineArt.deviceVerified)
-        assertTrue(lineArt.limitation.contains("no GP strokes are generated"))
+        assertTrue(lineArt.limitation.contains("Not supported: shadows"))
     }
 
     @Test

@@ -146,3 +146,28 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArt(JNIEn
   pg_lineart_free_segments(segments);
   return to_java(env, out);
 }
+
+/* Line Art strokes (pg_lineart_compute_strokes(), default modifier settings, occlusion levels
+ * 0..level_end) in frame-buffer coordinates: [stroke_count, { point_count, edge_type, level,
+ * x0, y0, x1, y1, ... }]. Null on failure. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArtStrokes(JNIEnv *env, jobject, jlong handle, jint level_end)
+{
+  PGSceneLite *scene = scene_from(handle);
+  if (!scene) return nullptr;
+  PGLineartSettings settings;
+  pg_lineart_settings_default(&settings);
+  settings.level_end = level_end < 0 ? 0 : (level_end > 128 ? 128 : level_end);
+  PGLineartStrokes strokes;
+  if (pg_lineart_compute_strokes(scene, &settings, &strokes) < 0) return nullptr;
+  std::vector<float> out;
+  out.reserve(1u + size_t(strokes.stroke_count) * 3u + size_t(strokes.point_count) * 2u);
+  out.push_back(float(strokes.stroke_count));
+  for (int i = 0; i < strokes.stroke_count; i++) {
+    const PGLineartStroke &s = strokes.strokes[i];
+    out.insert(out.end(), {float(s.point_count), float(s.edge_type), float(s.level)});
+    out.insert(out.end(), strokes.image + size_t(s.first) * 2u, strokes.image + size_t(s.first + s.point_count) * 2u);
+  }
+  pg_lineart_free_strokes(&strokes);
+  return to_java(env, out);
+}

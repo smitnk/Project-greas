@@ -29,10 +29,11 @@ REPLACED = [
     "lineart_geometry_object_load", "lineart_intersection_mask_check",
     "lineart_intersection_priority_check", "lineart_usage_check", "lineart_geometry_check_visible",
     "lineart_object_load_single_instance", "lineart_main_load_geometries",
-    "lineart_create_render_buffer", "MOD_lineart_compute_feature_lines",
+    "lineart_create_render_buffer", "MOD_lineart_compute_feature_lines", "lineart_gpencil_generate",
 ]
-# GP stroke output and modifier-data plumbing: batch 3.
-DROPPED = ["MOD_lineart_destroy_render_data", "lineart_gpencil_generate", "MOD_lineart_gpencil_generate"]
+# Modifier-data plumbing (the GP modifier itself is not used: lineart_gpencil_generate is replaced
+# by a version that writes Project Grease strokes).
+DROPPED = ["MOD_lineart_destroy_render_data", "MOD_lineart_gpencil_generate"]
 
 HEADER = """/* SPDX-License-Identifier: GPL-2.0-or-later
  *
@@ -127,7 +128,7 @@ def generate():
             out.append(f"/* Scene-lite replacement for {name} (lineart_scene_lite_replacements.cc) */\n"
                        + sections[name])
         else:
-            out.append(f"/* {name}: not included (GP output and modifier data come with batch 3). */")
+            out.append(f"/* {name}: not included (Blender GP modifier plumbing; see lineart_gpencil_generate). */")
         cursor = end + 1
     verbatim.extend(lines[cursor:])
     flush()

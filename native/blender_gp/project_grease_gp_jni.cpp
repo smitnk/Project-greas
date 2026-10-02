@@ -607,6 +607,80 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerOpacity(
   return project_grease_gp_set_layer_opacity(from_handle(handle), index, opacity) != 0;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeVertexGroupCount(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_vertex_group_count(from_handle(handle));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeVertexGroupName(JNIEnv *env, jobject, jlong handle, jint group)
+{
+  char name[64] = {};
+  if (!project_grease_gp_vertex_group_name(from_handle(handle), group, name, sizeof(name))) return nullptr;
+  return env->NewStringUTF(name);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeVertexGroupAdd(JNIEnv *env, jobject, jlong handle, jstring name)
+{
+  const char *chars = name ? env->GetStringUTFChars(name, nullptr) : nullptr;
+  const int index = project_grease_gp_vertex_group_add(from_handle(handle), chars);
+  if (chars) env->ReleaseStringUTFChars(name, chars);
+  return index;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeVertexGroupRemove(JNIEnv *, jobject, jlong handle, jint group)
+{
+  return project_grease_gp_vertex_group_remove(from_handle(handle), group) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeVertexGroupRename(JNIEnv *env, jobject, jlong handle, jint group, jstring name)
+{
+  if (!name) return JNI_FALSE;
+  const char *chars = env->GetStringUTFChars(name, nullptr);
+  const int ok = project_grease_gp_vertex_group_rename(from_handle(handle), group, chars);
+  env->ReleaseStringUTFChars(name, chars);
+  return ok != 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeVertexGroupActive(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_vertex_group_active(from_handle(handle));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetVertexGroupActive(JNIEnv *, jobject, jlong handle, jint group)
+{
+  return project_grease_gp_set_vertex_group_active(from_handle(handle), group) != 0;
+}
+
+/* [group0, weight0, group1, weight1, ...] of one point, empty when it has no weights, null when invalid. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPointWeights(JNIEnv *env, jobject, jlong handle, jint stroke, jint point)
+{
+  const int n = project_grease_gp_point_weight_count(from_handle(handle), stroke, point);
+  jfloatArray result = env->NewFloatArray(n * 2);
+  if (!result) return nullptr;
+  for (int k = 0; k < n; ++k) {
+    int group = 0;
+    float weight = 0.0f;
+    if (!project_grease_gp_point_weight_at(from_handle(handle), stroke, point, k, &group, &weight)) continue;
+    const jfloat pair[2] = {static_cast<jfloat>(group), weight};
+    env->SetFloatArrayRegion(result, k * 2, 2, pair);
+  }
+  return result;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPointWeight(JNIEnv *, jobject, jlong handle, jint stroke, jint point, jint group, jfloat weight)
+{
+  return project_grease_gp_set_point_weight(from_handle(handle), stroke, point, group, weight) != 0;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLayerUseMask(JNIEnv *, jobject, jlong handle, jint layer)
 {

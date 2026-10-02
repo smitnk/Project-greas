@@ -533,6 +533,62 @@ int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index
   return ensure_ready(handle) && handle->backend.set_layer_opacity(index, opacity) ? 1 : 0;
 }
 
+int project_grease_gp_vertex_group_count(const ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) ? handle->backend.vertex_group_count() : 0;
+}
+
+int project_grease_gp_vertex_group_name(const ProjectGreaseGPHandle *handle, int group, char *name, int name_capacity)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) &&
+                 handle->backend.vertex_group_name(group, name, name_capacity)
+             ? 1
+             : 0;
+}
+
+int project_grease_gp_vertex_group_add(ProjectGreaseGPHandle *handle, const char *name)
+{
+  return ensure_ready(handle) ? handle->backend.vertex_group_add(name) : -1;
+}
+
+int project_grease_gp_vertex_group_remove(ProjectGreaseGPHandle *handle, int group)
+{
+  return ensure_ready(handle) && handle->backend.vertex_group_remove(group) ? 1 : 0;
+}
+
+int project_grease_gp_vertex_group_rename(ProjectGreaseGPHandle *handle, int group, const char *name)
+{
+  return ensure_ready(handle) && handle->backend.vertex_group_rename(group, name) ? 1 : 0;
+}
+
+int project_grease_gp_vertex_group_active(const ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) ? handle->backend.vertex_group_active() : -1;
+}
+
+int project_grease_gp_set_vertex_group_active(ProjectGreaseGPHandle *handle, int group)
+{
+  return ensure_ready(handle) && handle->backend.set_vertex_group_active(group) ? 1 : 0;
+}
+
+int project_grease_gp_point_weight_count(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) ? handle->backend.point_weight_count(stroke_index, point_index) : 0;
+}
+
+int project_grease_gp_point_weight_at(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, int k, int *group, float *weight)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) &&
+                 handle->backend.point_weight_at(stroke_index, point_index, k, group, weight)
+             ? 1
+             : 0;
+}
+
+int project_grease_gp_set_point_weight(ProjectGreaseGPHandle *handle, int stroke_index, int point_index, int group, float weight)
+{
+  return ensure_ready(handle) && handle->backend.set_point_weight(stroke_index, point_index, group, weight) ? 1 : 0;
+}
+
 int project_grease_gp_layer_use_mask(const ProjectGreaseGPHandle *handle, int layer_index)
 {
   return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) && handle->backend.layer_use_mask(layer_index) ? 1 : 0;

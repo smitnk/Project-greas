@@ -85,8 +85,9 @@ class FeatureRegistryTest {
         val capability = FeatureRegistry.capability(FeatureId.VERTEX_PAINT)
         assertEquals(FeatureState.IN_PROGRESS, capability.state)
         assertFalse(capability.deviceVerified)
-        // Weight paint has no brushes yet and stays gated.
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).state)
+        // Weight Paint is enabled the same way, and is not claimed verified either.
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).state)
+        assertFalse(FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).deviceVerified)
     }
 
     @Test

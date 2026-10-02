@@ -251,6 +251,38 @@ int main()
     CHECK(!b.mask_remove(3, 4));
   }
 
+  /* --- vertex groups and point weights --- */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    CHECK(b.vertex_group_count() == 0 && b.vertex_group_active() == -1);
+    CHECK(b.vertex_group_add("Arm") == 0 && b.vertex_group_add("Arm") == 1 && b.vertex_group_add("Leg") == 2);
+    char gname[64];
+    CHECK(b.vertex_group_name(1, gname, sizeof(gname)) && std::strcmp(gname, "Arm.001") == 0); /* unique */
+    CHECK(b.vertex_group_active() == 0 && b.set_vertex_group_active(2) && b.vertex_group_active() == 2);
+    CHECK(!b.set_vertex_group_active(3) && !b.vertex_group_remove(7));
+    CHECK(b.set_point_weight(0, 0, 0, 0.25f) && b.set_point_weight(0, 0, 2, 1.5f) /* clamped */ &&
+          b.set_point_weight(0, 1, 1, 0.5f));
+    CHECK(!b.set_point_weight(0, 99, 0, 1.0f) && !b.set_point_weight(5, 0, 0, 1.0f));
+    CHECK(b.point_weight_count(0, 0) == 2 && b.point_weight_count(0, 2) == 0);
+    int grp = -1;
+    float wt = -1.0f;
+    CHECK(b.point_weight_at(0, 0, 1, &grp, &wt) && grp == 2 && std::fabs(wt - 1.0f) < 1e-6f);
+    CHECK(b.history_reset());
+    CHECK(b.vertex_group_rename(0, "Hand") && b.vertex_group_name(0, gname, sizeof(gname)) && std::strcmp(gname, "Hand") == 0);
+    CHECK(b.vertex_group_remove(1)); /* "Arm.001": its weight goes, Leg (2) becomes 1 */
+    CHECK(b.vertex_group_count() == 2 && b.vertex_group_name(1, gname, sizeof(gname)) && std::strcmp(gname, "Leg") == 0);
+    CHECK(b.point_weight_count(0, 1) == 0); /* point 1 only had group 1 */
+    CHECK(b.point_weight_at(0, 0, 0, &grp, &wt) && grp == 0 && std::fabs(wt - 0.25f) < 1e-6f);
+    CHECK(b.point_weight_at(0, 0, 1, &grp, &wt) && grp == 1 && std::fabs(wt - 1.0f) < 1e-6f); /* shifted */
+    CHECK(b.vertex_group_active() == 1); /* the active group followed its shift */
+    CHECK(b.history_record());
+    CHECK(b.history_undo()); /* undo brings back the group, its name and the weights */
+    CHECK(b.vertex_group_count() == 3 && b.vertex_group_name(1, gname, sizeof(gname)) && std::strcmp(gname, "Arm.001") == 0);
+    CHECK(b.point_weight_count(0, 1) == 1 && b.vertex_group_active() == 2);
+    CHECK(b.history_redo() && b.vertex_group_count() == 2);
+  }
+
   /* --- reset clears every stack --- */
   CHECK(b.reset_document());
   CHECK(b.layer_count() == 1 && b.modifier_count(0) == 0);

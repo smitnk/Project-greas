@@ -167,7 +167,7 @@ object FeatureRegistry {
         FeatureId.SCULPT_TWIST to wired("$DEVICE"),
         FeatureId.SCULPT_RANDOMIZE to wired("$DEVICE"),
         FeatureId.VERTEX_PAINT to wired("Draw/Blur/Average/Smear/Replace brushes on the editable strokes with Blender's smooth falloff, target Stroke/Fill/Both, paint color from the Materials color; pen pressure scales strength. Not a full port of gpencil_vertex_paint.c: no selection mask, brush curves, spacing or jitter. One undo step per drag. $DEVICE"),
-        FeatureId.WEIGHT_PAINT to missing("Mode chip disabled; no weight paint path."),
+        FeatureId.WEIGHT_PAINT to wired("Draw brush (weight moves toward the chosen value by Blender's smooth falloff x strength x pressure) on the editable strokes; vertex groups (add/rename/remove, active group) stored in bGPdata::vertex_group_names; the canvas shows the active group's weights blue 0 .. red 1 while in the mode; weights and group names are saved. Weights only matter where something reads them: the live stack's Thickness entry and the selection Thickness-by-weight read vertex groups, every other modifier ignores them. Blur/Average/Smear/Sample weight brushes are not ported. $DEVICE"),
         FeatureId.ADVANCED_FILL to missing("Blender fill brush options not exposed."),
         FeatureId.FILL_GAP_TOLERANCE to missing("Native fill accepts a leak size; no control."),
         FeatureId.FILL_EXPANSION to missing("Native fill accepts a dilate size; no control."),

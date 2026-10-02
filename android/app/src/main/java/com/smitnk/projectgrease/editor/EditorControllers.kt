@@ -76,6 +76,16 @@ class NativeEditorBridge : ModifierNative {
     fun layerInfo(index: Int) = if (handle != 0L) GPNative.nativeGetLayerInfo(handle, index) else null
     fun layerName(index: Int) = if (handle != 0L) GPNative.nativeGetLayerName(handle, index) else null
     fun setLayerOpacity(index: Int, opacity: Float) = handle != 0L && GPNative.nativeSetLayerOpacity(handle, index, opacity)
+    fun vertexGroupCount() = if (handle != 0L) GPNative.nativeVertexGroupCount(handle) else 0
+    fun vertexGroupName(group: Int) = if (handle != 0L) GPNative.nativeVertexGroupName(handle, group) else null
+    fun vertexGroupAdd(name: String) = if (handle != 0L) GPNative.nativeVertexGroupAdd(handle, name) else -1
+    fun vertexGroupRemove(group: Int) = handle != 0L && GPNative.nativeVertexGroupRemove(handle, group)
+    fun vertexGroupRename(group: Int, name: String) = handle != 0L && GPNative.nativeVertexGroupRename(handle, group, name)
+    fun vertexGroupActive() = if (handle != 0L) GPNative.nativeVertexGroupActive(handle) else -1
+    fun setVertexGroupActive(group: Int) = handle != 0L && GPNative.nativeSetVertexGroupActive(handle, group)
+    fun pointWeights(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPointWeights(handle, stroke, point) else null
+    fun setPointWeight(stroke: Int, point: Int, group: Int, weight: Float) =
+        handle != 0L && GPNative.nativeSetPointWeight(handle, stroke, point, group, weight)
     fun layerUseMask(layer: Int) = handle != 0L && GPNative.nativeLayerUseMask(handle, layer)
     fun setLayerUseMask(layer: Int, enabled: Boolean) = handle != 0L && GPNative.nativeSetLayerUseMask(handle, layer, enabled)
     fun maskCount(layer: Int) = if (handle != 0L) GPNative.nativeMaskCount(handle, layer) else 0
@@ -541,10 +551,11 @@ class EditorController {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
             GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
             GreaseMode.VERTEX_PAINT -> FeatureRegistry.capability(FeatureId.VERTEX_PAINT).state != FeatureState.NOT_IMPLEMENTED
-            GreaseMode.WEIGHT_PAINT -> false
+            GreaseMode.WEIGHT_PAINT -> FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).state != FeatureState.NOT_IMPLEMENTED
         }
         if (!supported) return false
         mode = value
+        if (value == GreaseMode.WEIGHT_PAINT) syncWeightPaintGroup()
         if (value == GreaseMode.EDIT && tools.activeTool == GreaseTool.DRAW) {
             tools.select(GreaseTool.SELECT)
         }
@@ -1023,6 +1034,8 @@ class EditorController {
         if(rendererHandle!=0L){
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
+            // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
+            GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
             GPNative.nativeRenderEgl(rendererHandle)
         }
     }
@@ -1262,6 +1275,14 @@ class EditorController {
         return changed
     }
     fun endVertexPaint() { if (vertexPaintChanged) history.markEdit(); vertexPaintChanged = false }
+    /** One dab of the active paint mode (Vertex Paint colors or Weight Paint weights). */
+    fun paintModeDab(x:Float, y:Float, dx:Float=0f, dy:Float=0f, pressure:Float=1f, render:Boolean=true):Boolean = when (mode) {
+        GreaseMode.VERTEX_PAINT -> vertexPaintDab(x, y, dx, dy, pressure, render)
+        GreaseMode.WEIGHT_PAINT -> weightPaintDab(x, y, pressure, render)
+        else -> false
+    }
+    /** Ends the drag of either paint mode: one undo step. */
+    fun endPaintMode() { endVertexPaint(); endWeightPaint() }
     /** Mirror modifier as copies, about the selection median (Blender uses the object origin). */
     fun mirrorSelectionCopy(axisX:Boolean, axisY:Boolean):Boolean {
         val pivot = selectionPivot() ?: return false
@@ -1275,12 +1296,41 @@ class EditorController {
     private var weightPaintChanged = false
     fun setWeightPaintGroup(group:Int) { if (group >= 0) weightPaintGroup = group }
     fun setWeightPaintValue(value:Float) { weightPaintValue = value.coerceIn(0f, 1f) }
-    fun weightPaintDab(x:Float, y:Float, pressure:Float=1f):Boolean {
+    /** The group to paint: the document's active vertex group, created ("Group") when there is none. */
+    private fun syncWeightPaintGroup() {
+        if (native.handle == 0L) return
+        if (native.vertexGroupCount() == 0) native.vertexGroupAdd("Group")
+        val active = native.vertexGroupActive()
+        weightPaintGroup = if (active >= 0) active else 0
+    }
+    fun vertexGroups():List<String> = (0 until native.vertexGroupCount()).map { native.vertexGroupName(it) ?: "Group" }
+    fun selectVertexGroup(group:Int):Boolean {
+        if (!native.setVertexGroupActive(group)) return false
+        weightPaintGroup = group
+        render()
+        return true
+    }
+    private fun vertexGroupChanged(ok:Boolean):Boolean {
+        if (ok) { history.markEdit(); document.markDirty(); render() }
+        return ok
+    }
+    fun addVertexGroup(name:String = "Group"):Boolean {
+        val index = native.vertexGroupAdd(name)
+        if (index >= 0) { native.setVertexGroupActive(index); weightPaintGroup = index }
+        return vertexGroupChanged(index >= 0)
+    }
+    fun renameVertexGroup(group:Int, name:String) = vertexGroupChanged(native.vertexGroupRename(group, name))
+    fun removeVertexGroup(group:Int):Boolean {
+        val ok = native.vertexGroupRemove(group)
+        if (ok) syncWeightPaintGroup()
+        return vertexGroupChanged(ok)
+    }
+    fun weightPaintDab(x:Float, y:Float, pressure:Float=1f, render:Boolean=true):Boolean {
         if (native.handle == 0L) return false
         val cmd = ProjectGreaseSelect.weightPaint(weightPaintGroup, x, y, brushes.size.coerceAtLeast(1f),
             (brushes.strength * pressure).coerceIn(0f, 1f), weightPaintValue) ?: return false
         val changed = native.applyEditCommand(cmd.id, cmd.args)
-        if (changed) { weightPaintChanged = true; document.markDirty(); render() }
+        if (changed) { weightPaintChanged = true; document.markDirty(); if (render) render() }
         return changed
     }
     fun endWeightPaint() { if (weightPaintChanged) history.markEdit(); weightPaintChanged = false }

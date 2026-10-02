@@ -16,12 +16,14 @@
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
+#include "DNA_meshdata_types.h"
 #include "MEM_guardedalloc.h"
 
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" void project_grease_android_present_reset();
+extern "C" void project_grease_android_present_set_weight_view(int group);
 
 static const int W = 200, H = 120;
 static int failures = 0;
@@ -247,6 +249,41 @@ static void test_masks()
   }
 }
 
+/* Weight Paint view: a stroke whose weights in group 1 run 0 -> 1 is tinted blue -> red, a stroke
+ * without weights is blue (weight 0). Blender's ramp: weight 0 = (0,0,.5), 1 = (1,0,0) at the ends. */
+static void test_weight_view()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 1, 0); /* the material color is NOT used in the weight view */
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 40, 16);
+  add_bar(l, 20, 180, 90, 16);
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  bGPDstroke *weighted = static_cast<bGPDstroke *>(f->strokes.first);
+  weighted->dvert = static_cast<MDeformVert *>(MEM_callocN(sizeof(MDeformVert) * 2, "dvert"));
+  for (int i = 0; i < 2; i++) {
+    weighted->dvert[i].dw = static_cast<MDeformWeight *>(MEM_callocN(sizeof(MDeformWeight), "dw"));
+    weighted->dvert[i].totweight = 1;
+    weighted->dvert[i].dw[0].def_nr = 1;
+    weighted->dvert[i].dw[0].weight = static_cast<float>(i); /* point 0 -> 0, point 1 -> 1 */
+  }
+  project_grease_android_present_set_weight_view(1);
+  present(d);
+  project_grease_android_present_set_weight_view(-1);
+  /* the middle of the weighted bar has weight 0.5: Blender's ramp gives (r,g,b) = (0, 1, 0) * blend,
+   * blend = 0.75 -> a green; the ends are blue-ish (0) and red-ish (1) */
+  const Rgba left = pixel_at_canvas(30, 40), mid = pixel_at_canvas(100, 40), right = pixel_at_canvas(170, 40);
+  CHECK(left.b > left.r && left.r < 80);
+  CHECK(right.r > right.b && right.b < 80);
+  CHECK(mid.g > mid.r && mid.g > mid.b);
+  /* an unweighted stroke is weight 0: blue, not the material's green */
+  const Rgba plain = pixel_at_canvas(100, 90);
+  CHECK(plain.b > plain.g && plain.b > plain.r);
+  /* the normal view is back: the material color shows */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 90), 0, 255, 0));
+}
+
 int main()
 {
   if (!init_gl()) {
@@ -261,6 +298,7 @@ int main()
   project_grease_android_present_set_view_transform(1.0f, 0.0f, 0.0f);
   test_baseline();
   test_masks();
+  test_weight_view();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

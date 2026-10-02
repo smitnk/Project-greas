@@ -134,6 +134,22 @@ class Backend {
   bool add_stroke(const StrokePoint* points, int count, const PGStrokeInfo& info);
   bool get_layer_info(int index, PGLayerInfo* out) const;
 
+  // Vertex groups (bGPdata::vertex_group_names; the weights are bGPDstroke::dvert of the points).
+  // Group indices are 0-based and are the `def_nr` of the weights; removing a group shifts the
+  // higher indices down like BKE_gpencil_vgroup_remove().
+  int vertex_group_count() const;
+  bool vertex_group_name(int group, char* name, int name_capacity) const;
+  int vertex_group_add(const char* name); // returns the new index or -1; names are made unique
+  bool vertex_group_remove(int group);
+  bool vertex_group_rename(int group, const char* name);
+  int vertex_group_active() const;        // -1 when there is none
+  bool set_vertex_group_active(int group);
+  // Weights of the points of the current frame's strokes (for display, save and load).
+  int point_weight_count(int stroke_index, int point_index) const;
+  bool point_weight_at(int stroke_index, int point_index, int k, int* group, float* weight) const;
+  // Creates the dvert/weight when needed; weight is clamped to 0..1.
+  bool set_point_weight(int stroke_index, int point_index, int group, float weight);
+
   // Layer masks (bGPDlayer::mask_layers, GP_LAYER_USE_MASK, GP_MASK_INVERT/GP_MASK_HIDE): a masked
   // layer is drawn only where the union of its mask layers has coverage (inverted entries: where
   // they have none), as gpencil_engine.c gpencil_draw_mask() does. Masks refer to layers by name.

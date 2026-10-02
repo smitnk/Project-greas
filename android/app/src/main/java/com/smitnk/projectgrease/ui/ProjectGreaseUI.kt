@@ -322,6 +322,48 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
+/** Weight Paint mode: vertex group chips with add/rename/remove and the weight to paint toward. */
+@Composable private fun WeightPaintBar(controller:EditorController,redraw:()->Unit){
+    var renameOpen by remember{mutableStateOf(false)}
+    var renameText by remember{mutableStateOf("")}
+    val groups=controller.vertexGroups()
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+        verticalAlignment=Alignment.CenterVertically
+    ){
+        Text("Group",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+        groups.forEachIndexed{index,name->
+            FilterChip(
+                selected=controller.weightPaintGroup==index,
+                onClick={controller.selectVertexGroup(index);redraw()},
+                label={Text(name,fontSize=10.sp)},
+                modifier=Modifier.padding(end=3.dp)
+            )
+        }
+        TextButton(onClick={controller.addVertexGroup("Group "+(groups.size+1));redraw()}){Text("Add",fontSize=11.sp)}
+        TextButton(onClick={renameText=groups.getOrNull(controller.weightPaintGroup)?:"";renameOpen=true},enabled=groups.isNotEmpty()){Text("Rename",fontSize=11.sp)}
+        TextButton(onClick={controller.removeVertexGroup(controller.weightPaintGroup);redraw()},enabled=groups.size>1){Text("Remove",fontSize=11.sp)}
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),verticalAlignment=Alignment.CenterVertically){
+        Text("Weight "+"%.2f".format(controller.weightPaintValue),fontSize=10.sp,modifier=Modifier.width(76.dp))
+        Slider(
+            value=controller.weightPaintValue,
+            onValueChange={controller.setWeightPaintValue(it);redraw()},
+            valueRange=0f..1f,
+            modifier=Modifier.weight(1f).padding(horizontal=4.dp)
+        )
+    }
+    if(renameOpen){
+        AlertDialog(
+            onDismissRequest={renameOpen=false},
+            title={Text("Rename vertex group")},
+            text={OutlinedTextField(value=renameText,onValueChange={renameText=it},singleLine=true)},
+            confirmButton={TextButton(onClick={if(renameText.isNotBlank())controller.renameVertexGroup(controller.weightPaintGroup,renameText.trim());renameOpen=false;redraw()}){Text("Rename")}},
+            dismissButton={TextButton(onClick={renameOpen=false}){Text("Cancel")}}
+        )
+    }
+}
+
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
@@ -338,7 +380,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                         GreaseMode.DRAW,GreaseMode.EDIT->true
                         GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state!=FeatureState.NOT_IMPLEMENTED
                         GreaseMode.VERTEX_PAINT->FeatureRegistry.capability(FeatureId.VERTEX_PAINT).state!=FeatureState.NOT_IMPLEMENTED
-                        GreaseMode.WEIGHT_PAINT->false
+                        GreaseMode.WEIGHT_PAINT->FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).state!=FeatureState.NOT_IMPLEMENTED
                     }
                     FilterChip(
                         selected=selected,
@@ -394,6 +436,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                         )
                     }
                 }
+            }
+            if (controller.mode == GreaseMode.WEIGHT_PAINT) {
+                WeightPaintBar(controller,redraw)
             }
             if (controller.tools.activeTool == GreaseTool.ERASE) {
                 Row(

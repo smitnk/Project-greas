@@ -32,6 +32,7 @@ C|native/blender_gp/project_grease_blender_primitive.c
 C|native/blender_gp/project_grease_blender_select.c
 C|native/blender_gp/project_grease_blender_eraser.c
 C|native/blender_gp/project_grease_blender_edit.c
+C|native/blender_gp/project_grease_modifier_stack.c
 C|native/blender_gp/project_grease_document_state.c
 C|build/blender-dna/dna.c
 C|third_party/blender/source/blender/makesdna/intern/dna_utils.c

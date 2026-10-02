@@ -128,6 +128,11 @@ jobs:
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 
+      - name: Run native modifier stack tests
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_modifier_stack_tests.sh
+
       - name: Run Android unit tests
         working-directory: android
         run: gradle :app:testDebugUnitTest --no-daemon

@@ -6,6 +6,7 @@
 
 #include "project_grease_gp_bridge.h"
 #include "project_grease_modifier_stack.h"
+#include "project_grease_shader_fx.h"
 
 namespace {
 
@@ -809,6 +810,74 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeModifierApply(
     JNIEnv *, jobject, jlong handle, jint layer, jint index)
 {
   return project_grease_gp_modifier_apply(from_handle(handle), layer, index) != 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxCount(
+    JNIEnv *, jobject, jlong handle, jint layer)
+{
+  return project_grease_gp_fx_count(from_handle(handle), layer);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxAdd(
+    JNIEnv *, jobject, jlong handle, jint layer, jint type)
+{
+  return project_grease_gp_fx_add(from_handle(handle), layer, type);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxRemove(
+    JNIEnv *, jobject, jlong handle, jint layer, jint index)
+{
+  return project_grease_gp_fx_remove(from_handle(handle), layer, index) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxMove(
+    JNIEnv *, jobject, jlong handle, jint layer, jint from, jint to)
+{
+  return project_grease_gp_fx_move(from_handle(handle), layer, from, to) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxSetEnabled(
+    JNIEnv *, jobject, jlong handle, jint layer, jint index, jboolean enabled)
+{
+  return project_grease_gp_fx_set_enabled(from_handle(handle), layer, index, enabled ? 1 : 0) != 0;
+}
+
+/* params: the float parameters of the effect (see ShaderFx.kt packing). */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxSetParams(
+    JNIEnv *env, jobject, jlong handle, jint layer, jint index, jfloatArray params)
+{
+  if (!params) return JNI_FALSE;
+  const jsize count = env->GetArrayLength(params);
+  if (count < 0 || count > PG_FX_MAX_PARAMS) return JNI_FALSE;
+  float values[PG_FX_MAX_PARAMS] = {};
+  env->GetFloatArrayRegion(params, 0, count, values);
+  return project_grease_gp_fx_set_params(from_handle(handle), layer, index, values, count) != 0;
+}
+
+/* Returns [type, enabled, param0, param1, ...] or null. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxGet(
+    JNIEnv *env, jobject, jlong handle, jint layer, jint index)
+{
+  int type = 0, enabled = 0;
+  float params[PG_FX_MAX_PARAMS] = {};
+  const int n = project_grease_gp_fx_get(
+      from_handle(handle), layer, index, &type, &enabled, params, PG_FX_MAX_PARAMS);
+  if (n < 0) return nullptr;
+  jfloat values[PG_FX_MAX_PARAMS + 2];
+  values[0] = static_cast<jfloat>(type);
+  values[1] = static_cast<jfloat>(enabled);
+  for (int i = 0; i < n; ++i) values[i + 2] = params[i];
+  jfloatArray result = env->NewFloatArray(n + 2);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, n + 2, values);
+  return result;
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL

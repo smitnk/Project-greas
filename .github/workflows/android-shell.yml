@@ -144,6 +144,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_modifier_stack_tests.sh
 
+      - name: Run native shader effect tests
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_shader_fx_tests.sh
+
       - name: Run Android unit tests
         working-directory: android
         run: gradle :app:testDebugUnitTest --no-daemon
@@ -195,6 +200,22 @@ jobs:
               # informational: debug symbols may be stripped by the packager
               print(name, "exports pg_gp_edit2_dispatch symbol:", b"pg_gp_edit2_dispatch" in data)
           print("APK carries the combined-batch UI entries")
+          PY
+
+      - name: Verify the shader effects are in the built APK
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          apk = zipfile.ZipFile("android/app/build/outputs/apk/debug/app-debug.apk")
+          dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
+          for text in (b"Add effect", b"Wave Distortion", b"Colorize", b"Pixelate", b"Nearest filter", b"Per-layer effect list in the Layers sheet"):
+              assert text in dex, "APK lacks the effects UI/registry text " + text.decode()
+          assert b"Shader effects need the full DRW pipeline." not in dex, "APK still carries the blocked VISUAL_EFFECTS entry"
+          libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
+          assert libs, "APK has no native library"
+          for name, data in libs.items():
+              print(name, "has Java_..._nativeFxAdd:", b"nativeFxAdd" in data)
+          print("APK carries the shader effect UI and the enabled registry entry")
           PY
 
       - name: Upload APK artifact

@@ -4,6 +4,7 @@
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -18,12 +19,18 @@
 #include "DNA_material_types.h"
 #include "DNA_meshdata_types.h"
 #include "MEM_guardedalloc.h"
+#include "project_grease_shader_fx.h"
 
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
+extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
+extern "C" int project_grease_fx_begin_layer(int, int);
+extern "C" int project_grease_fx_end_layer(const PGFxEntry *, int, const PGFxView *, unsigned char *, unsigned char *);
+extern "C" void project_grease_android_set_fx_provider(
+    int (*)(void *, const bGPDlayer *, const PGFxEntry **), void *);
 
 static const int W = 200, H = 120;
 static int failures = 0;
@@ -284,6 +291,187 @@ static void test_weight_view()
   CHECK(near_rgb(pixel_at_canvas(100, 90), 0, 255, 0));
 }
 
+static PGFxEntry fxe(int type, std::initializer_list<std::pair<int, float>> set = {}) {
+  PGFxEntry e;
+  pg_fx_entry_init(&e, type);
+  for (auto &kv : set) e.params[kv.first] = kv.second;
+  return e;
+}
+
+/* ---- shader effects through the presenter: the layer is drawn offscreen, the effects run, the result is composited */
+static std::vector<PGFxEntry> g_provider_entries;
+static const bGPDlayer *g_provider_layer = nullptr;
+static int fx_provider(void *, const bGPDlayer *layer, const PGFxEntry **out) {
+  if (layer != g_provider_layer || g_provider_entries.empty()) return 0;
+  *out = g_provider_entries.data();
+  return static_cast<int>(g_provider_entries.size());
+}
+
+static void test_fx_through_presenter() {
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *under = add_layer(d, "Under");
+  add_bar(under, 20, 180, 100, 10, 1.0f, 1); /* a blue bar the effect layer must not disturb */
+  bGPDlayer *fxl = add_layer(d, "FX");
+  add_bar(fxl, 20, 80, 60, 20);              /* red bar in the left part of the canvas */
+  g_provider_layer = fxl;
+  project_grease_android_set_fx_provider(fx_provider, nullptr);
+
+  g_provider_entries = {};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(150, 60), 245, 245, 245));
+
+  /* Flip horizontal mirrors the layer about the canvas center; layers below stay as they were */
+  g_provider_entries = {fxe(PG_FX_FLIP)};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(150, 60), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 245, 245, 245));
+  CHECK(near_rgb(pixel_at_canvas(50, 100), 0, 0, 255)); /* the unaffected layer under it is intact */
+  CHECK(near_rgb(pixel_at_canvas(150, 100), 0, 0, 255));
+
+  /* Colorize grayscale, factor 1: the red bar turns gray 0.2126 */
+  g_provider_entries = {fxe(PG_FX_COLORIZE, {{PG_FXP_COLORIZE_FACTOR, 1.0f}})};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 54, 54, 54, 8));
+
+  /* disabled / no working pass: the direct path, same pixels as without effects */
+  PGFxEntry off = fxe(PG_FX_FLIP);
+  off.enabled = 0;
+  g_provider_entries = {off};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 255, 0, 0));
+  g_provider_entries = {fxe(PG_FX_BLUR, {{PG_FXP_BLUR_RADIUS_X, 0}, {PG_FXP_BLUR_RADIUS_Y, 0}})};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 255, 0, 0));
+
+  /* a shadow lands next to the bar and its pixels stay below the bar's own color */
+  g_provider_entries = {fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_OFFSET_X, 0}, {PG_FXP_SHADOW_OFFSET_Y, -30},
+                                           {PG_FXP_SHADOW_BLUR_X, 0}, {PG_FXP_SHADOW_BLUR_Y, 0}})};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 255, 0, 0));
+  const Rgba sh = pixel_at_canvas(50, 90); /* 30 canvas px below (y up offset -30 = down on screen) */
+  CHECK(sh.r < 120 && sh.g < 120 && sh.b < 120); /* a dark shadow over the light canvas */
+
+  project_grease_android_set_fx_provider(nullptr, nullptr);
+  g_provider_entries = {};
+  g_provider_layer = nullptr;
+}
+
+/* ---- shader effects: the GLSL passes against the CPU port (project_grease_shader_fx.c) -------- */
+
+struct Rect { int x, y, w, h; float r, g, b, a; }; /* premultiplied color, GL row order (y up) */
+static const int FW = 64, FH = 48;
+static const std::vector<Rect> &scene() {
+  static const std::vector<Rect> rects = {
+      {10, 12, 20, 18, 1.0f, 0.0f, 0.0f, 1.0f},      /* opaque red */
+      {24, 20, 26, 20, 0.0f, 0.5f, 0.0f, 0.5f},      /* half transparent green over the red */
+      {40, 5, 20, 10, 0.1f, 0.1f, 0.4f, 0.5f},       /* dim blue at 50 % */
+      {4, 36, 8, 8, 0.9f, 0.9f, 0.9f, 1.0f},         /* bright square (glow, rim) */
+  };
+  return rects;
+}
+static unsigned char to_byte(float v) { return static_cast<unsigned char>(std::lround(std::fmin(1.0f, std::fmax(0.0f, v)) * 255.0f)); }
+
+/* Runs `entries` through the GL engine and through the CPU port; returns the largest byte difference
+ * over both planes (color and revealage). */
+static int fx_max_diff(const std::vector<PGFxEntry> &entries, const char *name, std::vector<unsigned char> *gl_out = nullptr) {
+  PGFxView view{FW, FH, 1.0f, 0.0f, 0.0f, FW, FH};
+  /* GL: paint the scene into the layer buffer with scissored clears (exact premultiplied values) */
+  CHECK(project_grease_fx_begin_layer(FW, FH) == 1);
+  glEnable(GL_SCISSOR_TEST);
+  for (const Rect &r : scene()) {
+    glScissor(r.x, r.y, r.w, r.h);
+    glClearColor(r.r, r.g, r.b, r.a);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
+  glDisable(GL_SCISSOR_TEST);
+  std::vector<unsigned char> col(FW * FH * 4), rev(FW * FH * 4);
+  CHECK(project_grease_fx_end_layer(entries.data(), static_cast<int>(entries.size()), &view, col.data(), rev.data()) == 1);
+
+  /* CPU: the same scene as floats (the layer buffer is 8 bit) */
+  std::vector<float> premult(FW * FH * 4, 0.0f);
+  for (const Rect &r : scene()) {
+    for (int y = r.y; y < r.y + r.h; y++) {
+      for (int x = r.x; x < r.x + r.w; x++) {
+        float *p = &premult[(static_cast<size_t>(y) * FW + x) * 4];
+        p[0] = to_byte(r.r) / 255.0f; p[1] = to_byte(r.g) / 255.0f; p[2] = to_byte(r.b) / 255.0f; p[3] = to_byte(r.a) / 255.0f;
+      }
+    }
+  }
+  PGFxImage im = pg_fx_image_new(FW, FH);
+  pg_fx_image_from_premult(&im, premult.data());
+  pg_fx_run_cpu(entries.data(), static_cast<int>(entries.size()), &view, &im);
+  int worst = 0, wx = 0, wy = 0, wc = 0;
+  for (int y = 0; y < FH; y++) {
+    for (int x = 0; x < FW; x++) {
+      for (int c = 0; c < 4; c++) {
+        const size_t o = (static_cast<size_t>(y) * FW + x) * 4 + c;
+        const int dc = std::abs(static_cast<int>(col[o]) - static_cast<int>(to_byte(im.color[o])));
+        const int dr = std::abs(static_cast<int>(rev[o]) - static_cast<int>(to_byte(im.reveal[o])));
+        if (std::max(dc, dr) > worst) { worst = std::max(dc, dr); wx = x; wy = y; wc = c; }
+      }
+    }
+  }
+  pg_fx_image_free(&im);
+  if (gl_out) *gl_out = col;
+  printf("  fx %-28s max diff %3d/255 at (%d,%d) ch %d\n", name, worst, wx, wy, wc);
+  return worst;
+}
+
+static void test_shader_fx_gl() {
+  const int tol = 12;
+  std::vector<unsigned char> baseline;
+  fx_max_diff({}, "no effects", &baseline);
+  auto check = [&](const char *name, std::vector<PGFxEntry> e) {
+    std::vector<unsigned char> out;
+    const int d = fx_max_diff(e, name, &out);
+    if (d > tol) printf("FAIL %s: GL and CPU differ by %d/255 (> %d)\n", name, d, tol);
+    CHECK(d <= tol);
+    /* the effect must actually change the layer (a shared identity bug would pass the comparison) */
+    long changed = 0;
+    for (size_t i = 0; i < out.size(); i++) changed += std::abs(int(out[i]) - int(baseline[i]));
+    if (changed < 200) printf("FAIL %s: the effect changed almost nothing (%ld)\n", name, changed);
+    CHECK(changed >= 200);
+  };
+  for (int mode = 0; mode < 5; mode++) {
+    char n[40];
+    std::snprintf(n, sizeof n, "colorize mode %d", mode);
+    check(n, {fxe(PG_FX_COLORIZE, {{PG_FXP_COLORIZE_MODE, float(mode)}, {PG_FXP_COLORIZE_FACTOR, 0.6f},
+                                   {PG_FXP_COLORIZE_LOW, 0.1f}, {PG_FXP_COLORIZE_LOW + 2, 0.9f}, {PG_FXP_COLORIZE_HIGH + 2, 0.2f}})});
+  }
+  check("blur", {fxe(PG_FX_BLUR, {{PG_FXP_BLUR_RADIUS_X, 6}, {PG_FXP_BLUR_RADIUS_Y, 4}, {PG_FXP_BLUR_SAMPLES, 4}, {PG_FXP_BLUR_ROTATION, 0.5f}})});
+  check("flip horizontal", {fxe(PG_FX_FLIP)});
+  check("flip both", {fxe(PG_FX_FLIP, {{PG_FXP_FLIP_VERTICAL, 1}})});
+  check("wave horizontal", {fxe(PG_FX_WAVE, {{PG_FXP_WAVE_ORIENTATION, 0}, {PG_FXP_WAVE_AMPLITUDE, 3}, {PG_FXP_WAVE_PERIOD, 12}})});
+  check("wave vertical", {fxe(PG_FX_WAVE, {{PG_FXP_WAVE_AMPLITUDE, 3}, {PG_FXP_WAVE_PERIOD, 12}, {PG_FXP_WAVE_PHASE, 1.0f}})});
+  check("swirl", {fxe(PG_FX_SWIRL, {{PG_FXP_SWIRL_RADIUS, 22}, {PG_FXP_SWIRL_ANGLE, 2.0f}})});
+  check("pixelate", {fxe(PG_FX_PIXEL, {{PG_FXP_PIXEL_SIZE_X, 6}, {PG_FXP_PIXEL_SIZE_Y, 4}})});
+  check("pixelate nearest", {fxe(PG_FX_PIXEL, {{PG_FXP_PIXEL_SIZE_X, 6}, {PG_FXP_PIXEL_SIZE_Y, 4}, {PG_FXP_PIXEL_NEAREST, 1}})});
+  check("shadow", {fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_OFFSET_X, 6}, {PG_FXP_SHADOW_OFFSET_Y, -5}, {PG_FXP_SHADOW_BLUR_X, 3}, {PG_FXP_SHADOW_BLUR_Y, 3}})});
+  check("shadow wave rot scale", {fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_USE_WAVE, 1}, {PG_FXP_SHADOW_ROTATION, 0.3f},
+                                                     {PG_FXP_SHADOW_SCALE_X, 1.2f}, {PG_FXP_SHADOW_SCALE_Y, 0.8f}, {PG_FXP_SHADOW_AMPLITUDE, 2}})});
+  for (int mode = 0; mode < 6; mode++) {
+    char n[40];
+    std::snprintf(n, sizeof n, "rim mode %d", mode);
+    check(n, {fxe(PG_FX_RIM, {{PG_FXP_RIM_MODE, float(mode)}, {PG_FXP_RIM_OFFSET_X, 4}, {PG_FXP_RIM_OFFSET_Y, -3},
+                              {PG_FXP_RIM_BLUR_X, 2}, {PG_FXP_RIM_BLUR_Y, 2}})});
+  }
+  check("glow luminance", {fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 5}, {PG_FXP_GLOW_BLUR_Y, 5}, {PG_FXP_GLOW_SAMPLES, 4}, {PG_FXP_GLOW_THRESHOLD, 0.3f}})});
+  check("glow color", {fxe(PG_FX_GLOW, {{PG_FXP_GLOW_MODE, 1}, {PG_FXP_GLOW_SELECT, 1.0f}, {PG_FXP_GLOW_SELECT + 1, 0.0f},
+                                         {PG_FXP_GLOW_THRESHOLD, 0.3f}, {PG_FXP_GLOW_BLUR_X, 4}, {PG_FXP_GLOW_BLUR_Y, 4}, {PG_FXP_GLOW_SAMPLES, 4}})});
+  check("glow under", {fxe(PG_FX_GLOW, {{PG_FXP_GLOW_USE_ALPHA, 1}, {PG_FXP_GLOW_BLUR_X, 5}, {PG_FXP_GLOW_BLUR_Y, 5}, {PG_FXP_GLOW_SAMPLES, 4}})});
+  for (int blend : {2, 3, 4, 5}) {
+    char n[40];
+    std::snprintf(n, sizeof n, "glow blend %d", blend);
+    check(n, {fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLEND, float(blend)}, {PG_FXP_GLOW_BLUR_X, 4}, {PG_FXP_GLOW_BLUR_Y, 4}, {PG_FXP_GLOW_SAMPLES, 3}})});
+  }
+  check("chain blur+colorize+flip", {fxe(PG_FX_BLUR, {{PG_FXP_BLUR_RADIUS_X, 4}, {PG_FXP_BLUR_RADIUS_Y, 4}, {PG_FXP_BLUR_SAMPLES, 3}}),
+                                     fxe(PG_FX_COLORIZE, {{PG_FXP_COLORIZE_MODE, 1}, {PG_FXP_COLORIZE_FACTOR, 1.0f}}), fxe(PG_FX_FLIP)});
+  check("chain shadow+glow", {fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_BLUR_X, 2}, {PG_FXP_SHADOW_BLUR_Y, 2}}),
+                              fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})});
+}
+
 int main()
 {
   if (!init_gl()) {
@@ -299,6 +487,8 @@ int main()
   test_baseline();
   test_masks();
   test_weight_view();
+  test_shader_fx_gl();
+  test_fx_through_presenter();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

@@ -679,6 +679,47 @@ int project_grease_gp_modifier_apply(ProjectGreaseGPHandle *handle, int layer_in
   return ensure_ready(handle) && handle->backend.modifier_apply(layer_index, modifier_index) ? 1 : 0;
 }
 
+int project_grease_gp_fx_count(const ProjectGreaseGPHandle *handle, int layer_index)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) {
+    return 0;
+  }
+  return handle->backend.fx_count(layer_index);
+}
+
+int project_grease_gp_fx_add(ProjectGreaseGPHandle *handle, int layer_index, int type)
+{
+  return ensure_ready(handle) ? handle->backend.fx_add(layer_index, type) : -1;
+}
+
+int project_grease_gp_fx_remove(ProjectGreaseGPHandle *handle, int layer_index, int fx_index)
+{
+  return ensure_ready(handle) && handle->backend.fx_remove(layer_index, fx_index) ? 1 : 0;
+}
+
+int project_grease_gp_fx_move(ProjectGreaseGPHandle *handle, int layer_index, int from_index, int to_index)
+{
+  return ensure_ready(handle) && handle->backend.fx_move(layer_index, from_index, to_index) ? 1 : 0;
+}
+
+int project_grease_gp_fx_set_enabled(ProjectGreaseGPHandle *handle, int layer_index, int fx_index, int enabled)
+{
+  return ensure_ready(handle) && handle->backend.fx_set_enabled(layer_index, fx_index, enabled != 0) ? 1 : 0;
+}
+
+int project_grease_gp_fx_set_params(ProjectGreaseGPHandle *handle, int layer_index, int fx_index, const float *params, int count)
+{
+  return ensure_ready(handle) && handle->backend.fx_set_params(layer_index, fx_index, params, count) ? 1 : 0;
+}
+
+int project_grease_gp_fx_get(const ProjectGreaseGPHandle *handle, int layer_index, int fx_index, int *type, int *enabled, float *params, int capacity)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) {
+    return -1;
+  }
+  return handle->backend.fx_get(layer_index, fx_index, type, enabled, params, capacity);
+}
+
 int project_grease_gp_get_material_info(const ProjectGreaseGPHandle *handle, int index, PGMaterialInfo *out)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) {

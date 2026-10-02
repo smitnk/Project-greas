@@ -4,7 +4,7 @@ import kotlin.math.pow
 
 import com.smitnk.projectgrease.nativebridge.GPNative
 
-class NativeEditorBridge : ModifierNative {
+class NativeEditorBridge : ModifierNative, FxNative {
     var handle: Long = 0L
         private set
     fun attach(value: Long) { handle = value }
@@ -104,6 +104,15 @@ class NativeEditorBridge : ModifierNative {
         handle != 0L && GPNative.nativeModifierSetParams(handle, layer, index, params)
     override fun modifierGet(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeModifierGet(handle, layer, index) else null
     override fun modifierApply(layer: Int, index: Int) = handle != 0L && GPNative.nativeModifierApply(handle, layer, index)
+    override fun fxCount(layer: Int) = if (handle != 0L) GPNative.nativeFxCount(handle, layer) else 0
+    override fun fxAdd(layer: Int, type: Int) = if (handle != 0L) GPNative.nativeFxAdd(handle, layer, type) else -1
+    override fun fxRemove(layer: Int, index: Int) = handle != 0L && GPNative.nativeFxRemove(handle, layer, index)
+    override fun fxMove(layer: Int, from: Int, to: Int) = handle != 0L && GPNative.nativeFxMove(handle, layer, from, to)
+    override fun fxSetEnabled(layer: Int, index: Int, enabled: Boolean) =
+        handle != 0L && GPNative.nativeFxSetEnabled(handle, layer, index, enabled)
+    override fun fxSetParams(layer: Int, index: Int, params: FloatArray) =
+        handle != 0L && GPNative.nativeFxSetParams(handle, layer, index, params)
+    override fun fxGet(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeFxGet(handle, layer, index) else null
     fun materialInfo(index: Int) = if (handle != 0L) GPNative.nativeGetMaterialInfo(handle, index) else null
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
@@ -1072,6 +1081,20 @@ class EditorController {
         return ok
     }
     fun commitModifierEdit():Boolean = history.markEdit()
+
+    // Shader effects of a layer (see ShaderFx.kt): a 2D post-pass over the rendered layer, same
+    // undo/redraw behaviour as the modifier stack. Strokes are never changed.
+    fun effects(layer:Int=selectedLayer):List<FxRecord> = FxCommands.list(native,layer)
+    fun addEffect(type:Int,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.add(native,layer,type)>=0)
+    fun removeEffect(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.remove(native,layer,index))
+    fun moveEffect(index:Int,delta:Int,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.moveBy(native,layer,index,delta))
+    fun setEffectEnabled(index:Int,enabled:Boolean,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.setEnabled(native,layer,index,enabled))
+    fun setEffectParam(index:Int,paramIndex:Int,value:Float,commit:Boolean=true,layer:Int=selectedLayer):Boolean {
+        val ok=FxCommands.setParam(native,layer,index,paramIndex,value)
+        if(ok){ if(commit){history.markEdit()}; document.markDirty(); render() }
+        return ok
+    }
+    fun commitEffectEdit():Boolean = history.markEdit()
     /** Bakes the modifier into the layer's strokes (all frames) and removes it from the stack. */
     fun applyLayerModifier(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.apply(native,layer,index))
 

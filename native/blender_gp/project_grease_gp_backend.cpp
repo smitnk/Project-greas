@@ -5,6 +5,7 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_document_state.h"
 #include "project_grease_modifier_stack.h"
+#include "project_grease_shader_fx.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +50,8 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, i
 typedef const bGPDframe *(*ProjectGreaseGPFrameEvaluator)(void *user, const bGPDlayer *layer,
                                                           const bGPDframe *current, int frame_number);
 extern "C" void project_grease_android_set_frame_evaluator(ProjectGreaseGPFrameEvaluator fn, void *user);
+typedef int (*ProjectGreaseGPFxProvider)(void *user, const bGPDlayer *layer, const PGFxEntry **entries);
+extern "C" void project_grease_android_set_fx_provider(ProjectGreaseGPFxProvider fn, void *user);
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 #endif
@@ -167,10 +170,12 @@ static void gp_materials_free(bGPdata *gpd)
 }
 
 using ModifierStacks = std::vector<std::vector<PGModEntry>>;
+using FxStacks = std::vector<std::vector<PGFxEntry>>;
 
 struct HistorySnapshot {
   bGPdata *data = nullptr;
   ModifierStacks stacks; /* the live modifier stack of every layer, by layer index */
+  FxStacks fx_stacks;    /* the shader effect list of every layer, by layer index */
 };
 
 /* One evaluated copy of a layer's current frame (see pg_mod_eval_frame). */
@@ -220,6 +225,8 @@ struct Backend::Impl {
   // Live modifier stacks: stacks[i] belongs to the i-th layer of gpd->layers. They are document
   // state (saved, in undo snapshots); strokes never carry modifiers.
   ModifierStacks stacks;
+  // Shader effect lists (2D post-pass, see project_grease_shader_fx.h), same indexing and lifetime.
+  FxStacks fx_stacks;
   uint64_t stack_revision = 1;
   uint64_t eval_count = 0;
   std::vector<std::unique_ptr<EvalCacheEntry>> eval_cache;
@@ -257,6 +264,15 @@ static std::vector<PGModEntry> *layer_stack(Backend::Impl *impl, int layer_index
   }
   impl->stacks.resize(static_cast<size_t>(layer_total(impl->gpd)));
   return &impl->stacks[static_cast<size_t>(layer_index)];
+}
+
+static std::vector<PGFxEntry> *layer_fx(Backend::Impl *impl, int layer_index)
+{
+  if (!impl->gpd || layer_index < 0 || layer_index >= layer_total(impl->gpd)) {
+    return nullptr;
+  }
+  impl->fx_stacks.resize(static_cast<size_t>(layer_total(impl->gpd)));
+  return &impl->fx_stacks[static_cast<size_t>(layer_index)];
 }
 
 /* Presenter callback (see Backend::evaluated_frame). */
@@ -318,6 +334,14 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   return &target->frame;
 }
 
+/* Presenter callback: the shader effect list of `layer` (see android_gp_presentation.cpp). Effects
+ * never change stroke data. */
+[[maybe_unused]] static int fx_provider_trampoline(void *user, const bGPDlayer *layer,
+                                                    const PGFxEntry **entries)
+{
+  return static_cast<const Backend *>(user)->fx_for_layer(layer, entries);
+}
+
 static void history_snapshot_free(HistorySnapshot *snapshot)
 {
   if (!snapshot) {
@@ -377,7 +401,9 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   return destination;
 }
 
-static HistorySnapshot *history_snapshot_create(const bGPdata *source, const ModifierStacks &stacks)
+static HistorySnapshot *history_snapshot_create(const bGPdata *source,
+                                                const ModifierStacks &stacks,
+                                                const FxStacks &fx_stacks)
 {
   if (!source) {
     return nullptr;
@@ -392,6 +418,7 @@ static HistorySnapshot *history_snapshot_create(const bGPdata *source, const Mod
 
   snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
   snapshot->stacks = stacks;
+  snapshot->fx_stacks = fx_stacks;
   return snapshot;
 }
 
@@ -475,6 +502,7 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   impl->frame_created = impl->frame != nullptr;
   impl->stroke_open = false;
   impl->stacks = snapshot->stacks;
+  impl->fx_stacks = snapshot->fx_stacks;
   impl->stack_revision++;
   eval_cache_clear(impl);
   project_grease_gp_tag(impl->gpd);
@@ -508,7 +536,7 @@ bool Backend::history_record()
     return false;
   }
 
-  HistorySnapshot *snapshot = history_snapshot_create(impl_->gpd, impl_->stacks);
+  HistorySnapshot *snapshot = history_snapshot_create(impl_->gpd, impl_->stacks, impl_->fx_stacks);
   if (!snapshot) {
     impl_->last_error = "Legacy GP history snapshot allocation failed";
     return false;
@@ -614,6 +642,7 @@ void Backend::shutdown()
 
   eval_cache_clear(impl_);
   impl_->stacks.clear();
+  impl_->fx_stacks.clear();
 
   // Android does not create a Blender Main/ID database. Free the minimal
   // legacy GP containers directly after releasing their GPU cache.
@@ -713,6 +742,7 @@ bool Backend::reset_document()
   }
   eval_cache_clear(impl_);
   impl_->stacks.clear();
+  impl_->fx_stacks.clear();
   impl_->stack_revision++;
   if (impl_->gpd) {
     if (impl_->gpu_initialized) {
@@ -831,6 +861,7 @@ bool Backend::create_layer(const char *name) {
   }
   impl_->layer_created = true;
   impl_->stacks.resize(static_cast<size_t>(layer_total(impl_->gpd))); /* the new layer's stack is empty */
+  impl_->fx_stacks.resize(static_cast<size_t>(layer_total(impl_->gpd)));
   return true;
 }
 
@@ -937,6 +968,11 @@ bool Backend::move_layer(int from_index, int to_index)
     impl_->stacks.erase(impl_->stacks.begin() + from_index);
     impl_->stacks.insert(impl_->stacks.begin() + to_index, std::move(moved));
   }
+  if (layer_fx(impl_, from_index) != nullptr) {
+    std::vector<PGFxEntry> moved = std::move(impl_->fx_stacks[static_cast<size_t>(from_index)]);
+    impl_->fx_stacks.erase(impl_->fx_stacks.begin() + from_index);
+    impl_->fx_stacks.insert(impl_->fx_stacks.begin() + to_index, std::move(moved));
+  }
   impl_->stack_revision++;
   impl_->layer = layer_at(impl_->gpd, to_index);
   impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
@@ -953,9 +989,13 @@ bool Backend::duplicate_layer(int index)
   if (!copy) { impl_->last_error = "BKE_gpencil_layer_duplicate() failed"; return false; }
   const std::vector<PGModEntry> source_stack =
       layer_stack(impl_, index) ? impl_->stacks[static_cast<size_t>(index)] : std::vector<PGModEntry>();
+  const std::vector<PGFxEntry> source_fx =
+      layer_fx(impl_, index) ? impl_->fx_stacks[static_cast<size_t>(index)] : std::vector<PGFxEntry>();
   BLI_addtail(&impl_->gpd->layers, copy);
   impl_->stacks.resize(static_cast<size_t>(layer_total(impl_->gpd)) - 1);
   impl_->stacks.push_back(source_stack); /* a duplicated layer keeps its modifiers */
+  impl_->fx_stacks.resize(static_cast<size_t>(layer_total(impl_->gpd)) - 1);
+  impl_->fx_stacks.push_back(source_fx);  /* ... and its effects */
   impl_->stack_revision++;
   impl_->layer = copy;
   impl_->frame = copy->actframe;
@@ -972,6 +1012,9 @@ bool Backend::delete_layer(int index)
   if (layer_count() <= 1) { impl_->last_error = "cannot delete final layer"; return false; }
   if (layer_stack(impl_, index) != nullptr) {
     impl_->stacks.erase(impl_->stacks.begin() + index);
+  }
+  if (layer_fx(impl_, index) != nullptr) {
+    impl_->fx_stacks.erase(impl_->fx_stacks.begin() + index);
   }
   impl_->stack_revision++;
   BKE_gpencil_layer_delete(impl_->gpd, layer);
@@ -3309,9 +3352,11 @@ bool Backend::render_with_gpu_context()
     }
   }
   project_grease_android_set_frame_evaluator(eval_frame_trampoline, this);
+  project_grease_android_set_fx_provider(fx_provider_trampoline, this);
   const bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
   project_grease_android_set_frame_evaluator(nullptr, nullptr);
+  project_grease_android_set_fx_provider(nullptr, nullptr);
 #else
   const bool presented = cache_ready;
 #endif
@@ -3592,6 +3637,137 @@ bool Backend::get_layer_info(int index, PGLayerInfo *out) const
 }
 
 uint64_t Backend::modifier_eval_count() const { return impl_->eval_count; }
+
+int Backend::fx_for_layer(const bGPDlayer *layer, const PGFxEntry **entries) const
+{
+  *entries = nullptr;
+  if (!impl_->gpd || !layer) {
+    return 0;
+  }
+  const int index = layer_index_of(impl_->gpd, layer);
+  if (index < 0 || static_cast<size_t>(index) >= impl_->fx_stacks.size()) {
+    return 0;
+  }
+  const std::vector<PGFxEntry> &list = impl_->fx_stacks[static_cast<size_t>(index)];
+  *entries = list.data();
+  return static_cast<int>(list.size());
+}
+
+int Backend::fx_count(int layer_index) const
+{
+  if (!impl_->gpd || layer_index < 0 || layer_index >= layer_total(impl_->gpd)) {
+    return 0;
+  }
+  return static_cast<size_t>(layer_index) < impl_->fx_stacks.size()
+             ? static_cast<int>(impl_->fx_stacks[static_cast<size_t>(layer_index)].size())
+             : 0;
+}
+
+int Backend::fx_add(int layer_index, int type)
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  if (!list) {
+    impl_->last_error = "layer index out of range";
+    return -1;
+  }
+  if (!pg_fx_valid_type(type)) {
+    impl_->last_error = "unknown effect type";
+    return -1;
+  }
+  if (list->size() >= static_cast<size_t>(PG_FX_MAX_STACK)) {
+    impl_->last_error = "effect list is full";
+    return -1;
+  }
+  PGFxEntry entry;
+  pg_fx_entry_init(&entry, type);
+  list->push_back(entry);
+  impl_->last_error.clear();
+  return static_cast<int>(list->size()) - 1;
+}
+
+bool Backend::fx_remove(int layer_index, int fx_index)
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  if (!list || fx_index < 0 || static_cast<size_t>(fx_index) >= list->size()) {
+    impl_->last_error = "effect index out of range";
+    return false;
+  }
+  list->erase(list->begin() + fx_index);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::fx_move(int layer_index, int from_index, int to_index)
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  const int n = list ? static_cast<int>(list->size()) : 0;
+  if (!list || from_index < 0 || to_index < 0 || from_index >= n || to_index >= n) {
+    impl_->last_error = "effect index out of range";
+    return false;
+  }
+  if (from_index != to_index) {
+    PGFxEntry moved = (*list)[static_cast<size_t>(from_index)];
+    list->erase(list->begin() + from_index);
+    list->insert(list->begin() + to_index, moved);
+  }
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::fx_set_enabled(int layer_index, int fx_index, bool enabled)
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  if (!list || fx_index < 0 || static_cast<size_t>(fx_index) >= list->size()) {
+    impl_->last_error = "effect index out of range";
+    return false;
+  }
+  (*list)[static_cast<size_t>(fx_index)].enabled = enabled ? 1 : 0;
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::fx_set_params(int layer_index, int fx_index, const float *params, int count)
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  if (!list || fx_index < 0 || static_cast<size_t>(fx_index) >= list->size() || !params ||
+      count < 0)
+  {
+    impl_->last_error = "invalid effect parameters";
+    return false;
+  }
+  PGFxEntry &entry = (*list)[static_cast<size_t>(fx_index)];
+  const int n = std::min(count, pg_fx_param_count(entry.type));
+  for (int i = 0; i < n; ++i) {
+    entry.params[i] = params[i];
+  }
+  pg_fx_sanitize(entry.type, entry.params);
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::fx_get(int layer_index, int fx_index, int *type, int *enabled, float *params,
+                    int capacity) const
+{
+  if (!impl_->gpd || layer_index < 0 || layer_index >= layer_total(impl_->gpd) ||
+      static_cast<size_t>(layer_index) >= impl_->fx_stacks.size())
+  {
+    return -1;
+  }
+  const std::vector<PGFxEntry> &list = impl_->fx_stacks[static_cast<size_t>(layer_index)];
+  if (fx_index < 0 || static_cast<size_t>(fx_index) >= list.size()) {
+    return -1;
+  }
+  const PGFxEntry &entry = list[static_cast<size_t>(fx_index)];
+  const int n = pg_fx_param_count(entry.type);
+  if (type) *type = entry.type;
+  if (enabled) *enabled = entry.enabled;
+  if (params) {
+    for (int i = 0; i < n && i < capacity; ++i) {
+      params[i] = entry.params[i];
+    }
+  }
+  return n;
+}
 
 int Backend::modifier_count(int layer_index) const
 {

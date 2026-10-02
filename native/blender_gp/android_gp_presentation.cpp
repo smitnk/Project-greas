@@ -13,6 +13,7 @@
 
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_color.h"
+#include "project_grease_shader_fx.h"
 
 namespace {
 struct Vertex { float x; float y; };
@@ -28,7 +29,7 @@ GLuint g_active_mask_tex=0;   // non-zero while a masked layer is drawn
 int g_active_w=1, g_active_h=1;
 // DRAW_REVEALAGE multiplies the target by (1 - alpha) (mask buffer, Blender's "revealage" buffer);
 // DRAW_INVERT replaces the target by 1 - target.
-enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT };
+enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT, DRAW_PREMULT };
 DrawMode g_draw_mode=DRAW_NORMAL;
 // Weight Paint view: >= 0 draws strokes tinted by the weight of this vertex group (blue 0 .. red 1).
 int g_weight_group=-1;
@@ -150,6 +151,7 @@ void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=t
   glUniform4f(color_loc,color[0],color[1],color[2],color[3]);
   if(g_draw_mode==DRAW_REVEALAGE){glEnable(GL_BLEND);glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);}
   else if(g_draw_mode==DRAW_INVERT){glEnable(GL_BLEND);glBlendFunc(GL_ONE_MINUS_DST_COLOR,GL_ZERO);}
+  else if(g_draw_mode==DRAW_PREMULT){glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);}
   else if(blend){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);}
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
   if(blend||g_draw_mode!=DRAW_NORMAL)glDisable(GL_BLEND);
@@ -239,11 +241,20 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
 // Optional live-modifier hook (see project_grease_modifier_stack.h): maps a layer's current frame
 // to the evaluated copy that is drawn instead. Onion-skin frames are always drawn unmodified.
 typedef const bGPDframe*(*FrameEvaluator)(void*,const bGPDlayer*,const bGPDframe*,int);
+// Shader effects of a layer (project_grease_shader_fx.h): the provider returns the layer's effect list.
+typedef int(*FxProvider)(void*,const bGPDlayer*,const PGFxEntry**);
+extern "C" int project_grease_fx_pass_count(const PGFxEntry*,int,const PGFxView*);
+extern "C" int project_grease_fx_begin_layer(int,int);
+extern "C" int project_grease_fx_end_layer(const PGFxEntry*,int,const PGFxView*,unsigned char*,unsigned char*);
+extern "C" void project_grease_fx_reset();
 namespace {
+FxProvider g_fx_provider=nullptr;
+void* g_fx_provider_user=nullptr;
 FrameEvaluator g_frame_evaluator=nullptr;
 void* g_frame_evaluator_user=nullptr;
 } // namespace
 
+extern "C" void project_grease_android_set_fx_provider(FxProvider fn,void* user){g_fx_provider=fn;g_fx_provider_user=user;}
 extern "C" void project_grease_android_set_frame_evaluator(FrameEvaluator fn,void* user){
   g_frame_evaluator=fn;g_frame_evaluator_user=user;
 }
@@ -360,6 +371,13 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       g_active_mask_tex=render_layer_mask(gpd,layer,frame_number,w,h);
       g_active_w=w;g_active_h=h;
     }
+    // Shader effects: a layer with working effects is drawn offscreen (premultiplied), the passes run on
+    // it and the result is composited; a layer without effects keeps the direct path.
+    const PGFxEntry* fx_entries=nullptr;
+    const int fx_count=g_fx_provider?g_fx_provider(g_fx_provider_user,layer,&fx_entries):0;
+    PGFxView fx_view{w,h,g_map_scale,g_map_origin_x,g_map_origin_y,g_canvas_width,g_canvas_height};
+    const bool use_fx=fx_count>0&&project_grease_fx_pass_count(fx_entries,fx_count,&fx_view)>0&&project_grease_fx_begin_layer(w,h)!=0;
+    if(use_fx)g_draw_mode=DRAW_PREMULT;
     if(layer->onion_flag&GP_LAYER_ONIONSKIN){
       const float base=std::max(0.0f,std::min(gpd->onion_factor,1.0f));
       int steps=std::max(0,(int)layer->gstep);
@@ -376,6 +394,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
     if(g_weight_group>=0)draw_frame_weights(gpd,shown?shown:current,w,h);
     else draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
+    if(use_fx){g_draw_mode=DRAW_NORMAL;project_grease_fx_end_layer(fx_entries,fx_count,&fx_view,nullptr,nullptr);}
     g_active_mask_tex=0;
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
@@ -492,4 +511,5 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom,flo
 extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
   if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
-  g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;}
+  g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
+  project_grease_fx_reset();}

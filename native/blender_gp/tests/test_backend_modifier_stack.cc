@@ -12,6 +12,7 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_gp_backend.h"
 #include "project_grease_modifier_stack.h"
+#include "project_grease_shader_fx.h"
 
 /* The draw module is not part of this host test: the backend only needs these two to be non-null. */
 extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *) {}
@@ -283,9 +284,68 @@ int main()
     CHECK(b.history_redo() && b.vertex_group_count() == 2);
   }
 
+  /* --- shader effects: per-layer list, same bookkeeping as the modifier stack --- */
+  {
+    CHECK(b.reset_document());
+    CHECK(b.create_layer("B") && b.layer_count() == 2);
+    CHECK(b.fx_count(0) == 0 && b.fx_count(5) == 0);
+    CHECK(b.fx_add(0, 99) == -1 && b.fx_add(0, 3) == -1 && b.fx_add(7, PG_FX_FLIP) == -1);
+    CHECK(b.fx_add(0, PG_FX_BLUR) == 0 && b.fx_add(0, PG_FX_COLORIZE) == 1 && b.fx_count(0) == 2);
+    int type = 0, enabled = 0;
+    float params[PG_FX_MAX_PARAMS];
+    CHECK(b.fx_get(0, 1, &type, &enabled, params, PG_FX_MAX_PARAMS) == pg_fx_param_count(PG_FX_COLORIZE));
+    CHECK(type == PG_FX_COLORIZE && enabled == 1);
+    CHECK(b.fx_get(0, 2, &type, &enabled, params, PG_FX_MAX_PARAMS) == -1);
+    float defaults[PG_FX_MAX_PARAMS];
+    pg_fx_defaults(PG_FX_COLORIZE, defaults);
+    for (int i = 0; i < pg_fx_param_count(PG_FX_COLORIZE); ++i) CHECK(params[i] == defaults[i]);
+    /* set_params sanitises: a negative blur radius is clamped, wrong counts only fill what exists */
+    float blur[PG_FX_MAX_PARAMS] = {-5.0f, 7.0f, 9.0f, 0.0f};
+    CHECK(b.fx_set_params(0, 0, blur, pg_fx_param_count(PG_FX_BLUR)));
+    CHECK(b.fx_get(0, 0, nullptr, nullptr, params, PG_FX_MAX_PARAMS) == pg_fx_param_count(PG_FX_BLUR));
+    float expect[PG_FX_MAX_PARAMS];
+    std::memcpy(expect, blur, sizeof(expect));
+    pg_fx_sanitize(PG_FX_BLUR, expect);
+    for (int i = 0; i < pg_fx_param_count(PG_FX_BLUR); ++i) CHECK(params[i] == expect[i]);
+    CHECK(!b.fx_set_params(0, 5, blur, 4) && !b.fx_set_params(0, 0, nullptr, 4));
+    CHECK(b.fx_move(0, 1, 0) && b.fx_get(0, 0, &type, nullptr, nullptr, 0) > 0 && type == PG_FX_COLORIZE);
+    CHECK(!b.fx_move(0, 0, 2));
+    CHECK(b.fx_set_enabled(0, 1, false) && b.fx_get(0, 1, nullptr, &enabled, nullptr, 0) > 0 && enabled == 0);
+    {
+      /* the presenter's view of the list: all entries (enabled flag included) of that layer */
+      const PGFxEntry *list = nullptr;
+      const int n = b.fx_for_layer(static_cast<const bGPDlayer *>(BLI_findlink(&b.document_data()->layers, 0)), &list);
+      CHECK(n == 2 && list != nullptr && list[0].type == PG_FX_COLORIZE && list[1].enabled == 0);
+      CHECK(b.fx_for_layer(static_cast<const bGPDlayer *>(BLI_findlink(&b.document_data()->layers, 1)), &list) == 0);
+    }
+    /* layer operations carry the list */
+    CHECK(b.fx_add(1, PG_FX_FLIP) == 0);
+    CHECK(b.move_layer(1, 0));
+    CHECK(b.fx_count(0) == 1 && b.fx_count(1) == 2);
+    CHECK(b.duplicate_layer(0)); /* the copy is appended with the same effects */
+    CHECK(b.layer_count() == 3 && b.fx_count(2) == 1);
+    CHECK(b.fx_get(2, 0, &type, nullptr, nullptr, 0) > 0 && type == PG_FX_FLIP);
+    CHECK(b.fx_add(2, PG_FX_GLOW) == 1 && b.fx_count(0) == 1); /* independent of the source layer */
+    CHECK(b.history_reset());
+    CHECK(b.delete_layer(0));
+    CHECK(b.layer_count() == 2 && b.fx_count(0) == 2 && b.fx_count(1) == 2);
+    CHECK(b.history_record());
+    CHECK(b.fx_remove(0, 0) && b.fx_count(0) == 1 && !b.fx_remove(0, 3));
+    CHECK(b.history_record());
+    CHECK(b.history_undo() && b.fx_count(0) == 2); /* undo restores the effect */
+    CHECK(b.history_undo() && b.layer_count() == 3 && b.fx_count(0) == 1 && b.fx_count(2) == 2);
+    CHECK(b.history_redo() && b.layer_count() == 2 && b.fx_count(0) == 2);
+    /* effects never touch strokes and never invalidate the modifier cache */
+    const uint64_t evals = b.modifier_eval_count();
+    CHECK(b.fx_add(0, PG_FX_WAVE) >= 0 && b.modifier_eval_count() == evals);
+    for (int i = 0; i < PG_FX_MAX_STACK; ++i) b.fx_add(1, PG_FX_PIXEL);
+    CHECK(b.fx_count(1) == PG_FX_MAX_STACK && b.fx_add(1, PG_FX_PIXEL) == -1);
+  }
+
   /* --- reset clears every stack --- */
   CHECK(b.reset_document());
   CHECK(b.layer_count() == 1 && b.modifier_count(0) == 0);
+  CHECK(b.fx_count(0) == 0);
 
   b.shutdown();
   if (failures) {

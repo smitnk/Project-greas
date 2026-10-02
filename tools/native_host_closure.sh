@@ -27,6 +27,7 @@ CF=(-std=gnu11 -DNDEBUG -DMATH_STANDALONE -w -DMALLOC_USABLE_SIZE_DISABLED -ffun
 XF=(-std=gnu++17 -DNDEBUG -w -ffunction-sections -fdata-sections)
 C_SRC=(
   "$ROOT/native/blender_gp/project_grease_modifier_stack.c"
+  "$ROOT/native/blender_gp/project_grease_shader_fx.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit2.c"
   "$ROOT/native/blender_gp/android_legacy_runtime_compat.c"
@@ -37,7 +38,7 @@ C_SRC=(
   "$ROOT/native/blender_gp/android_blender_string_utf8_compat.c"
   "$ROOT/build/blender-dna/dna.c"
   "$BL/makesdna/intern/dna_utils.c"
-  "$BL/blenlib/intern/array_utils.c" "$BL/blenlib/intern/noise.c" "$BL/blenlib/intern/math_geom.c"
+  "$BL/blenlib/intern/BLI_assert.c" "$BL/blenlib/intern/array_utils.c" "$BL/blenlib/intern/noise.c" "$BL/blenlib/intern/math_geom.c"
   "$BL/blenlib/intern/lasso_2d.c" "$BL/blenlib/intern/polyfill_2d.c" "$BL/blenlib/intern/BLI_memarena.c"
   "$BL/blenlib/intern/BLI_heap.c" "$BL/blenlib/intern/string_utils.c"
   "$BL/blenkernel/intern/gpencil_curve_legacy.c" "$BL/blenkernel/intern/gpencil_legacy.c"

@@ -317,6 +317,8 @@ class SelectionController(private val native: NativeEditorBridge) {
     var hasSelection=false; private set
     var selectedStroke=-1; private set
     fun clear(){hasSelection=false; selectedStroke=-1}
+    /** Remember the stroke under the last pick without touching the native selection. */
+    fun note(index:Int){hasSelection=true; selectedStroke=index}
     fun selectStroke(index:Int):Boolean {
         val ok=native.selectStroke(index)
         if(ok){selectedStroke=index;hasSelection=true}
@@ -1100,8 +1102,19 @@ class EditorController {
         return ok
     }
     fun hitTestAndSelectStroke(x:Float, y:Float, radius:Float = 24f):Boolean {
+        // The select tool is a plain Blender click-select.
+        if (tools.activeTool == GreaseTool.SELECT) return pickSelect(x, y)
         val index = native.hitTestStroke(x, y, radius)
-        return index >= 0 && selection.selectStroke(index)
+        if (index < 0) return false
+        // Transform tools: pass-through keeps the current selection when the tapped stroke is
+        // part of it, so move/rotate/scale/mirror act on everything that is selected.
+        runSelectCommand(ProjectGreaseSelect.pick(
+            x, y, ProjectGreaseSelect.pickRadiusSquared(view.zoom),
+            ProjectGreaseSelect.PICK_ENTIRE or ProjectGreaseSelect.PICK_PASSTHROUGH,
+            ProjectGreaseSelect.MODE_STROKE))
+        if (selectionPivot() == null) return selection.selectStroke(index)
+        selection.note(index)
+        return true
     }
     var eraserMode = EraserMode.HARD
         private set
@@ -1138,15 +1151,39 @@ class EditorController {
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun duplicateSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.duplicateStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.translate(dx,dy));val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun flipSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.flipStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun selectedStrokeCenter():FloatArray?{val i=selection.selectedStroke;if(i<0)return null;return native.strokeCenter(i)}
+    /** Median of every selected point (native stroke_center(-1)); null when nothing is selected. */
+    fun selectionPivot():FloatArray? = native.strokeCenter(-1)?.takeIf { it.size >= 2 }
+    fun selectedStrokeCenter():FloatArray? {
+        selectionPivot()?.let { return it }
+        val i=selection.selectedStroke
+        if(i<0) return null
+        return native.strokeCenter(i)
+    }
+    /** Tapping selects whole strokes (true) or the nearest point only (false, Blender's point mode). */
+    var pickEntireStrokes = true
+        private set
+    fun setPickEntireStrokes(value:Boolean) { pickEntireStrokes = value }
+
+    /** Blender gpencil_select_exec(): nearest point under the tap; a tap on empty space deselects. */
+    fun pickSelect(x:Float, y:Float):Boolean {
+        val flags = ProjectGreaseSelect.PICK_DESELECT_ALL or
+            (if (pickEntireStrokes) ProjectGreaseSelect.PICK_ENTIRE else 0)
+        val radiusSquared = ProjectGreaseSelect.pickRadiusSquared(view.zoom)
+        val changed = runSelectCommand(ProjectGreaseSelect.pick(x, y, radiusSquared, flags, selectMode))
+        val index = native.hitTestStroke(x, y, 24f)
+        if (index >= 0) selection.note(index) else if (changed) selection.clear()
+        return changed || index >= 0
+    }
+    fun deleteSelectedStrokes() = runSelectCommand(ProjectGreaseSelect.deleteStrokes()).also { if (it) selection.clear() }
+    fun deleteSelectedPoints() = runSelectCommand(ProjectGreaseSelect.deletePoints()).also { if (it) selection.clear() }
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStroke(mirrorX:Boolean,mirrorY:Boolean):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStroke(i,mirrorX,mirrorY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.mirror(mirrorX,mirrorY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun subdivideSelectedStroke(level:Int=1):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.subdivideStroke(i,level);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun closeSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.closeStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun trimSelectedStroke(from:Int,to:Int,keepSinglePoint:Boolean=true):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStroke(i,from,to,keepSinglePoint);if(ok){history.markEdit();document.markDirty();render()};return ok}

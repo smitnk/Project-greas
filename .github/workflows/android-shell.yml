@@ -109,6 +109,9 @@ jobs:
       - name: Run native eraser tests
         run: bash tools/run_native_eraser_tests.sh
 
+      - name: Run native edit tests
+        run: bash tools/run_native_edit_tests.sh
+
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 

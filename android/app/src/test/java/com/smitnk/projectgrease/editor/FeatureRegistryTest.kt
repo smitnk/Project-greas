@@ -70,9 +70,10 @@ class FeatureRegistryTest {
         // (ProjectDocumentRoundTripTest); the registry must not still call it lossy.
         assertFalse(FeatureRegistry.capability(FeatureId.SAVE).limitation.contains("LOSSY"))
         assertFalse(FeatureRegistry.capability(FeatureId.OPEN_PROJECT).limitation.contains("LOSSY"))
-        // Vector export (SVG/PDF) exists but is unverified on a device; raster export is not implemented.
+        // Vector export (SVG/PDF) and PNG export exist but are unverified on a device; GIF is not implemented.
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT).state)
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT_PNG).state)
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT_PNG).state)
+        assertFalse(FeatureRegistry.capability(FeatureId.EXPORT_PNG).deviceVerified)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT_GIF).state)
         // The live modifier stack exists but has no device evidence; Dash and Outline are still not ported.
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
@@ -84,6 +85,20 @@ class FeatureRegistryTest {
         assertEquals(AuditStatus.IN_PROGRESS, lineArt.audit)
         assertFalse(lineArt.deviceVerified)
         assertTrue(lineArt.limitation.contains("Not supported: shadows"))
+    }
+
+    @Test
+    fun nextBatchFeaturesAreWiredButNotClaimedVerified() {
+        listOf(
+            FeatureId.SELECT_SEGMENT, FeatureId.FILL_GAP_TOLERANCE, FeatureId.FILL_EXPANSION, FeatureId.FILL_BOUNDARY,
+            FeatureId.DELETE_MATERIAL, FeatureId.FIT_CANVAS, FeatureId.ONION_FADE, FeatureId.ONION_LAYER_FILTER,
+            FeatureId.SAVE_AS, FeatureId.EXPORT_PNG
+        ).forEach {
+            val c = FeatureRegistry.capability(it)
+            assertEquals("$it", FeatureState.IN_PROGRESS, c.state)
+            assertFalse("$it", c.deviceVerified)
+            assertTrue("$it", c.limitation.contains("Device validation NOT VERIFIED"))
+        }
     }
 
     @Test

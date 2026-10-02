@@ -31,6 +31,7 @@ typedef struct PGLayerInfo {
   int visible;             /* !GP_LAYER_HIDE */
   int locked;              /* GP_LAYER_LOCKED */
   float opacity;           /* bGPDlayer.opacity */
+  int onion;               /* GP_LAYER_ONIONSKIN (read only: pg_doc_layer_info_apply ignores it) */
 } PGLayerInfo;
 
 typedef struct PGMaterialInfo {

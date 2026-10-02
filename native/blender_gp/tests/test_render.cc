@@ -26,6 +26,9 @@ extern "C" void project_grease_android_present_set_canvas_size(int width, int he
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
+extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
+extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
 extern "C" int project_grease_fx_begin_layer(int, int);
 extern "C" int project_grease_fx_end_layer(const PGFxEntry *, int, const PGFxView *, unsigned char *, unsigned char *);
@@ -149,6 +152,106 @@ static void test_baseline()
   CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));        /* on the stroke */
   CHECK(near_rgb(pixel_at_canvas(100, 100), 245, 245, 245));   /* canvas background (0.96) */
   CHECK(near_rgb(pixel_at_canvas(100, 60 + 30), 245, 245, 245)); /* beyond the stroke edge */
+}
+
+/* Device report: thick strokes showed wedge "slashes" on the outer side of bends because every
+ * segment was an independent quad. A 90 deg bend of a 40 px stroke must be solid at its outer
+ * corner (miter join), and the round end cap must be drawn. */
+static void test_thick_bend()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 3, 40, false);
+  const float xy[3][2] = {{40, 90}, {100, 90}, {100, 30}};
+  for (int i = 0; i < 3; i++) {
+    s->points[i].x = xy[i][0];
+    s->points[i].y = xy[i][1];
+    s->points[i].pressure = 1.0f;
+    s->points[i].strength = 1.0f;
+  }
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(112, 102), 255, 0, 0)); /* outer corner wedge: was a gap */
+  CHECK(near_rgb(pixel_at_canvas(100, 90), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(26, 90), 255, 0, 0));   /* round cap beyond the first point */
+  CHECK(near_rgb(pixel_at_canvas(70, 60), 245, 245, 245)); /* inside the bend, off the stroke */
+}
+
+static Rgba raw_pixel(int x, int y) /* y from the top */
+{
+  const uint8_t *p = &g_pixels[(static_cast<size_t>(H - 1 - y) * W + x) * 4];
+  return {p[0], p[1], p[2], p[3]};
+}
+
+/* PNG export path: canvas mapped 1:1 onto the target, transparent background, straight colors. */
+static void test_export_transparent()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  add_bar(l, 20, 180, 100, 10, 0.5f); /* half strength */
+  project_grease_android_present_set_view_transform(1.0f / 0.92f, 0.0f, 0.0f);
+  project_grease_android_present_set_export_mode(2);
+  present(d);
+  project_grease_android_present_set_export_mode(0);
+  project_grease_android_present_set_view_transform(1.0f, 0.0f, 0.0f);
+  CHECK(raw_pixel(5, 5).a == 0);            /* no canvas background */
+  CHECK(raw_pixel(100, 30).a == 0);
+  const Rgba on = raw_pixel(100, 60);
+  CHECK(on.a == 255 && near_rgb(on, 255, 0, 0));
+  CHECK(raw_pixel(100, 72).a == 0);         /* 1:1: the 20 px bar ends at y = 70 */
+  CHECK(raw_pixel(100, 68).a == 255);
+  const Rgba half = raw_pixel(100, 100);
+  CHECK(half.a > 110 && half.a < 145);      /* alpha kept in the target, not squared */
+}
+
+/* Fill boundary "Edit Lines": the mask holds 1 px center lines instead of the full thickness. */
+static void test_fill_mask_modes()
+{
+  Doc d = make_doc();
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  glViewport(0, 0, W, H);
+  project_grease_android_present_set_fill_draw_mode(0);
+  CHECK(project_grease_android_present_gp_fill_mask(d.gpd, 1) == 1);
+  read_back();
+  CHECK(pixel_at_canvas(100, 66).r > 200);   /* inside the 20 px stroke */
+  project_grease_android_present_set_fill_draw_mode(2);
+  CHECK(project_grease_android_present_gp_fill_mask(d.gpd, 1) == 1);
+  read_back();
+  CHECK(pixel_at_canvas(100, 66).r < 50);    /* only the center line */
+  CHECK(pixel_at_canvas(100, 60).r > 200);
+  project_grease_android_present_set_fill_draw_mode(0);
+}
+
+/* Onion skin: overlay switch + per-layer GP_LAYER_ONIONSKIN; ghost alpha follows GP_ONION_FADE. */
+static void test_onion()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 1);
+  bGPDlayer *l = add_layer(d, "A");           /* frame 1: empty */
+  bGPDframe *f2 = BKE_gpencil_frame_addnew(l, 2);
+  bGPDstroke *s = BKE_gpencil_stroke_add(f2, 0, 2, 20, false);
+  s->points[0].x = 20; s->points[1].x = 180;
+  for (int i = 0; i < 2; i++) { s->points[i].y = 60; s->points[i].pressure = 1; s->points[i].strength = 1; }
+  d.gpd->gstep = 1; d.gpd->gstep_next = 1; d.gpd->onion_factor = 0.5f;
+  d.gpd->onion_flag = GP_ONION_FADE;
+  l->onion_flag |= GP_LAYER_ONIONSKIN;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 245, 245, 245)); /* overlay switch off: no ghost */
+  d.gpd->flag |= GP_DATA_SHOW_ONIONSKINS;
+  present(d);
+  const Rgba faded = pixel_at_canvas(100, 60);  /* fade: 1/1 * 0.5 = 0.5 */
+  CHECK(faded.b > 240 && faded.r > 100 && faded.r < 140);
+  d.gpd->onion_flag = 0;                         /* no fade: 0.5 * 0.5 = 0.25 */
+  present(d);
+  const Rgba flat = pixel_at_canvas(100, 60);
+  CHECK(flat.r > 170 && flat.r < 200);
+  l->onion_flag &= ~GP_LAYER_ONIONSKIN;          /* per-layer switch off */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 245, 245, 245));
 }
 
 static void use_mask(bGPDlayer *l, const bGPDlayer *mask_layer, int flags = 0)
@@ -485,6 +588,10 @@ int main()
   project_grease_android_present_set_canvas_size(W, H);
   project_grease_android_present_set_view_transform(1.0f, 0.0f, 0.0f);
   test_baseline();
+  test_thick_bend();
+  test_export_transparent();
+  test_fill_mask_modes();
+  test_onion();
   test_masks();
   test_weight_view();
   test_shader_fx_gl();

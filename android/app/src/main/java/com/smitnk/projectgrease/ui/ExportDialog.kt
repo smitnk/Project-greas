@@ -1,6 +1,7 @@
 package com.smitnk.projectgrease.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.widget.Toast
@@ -27,13 +28,26 @@ import com.smitnk.projectgrease.editor.EditorController
 import com.smitnk.projectgrease.editor.VectorExport
 
 /**
- * SVG / PDF export through the Storage Access Framework: a single file for the current frame (SVG)
+ * PNG export of the current frame: the presenter's own offscreen render at canvas size (what the
+ * screen shows: modifiers, masks, effects; no annotations), optionally on a transparent background.
+ */
+internal fun writePng(context: Context, uri: Uri, argb: IntArray, width: Int, height: Int): Boolean = runCatching {
+    val bitmap = Bitmap.createBitmap(argb, width, height, Bitmap.Config.ARGB_8888)
+    val ok = context.contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } ?: false
+    bitmap.recycle()
+    ok
+}.getOrDefault(false)
+
+/**
+ * SVG / PDF / PNG export through the Storage Access Framework: a single file for the current frame (SVG)
  * or any selection (PDF, one page per frame), or a folder with one SVG per frame for the whole
  * timeline. The files are built by [VectorExport]; see its notes for what is exported.
  */
 @Composable
 fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -> Unit) {
     var pdf by remember { mutableStateOf(false) }
+    var png by remember { mutableStateOf(false) }
+    var transparent by remember { mutableStateOf(false) }
     var wholeTimeline by remember { mutableStateOf(false) }
     // Annotations are overlay notes, not part of the drawing: left out unless asked for.
     var includeAnnotations by remember { mutableStateOf(false) }
@@ -59,6 +73,15 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         toast(if (ok) "Exported" else "Export failed")
         if (ok) onDismiss()
     }
+    val pngFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val w = controller.document.canvasWidth
+        val h = controller.document.canvasHeight
+        val pixels = controller.renderCanvasPixels(transparent)
+        val ok = pixels != null && writePng(context, uri, pixels, w, h)
+        toast(if (ok) "Exported PNG ${w}×$h" else "PNG export failed")
+        if (ok) onDismiss()
+    }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
         val pages = controller.exportPages(frames, includeAnnotations)
@@ -82,28 +105,41 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
             Column {
                 Text("Format")
                 Row {
-                    FilterChip(selected = !pdf, onClick = { pdf = false }, label = { Text("SVG") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = pdf, onClick = { pdf = true }, label = { Text("PDF") })
+                    FilterChip(selected = !pdf && !png, onClick = { pdf = false; png = false }, label = { Text("SVG") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = pdf, onClick = { pdf = true; png = false }, label = { Text("PDF") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = png, onClick = { png = true; pdf = false }, label = { Text("PNG") })
                 }
-                Text("Frames", Modifier.padding(top = 8.dp))
-                Row {
-                    FilterChip(selected = !wholeTimeline, onClick = { wholeTimeline = false }, label = { Text("Current frame") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = wholeTimeline, onClick = { wholeTimeline = true }, label = { Text("Timeline (${controller.animation.timelineEnd})") })
+                if (png) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Transparent background", Modifier.weight(1f))
+                        Switch(transparent, { transparent = it })
+                    }
+                    Text(
+                        "The current frame as on screen (modifiers, masks, effects), ${controller.document.canvasWidth}×${controller.document.canvasHeight} px; annotations are not included.",
+                        Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                } else {
+                    Text("Frames", Modifier.padding(top = 8.dp))
+                    Row {
+                        FilterChip(selected = !wholeTimeline, onClick = { wholeTimeline = false }, label = { Text("Current frame") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = wholeTimeline, onClick = { wholeTimeline = true }, label = { Text("Timeline (${controller.animation.timelineEnd})") })
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Include annotations", Modifier.weight(1f))
+                        Switch(includeAnnotations, { includeAnnotations = it })
+                    }
+                    Text(
+                        if (pdf) "One PDF, one page per frame." else if (wholeTimeline) "A folder with one SVG per frame." else "One SVG file.",
+                        Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Include annotations", Modifier.weight(1f))
-                    Switch(includeAnnotations, { includeAnnotations = it })
-                }
-                Text(
-                    if (pdf) "One PDF, one page per frame." else if (wholeTimeline) "A folder with one SVG per frame." else "One SVG file.",
-                    Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 val extension = if (pdf) "pdf" else "svg"
-                if (!pdf && wholeTimeline) folder.launch(null) else singleFile.launch("$baseName.$extension")
+                if (png) pngFile.launch("$baseName.png")
+                else if (!pdf && wholeTimeline) folder.launch(null) else singleFile.launch("$baseName.$extension")
             }) { Text("Export") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

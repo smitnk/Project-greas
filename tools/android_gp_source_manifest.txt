@@ -9,6 +9,7 @@ CXX|native/blender_gp/project_grease_gp_bridge.cpp
 CXX|native/blender_gp/project_grease_gp_jni.cpp
 CXX|native/blender_gp/android_gpu_backend.cpp
 CXX|native/blender_gp/android_gp_presentation.cpp
+C|native/blender_gp/project_grease_stroke_outline.c
 CXX|native/blender_gp/android_gp_shader_fx.cpp
 CXX|native/blender_gp/project_grease_legacy_fill.cpp
 CXX|native/blender_gp/project_grease_legacy_primitive.cpp
@@ -35,6 +36,7 @@ C|native/blender_gp/project_grease_blender_eraser.c
 C|native/blender_gp/project_grease_blender_edit.c
 C|native/blender_gp/project_grease_blender_edit2.c
 C|native/blender_gp/project_grease_blender_edit3.c
+C|native/blender_gp/project_grease_blender_edit4.c
 C|native/blender_gp/project_grease_annotations.c
 C|native/blender_gp/project_grease_scene_lite.c
 CXX|native/blender_gp/project_grease_scene_lite_jni.cpp
@@ -59,6 +61,10 @@ C|third_party/blender/source/blender/blenlib/intern/lasso_2d.c
 C|third_party/blender/source/blender/blenlib/intern/polyfill_2d.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_memarena.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_heap.c
+C|third_party/blender/source/blender/blenlib/intern/BLI_ghash.c
+C|third_party/blender/source/blender/blenlib/intern/BLI_ghash_utils.c
+C|third_party/blender/source/blender/blenlib/intern/BLI_mempool.c
+C|third_party/blender/source/blender/blenlib/intern/hash_mm2a.c
 C|native/blender_gp/android_blender_string_compat.c
 C|native/blender_gp/android_blender_string_utf8_compat.c
 C|third_party/blender/source/blender/blenlib/intern/string_utils.c

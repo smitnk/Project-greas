@@ -19,9 +19,16 @@ object ProjectGreaseSelect {
     const val OP_AND = 4
     const val OP_XOR = 5
 
-    // eGP_Selectmode (segment mode is not ported yet)
+    // eGP_Selectmode
     const val MODE_POINT = 0
     const val MODE_STROKE = 1
+    const val MODE_SEGMENT = 2
+
+    // project_grease_blender_edit4.h
+    const val CMD_SELECT_SEGMENT = 76
+    const val CMD_MATERIAL_REMOVE = 77
+    const val CMD_ONION_LAYER = 78
+    const val CMD_ONION_FADE = 79
 
     // GPENCIL_OT_select_grouped "type"
     const val GROUP_LAYER = 0
@@ -43,7 +50,23 @@ object ProjectGreaseSelect {
     class Command(val id: Int, val args: FloatArray)
 
     fun isValidOp(op: Int): Boolean = op in OP_ADD..OP_XOR
+    /** Modes the native box / lasso / circle / pick operators take (point or stroke). */
     fun isValidMode(mode: Int): Boolean = mode == MODE_POINT || mode == MODE_STROKE
+    /** Modes of the Edit-mode switch (Point / Stroke / Segment). */
+    fun isValidSelectMode(mode: Int): Boolean = mode == MODE_POINT || mode == MODE_STROKE || mode == MODE_SEGMENT
+    /** Area selection (box / lasso / circle) treats Segment like Point (segment expansion is click-only here). */
+    fun areaMode(mode: Int): Int = if (mode == MODE_SEGMENT) MODE_POINT else mode
+
+    /** Click select in segment mode: args x, y, radius_squared, flags. */
+    fun segmentPick(x: Float, y: Float, radiusSquared: Int, flags: Int): Command? {
+        if (radiusSquared < 0 || !finite(x, y)) return null
+        return Command(CMD_SELECT_SEGMENT, floatArrayOf(x, y, radiusSquared.toFloat(), flags.toFloat()))
+    }
+    fun materialRemove(index: Int): Command? =
+        if (index >= 0) Command(CMD_MATERIAL_REMOVE, floatArrayOf(index.toFloat())) else null
+    fun onionLayer(layer: Int, enabled: Boolean): Command? =
+        if (layer >= 0) Command(CMD_ONION_LAYER, floatArrayOf(layer.toFloat(), flag(enabled))) else null
+    fun onionFade(enabled: Boolean) = Command(CMD_ONION_FADE, floatArrayOf(flag(enabled)))
 
     /** ED_select_op_modal(): only the first sample of a SET gesture replaces the selection. */
     fun opModal(op: Int, isFirst: Boolean): Int = if (op == OP_SET && !isFirst) OP_ADD else op

@@ -4730,10 +4730,18 @@ int pg_lineart_compute(const PGSceneLite *scene,
     return -1;
   }
   /* Every feature edge (mesh edges and intersection lines) is in pending_edges; its segments
-   * split it at ratio points (in projected 2D) with the occlusion level after each point. */
+   * split it at ratio points (in projected 2D) with the occlusion level after each point. Edges
+   * the chainer would skip (lineart_chain.c: no type left, or already "picked") are not lines:
+   * culling and lineart_main_discard_out_of_frame_edges() mark discarded edges that way. */
+  auto is_line = [](const LineartEdge *e) {
+    return (e->flags & LRT_EDGE_FLAG_ALL_TYPE) && !(e->flags & LRT_EDGE_FLAG_CHAIN_PICKED);
+  };
   int count = 0;
   for (int i = 0; i < ld->pending_edges.next; i++) {
     LineartEdge *e = ld->pending_edges.array[i];
+    if (!is_line(e)) {
+      continue;
+    }
     LISTBASE_FOREACH (LineartEdgeSegment *, es, &e->segments) {
       count++;
     }
@@ -4743,6 +4751,9 @@ int pg_lineart_compute(const PGSceneLite *scene,
   int n = 0;
   for (int i = 0; i < ld->pending_edges.next && out; i++) {
     LineartEdge *e = ld->pending_edges.array[i];
+    if (!is_line(e)) {
+      continue;
+    }
     LISTBASE_FOREACH (LineartEdgeSegment *, es, &e->segments) {
       const double r0 = es->ratio;
       const double r1 = es->next ? es->next->ratio : 1.0;
@@ -4752,6 +4763,7 @@ int pg_lineart_compute(const PGSceneLite *scene,
       s.x1 = float(interpd(e->v2->fbcoord[0], e->v1->fbcoord[0], r1));
       s.y1 = float(interpd(e->v2->fbcoord[1], e->v1->fbcoord[1], r1));
       s.occlusion = es->occlusion;
+      s.edge_index = i;
       s.edge_type = int(e->flags & LRT_EDGE_FLAG_ALL_TYPE);
       s.object_index = (e->flags & LRT_EDGE_FLAG_INTERSECTION) ?
                            -1 :

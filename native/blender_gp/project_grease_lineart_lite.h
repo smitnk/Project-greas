@@ -33,6 +33,7 @@ typedef struct PGLineartSegment {
   int occlusion;
   int edge_type;
   int object_index; /* index in PGSceneLite::objects, -1 for intersection lines */
+  int edge_index;   /* the feature edge this segment belongs to (segments of one edge share it) */
 } PGLineartSegment;
 
 /* Runs Line Art. Returns the number of segments (0 is valid: nothing visible) and stores a

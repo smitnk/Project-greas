@@ -88,40 +88,46 @@ static void test_cube(void)
 
 static void test_occluder_cuts_lines(void)
 {
-  /* A cube behind a plane that covers its left half: the cube's edges are split into a hidden part
-   * (behind the plane) and a visible part. */
+  /* A plane between the camera and the left half of a cube (camera on -Y looking at it): the
+   * cube's front edges that cross x = 0 are split into a hidden part (behind the plane) and a
+   * visible part. OBJ (x, y, z) is Blender (x, -z, y): the plane is at y = -4, x in [-2, 0], z in [-1.5, 1.5], inside the frame. */
   const char *obj =
       "o Cube\n"
       "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n"
       "f 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\nf 2 6 7 3\nf 3 7 8 4\nf 5 1 4 8\n"
       "o Plane\n"
-      "v -3 -3 4\nv 0 -3 4\nv 0 3 4\nv -3 3 4\n"
+      "v -2 -1.5 4\nv 0 -1.5 4\nv 0 1.5 4\nv -2 1.5 4\n"
       "f 9 10 11 12\n";
   PGSceneLite *s = scene_with(obj);
   PGLineartSettings st;
   pg_lineart_settings_default(&st);
   st.level_end = 1;
   const float target[3] = {0, 0, 0};
-  pg_lite_camera_orbit(&s->camera, target, 0.3f, 0.35f, 12.0f);
+  pg_lite_camera_orbit(&s->camera, target, 0.0f, 0.0f, 12.0f);
   PGLineartSegment *seg = NULL;
   const int n = pg_lineart_compute(s, &st, &seg);
-  int cube_cut = 0, cube_hidden = 0, cube_visible = 0;
+  int cube_visible = 0, cube_hidden = 0, cut_edges = 0, plane_lines = 0;
   for (int i = 0; i < n; i++) {
+    if (!seg[i].edge_type) { CHECK(0, "every reported segment has an edge type"); break; }
+    if (seg[i].object_index == 1) plane_lines++;
     if (seg[i].object_index != 0) continue;
     if (seg[i].occlusion == 0) cube_visible++;
     else cube_hidden++;
   }
-  /* edges with more than one segment */
-  for (int i = 0; i + 1 < n; i++) {
-    if (seg[i].object_index == 0 && seg[i + 1].object_index == 0 && seg[i].x1 == seg[i + 1].x0 &&
-        seg[i].y1 == seg[i + 1].y0 && seg[i].occlusion != seg[i + 1].occlusion)
-    {
-      cube_cut++;
+  /* an edge cut by the plane: a visible and a hidden segment of the same edge */
+  for (int i = 0; i < n; i++) {
+    if (seg[i].object_index != 0) continue;
+    for (int j = i + 1; j < n; j++) {
+      if (seg[j].edge_index == seg[i].edge_index && (seg[i].occlusion == 0) != (seg[j].occlusion == 0)) {
+        cut_edges++;
+        break;
+      }
     }
   }
+  CHECK(plane_lines == 4, "the plane's outline");
   CHECK(cube_visible > 0 && cube_hidden > 0, "cube partly hidden by the plane");
-  CHECK(cube_cut > 0, "edges cut where the plane's border crosses them");
-  printf("  occluder: %d segments (cube: %d visible, %d hidden, %d cuts)\n", n, cube_visible, cube_hidden, cube_cut);
+  CHECK(cut_edges == 2, "the cube's top and bottom front edges are split into a visible and a hidden part");
+  printf("  occluder: %d segments (cube: %d visible, %d hidden, %d edges cut)\n", n, cube_visible, cube_hidden, cut_edges);
   pg_lineart_free_segments(seg);
   pg_lite_scene_free(s);
 }

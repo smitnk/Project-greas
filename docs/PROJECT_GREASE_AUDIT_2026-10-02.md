@@ -22,9 +22,9 @@ There is no `STATUS.md`; status lives in `FeatureRegistry.kt`, the acceptance ma
 | 3 | Materials sheet Opacity slider updated a Kotlin field and never called `setMaterialColor` | Slider did not reach the engine | Fixed |
 | 4 | Moving the stabilizer factor slider called `setStabilizer(true, it)` | Slider silently enabled stabilization | Fixed |
 | 5 | `setSpacing(0)` left the Euclidean filter at the last non-zero value | Spacing could not be turned back off | Fixed |
-| 6 | `saveDocumentJson`/`loadDocumentJson` store only layers, frames, strokes and points | On load every stroke gets material 0 and the brush thickness; cyclic flags, layer names, hidden/locked state and material colors are lost | **Open** (needs native getters + JNI) |
+| 6 | `saveDocumentJson`/`loadDocumentJson` stored only layers, frames, strokes and points | On load every stroke got material 0 and the brush thickness; cyclic flags, layer names, hidden/locked state and material colors were lost | **Fixed** (format v2): native getters + JNI for stroke material/thickness/cyclic/fill, layer name/visibility/lock/opacity and the material palette; `add_stroke` restores strokes without paint smoothing. Tests: `run_native_document_state_tests.sh`, `ProjectDocumentRoundTripTest` |
 | 7 | Project sheet: "Open project" only closes the sheet, "Save as" = Save, "Export" shows a toast | No such features | Registry says NOT_IMPLEMENTED |
-| 8 | Layers sheet switches (Visible/Locked) start at fixed values and are not read from the native layer | Switch can disagree with the layer | **Open** (needs a layer-state getter) |
+| 8 | Layers sheet switches (Visible/Locked) started at fixed values and were not read from the native layer | Switch could disagree with the layer | **Fixed**: the sheet reads name/visibility/lock from the native layer and re-reads when the selected layer or layer count changes |
 | 9 | Transform menu items still call per-stroke operations; selection-wide delete/pick modes have no buttons | Features exist in code but are not reachable | **Open** (UI work) |
 | 10 | Strength slider also multiplies the live-preview color alpha | Possible double application in the preview only; final strokes use per-point strength | **Open**, needs the renderer source |
 
@@ -79,7 +79,7 @@ All rows: Build/APK = CI green; Device = NOT VERIFIED.
 
 | Feature | Source | Implementation | Status | Limitation |
 |---|---|---|---|---|
-| Layers (add/order/dup/delete/rename/visibility/lock) | BKE_gpencil_layer_* | Backend | IN_PROGRESS | sheet switches not synced (defect 8) |
+| Layers (add/order/dup/delete/rename/visibility/lock) | BKE_gpencil_layer_* | Backend | IN_PROGRESS | no layer opacity control in the UI (opacity is saved and restored) |
 | Frames add/duplicate/delete/holds | BKE_gpencil_frame_* | Backend | IN_PROGRESS | insert-and-shift missing |
 | Playback/loop/FPS/navigation | n/a (Android) | `AnimationController` | IN_PROGRESS | |
 | Interpolation | gpencil_interpolate.c | linear, matching topology | IN_PROGRESS | no pairing/easing |
@@ -95,7 +95,7 @@ All rows: Build/APK = CI green; Device = NOT VERIFIED.
 | Modifier stack ordering | NOT_IMPLEMENTED | needs an object-level stack |
 | Shader effects | BLOCKED | needs DRW pipeline |
 | Line Art | BLOCKED | needs scene/object/depsgraph closure not established |
-| New/Open/Save | IN_PROGRESS (LOSSY) | defect 6 |
+| New/Open/Save | IN_PROGRESS | round-trips strokes (material, thickness, cyclic, fill), layer state and the palette (defect 6, fixed); point vertex colors, per-point weights and onion settings are not saved |
 | Save as, Export PNG/GIF/animation | NOT_IMPLEMENTED | no pipeline |
 
 ## Device validation checklist (only you can produce this evidence)
@@ -111,4 +111,5 @@ Record pass/fail per line; any pass lets that feature move to AVAILABLE.
 7. Tap a stroke with Select; tap empty space (deselects).
 8. Materials sheet Opacity slider changes the next stroke immediately.
 9. Add frames, play, onion skin on: ghosts visible?
-10. Save, close, reopen: note what is lost (expected: materials, thickness, closed flags).
+10. Save, close, reopen: strokes keep their material, thickness and closed flag; layers keep name, hidden/locked state and opacity; the material palette keeps its colors. Note anything that differs.
+11. Open the Layers sheet on a hidden or locked layer: the switches match the layer.

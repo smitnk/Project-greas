@@ -465,6 +465,56 @@ int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
   return 1;
 }
 
+int project_grease_gp_get_stroke_info(const ProjectGreaseGPHandle *handle, int stroke_index, PGStrokeInfo *out)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) {
+    return 0;
+  }
+  return handle->backend.get_stroke_info(stroke_index, out) ? 1 : 0;
+}
+
+int project_grease_gp_add_stroke(ProjectGreaseGPHandle *handle,
+                                 const ProjectGreaseGPPoint *points,
+                                 int count,
+                                 const PGStrokeInfo *info)
+{
+  if (!ensure_ready(handle) || !points || count < 1 || !info) {
+    return 0;
+  }
+  std::vector<project_grease::gp::StrokePoint> native_points(static_cast<size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    project_grease::gp::StrokePoint &dst = native_points[static_cast<size_t>(i)];
+    dst.x = points[i].x;
+    dst.y = points[i].y;
+    dst.z = points[i].z;
+    dst.pressure = points[i].pressure;
+    dst.strength = points[i].strength;
+    dst.time = points[i].time;
+  }
+  return handle->backend.add_stroke(native_points.data(), count, *info) ? 1 : 0;
+}
+
+int project_grease_gp_get_layer_info(const ProjectGreaseGPHandle *handle, int index, PGLayerInfo *out)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) {
+    return 0;
+  }
+  return handle->backend.get_layer_info(index, out) ? 1 : 0;
+}
+
+int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index, float opacity)
+{
+  return ensure_ready(handle) && handle->backend.set_layer_opacity(index, opacity) ? 1 : 0;
+}
+
+int project_grease_gp_get_material_info(const ProjectGreaseGPHandle *handle, int index, PGMaterialInfo *out)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out) {
+    return 0;
+  }
+  return handle->backend.get_material_info(index, out) ? 1 : 0;
+}
+
 int project_grease_gp_set_point(ProjectGreaseGPHandle *handle,
                                 int stroke_index,
                                 int point_index,

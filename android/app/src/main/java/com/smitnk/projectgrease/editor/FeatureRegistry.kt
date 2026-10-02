@@ -119,9 +119,9 @@ object FeatureRegistry {
         FeatureId.JOIN_STROKES to wired("Controller API; no UI control. $DEVICE"),
 
         // ---- layers and animation ------------------------------------------------------
-        FeatureId.LAYERS to wired("Layer switches in the sheet do not reflect the selected layer's real state. $DEVICE"),
-        FeatureId.LAYER_VISIBILITY to wired("Sheet switch is not synced from native state. $DEVICE"),
-        FeatureId.LAYER_LOCKING to wired("Sheet switch is not synced from native state. $DEVICE"),
+        FeatureId.LAYERS to wired("Sheet name and switches are read from the native layer. $DEVICE"),
+        FeatureId.LAYER_VISIBILITY to wired("Sheet switch is read from native state; saved and restored with the project. $DEVICE"),
+        FeatureId.LAYER_LOCKING to wired("Sheet switch is read from native state; saved and restored with the project. $DEVICE"),
         FeatureId.LAYER_ORDERING to wired("BLI_listbase_move_index. $DEVICE"),
         FeatureId.LAYER_DUPLICATION to wired("BKE_gpencil_layer_duplicate. $DEVICE"),
         FeatureId.LAYER_DELETION to wired("BKE_gpencil_layer_delete. $DEVICE"),
@@ -206,8 +206,8 @@ object FeatureRegistry {
 
         // ---- persistence and export ----------------------------------------------------
         FeatureId.NEW_PROJECT to wired("Creates a document with one layer and frame. $DEVICE"),
-        FeatureId.OPEN_PROJECT to wired("LOSSY: loads points only; every stroke gets material 0 and the brush thickness, and cyclic flags, layer names/visibility/locks and material colors are lost. $DEVICE"),
-        FeatureId.SAVE to wired("LOSSY: saves points only (see OPEN_PROJECT). $DEVICE"),
+        FeatureId.OPEN_PROJECT to wired("Restores points, stroke material/thickness/cyclic/fill, layer name/visibility/lock/opacity and the material palette (round-trip tested); version-1 files load with the old defaults. $DEVICE"),
+        FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores (format version 2). $DEVICE"),
         FeatureId.SAVE_AS to missing("The menu item just saves."),
         FeatureId.EXPORT to missing("The menu shows 'Export pipeline is not connected yet'."),
         FeatureId.EXPORT_PNG to missing("No export pipeline."),

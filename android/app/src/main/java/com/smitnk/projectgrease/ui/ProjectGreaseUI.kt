@@ -561,13 +561,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun LayersSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
-    var visible by remember{mutableStateOf(true)}
-    var locked by remember{mutableStateOf(false)}
+    // Switch and name state come from the native layer, not from fixed defaults, and are re-read
+    // whenever the selected layer or the layer list changes.
+    val layerKey=controller.selectedLayer to controller.layerCount()
+    val layerState=controller.layerState()
+    var visible by remember(layerKey){mutableStateOf(layerState?.visible ?: true)}
+    var locked by remember(layerKey){mutableStateOf(layerState?.locked ?: false)}
     var renameOpen by remember{mutableStateOf(false)}
-    var renameText by remember{mutableStateOf("Layer "+(controller.selectedLayer+1))}
+    var renameText by remember(layerKey){mutableStateOf(layerState?.name?.takeIf{it.isNotBlank()} ?: ("Layer "+(controller.selectedLayer+1)))}
     ModalBottomSheet(onDismissRequest=onDismiss){
         Text("Layers",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        Text("Layer "+(controller.selectedLayer+1),Modifier.padding(horizontal=20.dp))
+        Text(layerState?.name?.takeIf{it.isNotBlank()} ?: ("Layer "+(controller.selectedLayer+1)),Modifier.padding(horizontal=20.dp))
         Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
             Button(onClick={controller.createLayer("Layer "+(controller.layerCount()+1));redraw()}){Text("Add")}
             Button(onClick={controller.duplicateLayer();redraw()}){Text("Duplicate")}

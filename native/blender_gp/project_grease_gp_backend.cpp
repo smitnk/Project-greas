@@ -3,6 +3,7 @@
 #include "project_grease_legacy_primitive.h"
 #include "project_grease_legacy_eraser.h"
 #include "project_grease_blender_edit.h"
+#include "project_grease_document_state.h"
 
 #include <algorithm>
 #include <cmath>
@@ -3309,6 +3310,105 @@ bool Backend::material_fill_enabled(int index) const
 {
   const Material *ma = gp_material_at(impl_->gpd, index);
   return ma && ma->gp_style && (ma->gp_style->flag & GP_MATERIAL_FILL_SHOW) != 0;
+}
+
+bool Backend::get_stroke_info(int stroke_index, PGStrokeInfo *out) const
+{
+  if (!out || !impl_->frame || stroke_index < 0) {
+    return false;
+  }
+  int current = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
+       stroke != nullptr;
+       stroke = stroke->next, ++current) {
+    if (current == stroke_index) {
+      return pg_doc_stroke_info_get(stroke, out) != 0;
+    }
+  }
+  return false;
+}
+
+bool Backend::add_stroke(const StrokePoint *points, int count, const PGStrokeInfo &info)
+{
+  if (!impl_->frame || !impl_->frame_created) {
+    impl_->last_error = "frame is not created";
+    return false;
+  }
+  if (!points || count < 1) {
+    impl_->last_error = "stroke needs at least one point";
+    return false;
+  }
+  const int material_index = info.material_index < 0 ? 0 : info.material_index;
+  if (!gp_material_ensure_slot(impl_->gpd, material_index)) {
+    impl_->last_error = "Legacy GP material index is unavailable";
+    return false;
+  }
+
+  const short thickness = static_cast<short>(
+      std::max(1.0f, std::min(info.thickness, 32767.0f)));
+  bGPDstroke *stroke = BKE_gpencil_stroke_add(
+      impl_->frame, material_index, count, thickness, false);
+  if (!stroke) {
+    impl_->last_error = "BKE_gpencil_stroke_add() failed";
+    return false;
+  }
+
+  for (int i = 0; i < count; ++i) {
+    const StrokePoint &src = points[i];
+    bGPDspoint &dst = stroke->points[i];
+    dst.x = src.x;
+    dst.y = src.y;
+    dst.z = src.z;
+    dst.pressure = std::max(0.0f, src.pressure);
+    dst.strength = std::max(0.0f, std::min(src.strength, 1.0f));
+    dst.time = src.time;
+    // Same default as create_polyline(): white keeps the material color authoritative.
+    dst.vert_color[0] = 1.0f;
+    dst.vert_color[1] = 1.0f;
+    dst.vert_color[2] = 1.0f;
+    dst.vert_color[3] = 1.0f;
+  }
+
+  pg_doc_stroke_info_apply(stroke, &info);
+  if (stroke->flag & GP_STROKE_CYCLIC) {
+    BKE_gpencil_stroke_fill_triangulate(stroke);
+  }
+  impl_->stroke = stroke;
+  impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::get_layer_info(int index, PGLayerInfo *out) const
+{
+  const bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer || !out) {
+    return false;
+  }
+  return pg_doc_layer_info_get(layer, out) != 0;
+}
+
+bool Backend::set_layer_opacity(int index, float opacity)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer || !std::isfinite(opacity)) {
+    impl_->last_error = "invalid layer opacity";
+    return false;
+  }
+  layer->opacity = std::max(0.0f, std::min(opacity, 1.0f));
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::get_material_info(int index, PGMaterialInfo *out) const
+{
+  const Material *ma = gp_material_at(impl_->gpd, index);
+  if (!ma || !out) {
+    return false;
+  }
+  return pg_doc_material_info_get(ma, out) != 0;
 }
 
 

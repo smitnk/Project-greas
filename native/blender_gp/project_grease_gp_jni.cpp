@@ -493,6 +493,112 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(
 }
 
 
+// Save/load state (see project_grease_document_state.h). Float layouts, mirrored in
+// ProjectDocumentCodec.kt:
+//   stroke info   [material, thickness, cyclic, fillOpacity, fillR, fillG, fillB, fillA]
+//   layer info    [visible, locked, opacity]
+//   material info [strokeR, strokeG, strokeB, strokeA, fillR, fillG, fillB, fillA, visible, fillEnabled]
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetStrokeInfo(
+    JNIEnv *env, jobject, jlong handle, jint stroke_index)
+{
+  PGStrokeInfo info{};
+  if (!project_grease_gp_get_stroke_info(from_handle(handle), stroke_index, &info)) {
+    return nullptr;
+  }
+  const jfloat values[] = {
+      static_cast<jfloat>(info.material_index), info.thickness,
+      info.cyclic ? 1.0f : 0.0f, info.fill_opacity_fac,
+      info.fill_color[0], info.fill_color[1], info.fill_color[2], info.fill_color[3]};
+  jfloatArray result = env->NewFloatArray(8);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, 8, values);
+  return result;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(
+    JNIEnv *env, jobject, jlong handle, jfloatArray points, jint count, jfloatArray info_values)
+{
+  if (!points || !info_values || count < 1 ||
+      env->GetArrayLength(points) < count * 6 || env->GetArrayLength(info_values) < 8) {
+    return JNI_FALSE;
+  }
+  std::vector<jfloat> raw(static_cast<size_t>(count) * 6u);
+  env->GetFloatArrayRegion(points, 0, count * 6, raw.data());
+  jfloat v[8];
+  env->GetFloatArrayRegion(info_values, 0, 8, v);
+
+  std::vector<ProjectGreaseGPPoint> native_points(static_cast<size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    const jfloat *p = &raw[static_cast<size_t>(i) * 6u];
+    native_points[static_cast<size_t>(i)] = {p[0], p[1], p[2], p[3], p[4], p[5]};
+  }
+  PGStrokeInfo info{};
+  info.material_index = static_cast<int>(v[0]);
+  info.thickness = v[1];
+  info.cyclic = v[2] != 0.0f ? 1 : 0;
+  info.fill_opacity_fac = v[3];
+  info.fill_color[0] = v[4];
+  info.fill_color[1] = v[5];
+  info.fill_color[2] = v[6];
+  info.fill_color[3] = v[7];
+  return project_grease_gp_add_stroke(
+             from_handle(handle), native_points.data(), count, &info) != 0;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetLayerInfo(
+    JNIEnv *env, jobject, jlong handle, jint index)
+{
+  PGLayerInfo info{};
+  if (!project_grease_gp_get_layer_info(from_handle(handle), index, &info)) {
+    return nullptr;
+  }
+  const jfloat values[] = {info.visible ? 1.0f : 0.0f, info.locked ? 1.0f : 0.0f, info.opacity};
+  jfloatArray result = env->NewFloatArray(3);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, 3, values);
+  return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetLayerName(
+    JNIEnv *env, jobject, jlong handle, jint index)
+{
+  PGLayerInfo info{};
+  if (!project_grease_gp_get_layer_info(from_handle(handle), index, &info)) {
+    return nullptr;
+  }
+  info.name[sizeof(info.name) - 1] = '\0';
+  return env->NewStringUTF(info.name);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerOpacity(
+    JNIEnv *, jobject, jlong handle, jint index, jfloat opacity)
+{
+  return project_grease_gp_set_layer_opacity(from_handle(handle), index, opacity) != 0;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetMaterialInfo(
+    JNIEnv *env, jobject, jlong handle, jint index)
+{
+  PGMaterialInfo info{};
+  if (!project_grease_gp_get_material_info(from_handle(handle), index, &info)) {
+    return nullptr;
+  }
+  const jfloat values[] = {
+      info.stroke_rgba[0], info.stroke_rgba[1], info.stroke_rgba[2], info.stroke_rgba[3],
+      info.fill_rgba[0], info.fill_rgba[1], info.fill_rgba[2], info.fill_rgba[3],
+      info.visible ? 1.0f : 0.0f, info.fill_enabled ? 1.0f : 0.0f};
+  jfloatArray result = env->NewFloatArray(10);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, 10, values);
+  return result;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPoint(
     JNIEnv *, jobject, jlong handle, jint stroke_index, jint point_index,

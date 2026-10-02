@@ -112,6 +112,9 @@ jobs:
       - name: Run native edit tests
         run: bash tools/run_native_edit_tests.sh
 
+      - name: Run native document-state tests
+        run: bash tools/run_native_document_state_tests.sh
+
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 

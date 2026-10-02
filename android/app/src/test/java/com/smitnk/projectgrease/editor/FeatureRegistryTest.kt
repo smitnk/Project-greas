@@ -66,9 +66,10 @@ class FeatureRegistryTest {
 
     @Test
     fun knownGapsAreNotHiddenBehindAnInProgressLabel() {
-        // Save/load drops material, thickness, cyclic flag, layer state and palettes.
-        assertTrue(FeatureRegistry.capability(FeatureId.SAVE).limitation.contains("LOSSY"))
-        assertTrue(FeatureRegistry.capability(FeatureId.OPEN_PROJECT).limitation.contains("LOSSY"))
+        // Save/load now round-trips material, thickness, cyclic flag, fill, layer state and palette
+        // (ProjectDocumentRoundTripTest); the registry must not still call it lossy.
+        assertFalse(FeatureRegistry.capability(FeatureId.SAVE).limitation.contains("LOSSY"))
+        assertFalse(FeatureRegistry.capability(FeatureId.OPEN_PROJECT).limitation.contains("LOSSY"))
         // Export is a toast, not a pipeline.
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT).state)
         // Only three modifiers exist and there is no stack.

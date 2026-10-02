@@ -60,4 +60,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for the project-file round-trip test (the Android stub jar throws "not mocked").
+    testImplementation("org.json:json:20231013")
 }

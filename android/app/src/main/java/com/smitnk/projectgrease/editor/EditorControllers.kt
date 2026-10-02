@@ -68,6 +68,13 @@ class NativeEditorBridge {
     fun trimStrokeToIntersection(index: Int) = handle != 0L && GPNative.nativeTrimStrokeToIntersection(handle, index)
     fun splitStroke(index: Int, beforeIndex: Int) = handle != 0L && GPNative.nativeSplitStroke(handle, index, beforeIndex)
     fun getPoint(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPoint(handle, stroke, point) else null
+    fun strokeInfo(stroke: Int) = if (handle != 0L) GPNative.nativeGetStrokeInfo(handle, stroke) else null
+    fun addStroke(points: FloatArray, count: Int, info: FloatArray) =
+        handle != 0L && GPNative.nativeAddStroke(handle, points, count, info)
+    fun layerInfo(index: Int) = if (handle != 0L) GPNative.nativeGetLayerInfo(handle, index) else null
+    fun layerName(index: Int) = if (handle != 0L) GPNative.nativeGetLayerName(handle, index) else null
+    fun setLayerOpacity(index: Int, opacity: Float) = handle != 0L && GPNative.nativeSetLayerOpacity(handle, index, opacity)
+    fun materialInfo(index: Int) = if (handle != 0L) GPNative.nativeGetMaterialInfo(handle, index) else null
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
     fun createMaterial() = handle != 0L && GPNative.nativeCreateMaterial(handle)
@@ -340,7 +347,7 @@ class SculptController(private val native: NativeEditorBridge) {
     private val settings = LegacyGpSculptEngine.Settings()
 
     fun isAvailable() =
-        FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+        FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
 
     fun select(value: SculptBrush) { brush = value }
 
@@ -503,7 +510,7 @@ class EditorController {
     fun setMode(value:GreaseMode):Boolean {
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
-            GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+            GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
             GreaseMode.VERTEX_PAINT, GreaseMode.WEIGHT_PAINT -> false
         }
         if (!supported) return false
@@ -554,7 +561,7 @@ class EditorController {
     }
     fun setSpacing(value:Float) {
         spacing=value.coerceIn(0f,100f)
-        if (value > 0f) legacyEuclideanThreshold=value
+        legacyEuclideanThreshold = if (value > 0f) value else 1f // 0 restores Blender's default filter
     }
 
     /** Active smoothing of the Legacy GP brush (0 = off, 1 = strongest). */
@@ -837,85 +844,31 @@ class EditorController {
     }
     fun saveDocumentJson():String? {
         if (native.handle == 0L) return null
-        val root = org.json.JSONObject()
-        root.put("version", 1)
-        root.put("width", document.canvasWidth)
-        root.put("height", document.canvasHeight)
-        root.put("fps", animation.fps)
-        root.put("frame", animation.currentFrame)
-        val layers = org.json.JSONArray()
         val originalLayer = selectedLayer
         val originalFrame = animation.currentFrame
-        for (layerIndex in 0 until native.layerCount()) {
-            if (!native.selectLayer(layerIndex)) continue
-            val layerJson = org.json.JSONObject().put("index", layerIndex)
-            val frames = org.json.JSONArray()
-            for (frameNumber in native.frameNumbers()) {
-                if (!native.selectFrame(frameNumber)) continue
-                val frameJson = org.json.JSONObject().put("number", frameNumber)
-                val strokes = org.json.JSONArray()
-                for (strokeIndex in 0 until native.strokeCount()) {
-                    val points = org.json.JSONArray()
-                    var pointIndex = 0
-                    while (true) {
-                        val point = GPNative.nativeGetPoint(native.handle, strokeIndex, pointIndex) ?: break
-                        points.put(org.json.JSONArray().apply { for (v in point) put(v.toDouble()) })
-                        pointIndex++
-                    }
-                    if (points.length() >= 1) strokes.put(org.json.JSONObject().put("points", points))
-                }
-                frameJson.put("strokes", strokes)
-                frames.put(frameJson)
-            }
-            layerJson.put("frames", frames)
-            layers.put(layerJson)
-        }
+        val json = ProjectDocumentCodec.encode(
+            NativeDocumentAdapter(native),
+            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame
+        )
         if (native.layerCount() > 0) {
             native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
             native.selectFrameOrHold(originalFrame)
         }
         render()
-        root.put("layers", layers)
-        return root.toString()
+        return json
     }
 
     fun loadDocumentJson(raw:String):Boolean {
         if (native.handle == 0L) return false
-        val root = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return false
+        val parsed = ProjectDocumentCodec.parse(raw) ?: return false
         if (!GPNative.nativeResetDocumentEgl(rendererHandle)) return false
-        document.canvasWidth = root.optInt("width", document.canvasWidth).coerceAtLeast(1)
-        document.canvasHeight = root.optInt("height", document.canvasHeight).coerceAtLeast(1)
-        animation.setFps(root.optInt("fps", animation.fps).coerceIn(1,120))
-        val layers = root.optJSONArray("layers") ?: return true
-        for (layerIndex in 0 until layers.length()) {
-            val layerJson = layers.optJSONObject(layerIndex) ?: continue
-            if (layerIndex > 0 && !native.createLayer("Layer " + (layerIndex + 1))) return false
-            if (!native.selectLayer(layerIndex)) return false
-            val frames = layerJson.optJSONArray("frames") ?: continue
-            for (frameIndex in 0 until frames.length()) {
-                val frameJson = frames.optJSONObject(frameIndex) ?: continue
-                val frameNumber = frameJson.optInt("number", 1).coerceAtLeast(1)
-                if (frameIndex == 0) {
-                    if (!native.createFrame(frameNumber) && !native.selectFrame(frameNumber)) return false
-                } else if (!native.createFrame(frameNumber)) {
-                    return false
-                }
-                if (!native.selectFrame(frameNumber)) return false
-                val strokes = frameJson.optJSONArray("strokes") ?: continue
-                for (strokeIndex in 0 until strokes.length()) {
-                    val points = strokes.optJSONObject(strokeIndex)?.optJSONArray("points") ?: continue
-                    if (points.length() == 0) continue
-                    if (!native.beginStroke(0, brushes.size.toFloat())) return false
-                    for (pointIndex in 0 until points.length()) {
-                        val a = points.optJSONArray(pointIndex) ?: continue
-                        val p = FloatArray(6) { a.optDouble(it, 0.0).toFloat() }
-                        if (!native.addPoint(p)) return false
-                    }
-                    if (!native.endStroke()) return false
-                }
-            }
-        }
-        val targetFrame = root.optInt("frame", 1).coerceAtLeast(1)
+        document.canvasWidth = (parsed.width ?: document.canvasWidth).coerceAtLeast(1)
+        document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
+        animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
+        if (!ProjectDocumentCodec.restore(parsed, NativeDocumentAdapter(native), brushes.size)) return false
+        if (parsed.layers == null) return true
+        syncActiveMaterial(parsed.materials.firstOrNull())
+        val targetFrame = parsed.frame.coerceAtLeast(1)
         native.selectFrameOrHold(targetFrame)
         animation.setFrame(targetFrame)
         history.reset()
@@ -923,6 +876,20 @@ class EditorController {
         render()
         return true
     }
+
+    /** Brings the palette UI state in line with the loaded material 0 (the editor's active material). */
+    private fun syncActiveMaterial(material:MaterialRecord?) {
+        materials.select(0)
+        if (material == null) return
+        val s = material.stroke
+        fun channel(v:Float) = (v.coerceIn(0f,1f) * 255f + 0.5f).toInt()
+        materials.setColor((channel(s[3]) shl 24) or (channel(s[0]) shl 16) or (channel(s[1]) shl 8) or channel(s[2]))
+        materials.setFillEnabled(material.fillEnabled)
+        pushMaterialColor()
+    }
+
+    /** Layer state as the native document holds it; null when there is no such layer. */
+    fun layerState(index:Int = selectedLayer):LayerRecord? = NativeDocumentAdapter(native).layerRecord(index)
 
     fun setMultiframeEditing(enabled:Boolean):Boolean {
         val ok=native.setMultiframeEditing(enabled)

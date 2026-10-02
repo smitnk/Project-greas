@@ -31,6 +31,9 @@ typedef struct bGPDstroke {
   int totpoints;
   int flag;
   int mat_nr;
+  short thickness;
+  float fill_opacity_fac;
+  float vert_color_fill[4];
   int select_index;
   void *editcurve;
   bGPDstroke_Runtime runtime;
@@ -48,6 +51,7 @@ typedef struct bGPDlayer {
   ListBase frames;
   bGPDframe *actframe;
   int flag;
+  char info[128];
   float opacity;
 } bGPDlayer;
 

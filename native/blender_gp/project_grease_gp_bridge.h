@@ -1,5 +1,7 @@
 #pragma once
 
+#include "project_grease_document_state.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -158,6 +160,15 @@ int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      int dilate_pixels,
                                      int material_index,
                                      float thickness);
+/* Save/load state (stroke style, layer state, palette); structs live in project_grease_document_state.h. */
+int project_grease_gp_get_stroke_info(const ProjectGreaseGPHandle *handle, int stroke_index, PGStrokeInfo *out);
+int project_grease_gp_add_stroke(ProjectGreaseGPHandle *handle,
+                                 const ProjectGreaseGPPoint *points,
+                                 int count,
+                                 const PGStrokeInfo *info);
+int project_grease_gp_get_layer_info(const ProjectGreaseGPHandle *handle, int index, PGLayerInfo *out);
+int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index, float opacity);
+int project_grease_gp_get_material_info(const ProjectGreaseGPHandle *handle, int index, PGMaterialInfo *out);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 int project_grease_gp_set_point(ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint point);
 

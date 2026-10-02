@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "project_grease_legacy_sculpt.h"
+#include "project_grease_document_state.h"
 
 // Blender DNA types, declared at global scope so the accessors below name the
 // real C structs and not types of project_grease::gp.
@@ -120,6 +121,15 @@ class Backend {
   bool set_material_visibility(int index, bool visible);
   bool set_material_fill_enabled(int index, bool enabled);
   bool material_fill_enabled(int index) const;
+
+  // Save/load state that get_point() does not carry: per-stroke style, layer state and the
+  // material palette (see project_grease_document_state.h).
+  bool get_stroke_info(int stroke_index, PGStrokeInfo* out) const;
+  // Restores a stroke exactly as saved: no paint-stage smoothing, selection untouched.
+  bool add_stroke(const StrokePoint* points, int count, const PGStrokeInfo& info);
+  bool get_layer_info(int index, PGLayerInfo* out) const;
+  bool set_layer_opacity(int index, float opacity);
+  bool get_material_info(int index, PGMaterialInfo* out) const;
   bool smooth_stroke(int index, float influence, int iterations);
   // Focused Legacy GP sculpt brush bridge. Position/strength/thickness use Blender BKE algorithms;
   // grab/push use the same real bGPD point data with a local falloff.

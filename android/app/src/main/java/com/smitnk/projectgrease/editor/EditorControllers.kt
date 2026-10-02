@@ -892,6 +892,20 @@ class EditorController {
         if (ok) { if (enabled != onion.enabled) onion.toggle(); onion.setBefore(before); onion.setAfter(after); onion.setOpacity(opacity); render() }
         return ok
     }
+    /** Vector pages (SVG/PDF export) for [frames]; the layer/frame selection is restored afterwards. */
+    fun exportPages(frames:List<Int>):List<VectorPage> {
+        if (native.handle == 0L || frames.isEmpty()) return emptyList()
+        val originalLayer = selectedLayer
+        val originalFrame = animation.currentFrame
+        val pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames)
+        if (native.layerCount() > 0) {
+            native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
+            native.selectFrameOrHold(originalFrame)
+        }
+        render()
+        return pages
+    }
+
     fun saveDocumentJson():String? {
         if (native.handle == 0L) return null
         val originalLayer = selectedLayer

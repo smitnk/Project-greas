@@ -70,8 +70,10 @@ class FeatureRegistryTest {
         // (ProjectDocumentRoundTripTest); the registry must not still call it lossy.
         assertFalse(FeatureRegistry.capability(FeatureId.SAVE).limitation.contains("LOSSY"))
         assertFalse(FeatureRegistry.capability(FeatureId.OPEN_PROJECT).limitation.contains("LOSSY"))
-        // Export is a toast, not a pipeline.
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT).state)
+        // Vector export (SVG/PDF) exists but is unverified on a device; raster export is not implemented.
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT).state)
+        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT_PNG).state)
+        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT_GIF).state)
         // The live modifier stack exists but has no device evidence; Dash and Outline are still not ported.
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.DASH).state)

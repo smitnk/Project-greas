@@ -189,7 +189,7 @@ jobs:
           import zipfile
           apk = zipfile.ZipFile("android/app/build/outputs/apk/debug/app-debug.apk")
           dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
-          for text in (b"Add mask layer", b"In-between easing", b"Mirror copy (X+Y)", b"Select by vertex color", b"Extrude ends", b"Resample (8 px)", b"Thickness x2 by weight"):
+          for text in (b"Export failed", b"A folder with one SVG per frame.", b"Add mask layer", b"In-between easing", b"Mirror copy (X+Y)", b"Select by vertex color", b"Extrude ends", b"Resample (8 px)", b"Thickness x2 by weight"):
               assert text in dex, "APK lacks the UI entry " + text.decode()
           assert b"Draw brush (weight moves toward" in dex, "APK lacks the wired WEIGHT_PAINT registry entry"
           assert b"Mode chip disabled; no weight paint path." not in dex, "APK still carries the disabled WEIGHT_PAINT entry"

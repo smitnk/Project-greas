@@ -3,6 +3,8 @@ package com.smitnk.projectgrease.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -326,6 +328,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
                 Icon(Icons.Default.CloseFullscreen,"Exit canvas")
             }
+            IconButton(onClick={controller.fitCanvas();redraw()},Modifier.align(Alignment.TopEnd).padding(8.dp)){
+                Icon(Icons.Default.FitScreen,"Fit canvas")
+            }
         }
         return
     }
@@ -345,6 +350,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 }){Icon(Icons.Default.Save,"Save")}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
+                IconButton(onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
                 IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
                 IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
             }
@@ -444,6 +450,28 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     }
 }
 
+/** Fill tool options: Blender's fill Leak Size, Dilate (negative contracts) and boundary mode. */
+@Composable private fun FillBar(controller:EditorController,redraw:()->Unit){
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+        verticalAlignment=Alignment.CenterVertically
+    ){
+        Text("Fill",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+        listOf(
+            com.smitnk.projectgrease.editor.FILL_BOUNDARY_ALL to "All",
+            com.smitnk.projectgrease.editor.FILL_BOUNDARY_STROKES to "Strokes",
+            com.smitnk.projectgrease.editor.FILL_BOUNDARY_EDIT_LINES to "Edit Lines"
+        ).forEach{(value,label)->
+            FilterChip(selected=controller.fillBoundary==value,onClick={controller.setFillOptions(boundary=value);redraw()},
+                label={Text(label,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+        }
+        Text("Leak "+controller.fillLeak+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(64.dp))
+        Slider(controller.fillLeak.toFloat(),{controller.setFillOptions(leak=it.toInt());redraw()},valueRange=1f..20f,modifier=Modifier.width(120.dp))
+        Text("Dilate "+controller.fillDilate+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
+        Slider(controller.fillDilate.toFloat(),{controller.setFillOptions(dilate=Math.round(it));redraw()},valueRange=-10f..10f,modifier=Modifier.width(120.dp))
+    }
+}
+
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
@@ -521,6 +549,27 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 WeightPaintBar(controller,redraw)
             }
             if (controller.tools.activeTool == GreaseTool.ANNOTATE) AnnotationBar(controller,redraw)
+            if (controller.mode == GreaseMode.EDIT) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+                    verticalAlignment=Alignment.CenterVertically
+                ) {
+                    Text("Select",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+                    listOf(
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODE_POINT to "Point",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODE_STROKE to "Stroke",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODE_SEGMENT to "Segment"
+                    ).forEach { (value,label) ->
+                        FilterChip(
+                            selected=controller.selectMode == value,
+                            onClick={controller.setSelectMode(value);redraw()},
+                            label={Text(label,fontSize=10.sp)},
+                            modifier=Modifier.padding(end=3.dp)
+                        )
+                    }
+                }
+            }
+            if (controller.tools.activeTool == GreaseTool.FILL) FillBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ERASE) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
@@ -695,10 +744,25 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     val importSvg=rememberSvgImport(controller,context,onDismiss)
     var traceOpen by remember{mutableStateOf(false)}
     if(traceOpen)TraceImageDialog(controller,context,{traceOpen=false;onDismiss()})
+    val saveAs=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
+        if(uri==null)return@rememberLauncherForActivityResult
+        val json=controller.saveDocumentJson()
+        val ok=json!=null&&runCatching{context.contentResolver.openOutputStream(uri)?.use{it.write(json.toByteArray(Charsets.UTF_8))}!=null}.getOrDefault(false)
+        if(ok){
+            // The written file becomes the current document: continue under its name.
+            val display=runCatching{
+                context.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{c->if(c.moveToFirst())c.getString(0) else null}
+            }.getOrNull()
+            com.smitnk.projectgrease.editor.SaveAsNaming.projectName(display)?.let{controller.document.projectName=it}
+            onSave()
+        }
+        Toast.makeText(context,if(ok)"Saved as "+controller.document.projectName else "Save as failed",Toast.LENGTH_SHORT).show()
+        if(ok)onDismiss()
+    }
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Project",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("Open project")},modifier=Modifier.clickable{onDismiss()})
         ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
-        ListItem(headlineContent={Text("Save as")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
+        ListItem(headlineContent={Text("Save as")},supportingContent={Text("Write the project to a new file and continue under its name")},modifier=Modifier.clickable{saveAs.launch(controller.document.projectName.ifBlank{"Project Grease"}+".gpjson")})
         ListItem(headlineContent={Text("Export")},modifier=Modifier.clickable{exportOpen=true})
         ListItem(headlineContent={Text("Import SVG")},supportingContent={Text("Shapes become strokes on the active layer")},modifier=Modifier.clickable{importSvg()})
         ListItem(headlineContent={Text("Trace image")},supportingContent={Text("Outlines of an image become filled strokes on a new layer")},modifier=Modifier.clickable{traceOpen=true})
@@ -841,6 +905,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     val layerState=controller.layerState()
     var visible by remember(layerKey){mutableStateOf(layerState?.visible ?: true)}
     var locked by remember(layerKey){mutableStateOf(layerState?.locked ?: false)}
+    var onionOn by remember(layerKey){mutableStateOf(controller.layerOnion())}
     var renameOpen by remember{mutableStateOf(false)}
     var renameText by remember(layerKey){mutableStateOf(layerState?.name?.takeIf{it.isNotBlank()} ?: ("Layer "+(controller.selectedLayer+1)))}
     ModalBottomSheet(onDismissRequest=onDismiss){
@@ -865,6 +930,10 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Locked",Modifier.weight(1f))
             Switch(checked=locked,onCheckedChange={locked=it;controller.setLayerLocked(controller.selectedLayer,it);redraw()})
         }
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Use onion skinning",Modifier.weight(1f))
+            Switch(checked=onionOn,onCheckedChange={onionOn=it;controller.setLayerOnion(controller.selectedLayer,it);redraw()})
+        }
         LayerMaskSection(controller,redraw)
         LayerEffectsSection(controller,redraw)
         Spacer(Modifier.height(20.dp))
@@ -883,6 +952,17 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun MaterialsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
+    var deleteConfirm by remember{mutableStateOf(false)}
+    if(deleteConfirm){
+        val index=controller.materials.activeMaterial
+        AlertDialog(
+            onDismissRequest={deleteConfirm=false},
+            title={Text("Delete material $index?")},
+            text={Text("Every stroke that uses this material is deleted, on all layers and frames. Materials after it move down one slot. You can undo this.")},
+            confirmButton={TextButton(onClick={deleteConfirm=false;if(controller.deleteMaterial(index))redraw()}){Text("Delete")}},
+            dismissButton={TextButton(onClick={deleteConfirm=false}){Text("Cancel")}}
+        )
+    }
     var thickness by remember{mutableFloatStateOf(controller.materials.thickness)}
     var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     val palette=listOf(
@@ -918,8 +998,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     onCheckedChange={controller.setMaterialFillEnabled(it);redraw()}
                 )
             }
-            Text("Active material: "+controller.materials.activeMaterial,Modifier.padding(horizontal=20.dp))
-            TextButton(onClick={controller.selectMaterial(controller.materials.activeMaterial+1);redraw()},Modifier.padding(horizontal=20.dp)){Text("Next brush/material")}
+            Text("Active material: "+controller.materials.activeMaterial+" of "+controller.materialCount(),Modifier.padding(horizontal=20.dp))
+            Row(Modifier.padding(horizontal=20.dp)){
+                TextButton(onClick={controller.selectMaterial(controller.materials.activeMaterial+1);redraw()}){Text("Next brush/material")}
+                TextButton(onClick={deleteConfirm=true},enabled=controller.materialCount()>1){Text("Delete material")}
+            }
         }
     }
 }
@@ -931,7 +1014,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){Text("Enable",Modifier.weight(1f));Switch(checked=controller.onion.enabled,onCheckedChange={controller.setOnionSkin(it,controller.onion.beforeFrames,controller.onion.afterFrames,controller.onion.opacity);redraw()})}
         Text("Previous "+controller.onion.beforeFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.beforeFrames.toFloat(), {val v=it.toInt();controller.setOnionSkin(controller.onion.enabled,v,controller.onion.afterFrames,controller.onion.opacity);redraw()}, valueRange = 0f..12f)
         Text("Next "+controller.onion.afterFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.afterFrames.toFloat(), {val v=it.toInt();controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,v,controller.onion.opacity);redraw()}, valueRange = 0f..12f)
-        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,controller.onion.afterFrames,it);redraw()}, valueRange = 0f..1f);Spacer(Modifier.height(20.dp))}
+        Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,controller.onion.afterFrames,it);redraw()}, valueRange = 0f..1f)
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){Text("Fade");Text("Ghosts further from the current frame are fainter",fontSize=11.sp)}
+            Switch(checked=controller.onion.fade,onCheckedChange={controller.setOnionFade(it);redraw()})
+        }
+        Text("Layers can opt out in Layers > Use onion skinning.",Modifier.padding(horizontal=20.dp),fontSize=11.sp);Spacer(Modifier.height(20.dp))}
 }
 
 /**

@@ -371,3 +371,31 @@ otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the
   each frame's Line Art strokes to its own keyframe on a new "Line Art bake" layer; the camera is
   restored afterwards. Sheet: frame count, orbit sweep, "Bake Line Art to frames". Unit test for
   `orbitAt`; CI checks the button string in the APK.
+
+## Next batch (one go) — 2026-10-02, branch feature/batch-next
+
+- 0. BUG thick-stroke slashes: the GLES presenter drew each segment as its own quad (wedge gaps
+  on the outer side of bends, visible at Size 100). Strokes are now one band built by
+  `project_grease_stroke_outline.c` after Blender's `gpencil_vertex()` (common_gpencil_lib.glsl):
+  miter offsets with miter_limit cos 60 deg, bevel + round join when it breaks, round caps
+  (caps[] FLAT respected), per-point thickness x pressure. Used for strokes, the live sbuffer,
+  the pending preview, annotations and the fill mask. Unit tests (90/150/45/179/-120 deg turns
+  without gaps, plain strip, miter limit, cyclic, dot) and a GLES pixel test of a 40 px bend
+  that fails on the old presenter.
+- 1. Segment select: `project_grease_blender_edit4.c` carries gpencil_utils.c collision helpers
+  and `ED_gpencil_select_stroke_segment` verbatim; flat_ref is swapped for the XY projection our
+  strokes lie in (flat_ref degenerates on straight strokes). Edit-mode Point/Stroke/Segment
+  switch; area selection treats Segment as Point.
+- 2-4. Fill Leak / Dilate (negative contracts) / boundary All, Strokes, Edit Lines (1 px center
+  lines) reach the fill mask and the Legacy fill port.
+- 5. Delete material: strokes on the slot removed, higher slots shifted
+  (BKE_gpencil_material_index_reassign), palette shrinks; confirm dialog; undoable.
+- 6. Fit canvas button (zoom 1 / no pan = whole canvas with 4% margins).
+- 7-8. Onion: GP_DATA_SHOW_ONIONSKINS overlay switch + per-layer GP_LAYER_ONIONSKIN, gpd gstep
+  keyframes, ghost alpha verbatim from gpencil_layer_final_tint_and_alpha_get (GP_ONION_FADE).
+- 9. Save as (SAF create-document, continues under the file's name).
+- 10. PNG export: offscreen canvas-size render of the current frame by the same presenter,
+  transparent background option (premultiplied blending undone on readback).
+- BLI_ghash / mempool / hash_mm2a added to the Android and host closures.
+- Not validated locally: Android NDK link probe and Gradle (no Google Maven / NDK in the
+  session); editor Kotlin compiled and its 149 unit tests run offline with kotlinc.

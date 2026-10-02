@@ -158,15 +158,18 @@ static int compare_scene(const char *ref_dir, char **f)
     return 1;
   }
 
-  /* Blender -> ours: every reference point and segment midpoint. */
+  /* Blender -> ours: samples along Blender's strokes, as dense as the other direction. */
   int a_total = 0, a_hit = 0;
   for (int i = 0; i < theirs.n; i++) {
     const Seg *s = &theirs.v[i];
-    const double px[2] = {s->x1, (s->x0 + s->x1) * 0.5}, py[2] = {s->y1, (s->y0 + s->y1) * 0.5};
-    for (int k = 0; k < 2; k++) {
-      if (fabs(px[k]) > 1.0 || fabs(py[k]) > 1.0) continue; /* outside the frame */
+    const int steps = (int)(hypot(s->x1 - s->x0, s->y1 - s->y0) / SAMPLE_STEP) + 1;
+    for (int k = 1; k <= steps; k++) {
+      const double t = (double)k / steps;
+      const double px[1] = {s->x0 + (s->x1 - s->x0) * t}, py[1] = {s->y0 + (s->y1 - s->y0) * t};
+      const int kk = 0;
+      if (fabs(px[kk]) > 1.0 || fabs(py[kk]) > 1.0) continue; /* outside the frame */
       a_total++;
-      if (nearest(&ours, px[k], py[k]) <= TOLERANCE) {
+      if (nearest(&ours, px[kk], py[kk]) <= TOLERANCE) {
         a_hit++;
       }
       else if (a_total - a_hit <= 40) {
@@ -174,11 +177,11 @@ static int compare_scene(const char *ref_dir, char **f)
         int best = -1;
         double bd = 1e30;
         for (int j = 0; j < all.n; j++) {
-          const double d = dist_point_seg(px[k], py[k], &all.v[j]);
+          const double d = dist_point_seg(px[kk], py[kk], &all.v[j]);
           if (d < bd) { bd = d; best = j; }
         }
         printf("        Blender sample not ours: (%.4f, %.4f) nearest of all ours %.4f away: object %d type 0x%x occlusion %d\n",
-               px[k], py[k], bd, best >= 0 ? all.v[best].object : -9, best >= 0 ? all.v[best].type : 0,
+               px[kk], py[kk], bd, best >= 0 ? all.v[best].object : -9, best >= 0 ? all.v[best].type : 0,
                best >= 0 ? all.v[best].occlusion : -1);
       }
     }

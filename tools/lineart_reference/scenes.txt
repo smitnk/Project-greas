@@ -6,7 +6,7 @@ cube_occlusion1 cube.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 1
 cube_ortho      cube.obj       ortho 50 6  0.0  0.0  10 0   0    1920 1080 0
 cube_shift      cube.obj       persp 35 6  -0.6 0.3  9  0.1 -0.05 1080 1920 0
 occluder        occluder.obj   persp 50 6  0.3  0.35 12 0   0    1920 1080 0
-occluder_front  occluder_front.obj persp 50 6 0.0 0.0 12 0   0    1920 1080 1
+occluder_front  occluder_front.obj persp 50 6 0.07 0.05 12 0  0    1920 1080 1
 intersect       intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0
 sphere_smooth   sphere.obj     persp 50 6  0.5  0.3  8  0   0    1920 1080 0
 wire            wire.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 0

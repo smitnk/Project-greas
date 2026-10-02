@@ -24,3 +24,26 @@ if "*dvert;" not in dna:
     dna = dna.replace(anchor, anchor + "  struct MDeformVert *dvert;\n")
     DNA.write_text(dna, encoding="utf-8")
     print("added: bGPDstroke.dvert")
+
+# New shim headers for vertex weights (created only if the repo does not have them).
+SHIM_DIR = ROOT / "native/blender_gp/tests/select_shim"
+NEW_FILES = {
+    "DNA_meshdata_types.h": """/* Test-only stand-in for vertex weights. */
+#pragma once
+typedef struct MDeformWeight { unsigned int def_nr; float weight; } MDeformWeight;
+typedef struct MDeformVert { MDeformWeight *dw; int totweight; int flag; } MDeformVert;
+""",
+    "MEM_guardedalloc.h": """/* Test-only stand-in for guarded allocation. */
+#pragma once
+#include <stdlib.h>
+#define MEM_freeN(p) free(p)
+#define MEM_SAFE_FREE(v) do { if (v) { free(v); (v) = NULL; } } while (0)
+""",
+}
+for name, body in NEW_FILES.items():
+    path = SHIM_DIR / name
+    if path.exists():
+        print("kept existing shim:", name)
+    else:
+        path.write_text(body, encoding="utf-8")
+        print("created shim:", name)

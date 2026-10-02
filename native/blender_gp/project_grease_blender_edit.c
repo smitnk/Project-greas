@@ -34,6 +34,8 @@
 #include "BLI_utildefines.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
+#include "DNA_meshdata_types.h"
+#include "MEM_guardedalloc.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
 
@@ -1169,7 +1171,7 @@ int pg_gp_dissolve(bGPdata *gpd, const bGPDlayer *only_layer, int type)
   if (gpd == NULL || type < PG_DISSOLVE_POINTS || type > PG_DISSOLVE_UNSELECT) return 0;
   int changed = 0;
   PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!pge_stroke_selected(gps) || gps->points == NULL || gps->dvert != NULL) continue;
+    if (!pge_stroke_selected(gps) || gps->points == NULL) continue;
     int first = -1, last = -1;
     for (int i = 0; i < gps->totpoints; i++) {
       if (gps->points[i].flag & GP_SPOINT_SELECT) { if (first < 0) first = i; last = i; }
@@ -1184,7 +1186,14 @@ int pg_gp_dissolve(bGPdata *gpd, const bGPDlayer *only_layer, int type)
         case PG_DISSOLVE_BETWEEN: remove = !sel && i > first && i < last; break;
         default: remove = !sel; break;
       }
-      if (!remove) gps->points[keep++] = gps->points[i];
+      if (!remove) {
+        /* vertex weights move with their point */
+        if (gps->dvert != NULL) gps->dvert[keep] = gps->dvert[i];
+        gps->points[keep++] = gps->points[i];
+      }
+      else if (gps->dvert != NULL) {
+        MEM_SAFE_FREE(gps->dvert[i].dw); /* weights of a removed point */
+      }
     }
     if (keep == gps->totpoints) continue;
     changed = 1;

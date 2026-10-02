@@ -93,7 +93,7 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
             Text("3D reference (Line Art)", style = MaterialTheme.typography.headlineSmall)
             val s = reference.stats()
             Text("${s[0]} objects • ${s[1]} vertices • ${s[2]} triangles • ${s[3]} edges (${s[4]} loose)")
-            Text("Line Art lines are not generated yet; this sets up the scene and camera it will read.",
+            Text("Line Art preview shows its visible lines (feature lines + occlusion); turning them into strokes comes next.",
                 style = MaterialTheme.typography.bodySmall)
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { picker.launch(arrayOf("model/obj", "text/plain", "application/octet-stream", "*/*")) }) { Text("Import OBJ") }
@@ -102,6 +102,16 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Show over canvas", Modifier.weight(1f))
                 Switch(reference.visible, { reference.setVisible(it); tick++; redraw() })
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Line Art preview")
+                    Text(if (reference.lineArtPreview) {
+                        val (total, shown) = reference.lineArtCounts()
+                        "Visible lines of Blender's Line Art: $shown of $total segments"
+                    } else "Off: every mesh edge is shown", style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(reference.lineArtPreview, { reference.setLineArtPreview(it, cw, ch); tick++; redraw() })
             }
             Text("Camera", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

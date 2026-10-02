@@ -311,3 +311,30 @@ otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the
 - LINE_ART is IN_PROGRESS with "BATCH 1 OF 3 ONLY": no lines are generated, the reference is not
   saved. Next: batch 2 (lineart_cpu triangle/edge buffer and occlusion, compared with reference
   output exported from desktop Blender 3.6.23), then batch 3 (chaining, strokes, UI).
+
+
+## Line Art batch 2 — Blender 3.6.23 Line Art core on Scene-lite — 2026-10-02
+
+- `tools/gen_lineart_lite.py` generates `native/blender_gp/lineart/project_grease_lineart_cpu.cc` from the
+  pinned `lineart_cpu.cc`: the file is emitted in its original order as BEGIN/END VERBATIM regions
+  (10 regions, ~4,000 lines: culling, near/far clipping, perspective division, bounding areas,
+  triangle intersections, edge linking, occlusion), and only the 16 items that read Mesh / Object /
+  Depsgraph / Collection / Material data are swapped for the Scene-lite versions in
+  `lineart_scene_lite_replacements.cc` (written to follow the originals line by line). GP output
+  (`lineart_gpencil_generate`) is left for batch 3. CI checks the output is up to date (`--check`) and
+  the regions byte for byte (`verify_blender_verbatim.py`). The pinned `lineart_util.c` is compiled as is.
+- `lineart_lite_runtime.cc`: serial BLI_task pool / parallel range (one thread, deterministic), spin
+  locks, `G`, PIL time and the shadow entry points (shadows / light contour unsupported: off).
+- Scene-lite gained per-polygon smooth shading (OBJ `s`, flat by default like Blender's importer):
+  Line Art only looks for creases on flat (`sharp_face`) polygons unless forced.
+- `project_grease_lineart_lite.h`: `pg_lineart_compute()` returns every feature edge's segments with
+  occlusion level and type in Line Art frame-buffer coordinates.
+- Tests (`tools/run_native_lineart_tests.sh`, plain + ASan/UBSan): cube from a corner (9 visible / 3
+  hidden at level 1), orthographic front (4 edges, exact perimeter), an occluding plane cutting edges,
+  intersection lines of overlapping cubes, loose edges, empty / behind-camera scenes.
+- Reference: CI downloads desktop Blender 3.6.23 (cached), runs `tools/lineart_reference/blender_reference.py`
+  (OBJ import, same camera, default Line Art modifier with overscan 0 / depth offset 0) on
+  `tools/lineart_reference/scenes.txt`, and the test requires >= 99 % two-way coverage between
+  Blender's strokes and our visible segments in frame-buffer space (tolerance 0.002).
+- Android: JNI `nativeSceneLiteLineArt`; the 3D reference sheet has a "Line Art preview" switch that
+  draws Line Art's visible lines instead of the mesh wireframe. LINE_ART stays IN_PROGRESS ("BATCH 2 OF 3").

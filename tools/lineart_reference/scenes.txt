@@ -1,0 +1,11 @@
+# Line Art reference scenes, read by blender_reference.py (desktop Blender 3.6.23) and by
+# native/blender_gp/tests/test_lineart_reference.c (Project Grease). One scene per line:
+# name obj camera(persp|ortho) lens ortho_scale yaw pitch distance shift_x shift_y width height level_end
+cube_corner     cube.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 0
+cube_occlusion1 cube.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 1
+cube_ortho      cube.obj       ortho 50 6  0.0  0.0  10 0   0    1920 1080 0
+cube_shift      cube.obj       persp 35 6  -0.6 0.3  9  0.1 -0.05 1080 1920 0
+occluder        occluder.obj   persp 50 6  0.3  0.35 12 0   0    1920 1080 0
+intersect       intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0
+sphere_smooth   sphere.obj     persp 50 6  0.5  0.3  8  0   0    1920 1080 0
+wire            wire.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 0

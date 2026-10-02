@@ -21,4 +21,13 @@ class ReferenceCameraTest {
         val d = ReferenceCamera.fbToCanvas(0f, -1f, 1920, 1080)
         assertEquals(960f, d.first, 0f); assertEquals(1080f, d.second, 0f)
     }
+
+    @Test
+    fun lineArtPreviewKeepsVisibleSegmentsOnly() {
+        val raw = floatArrayOf(-1f, 1f, 0f, -1f, 0f, 2f, 0f, 0f, 1f, 1f, 1f, 4f)
+        val visible = ReferenceScene.visibleLineArt(raw)
+        assertEquals(4, visible.size)
+        val c = ReferenceScene.toCanvas(visible, 200, 100)
+        assertEquals(0f, c[0], 0f); assertEquals(0f, c[1], 0f); assertEquals(100f, c[2], 0f); assertEquals(100f, c[3], 0f)
+    }
 }

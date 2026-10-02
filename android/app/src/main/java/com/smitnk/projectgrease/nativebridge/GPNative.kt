@@ -110,6 +110,8 @@ object GPNative {
     external fun nativeSceneLiteSetCamera(handle: Long, params: FloatArray): Boolean
     /** x0, y0, x1, y1 per visible mesh edge, Line Art frame-buffer coordinates (-1..1). */
     external fun nativeSceneLiteProjectEdges(handle: Long): FloatArray?
+    /** Line Art (default settings, occlusion levels 0..levelEnd): x0, y0, x1, y1, occlusion, edge type per segment. */
+    external fun nativeSceneLiteLineArt(handle: Long, levelEnd: Int): FloatArray?
     // Annotations (project_grease_annotations.h): command ids PG_ANNOT_CMD_* of project_grease_gp_bridge.h.
     external fun nativeAnnotationCommand(handle: Long, command: Int, args: FloatArray?): Int
     /** r, g, b, a, thickness (px), visible (1/0); null without a document. */

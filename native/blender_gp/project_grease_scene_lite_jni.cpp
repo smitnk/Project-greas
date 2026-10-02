@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "project_grease_lineart_lite.h"
 #include "project_grease_scene_lite.h"
 
 namespace {
@@ -119,5 +120,29 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteProjectEdges(
       out.insert(out.end(), {float(fb[0][0]), float(fb[0][1]), float(fb[1][0]), float(fb[1][1])});
     }
   }
+  return to_java(env, out);
+}
+
+/* Line Art (project_grease_lineart_lite.h) on the reference scene with a default modifier's
+ * settings and occlusion levels 0..level_end: x0, y0, x1, y1, occlusion, edge type per segment, in
+ * frame-buffer coordinates. Empty array when nothing is in view, null on failure. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArt(JNIEnv *env, jobject, jlong handle, jint level_end)
+{
+  PGSceneLite *scene = scene_from(handle);
+  if (!scene) return nullptr;
+  PGLineartSettings settings;
+  pg_lineart_settings_default(&settings);
+  settings.level_end = level_end < 0 ? 0 : (level_end > 128 ? 128 : level_end);
+  PGLineartSegment *segments = nullptr;
+  const int n = pg_lineart_compute(scene, &settings, &segments);
+  if (n < 0) return nullptr;
+  std::vector<float> out;
+  out.reserve(static_cast<size_t>(n) * 6u);
+  for (int i = 0; i < n; i++) {
+    const PGLineartSegment &s = segments[i];
+    out.insert(out.end(), {s.x0, s.y0, s.x1, s.y1, float(s.occlusion), float(s.edge_type)});
+  }
+  pg_lineart_free_segments(segments);
   return to_java(env, out);
 }

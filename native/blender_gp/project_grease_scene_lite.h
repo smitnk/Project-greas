@@ -50,6 +50,8 @@ typedef struct PGMeshLite {
   int (*tris)[3];
   int *tri_poly;     /* original polygon index of every triangle */
   int *tri_material; /* material index of every triangle */
+  int *tri_smooth;   /* 1 when the polygon is shaded smooth (OBJ "s 1"), 0 flat (Blender's
+                      * OBJ importer default; flat faces are Mesh "sharp_face") */
   int tottri;
   int totpoly;
   PGLiteEdge *edges;
@@ -89,7 +91,8 @@ void pg_lite_scene_clear(PGSceneLite *scene);
 
 /* Wavefront OBJ: o/g start objects, v, f (any polygon size, v, v/vt, v/vt/vn, v//vn and negative
  * indices; polygons are fan-triangulated and keep their polygon index), l (loose edges), usemtl
- * (material index per distinct name, in order of first use). Appends the objects to the scene
+ * (material index per distinct name, in order of first use), s (smooth groups: s 0 / off = flat,
+ * the default). Appends the objects to the scene
  * (identity matrix, usage INHERIT); returns the number added, 0 on malformed input (then
  * nothing is added). Also converts OBJ's Y-up to Blender's Z-up like Blender's importer
  * (forward -Z, up Y): (x, y, z) -> (x, -z, y). */

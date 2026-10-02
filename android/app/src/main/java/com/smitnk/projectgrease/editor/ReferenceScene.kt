@@ -50,7 +50,11 @@ class ReferenceScene {
         private set
     var visible = true
         private set
+    /** Show Line Art's visible lines instead of the mesh wireframe. */
+    var lineArtPreview = false
+        private set
     private var segments: FloatArray = FloatArray(0)
+    private var lineArt: FloatArray = FloatArray(0)
 
     private fun ensure(): Long {
         if (handle == 0L) handle = runCatching { GPNative.nativeSceneLiteCreate() }.getOrDefault(0L)
@@ -73,9 +77,23 @@ class ReferenceScene {
     fun clear() {
         if (handle != 0L) GPNative.nativeSceneLiteClear(handle)
         segments = FloatArray(0)
+        lineArt = FloatArray(0)
     }
 
     fun setVisible(value: Boolean) { visible = value }
+
+    fun setLineArtPreview(value: Boolean, canvasW: Int, canvasH: Int) {
+        lineArtPreview = value
+        refresh(canvasW, canvasH)
+    }
+
+    /** Line Art segments in the preview: total and visible (occlusion 0). */
+    fun lineArtCounts(): Pair<Int, Int> {
+        var visibleCount = 0
+        var i = 0
+        while (i + 5 < lineArt.size) { if (lineArt[i + 4] == 0f) visibleCount++; i += 6 }
+        return lineArt.size / 6 to visibleCount
+    }
 
     fun setCamera(value: ReferenceCamera, canvasW: Int, canvasH: Int) {
         camera = value
@@ -88,19 +106,40 @@ class ReferenceScene {
         if (h == 0L) return
         GPNative.nativeSceneLiteSetCamera(h, camera.params(canvasW, canvasH))
         segments = GPNative.nativeSceneLiteProjectEdges(h) ?: FloatArray(0)
+        lineArt = if (lineArtPreview) GPNative.nativeSceneLiteLineArt(h, 0) ?: FloatArray(0) else FloatArray(0)
     }
 
-    /** Projected edges in canvas coordinates: x0, y0, x1, y1 per edge. */
-    fun canvasSegments(canvasW: Int, canvasH: Int): FloatArray {
-        val out = FloatArray(segments.size)
-        var i = 0
-        while (i + 3 < segments.size) {
-            val a = ReferenceCamera.fbToCanvas(segments[i], segments[i + 1], canvasW, canvasH)
-            val b = ReferenceCamera.fbToCanvas(segments[i + 2], segments[i + 3], canvasW, canvasH)
-            out[i] = a.first; out[i + 1] = a.second; out[i + 2] = b.first; out[i + 3] = b.second
-            i += 4
+    /**
+     * What the overlay draws, in canvas coordinates (x0, y0, x1, y1 per line): Line Art's visible
+     * lines when the preview is on, otherwise every mesh edge.
+     */
+    fun canvasSegments(canvasW: Int, canvasH: Int): FloatArray =
+        if (lineArtPreview) visibleLineArt(lineArt).let { toCanvas(it, canvasW, canvasH) }
+        else toCanvas(segments, canvasW, canvasH)
+
+    companion object {
+        /** x0, y0, x1, y1 of the occlusion-0 segments of a nativeSceneLiteLineArt result. */
+        fun visibleLineArt(raw: FloatArray): FloatArray {
+            val out = ArrayList<Float>()
+            var i = 0
+            while (i + 5 < raw.size) {
+                if (raw[i + 4] == 0f) { out += raw[i]; out += raw[i + 1]; out += raw[i + 2]; out += raw[i + 3] }
+                i += 6
+            }
+            return out.toFloatArray()
         }
-        return out
+
+        fun toCanvas(fb: FloatArray, canvasW: Int, canvasH: Int): FloatArray {
+            val out = FloatArray(fb.size)
+            var i = 0
+            while (i + 3 < fb.size) {
+                val a = ReferenceCamera.fbToCanvas(fb[i], fb[i + 1], canvasW, canvasH)
+                val b = ReferenceCamera.fbToCanvas(fb[i + 2], fb[i + 3], canvasW, canvasH)
+                out[i] = a.first; out[i + 1] = a.second; out[i + 2] = b.first; out[i + 3] = b.second
+                i += 4
+            }
+            return out
+        }
     }
 
     fun release() {

@@ -41,6 +41,8 @@ set(BLENDER_INCLUDE_DIRS
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel"
     "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy"
     "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern"
+    "${BLENDER_SOURCE_DIR}/source/blender/gpencil_modifiers_legacy/intern/lineart"
+    "${PROJECT_GREASE_ROOT}/native/blender_gp/lineart"
     "${BLENDER_SOURCE_DIR}/source/blender/bmesh"
     "${BLENDER_SOURCE_DIR}/source/blender/makesdna"
     "${BLENDER_SOURCE_DIR}/source/blender/makesrna"

@@ -78,12 +78,12 @@ class FeatureRegistryTest {
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.DASH).state)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.OUTLINE).state)
-        // Line Art: the Scene-lite architecture change is approved and batch 1 landed, but no lines are
-        // generated yet, so it must stay IN_PROGRESS, unverified, and say so.
+        // Line Art: Scene-lite and the Line Art core (batch 2) are in, but no GP strokes are generated
+        // yet, so it must stay IN_PROGRESS, unverified, and say so.
         val lineArt = FeatureRegistry.capability(FeatureId.LINE_ART)
         assertEquals(AuditStatus.IN_PROGRESS, lineArt.audit)
         assertFalse(lineArt.deviceVerified)
-        assertTrue(lineArt.limitation.contains("no Line Art lines are generated"))
+        assertTrue(lineArt.limitation.contains("no GP strokes are generated"))
     }
 
     @Test

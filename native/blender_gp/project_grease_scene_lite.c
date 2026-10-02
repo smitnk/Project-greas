@@ -175,7 +175,7 @@ static int invert_m4(float r[4][4], const float m[4][4])
 /* ---- scene / mesh ------------------------------------------------------------------------- */
 static void mesh_free(PGMeshLite *me)
 {
-  free(me->verts); free(me->tris); free(me->tri_poly); free(me->tri_material); free(me->edges);
+  free(me->verts); free(me->tris); free(me->tri_poly); free(me->tri_material); free(me->tri_smooth); free(me->edges);
   memset(me, 0, sizeof(*me));
 }
 
@@ -286,7 +286,7 @@ static void *grow_push(Growable *g)
 
 typedef struct ObjPending {
   char name[64];
-  Growable tris, polys, mats, loose; /* int[3], int, int, int[2] (global vertex indices) */
+  Growable tris, polys, mats, smooth, loose; /* int[3], int, int, int, int[2] (global vertex indices) */
   int totpoly;
 } ObjPending;
 
@@ -297,12 +297,13 @@ static void pending_init(ObjPending *p, const char *name)
   p->tris.item = sizeof(int[3]);
   p->polys.item = sizeof(int);
   p->mats.item = sizeof(int);
+  p->smooth.item = sizeof(int);
   p->loose.item = sizeof(int[2]);
 }
 
 static void pending_free(ObjPending *p)
 {
-  free(p->tris.data); free(p->polys.data); free(p->mats.data); free(p->loose.data);
+  free(p->tris.data); free(p->polys.data); free(p->mats.data); free(p->smooth.data); free(p->loose.data);
 }
 
 /* OBJ vertex reference "i", "i/t", "i/t/n" or "i//n" -> 0-based index, -1 when invalid. */
@@ -343,8 +344,9 @@ static int pending_emit(PGSceneLite *scene, Growable *objects, ObjPending *p, co
   me->tris = malloc(sizeof(int[3]) * (size_t)(p->tris.count > 0 ? p->tris.count : 1));
   me->tri_poly = malloc(sizeof(int) * (size_t)(p->tris.count > 0 ? p->tris.count : 1));
   me->tri_material = malloc(sizeof(int) * (size_t)(p->tris.count > 0 ? p->tris.count : 1));
+  me->tri_smooth = malloc(sizeof(int) * (size_t)(p->tris.count > 0 ? p->tris.count : 1));
   int (*lo)[2] = malloc(sizeof(int[2]) * (size_t)(p->loose.count > 0 ? p->loose.count : 1));
-  if (!me->verts || !me->tris || !me->tri_poly || !me->tri_material || !lo) { free(map); free(lo); mesh_free(me); objects->count--; return 0; }
+  if (!me->verts || !me->tris || !me->tri_poly || !me->tri_material || !me->tri_smooth || !lo) { free(map); free(lo); mesh_free(me); objects->count--; return 0; }
   for (int i = 0; i <= maxv; i++) {
     if (map[i] < 0) continue;
     /* Blender's OBJ importer defaults (forward -Z, up Y): (x, y, z) -> (x, -z, y) */
@@ -357,6 +359,7 @@ static int pending_emit(PGSceneLite *scene, Growable *objects, ObjPending *p, co
     for (int k = 0; k < 3; k++) me->tris[t][k] = map[tris[t][k]];
     me->tri_poly[t] = ((int *)p->polys.data)[t];
     me->tri_material[t] = ((int *)p->mats.data)[t];
+    me->tri_smooth[t] = ((int *)p->smooth.data)[t];
   }
   me->tottri = p->tris.count;
   me->totpoly = p->totpoly;
@@ -374,7 +377,7 @@ int pg_lite_load_obj(PGSceneLite *scene, const char *text, int length)
   Growable verts = {NULL, 0, 0, sizeof(float[3])};
   Growable objects = {NULL, 0, 0, sizeof(PGObjectLite)};
   char matnames[64][64];
-  int matcount = 0, curmat = 0, ok = 1;
+  int matcount = 0, curmat = 0, cursmooth = 0, ok = 1;
   ObjPending p;
   pending_init(&p, "Object");
   char *buf = malloc((size_t)length + 1);
@@ -402,6 +405,11 @@ int pg_lite_load_obj(PGSceneLite *scene, const char *text, int length)
       else if (name[0]) {
         strncpy(p.name, name, sizeof(p.name) - 1);
       }
+    }
+    else if (line[0] == 's' && (line[1] == ' ' || line[1] == '\t')) {
+      char value[16] = "";
+      sscanf(line + 2, "%15s", value);
+      cursmooth = !(strcmp(value, "off") == 0 || strcmp(value, "0") == 0);
     }
     else if (strncmp(line, "usemtl", 6) == 0 && (line[6] == ' ' || line[6] == '\t')) {
       char name[64] = "";
@@ -434,10 +442,12 @@ int pg_lite_load_obj(PGSceneLite *scene, const char *text, int length)
           int *t = grow_push(&p.tris);
           int *pi = grow_push(&p.polys);
           int *mi = grow_push(&p.mats);
-          if (!t || !pi || !mi) { ok = 0; break; }
+          int *si = grow_push(&p.smooth);
+          if (!t || !pi || !mi || !si) { ok = 0; break; }
           t[0] = idx[0]; t[1] = idx[i]; t[2] = idx[i + 1];
           *pi = p.totpoly;
           *mi = curmat;
+          *si = cursmooth;
         }
         p.totpoly++;
       }

@@ -17,7 +17,7 @@ static const char *CUBE =
     "vn 0 0 1\n"
     "usemtl Red\n"
     "f 1//1 2//1 3//1 4//1\nf 5 8 7 6\nf 1 5 6 2\n"
-    "usemtl Blue\n"
+    "usemtl Blue\ns 1\n"
     "f 2/1/1 6/1/1 7/1/1 3/1/1\nf 3 7 8 4\nf -4 -8 -5 -1\n"
     "o Wire\r\n"
     "v 3 0 0\nv 4 0 0\nv 5 0 0\n"
@@ -47,6 +47,7 @@ static void test_obj(void)
   }
   CHECK(cube->tri_poly[0] == 0 && cube->tri_poly[1] == 0 && cube->tri_poly[11] == 5, "triangles keep their polygon");
   CHECK(cube->tri_material[0] == 0 && cube->tri_material[11] == 1, "material per usemtl");
+  CHECK(cube->tri_smooth[0] == 0 && cube->tri_smooth[11] == 1, "flat by default, s 1 smooth");
   /* Y-up -> Z-up: OBJ (-1,-1,-1) -> (-1, 1, -1) */
   CHECK(cube->verts[0][0] == -1.0f && cube->verts[0][1] == 1.0f && cube->verts[0][2] == -1.0f, "axis conversion");
   const PGMeshLite *wire = &s->objects[1].mesh;

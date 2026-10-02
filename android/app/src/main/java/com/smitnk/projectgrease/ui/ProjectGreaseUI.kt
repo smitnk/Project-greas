@@ -592,6 +592,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
                 TextButton(onClick={controller.animation.duplicateFrame(controller.animation.currentFrame,controller.animation.currentFrame+1);redraw()}){Text("Duplicate")}
                 TextButton(onClick={if(controller.animation.frameCount>1){controller.animation.deleteFrame(controller.animation.currentFrame);redraw()}}){Text("Delete")}
+                // GPENCIL_OT_blank_frame_add / GPENCIL_OT_frame_clean_duplicate; the strip below re-reads
+                // the native frame numbers, and the controller refreshes frame count/end.
+                TextButton(onClick={if(controller.insertBlankFrame())redraw()}){Text("Insert blank keyframe")}
+                TextButton(onClick={if(controller.cleanDuplicateFrames())redraw()}){Text("Clean duplicate frames")}
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
                 val keyframes=controller.frameNumbers().toSet()

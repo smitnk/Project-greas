@@ -129,7 +129,7 @@ object FeatureRegistry {
         FeatureId.FRAMES to wired("Real bGPDframe lifecycle. $DEVICE"),
         FeatureId.TIMELINE to wired("Frame strip with KEY/HOLD labels. $DEVICE"),
         FeatureId.ADD_FRAME to wired("Creates or selects the frame after the current one. $DEVICE"),
-        FeatureId.INSERT_FRAME to missing("No insert-and-shift operation."),
+        FeatureId.INSERT_FRAME to wired("Timeline \"Insert blank keyframe\" (GPENCIL_OT_blank_frame_add on the active layer: frames at/after the current one move one later) and \"Clean duplicate frames\". $DEVICE"),
         FeatureId.DUPLICATE_FRAME to wired("BKE_gpencil_frame_duplicate. $DEVICE"),
         FeatureId.DELETE_FRAME to wired("BKE_gpencil_layer_frame_delete. $DEVICE"),
         FeatureId.FRAME_HOLDS to wired("Holds via GP_GETFRAME_USE_PREV. $DEVICE"),

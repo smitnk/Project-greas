@@ -11,3 +11,5 @@ static inline void BLI_remlink(ListBase *listbase, void *vlink)
   if (listbase->last == link) listbase->last = link->prev;
   if (listbase->first == link) listbase->first = link->next;
 }
+void BLI_addtail(ListBase *listbase, void *vlink);
+void *BLI_findlink(const ListBase *listbase, int number);

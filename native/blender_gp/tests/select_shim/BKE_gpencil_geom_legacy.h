@@ -23,3 +23,5 @@ void BKE_gpencil_stroke_simplify_fixed(bGPdata *gpd, bGPDstroke *gps);
 bool BKE_gpencil_stroke_sample(bGPdata *gpd, bGPDstroke *gps, float dist, bool select, float sharp_threshold);
 bGPDframe *BKE_gpencil_frame_addnew(bGPDlayer *gpl, int cframe);
 bool BKE_gpencil_layer_frame_delete(bGPDlayer *gpl, bGPDframe *gpf);
+void BKE_gpencil_stroke_merge_distance(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps, float threshold, bool use_unselected);
+bGPDlayer *BKE_gpencil_layer_addnew(bGPdata *gpd, const char *name, bool setactive, bool add_to_header);

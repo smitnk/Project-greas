@@ -31,6 +31,7 @@ typedef struct bGPDstroke {
   struct bGPDstroke *next, *prev;
   bGPDspoint *points;
   int totpoints;
+  short caps[2];
   struct MDeformVert *dvert;
   int flag;
   int mat_nr;

@@ -37,6 +37,7 @@ C|native/blender_gp/project_grease_blender_edit.c
 C|native/blender_gp/project_grease_blender_edit2.c
 C|native/blender_gp/project_grease_blender_edit3.c
 C|native/blender_gp/project_grease_blender_edit4.c
+C|native/blender_gp/project_grease_blender_edit5.c
 C|native/blender_gp/project_grease_annotations.c
 C|native/blender_gp/project_grease_scene_lite.c
 CXX|native/blender_gp/project_grease_scene_lite_jni.cpp

@@ -1,4 +1,4 @@
-/* Host tests for project_grease_blender_edit4.c, linked with the real pinned BKE / BLI closure:
+/* Host tests for project_grease_blender_edit5.c, linked with the real pinned BKE / BLI closure:
  * segment select (ED_gpencil_select_stroke_segment), material slot removal, onion alpha. */
 #include <math.h>
 #include <stdio.h>
@@ -11,7 +11,7 @@
 #include "BLI_listbase.h"
 
 #include "project_grease_blender_edit.h"
-#include "project_grease_blender_edit4.h"
+#include "project_grease_blender_edit5.h"
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -136,11 +136,11 @@ static void test_onion()
   bGPDlayer *b = BKE_gpencil_layer_addnew(gpd, "B", true, false);
   CHECK(b->onion_flag & GP_LAYER_ONIONSKIN); /* on for new layers */
   const float off[2] = {1, 0}, fade_off[1] = {0};
-  CHECK(pg_gp_edit4_dispatch(gpd, b, PG_EDIT4_CMD_ONION_LAYER, off, 2) == 1);
+  CHECK(pg_gp_edit5_dispatch(gpd, b, PG_EDIT5_CMD_ONION_LAYER, off, 2) == 1);
   CHECK(!(b->onion_flag & GP_LAYER_ONIONSKIN));
-  CHECK(pg_gp_edit4_dispatch(gpd, b, PG_EDIT4_CMD_ONION_LAYER, off, 2) == 0);
+  CHECK(pg_gp_edit5_dispatch(gpd, b, PG_EDIT5_CMD_ONION_LAYER, off, 2) == 0);
   gpd->onion_flag = GP_ONION_FADE;
-  CHECK(pg_gp_edit4_dispatch(gpd, b, PG_EDIT4_CMD_ONION_FADE, fade_off, 1) == 1);
+  CHECK(pg_gp_edit5_dispatch(gpd, b, PG_EDIT5_CMD_ONION_FADE, fade_off, 1) == 1);
   CHECK(!(gpd->onion_flag & GP_ONION_FADE));
   free_doc(gpd);
 }
@@ -153,7 +153,7 @@ int main(void)
   test_segment();
   test_material_remove();
   test_onion();
-  if (failures) { fprintf(stderr, "%d edit4 check(s) failed\n", failures); return 1; }
-  printf("edit4 tests passed\n");
+  if (failures) { fprintf(stderr, "%d edit5 check(s) failed\n", failures); return 1; }
+  printf("edit5 tests passed\n");
   return 0;
 }

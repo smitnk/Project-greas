@@ -32,7 +32,8 @@ enum class FeatureId {
     NOISE, DASH, OUTLINE, THICKNESS_MODIFIER, COLOR_MODIFIER, DEFORM, GENERATE,
     ADVANCED_INTERPOLATION, LAYER_MASKS, MULTIFRAME, ADVANCED_ONION_SKIN, VISUAL_EFFECTS, LINE_ART,
     NEW_PROJECT, OPEN_PROJECT, SAVE, SAVE_AS, EXPORT, EXPORT_PNG, EXPORT_GIF, EXPORT_ANIMATION,
-    PROJECT_SETTINGS, IMPORT_SVG, TRACE_IMAGE, ANNOTATIONS
+    PROJECT_SETTINGS, IMPORT_SVG, TRACE_IMAGE, ANNOTATIONS,
+    MERGE_BY_DISTANCE, STROKE_CAPS, START_POINT, SEPARATE_TO_LAYER, MOVE_TO_LAYER, COPY_PASTE
 }
 
 data class FeatureCapability(
@@ -191,12 +192,18 @@ object FeatureRegistry {
         FeatureId.MODIFIERS to wired("Live per-layer stack (Advanced sheet) of Thickness, Opacity, Tint, Hue/Saturation, Length, Smooth, Simplify, Subdivide, Offset and Noise; Apply bakes one into the strokes. No vertex-group/layer/material/pass filters or custom curves; Build, Dash, Outline, Mirror, Array and the other modifiers are not ported. Onion-skin ghosts and fill-tool hit tests use the unmodified strokes. $DEVICE"),
         FeatureId.MODIFIER_ORDERING to wired("The stack order is the evaluation order (Up/Down in the Advanced sheet); order, enable/disable and apply-equals-live are host-tested. $DEVICE"),
         FeatureId.NOISE to wired("Noise deformStroke() ported from MOD_gpencil_legacy_noise.c with Blender's BLI_hash seeds, evaluated with the current frame; mapped to canvas units (see project_grease_modifier_stack.h); no vertex group or curve. $DEVICE"),
-        FeatureId.DASH to missing("Modifier source not traced yet."),
+        FeatureId.DASH to wired("Advanced > Dash: baked once into the selected strokes (one dash/gap segment pattern in points, like the Dash modifier's first segment); no per-segment radius/opacity/material, not a live modifier. $DEVICE"),
         FeatureId.OUTLINE to missing("Modifier source not traced yet."),
         FeatureId.THICKNESS_MODIFIER to wired("Thickness (MOD_gpencil_legacy_thick.c) and Opacity modifiers as live stack entries; no vertex groups/curve. $DEVICE"),
         FeatureId.COLOR_MODIFIER to wired("Tint and Hue/Saturation modifiers as live stack entries (no vertex groups/curve). $DEVICE"),
         FeatureId.DEFORM to missing("Modifier source not traced yet."),
-        FeatureId.GENERATE to missing("Generators are outside the focused closure."),
+        FeatureId.GENERATE to wired("Advanced > Multiply (copies offset along the stroke normal) and Array (copies at a fixed offset) are baked into the selection as new strokes; not live modifiers, no fading/randomize/object offset; Build is still not ported. $DEVICE"),
+        FeatureId.MERGE_BY_DISTANCE to wired("Advanced > Merge by distance: BKE_gpencil_stroke_merge_distance on the selected strokes (threshold 2 canvas px, selected points only). $DEVICE"),
+        FeatureId.STROKE_CAPS to wired("Advanced > Toggle caps: GPENCIL_OT_stroke_caps_set (round/flat per end); the stroke renderer draws flat caps when caps[] says FLAT. $DEVICE"),
+        FeatureId.START_POINT to wired("Advanced > Set start point: rotates a cyclic stroke so the selected point comes first (GPENCIL_OT_stroke_start_set); open strokes are left alone. $DEVICE"),
+        FeatureId.SEPARATE_TO_LAYER to wired("Advanced > Separate to new layer: selected strokes of the active layer move to a new \"Separated\" layer at the same frame numbers. $DEVICE"),
+        FeatureId.MOVE_TO_LAYER to wired("Layers > Move selection here: selected strokes move to that layer (frame created at the same number when missing). $DEVICE"),
+        FeatureId.COPY_PASTE to wired("Advanced > Copy / Paste strokes: process-wide clipboard (not saved, lost when the app closes); paste goes to the active layer's current frame and selects the pasted strokes. $DEVICE"),
         FeatureId.STROKE_EFFECTS to missing("Effects act on the whole rendered layer (see Visual effects); there is no stroke-only target."),
         FeatureId.FILL_EFFECTS to missing("Effects act on the whole rendered layer (see Visual effects); there is no fill-only target."),
         FeatureId.VISUAL_EFFECTS to wired("Per-layer effect list in the Layers sheet (Colorize, Pixelate, Flip, Wave Distortion, Swirl, Shadow, Rim, Blur, Glow), saved with the document. Blender's shader-FX pass construction and fragment math are ported to a 2D post-pass (the layer is drawn into an offscreen buffer, the effects ping-pong over it in list order, the result is composited; layers without effects keep the direct path). Adapted: sizes are canvas pixels and scale with zoom; the object origin is the canvas center; the Swirl center is a parameter (fraction of the canvas) instead of another object; Blur has no depth-of-field mode; Shadow has no object pivot; buffers are 8-bit, so Subtract/Divide blends and glow under-composites clamp at 0 and 1. GLSL is pixel-compared with a CPU port of Blender's shader math on a software GLES2 context, not on a device. $DEVICE"),

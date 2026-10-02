@@ -399,3 +399,19 @@ otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the
 - BLI_ghash / mempool / hash_mm2a added to the Android and host closures.
 - Not validated locally: Android NDK link probe and Gradle (no Google Maven / NDK in the
   session); editor Kotlin compiled and its 149 unit tests run offline with kotlinc.
+
+## Edit4 batch (one go) — 2026-10-02, branch feature/edit4-one-go (stacked on feature/batch-next)
+
+- `project_grease_blender_edit4.{c,h}` from the batch zip: Dash / Multiply / Array baked into the
+  selection, merge by distance (BKE_gpencil_stroke_merge_distance), caps toggle, start point,
+  separate to a new layer, move to layer, copy / paste (process-wide clipboard). Commands 76..85,
+  reached through edit3's dispatch default; PG_EDIT_CMD_LAST 95.
+- The previous batch's module (segment select, material removal, onion) was named edit4 with ids
+  76..79 on the unmerged batch-next branch; it is renamed `project_grease_blender_edit5` with ids
+  86..89 (bridge routes them; Kotlin ids and tests updated).
+- Signatures of BKE_gpencil_stroke_merge_distance / BKE_gpencil_layer_addnew match the pinned
+  3.6.23 headers. Stroke caps: the stroke outline renderer already honours caps[] FLAT.
+- Edit test: zip stubs, test_edit4, and the >32-point select mask fix merged; shim declarations by
+  tools/apply_shim_decls.py. Kotlin: snippets, Advanced actions, Layers "Move selection here",
+  BlenderEdit4RulesTest; registry DASH / GENERATE wired (baked), new entries for merge, caps,
+  start point, separate, move to layer, copy/paste.

@@ -75,9 +75,12 @@ class FeatureRegistryTest {
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT_PNG).state)
         assertFalse(FeatureRegistry.capability(FeatureId.EXPORT_PNG).deviceVerified)
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT_GIF).state)
-        // The live modifier stack exists but has no device evidence; Dash and Outline are still not ported.
+        // The live modifier stack exists but has no device evidence; Dash is baked only and Outline is not ported.
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.DASH).state)
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.DASH).state)
+        assertTrue(FeatureRegistry.capability(FeatureId.DASH).limitation.contains("baked"))
+        assertTrue(FeatureRegistry.capability(FeatureId.GENERATE).limitation.contains("Build is still not ported"))
+        assertTrue(FeatureRegistry.capability(FeatureId.COPY_PASTE).limitation.contains("not saved"))
         assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.OUTLINE).state)
         // Line Art: all three batches are in (strokes are generated) but nothing is device-verified and
         // shadows / material settings / collections are missing, so it stays IN_PROGRESS and says so.

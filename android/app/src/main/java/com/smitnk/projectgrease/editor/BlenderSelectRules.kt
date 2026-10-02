@@ -24,11 +24,11 @@ object ProjectGreaseSelect {
     const val MODE_STROKE = 1
     const val MODE_SEGMENT = 2
 
-    // project_grease_blender_edit4.h
-    const val CMD_SELECT_SEGMENT = 76
-    const val CMD_MATERIAL_REMOVE = 77
-    const val CMD_ONION_LAYER = 78
-    const val CMD_ONION_FADE = 79
+    // project_grease_blender_edit5.h
+    const val CMD_SELECT_SEGMENT = 86
+    const val CMD_MATERIAL_REMOVE = 87
+    const val CMD_ONION_LAYER = 88
+    const val CMD_ONION_FADE = 89
 
     // GPENCIL_OT_select_grouped "type"
     const val GROUP_LAYER = 0
@@ -358,4 +358,36 @@ object ProjectGreaseSelect {
         if (paintMode(mode) && finite(h, s) && finite(v)) Command(CMD_VCOLOR_HSV, floatArrayOf(mode.toFloat(), h, s, v)) else null
     fun vcolorLevels(mode: Int, offset: Float, gain: Float): Command? =
         if (paintMode(mode) && finite(offset, gain)) Command(CMD_VCOLOR_LEVELS, floatArrayOf(mode.toFloat(), offset, gain)) else null
+
+    // project_grease_blender_edit4.h
+    const val CMD_DASH = 76
+    const val CMD_MULTIPLY = 77
+    const val CMD_ARRAY = 78
+    const val CMD_MERGE_DISTANCE = 79
+    const val CMD_CAPS = 80
+    const val CMD_START_SET = 81
+    const val CMD_SEPARATE_LAYER = 82
+    const val CMD_MOVE_TO_LAYER = 83
+    const val CMD_COPY = 84
+    const val CMD_PASTE = 85
+    const val CAPS_TOGGLE_BOTH = 0
+    const val CAPS_TOGGLE_START = 1
+    const val CAPS_TOGGLE_END = 2
+    const val CAPS_DEFAULT = 3
+
+    fun dash(dash: Int, gap: Int, offset: Int = 0): Command? =
+        if (dash >= 1 && gap >= 1) Command(CMD_DASH, floatArrayOf(dash.toFloat(), gap.toFloat(), offset.toFloat())) else null
+    fun multiply(duplications: Int, distance: Float): Command? =
+        if (duplications in 1..100 && finite(distance)) Command(CMD_MULTIPLY, floatArrayOf(duplications.toFloat(), distance)) else null
+    fun array(count: Int, offsetX: Float, offsetY: Float): Command? =
+        if (count in 2..1000 && finite(offsetX, offsetY)) Command(CMD_ARRAY, floatArrayOf(count.toFloat(), offsetX, offsetY)) else null
+    fun mergeByDistance(threshold: Float, useUnselected: Boolean = false): Command? =
+        if (finite(threshold) && threshold > 0f) Command(CMD_MERGE_DISTANCE, floatArrayOf(threshold, flag(useUnselected))) else null
+    fun caps(type: Int): Command? =
+        if (type in CAPS_TOGGLE_BOTH..CAPS_DEFAULT) Command(CMD_CAPS, floatArrayOf(type.toFloat())) else null
+    fun startSet() = Command(CMD_START_SET, FloatArray(0))
+    fun separateToLayer() = Command(CMD_SEPARATE_LAYER, FloatArray(0))
+    fun moveToLayer(index: Int): Command? = if (index >= 0) Command(CMD_MOVE_TO_LAYER, floatArrayOf(index.toFloat())) else null
+    fun copy() = Command(CMD_COPY, FloatArray(0))
+    fun paste() = Command(CMD_PASTE, FloatArray(0))
 }

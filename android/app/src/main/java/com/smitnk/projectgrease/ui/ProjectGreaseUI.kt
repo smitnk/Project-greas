@@ -934,6 +934,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Use onion skinning",Modifier.weight(1f))
             Switch(checked=onionOn,onCheckedChange={onionOn=it;controller.setLayerOnion(controller.selectedLayer,it);redraw()})
         }
+        Text("Move selection to layer",Modifier.padding(horizontal=12.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
+            (0 until controller.layerCount()).filter{it!=controller.selectedLayer}.forEach{index->
+                TextButton(onClick={if(controller.moveSelectionToLayer(index))redraw()}){Text("Move selection here: "+controller.layerName(index))}
+            }
+        }
         LayerMaskSection(controller,redraw)
         LayerEffectsSection(controller,redraw)
         Spacer(Modifier.height(20.dp))
@@ -1149,7 +1155,16 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             "Vertex color brighter" to { controller.selectionVertexColorBrightnessContrast(0.1f, 0f) },
             "Vertex color more contrast" to { controller.selectionVertexColorBrightnessContrast(0f, 0.2f) },
             "Vertex color hue +30°" to { controller.selectionVertexColorHsv(h = 0.5f + 1f / 12f) },
-            "Vertex color levels x0.8" to { controller.selectionVertexColorLevels(0f, 0.8f) }
+            "Vertex color levels x0.8" to { controller.selectionVertexColorLevels(0f, 0.8f) },
+            "Dash (3 on / 2 off)" to { controller.dashSelection() },
+            "Multiply (2 copies)" to { controller.multiplySelection() },
+            "Array (3 copies)" to { controller.arraySelection() },
+            "Merge by distance" to { controller.mergeSelectionByDistance() },
+            "Toggle caps (round/flat)" to { controller.toggleSelectionCaps() },
+            "Set start point" to { controller.setSelectionStartPoint() },
+            "Separate to new layer" to { controller.separateSelectionToLayer() },
+            "Copy strokes" to { controller.copySelection() },
+            "Paste strokes" to { controller.pasteStrokes() }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

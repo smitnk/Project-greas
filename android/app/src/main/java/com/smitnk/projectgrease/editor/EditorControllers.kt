@@ -454,7 +454,11 @@ class EditorController {
         }
         return ok
     }
-    fun selectTool(tool:GreaseTool)=tools.select(tool)
+    fun selectTool(tool:GreaseTool):Boolean {
+        // Leaving the polyline tool confirms the polyline, like Blender's confirm keys.
+        if (tool != tools.activeTool && polyline.isActive) finishPolyline()
+        return tools.select(tool)
+    }
     private var sculptGestureChanged = false
     private fun applySculptPoint(x:Float,y:Float,pressure:Float=1f):Boolean {
         if (rendererHandle == 0L) return false
@@ -511,6 +515,10 @@ class EditorController {
     private val pendingShapePoints = mutableListOf<PendingPoint>()
     private val pendingLassoPoints = mutableListOf<Pair<Float,Float>>()
     private var pendingShapeTool: GreaseTool? = null
+    private val polyline = PolylineSession()
+    private var polylineAwaitingPress = false
+    private var polylineLastX = 0f
+    private var polylineLastY = 0f
     private val brushStrokeEngine = LegacyGpBrushStrokeEngine()
 
     private var legacyInputSamples = 4
@@ -579,7 +587,12 @@ class EditorController {
                 GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)
             }
             GreaseTool.LASSO -> { pendingLassoPoints.clear(); true }
-            GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC, GreaseTool.POLYLINE -> {
+            GreaseTool.POLYLINE -> {
+                // The polyline outlives a single gesture: each gesture adds a vertex.
+                polylineAwaitingPress = true
+                true
+            }
+            GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC -> {
                 pendingShapePoints.clear()
                 pendingShapeTool = tools.activeTool
                 true
@@ -608,83 +621,107 @@ class EditorController {
                     point.time
                 )
             }
+        } else if (tools.activeTool == GreaseTool.POLYLINE) {
+            val snapped=view.snapPoint(x,y)
+            polylineLastX = snapped.first
+            polylineLastY = snapped.second
+            if (polylineAwaitingPress) {
+                polyline.press(snapped.first, snapped.second)
+                polylineAwaitingPress = false
+            } else {
+                polyline.move(snapped.first, snapped.second)
+            }
+            showPrimitivePreview(
+                blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, polyline.previewVertices())
+            )
         } else if (pendingShapeTool != null) {
             val snapped=view.snapPoint(x,y)
-            pendingShapePoints += PendingPoint(snapped.first, snapped.second, pressure.coerceAtLeast(0.01f), timeSeconds)
-            val preview = generatedShapePoints()
-            if (preview.isNotEmpty()) {
-                val packed = FloatArray(preview.size * 3)
-                preview.forEachIndexed { index, point ->
-                    packed[index * 3] = point.x
-                    packed[index * 3 + 1] = point.y
-                    packed[index * 3 + 2] = point.pressure
-                }
-                GPNative.nativeSetPreviewStrokeEglRenderer(rendererHandle, packed, materials.thickness)
-            }
+            pendingShapePoints += PendingPoint(snapped.first, snapped.second, pressure.coerceIn(0f,1f), timeSeconds)
+            showPrimitivePreview(generatedShapePoints())
         }
     }
 
-    private fun generatedShapePoints(): List<PendingPoint> {
-        val p = pendingShapePoints
-        if (p.isEmpty()) return emptyList()
-        val first = p.first()
-        val last = p.last()
-        val tool = pendingShapeTool ?: return emptyList()
-        if (tool == GreaseTool.POLYLINE) return p
-
-        // Blender 3.6.23 gpencil_primitive_type:
-        // BOX=0, LINE=1, POLYLINE=2, CIRCLE=3, ARC=4, CURVE=5.
-        val type = when (tool) {
-            GreaseTool.RECTANGLE -> 0
-            GreaseTool.LINE -> 1
-            GreaseTool.CIRCLE -> 3
-            GreaseTool.ARC -> 4
-            else -> return emptyList()
+    /**
+     * Shape geometry from Blender 3.6.23 gpencil_primitive.c, run natively
+     * (project_grease_blender_primitive.c). Anchors are start/end for shapes and
+     * the vertices for a polyline. Edges 0 = Blender's operator defaults.
+     */
+    private fun blenderPrimitivePoints(type:Int, anchors:List<Pair<Float,Float>>):FloatArray? {
+        if (anchors.size < 2) return null
+        val packed = FloatArray(anchors.size * 2)
+        anchors.forEachIndexed { i, p ->
+            packed[i * 2] = p.first
+            packed[i * 2 + 1] = p.second
         }
-
-        // Preview geometry comes from the same native Blender-3.6.23-derived
-        // primitive generator used by final stroke creation. Kotlin no longer
-        // reimplements line/rectangle/circle/arc geometry.
-        val packed = GPNative.nativeGeneratePrimitivePreview(
-            type,
-            first.x, first.y,
-            last.x, last.y,
-            0f, 6.2831855f,
-            64
-        ) ?: return emptyList()
-
-        // nativeGeneratePrimitivePreview returns packed XY pairs.
-        // The old controller incorrectly treated them as XYZ/pressure triples,
-        // so every circle/rectangle/line preview was rejected or decoded with
-        // corrupted coordinates.
-        if (packed.size < 4 || packed.size % 2 != 0) return emptyList()
-        return (0 until packed.size / 2).map { i ->
-            PendingPoint(
-                packed[i * 2],
-                packed[i * 2 + 1],
-                1f,
-                last.time
-            )
-        }
+        val points = GPNative.nativeGenerateBlenderPrimitive(type, packed, 0, false) ?: return null
+        return if (points.size >= 4 && points.size % 2 == 0) points else null
     }
 
-    private fun shapeParameters(): FloatArray {
-        if (pendingShapePoints.isEmpty()) return FloatArray(0)
-        val first = pendingShapePoints.first()
+    private fun generatedShapePoints():FloatArray? {
+        val tool = pendingShapeTool ?: return null
+        val type = ProjectGreasePrimitive.forTool(tool) ?: return null
+        val first = pendingShapePoints.firstOrNull() ?: return null
         val last = pendingShapePoints.last()
-        return floatArrayOf(first.x, first.y, last.x, last.y)
+        // A tap without a drag is not a shape.
+        if (first.x == last.x && first.y == last.y) return null
+        return blenderPrimitivePoints(type, listOf(first.x to first.y, last.x to last.y))
+    }
+
+    private fun showPrimitivePreview(xy:FloatArray?) {
+        if (rendererHandle == 0L) return
+        if (xy == null) {
+            GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
+            return
+        }
+        val count = xy.size / 2
+        val packed = FloatArray(count * 3)
+        for (i in 0 until count) {
+            packed[i * 3] = xy[i * 2]
+            packed[i * 3 + 1] = xy[i * 2 + 1]
+            packed[i * 3 + 2] = 1f
+        }
+        GPNative.nativeSetPreviewStrokeEglRenderer(rendererHandle, packed, materials.thickness)
+    }
+
+    /**
+     * Commits exactly the previewed Blender geometry, as the primitive operator
+     * moves its temporary stroke into the frame. Uses the GP handle, not the
+     * EGL renderer handle.
+     */
+    private fun commitPrimitivePoints(xy:FloatArray, cyclic:Boolean):Boolean {
+        if (native.handle == 0L || xy.size < 4) return false
+        val created = GPNative.nativeCreatePolyline(
+            native.handle, xy, xy.size / 2,
+            materials.activeMaterial, materials.thickness, cyclic
+        )
+        if (created) {
+            selection.selectStroke(native.strokeCount() - 1)
+            history.markEdit(); document.markDirty(); render()
+        }
+        return created
+    }
+
+    private fun finishPolyline():Boolean {
+        val vertices = polyline.vertices
+        polyline.reset()
+        polylineAwaitingPress = false
+        showPrimitivePreview(null)
+        val points = blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, vertices)
+        val ok = points != null && commitPrimitivePoints(points, false)
+        if (!ok) render()
+        return ok
     }
 
     fun endStroke(){
         if (rendererHandle == 0L) return
         if (tools.activeTool == GreaseTool.LASSO) {
-            if (pendingLassoPoints.size >= 3) {
+            if (pendingLassoPoints.size >= 3 && native.handle != 0L) {
                 val packed = FloatArray(pendingLassoPoints.size * 2)
                 pendingLassoPoints.forEachIndexed { i, p ->
                     packed[i * 2] = p.first
                     packed[i * 2 + 1] = p.second
                 }
-                val selected = GPNative.nativeLassoSelect(rendererHandle, packed, pendingLassoPoints.size, false)
+                val selected = GPNative.nativeLassoSelect(native.handle, packed, pendingLassoPoints.size, false)
                 if (selected > 0) {
                     history.markEdit()
                     document.markDirty()
@@ -699,89 +736,51 @@ class EditorController {
             }
             return
         }
-        val params = shapeParameters()
+        if (tools.activeTool == GreaseTool.POLYLINE) {
+            when (polyline.release(polylineLastX, polylineLastY)) {
+                PolylineSession.Release.FINISH -> finishPolyline()
+                PolylineSession.Release.CONTINUE -> showPrimitivePreview(
+                    blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, polyline.previewVertices())
+                )
+            }
+            return
+        }
         val shapeTool = pendingShapeTool
-        // Preserve all final shape geometry before clearing the modal preview state.
-        // This is also the fallback geometry if the native primitive bridge rejects
-        // the modal parameters.
-        val finalShapePoints = generatedShapePoints()
-        val polylinePoints = pendingShapePoints.toList()
-        GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
+        val finalPoints = generatedShapePoints()
+        showPrimitivePreview(null)
         pendingShapePoints.clear()
         pendingShapeTool = null
-        if (shapeTool == null || (shapeTool != GreaseTool.POLYLINE && params.size < 4)) return
-        val type = when (shapeTool) {
-            GreaseTool.RECTANGLE -> 0
-            GreaseTool.LINE -> 1
-            GreaseTool.CIRCLE -> 3
-            GreaseTool.ARC -> 4
-            else -> -1
-        }
-        if (type >= 0) {
-            var created = GPNative.nativeCreatePrimitive(
-                rendererHandle, type,
-                params[0], params[1], params[2], params[3],
-                0f, 6.2831855f, 64,
-                materials.activeMaterial, materials.thickness
-            )
-            // Keep final geometry identical to the visible native preview even if
-            // the primitive bridge rejects a modal parameter. This fallback still
-            // commits a real Legacy GP stroke, not a UI-only path.
-            if (!created) {
-                val preview = finalShapePoints
-                if (preview.size >= 2) {
-                    val packed = FloatArray(preview.size * 2)
-                    preview.forEachIndexed { i, point ->
-                        packed[i * 2] = point.x
-                        packed[i * 2 + 1] = point.y
-                    }
-                    val cyclic = shapeTool == GreaseTool.RECTANGLE || shapeTool == GreaseTool.CIRCLE
-                    created = GPNative.nativeCreatePolyline(
-                        rendererHandle, packed, preview.size,
-                        materials.activeMaterial, materials.thickness, cyclic
-                    )
-                }
-            }
-            if (created) {
-                selection.selectStroke(native.strokeCount() - 1)
-                history.markEdit(); document.markDirty(); render()
-            }
-        } else if (shapeTool == GreaseTool.POLYLINE) {
-            val points = polylinePoints
-            if (points.size >= 2) {
-                val packed = FloatArray(points.size * 2)
-                points.forEachIndexed { i, p ->
-                    packed[i * 2] = p.x
-                    packed[i * 2 + 1] = p.y
-                }
-                if (GPNative.nativeCreatePolyline(rendererHandle, packed, points.size,
-                        materials.activeMaterial, materials.thickness, false)) {
-                    selection.selectStroke(native.strokeCount() - 1)
-                    history.markEdit(); document.markDirty(); render()
-                }
-            }
+        val type = shapeTool?.let { ProjectGreasePrimitive.forTool(it) } ?: return
+        if (finalPoints != null) {
+            commitPrimitivePoints(finalPoints, ProjectGreasePrimitive.isCyclic(type))
         }
     }
 
     fun cancelStroke(){
-        if(rendererHandle!=0L) {
-            if (tools.activeTool==GreaseTool.DRAW) {
-                GPNative.nativeCancelStrokeEglRenderer(rendererHandle)
-            }
-            GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
+        if (rendererHandle != 0L && tools.activeTool == GreaseTool.DRAW) {
+            GPNative.nativeCancelStrokeEglRenderer(rendererHandle)
         }
         pendingShapePoints.clear()
         pendingShapeTool=null
         pendingLassoPoints.clear()
+        if (tools.activeTool == GreaseTool.POLYLINE) {
+            polyline.cancelGesture()
+            polylineAwaitingPress = false
+            showPrimitivePreview(
+                blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, polyline.previewVertices())
+            )
+        } else {
+            showPrimitivePreview(null)
+        }
     }
     fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean {
-        if (rendererHandle == 0L || points.size < 3) return false
+        if (native.handle == 0L || points.size < 3) return false
         val packed = FloatArray(points.size * 2)
         points.forEachIndexed { i, p ->
             packed[i * 2] = p.first
             packed[i * 2 + 1] = p.second
         }
-        val count = GPNative.nativeLassoSelect(rendererHandle, packed, points.size, false)
+        val count = GPNative.nativeLassoSelect(native.handle, packed, points.size, false)
         if (count > 0) {
             history.markEdit()
             document.markDirty()

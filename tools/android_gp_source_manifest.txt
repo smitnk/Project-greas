@@ -11,6 +11,7 @@ CXX|native/blender_gp/android_gpu_backend.cpp
 CXX|native/blender_gp/android_gp_presentation.cpp
 CXX|native/blender_gp/project_grease_legacy_fill.cpp
 CXX|native/blender_gp/project_grease_legacy_primitive.cpp
+CXX|native/blender_gp/project_grease_blender_primitive_jni.cpp
 CXX|native/blender_gp/project_grease_legacy_eraser.cpp
 CXX|native/blender_gp/project_grease_legacy_sculpt.cpp
 CXX|third_party/blender/source/blender/draw/intern/draw_cache_impl_gpencil.cc
@@ -26,6 +27,7 @@ CXX|native/blender_gp/project_grease_legacy_curve_helpers.cc
 CXX|third_party/blender/intern/guardedalloc/intern/leak_detector.cc
 CXX|third_party/blender/intern/guardedalloc/intern/memory_usage.cc
 C|native/blender_gp/project_grease_legacy_sbuffer.c
+C|native/blender_gp/project_grease_blender_primitive.c
 C|build/blender-dna/dna.c
 C|third_party/blender/source/blender/makesdna/intern/dna_utils.c
 C|native/blender_gp/android_legacy_runtime_compat.c

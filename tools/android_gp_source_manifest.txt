@@ -9,6 +9,7 @@ CXX|native/blender_gp/project_grease_gp_bridge.cpp
 CXX|native/blender_gp/project_grease_gp_jni.cpp
 CXX|native/blender_gp/android_gpu_backend.cpp
 CXX|native/blender_gp/android_gp_presentation.cpp
+C|native/blender_gp/project_grease_stroke_outline.c
 CXX|native/blender_gp/android_gp_shader_fx.cpp
 CXX|native/blender_gp/project_grease_legacy_fill.cpp
 CXX|native/blender_gp/project_grease_legacy_primitive.cpp

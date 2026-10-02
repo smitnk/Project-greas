@@ -14,6 +14,7 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_color.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_stroke_outline.h"
 
 namespace {
 struct Vertex { float x; float y; };
@@ -122,6 +123,33 @@ void append_segment(std::vector<Vertex>&v,const bGPDspoint&a,const bGPDspoint&b,
   Vertex p0=ndc(a.x+nx,a.y+ny,w,h),p1=ndc(a.x-nx,a.y-ny,w,h),p2=ndc(b.x+nx,b.y+ny,w,h),p3=ndc(b.x-nx,b.y-ny,w,h);
   v.insert(v.end(),{p0,p1,p2,p2,p1,p3});
 }
+// A whole stroke as one band with miter / bevel+round joins and round caps
+// (project_grease_stroke_outline.h, after Blender's gpencil_vertex()); thickness is per point.
+void append_outline(std::vector<Vertex>&v,const std::vector<PGOutlinePoint>&pts,int flags,int w,int h){
+  if(pts.empty())return;
+  float max_r=0.0f;
+  for(const PGOutlinePoint&p:pts)max_r=std::max(max_r,p.radius);
+  const int steps=std::clamp(int(max_r*g_map_scale*0.5f),4,32);
+  static std::vector<float> buf;
+  const int max_tris=pg_stroke_outline_max_triangles(int(pts.size()),steps);
+  buf.resize(size_t(max_tris)*6u);
+  const int n=pg_stroke_outline(pts.data(),int(pts.size()),flags,steps,buf.data(),max_tris);
+  v.reserve(v.size()+size_t(n)*3u);
+  for(int i=0;i<n*3;i++)v.push_back(ndc(buf[size_t(i)*2],buf[size_t(i)*2+1],w,h));
+}
+inline PGOutlinePoint outline_point(float x,float y,float thickness){
+  return PGOutlinePoint{x,y,std::max(0.5f,thickness*0.5f)};
+}
+void append_stroke_outline(std::vector<Vertex>&v,const bGPDstroke*s,float thickness,int w,int h){
+  std::vector<PGOutlinePoint> pts; pts.reserve(size_t(s->totpoints));
+  for(int i=0;i<s->totpoints;i++)
+    pts.push_back(outline_point(s->points[i].x,s->points[i].y,thickness*std::max(s->points[i].pressure,0.01f)));
+  int flags=0;
+  if(s->flag&GP_STROKE_CYCLIC)flags|=PG_OUTLINE_CYCLIC;
+  if(s->caps[0]==GP_STROKE_CAP_FLAT)flags|=PG_OUTLINE_FLAT_START;
+  if(s->caps[1]==GP_STROKE_CAP_FLAT)flags|=PG_OUTLINE_FLAT_END;
+  append_outline(v,pts,flags,w,h);
+}
 void append_dot(std::vector<Vertex>&v,const bGPDspoint&p,float thickness,int w,int h){
   float half=std::max(0.5f,thickness*0.5f)*g_map_scale;
   Vertex p0=ndc(p.x-half,p.y-half,w,h),p1=ndc(p.x+half,p.y-half,w,h),p2=ndc(p.x-half,p.y+half,w,h),p3=ndc(p.x+half,p.y+half,w,h);
@@ -163,22 +191,13 @@ void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
   if (!gpd || !gpd->runtime.sbuffer || gpd->runtime.sbuffer_used <= 0) return;
   const tGPspoint *points = static_cast<const tGPspoint *>(gpd->runtime.sbuffer);
   std::vector<Vertex> stroke;
-  stroke.reserve(static_cast<size_t>(std::max(1, gpd->runtime.sbuffer_used - 1)) * 6u);
-  if (gpd->runtime.sbuffer_used == 1) {
-    bGPDspoint p{};
-    p.x = points[0].m_xy[0]; p.y = points[0].m_xy[1];
-    p.pressure = std::max(points[0].pressure, 0.01f);
-    append_dot(stroke, p, thickness * p.pressure, w, h);
-  } else {
-    for (int i=0; i+1<gpd->runtime.sbuffer_used; ++i) {
-      bGPDspoint a{}, b{};
-      a.x=points[i].m_xy[0]; a.y=points[i].m_xy[1];
-      b.x=points[i+1].m_xy[0]; b.y=points[i+1].m_xy[1];
-      a.pressure=std::max(points[i].pressure,0.01f);
-      b.pressure=std::max(points[i+1].pressure,0.01f);
-      append_segment(stroke,a,b,thickness*0.5f*(a.pressure+b.pressure),w,h,1.0f);
-    }
+  std::vector<PGOutlinePoint> pts;
+  pts.reserve(static_cast<size_t>(gpd->runtime.sbuffer_used));
+  for (int i = 0; i < gpd->runtime.sbuffer_used; ++i) {
+    pts.push_back(outline_point(points[i].m_xy[0], points[i].m_xy[1],
+                                thickness * std::max(points[i].pressure, 0.01f)));
   }
+  append_outline(stroke, pts, 0, w, h);
   draw_vertices(stroke,g_stroke_color);
 }
 
@@ -218,17 +237,7 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     float color[4]={stroke_rgb[0],stroke_rgb[1],stroke_rgb[2],stroke_base_alpha*alpha_scale};
     float fill_color[4]={fill_rgb[0],fill_rgb[1],fill_rgb[2],fill_base_alpha*alpha_scale};
     if(style==nullptr||((style->flag&GP_MATERIAL_STROKE_SHOW)!=0)){
-      if(s->totpoints==1) append_dot(stroke,s[0].points[0],float(s->thickness)*std::max(s->points[0].pressure,0.01f),w,h);
-      else {
-        for(int i=0;i+1<s->totpoints;i++){
-          float pressure=0.5f*(std::max(s->points[i].pressure,0.01f)+std::max(s->points[i+1].pressure,0.01f));
-          append_segment(stroke,s->points[i],s->points[i+1],float(s->thickness)*pressure,w,h,alpha);
-        }
-        if(s->flag&GP_STROKE_CYCLIC){
-          float pressure=0.5f*(std::max(s->points[s->totpoints-1].pressure,0.01f)+std::max(s->points[0].pressure,0.01f));
-          append_segment(stroke,s->points[s->totpoints-1],s->points[0],float(s->thickness)*pressure,w,h,alpha);
-        }
-      }
+      append_stroke_outline(stroke,s,float(s->thickness),w,h);
       draw_vertices(stroke,color); stroke.clear();
     }
     if(style && (style->flag&GP_MATERIAL_FILL_SHOW)) append_fill(fill,s,w,h);
@@ -439,41 +448,7 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
       const MaterialGPencilStyle* style = ma ? ma->gp_style : nullptr;
       if (style && (style->flag & GP_MATERIAL_HIDE)) continue;
 
-      if (stroke->totpoints == 1) {
-        append_dot(strokes,
-                   stroke->points[0],
-                   float(stroke->thickness) *
-                       std::max(stroke->points[0].pressure, 0.01f),
-                   w,
-                   h);
-      }
-      else {
-        for (int i = 0; i + 1 < stroke->totpoints; ++i) {
-          const float pressure =
-              0.5f * (std::max(stroke->points[i].pressure, 0.01f) +
-                      std::max(stroke->points[i + 1].pressure, 0.01f));
-          append_segment(strokes,
-                         stroke->points[i],
-                         stroke->points[i + 1],
-                         float(stroke->thickness) * pressure,
-                         w,
-                         h,
-                         1.0f);
-        }
-        if (stroke->flag & GP_STROKE_CYCLIC) {
-          const float pressure =
-              0.5f *
-              (std::max(stroke->points[stroke->totpoints - 1].pressure, 0.01f) +
-               std::max(stroke->points[0].pressure, 0.01f));
-          append_segment(strokes,
-                         stroke->points[stroke->totpoints - 1],
-                         stroke->points[0],
-                         float(stroke->thickness) * pressure,
-                         w,
-                         h,
-                         1.0f);
-        }
-      }
+      append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
     }
     draw_vertices(strokes, mask_color, false);
   }
@@ -497,8 +472,9 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
   std::vector<Vertex> v; v.reserve(1024);
   for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
     if(!s->points||s->totpoints<=0)continue;
-    if(s->totpoints==1){append_dot(v,s->points[0],px,w,h);continue;}
-    for(int i=0;i+1<s->totpoints;i++){append_segment(v,s->points[i],s->points[i+1],px,w,h,1.0f);append_dot(v,s->points[i+1],px,w,h);}
+    std::vector<PGOutlinePoint> pts; pts.reserve(size_t(s->totpoints));
+    for(int i=0;i<s->totpoints;i++)pts.push_back(outline_point(s->points[i].x,s->points[i].y,px));
+    append_outline(v,pts,0,w,h);
   }
   draw_vertices(v,layer->color);
   return glGetError()==GL_NO_ERROR?1:0;
@@ -512,9 +488,10 @@ extern "C" int project_grease_android_present_gp_frame(const bGPDframe*frame){
 extern "C" int project_grease_android_present_pending_stroke(const project_grease::gp::StrokePoint*points,int count,float thickness){
   if(!points||count<=0||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
-  std::vector<Vertex>v;v.reserve((size_t)std::max(1,count-1)*6);
-  if(count==1){bGPDspoint p={};p.x=points[0].x;p.y=points[0].y;p.pressure=std::max(points[0].pressure,0.01f);append_dot(v,p,thickness*p.pressure,w,h);}
-  else for(int i=0;i+1<count;i++){bGPDspoint a={},b={};a.x=points[i].x;a.y=points[i].y;a.pressure=std::max(points[i].pressure,0.01f);b.x=points[i+1].x;b.y=points[i+1].y;b.pressure=std::max(points[i+1].pressure,0.01f);append_segment(v,a,b,thickness*0.5f*(a.pressure+b.pressure),w,h,1.0f);}
+  std::vector<Vertex>v;
+  std::vector<PGOutlinePoint> pts; pts.reserve(size_t(count));
+  for(int i=0;i<count;i++)pts.push_back(outline_point(points[i].x,points[i].y,thickness*std::max(points[i].pressure,0.01f)));
+  append_outline(v,pts,0,w,h);
   // Live preview must use the active Legacy GP material color. The old
   // presenter hard-coded white, which made shape previews disagree with the
   // committed stroke and obscured whether the tool was actually connected.

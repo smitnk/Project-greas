@@ -151,6 +151,30 @@ static void test_baseline()
   CHECK(near_rgb(pixel_at_canvas(100, 60 + 30), 245, 245, 245)); /* beyond the stroke edge */
 }
 
+/* Device report: thick strokes showed wedge "slashes" on the outer side of bends because every
+ * segment was an independent quad. A 90 deg bend of a 40 px stroke must be solid at its outer
+ * corner (miter join), and the round end cap must be drawn. */
+static void test_thick_bend()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 3, 40, false);
+  const float xy[3][2] = {{40, 90}, {100, 90}, {100, 30}};
+  for (int i = 0; i < 3; i++) {
+    s->points[i].x = xy[i][0];
+    s->points[i].y = xy[i][1];
+    s->points[i].pressure = 1.0f;
+    s->points[i].strength = 1.0f;
+  }
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(112, 102), 255, 0, 0)); /* outer corner wedge: was a gap */
+  CHECK(near_rgb(pixel_at_canvas(100, 90), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(26, 90), 255, 0, 0));   /* round cap beyond the first point */
+  CHECK(near_rgb(pixel_at_canvas(70, 60), 245, 245, 245)); /* inside the bend, off the stroke */
+}
+
 static void use_mask(bGPDlayer *l, const bGPDlayer *mask_layer, int flags = 0)
 {
   l->flag |= GP_LAYER_USE_MASK;
@@ -485,6 +509,7 @@ int main()
   project_grease_android_present_set_canvas_size(W, H);
   project_grease_android_present_set_view_transform(1.0f, 0.0f, 0.0f);
   test_baseline();
+  test_thick_bend();
   test_masks();
   test_weight_view();
   test_shader_fx_gl();

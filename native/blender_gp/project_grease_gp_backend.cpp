@@ -1258,12 +1258,12 @@ bool Backend::create_polyline(const StrokePoint *points,
     dst.pressure = std::max(0.0f, src.pressure);
     dst.strength = std::max(0.0f, std::min(src.strength, 1.0f));
     dst.time = src.time;
-    // Legacy GP point vertex color defaults to transparent in a zeroed point;
-    // explicit white keeps material color authoritative until vertex paint is used.
-    dst.vert_color[0] = 1.0f;
-    dst.vert_color[1] = 1.0f;
-    dst.vert_color[2] = 1.0f;
-    dst.vert_color[3] = 1.0f;
+    // Zero vert_color (alpha 0) means "no vertex color": the renderer mixes it with the
+    // material color by alpha, as Blender does, so the material color stays authoritative.
+    dst.vert_color[0] = 0.0f;
+    dst.vert_color[1] = 0.0f;
+    dst.vert_color[2] = 0.0f;
+    dst.vert_color[3] = 0.0f;
   }
 
   if (cyclic) {
@@ -2891,10 +2891,11 @@ bool Backend::add_point(const StrokePoint &point) {
   dst.uv_rot = 0.0f;
   dst.rnd[0] = dst.rnd[1] = dst.rnd[2] = 0.0f;
   dst.rnd_dirty = false;
-  dst.vert_color[0] = 1.0f;
-  dst.vert_color[1] = 1.0f;
-  dst.vert_color[2] = 1.0f;
-  dst.vert_color[3] = 1.0f;
+  // Zero alpha = no vertex color (Blender's default); see create_polyline().
+  dst.vert_color[0] = 0.0f;
+  dst.vert_color[1] = 0.0f;
+  dst.vert_color[2] = 0.0f;
+  dst.vert_color[3] = 0.0f;
 
   // Kept only for the existing Android preview adapter. The authoritative
   // input representation is now Blender's sbuffer above.
@@ -3362,11 +3363,9 @@ bool Backend::add_stroke(const StrokePoint *points, int count, const PGStrokeInf
     dst.pressure = std::max(0.0f, src.pressure);
     dst.strength = std::max(0.0f, std::min(src.strength, 1.0f));
     dst.time = src.time;
-    // Same default as create_polyline(): white keeps the material color authoritative.
-    dst.vert_color[0] = 1.0f;
-    dst.vert_color[1] = 1.0f;
-    dst.vert_color[2] = 1.0f;
-    dst.vert_color[3] = 1.0f;
+    // Restore the saved vertex color; a zero default is "no vertex color" (see create_polyline()).
+    const float rgba[4] = {src.r, src.g, src.b, src.a};
+    pg_doc_point_color_apply(&dst, rgba);
   }
 
   pg_doc_stroke_info_apply(stroke, &info);

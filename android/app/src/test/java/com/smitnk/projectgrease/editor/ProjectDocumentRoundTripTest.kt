@@ -76,7 +76,12 @@ private class FakeDocument : DocumentNative {
 
 class ProjectDocumentRoundTripTest {
 
-    private fun point(i: Int) = floatArrayOf(10f + i, 20f - i, 0f, 0.25f + 0.1f * i, 0.5f + 0.05f * i, 0.016f * i)
+    /** [x, y, z, pressure, strength, time, r, g, b, a]; every other point carries a vertex color. */
+    private fun point(i: Int) = floatArrayOf(
+        10f + i, 20f - i, 0f, 0.25f + 0.1f * i, 0.5f + 0.05f * i, 0.016f * i,
+        if (i % 2 == 1) 0.2f * i else 0f, if (i % 2 == 1) 0.1f else 0f,
+        if (i % 2 == 1) 0.9f - 0.1f * i else 0f, if (i % 2 == 1) 0.5f else 0f
+    )
 
     private fun stroke(points: Int, material: Int, thickness: Float, cyclic: Boolean, fillOpacity: Float, fill: FloatArray) =
         StrokeRecord(List(points) { point(it) }, material, thickness, cyclic, fillOpacity, fill)
@@ -198,8 +203,56 @@ class ProjectDocumentRoundTripTest {
         assertEquals(9f, s0.thickness, 0f)
         assertFalse(s0.cyclic)
         assertEquals(2, s0.points.size)
-        assertArrayEquals(floatArrayOf(3f, 4f, 0f, 1f, 1f, 0.5f), s0.points[1], 0f)
+        assertArrayEquals(floatArrayOf(3f, 4f, 0f, 1f, 1f, 0.5f, 0f, 0f, 0f, 0f), s0.points[1], 0f)
         assertEquals(1, doc.materials.size) // no palette in the file: material 0 stays as it was
+        // a file without vertex colors reads as "no vertex color" (all zero), not white
+        assertEquals(StrokeRecord.POINT_SIZE, s0.points[0].size)
+        assertArrayEquals(floatArrayOf(0f, 0f, 0f, 0f), s0.points[0].copyOfRange(6, 10), 0f)
+        assertArrayEquals(floatArrayOf(0f, 0f, 0f, 0f), s0.fillColor, 0f)
+    }
+
+    @Test
+    fun vertexColorsOfPointsAndFillSurviveARoundTrip() {
+        val doc = FakeDocument()
+        doc.createFrame(1)
+        val tinted = StrokeRecord(
+            points = listOf(
+                floatArrayOf(1f, 2f, 0f, 1f, 1f, 0f, 0.25f, 0.5f, 0.75f, 0.6f),
+                floatArrayOf(3f, 4f, 0f, 1f, 1f, 0.1f, 1f, 0f, 0f, 1f),
+                floatArrayOf(5f, 6f, 0f, 1f, 1f, 0.2f, 0f, 0f, 0f, 0f)
+            ),
+            materialIndex = 0, thickness = 4f, cyclic = true, fillOpacity = 1f,
+            fillColor = floatArrayOf(0.1f, 0.2f, 0.3f, 0.4f)
+        )
+        doc.addStroke(tinted)
+        val restored = load(save(doc))
+        val s = restored.layers[0].frames[0].strokes[0]
+        tinted.points.forEachIndexed { i, p -> assertArrayEquals("point $i", p, s.points[i], 0f) }
+        assertArrayEquals(tinted.fillColor, s.fillColor, 0f)
+    }
+
+    @Test
+    fun pointsWithoutVertexColorStayCompactAndLoadAsZero() {
+        val doc = FakeDocument()
+        doc.createFrame(1)
+        doc.addStroke(StrokeRecord(listOf(FloatArray(10) { if (it < 6) it.toFloat() else 0f })))
+        val json = org.json.JSONObject(save(doc))
+        val point = json.getJSONArray("layers").getJSONObject(0).getJSONArray("frames")
+            .getJSONObject(0).getJSONArray("strokes").getJSONObject(0).getJSONArray("points").getJSONArray(0)
+        assertEquals(6, point.length())
+        val loaded = load(save(doc)).layers[0].frames[0].strokes[0].points[0]
+        assertArrayEquals(floatArrayOf(0f, 0f, 0f, 0f), loaded.copyOfRange(6, 10), 0f)
+    }
+
+    @Test
+    fun versionTwoFilesWithSixValuePointsStillLoad() {
+        val v2 = """{"version":2,"layers":[{"index":0,"name":"A","visible":true,"locked":false,"opacity":1,
+            "frames":[{"number":1,"strokes":[{"material":0,"thickness":3,"cyclic":false,"fillOpacity":1,
+            "fillColor":[0,0,0,0],"points":[[1,2,0,1,1,0],[3,4,0,1,1,0.5]]}]}]}]}"""
+        val s = load(v2).layers[0].frames[0].strokes[0]
+        assertEquals(3f, s.thickness, 0f)
+        assertEquals(2, s.points.size)
+        assertArrayEquals(floatArrayOf(3f, 4f, 0f, 1f, 1f, 0.5f, 0f, 0f, 0f, 0f), s.points[1], 0f)
     }
 
     @Test

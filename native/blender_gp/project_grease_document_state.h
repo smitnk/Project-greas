@@ -13,6 +13,7 @@
 extern "C" {
 #endif
 
+struct bGPDspoint;
 struct bGPDstroke;
 struct bGPDlayer;
 struct Material;
@@ -43,6 +44,11 @@ int pg_doc_stroke_info_get(const struct bGPDstroke *gps, PGStrokeInfo *r_info);
 /* Sets mat_nr, thickness (clamped to 1..32767), fill and the cyclic flag. The caller refreshes
  * the stroke triangulation when `cyclic` is set. */
 int pg_doc_stroke_info_apply(struct bGPDstroke *gps, const PGStrokeInfo *info);
+
+/* bGPDspoint.vert_color[4]. Zero alpha = no vertex color (Blender's default; the renderer then
+ * shows the material color). Apply clamps to 0..1 and maps NaN to 0. */
+int pg_doc_point_color_get(const struct bGPDspoint *pt, float r_rgba[4]);
+int pg_doc_point_color_apply(struct bGPDspoint *pt, const float rgba[4]);
 
 int pg_doc_layer_info_get(const struct bGPDlayer *gpl, PGLayerInfo *r_info);
 /* Sets name (empty keeps the current name), visibility, lock and opacity (clamped to 0..1). */

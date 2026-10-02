@@ -473,8 +473,28 @@ int project_grease_gp_get_stroke_info(const ProjectGreaseGPHandle *handle, int s
   return handle->backend.get_stroke_info(stroke_index, out) ? 1 : 0;
 }
 
+int project_grease_gp_get_point_color(const ProjectGreaseGPHandle *handle,
+                                      int stroke_index,
+                                      int point_index,
+                                      float out_rgba[4])
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) || !out_rgba) {
+    return 0;
+  }
+  project_grease::gp::StrokePoint native_point{};
+  if (!handle->backend.get_point(stroke_index, point_index, &native_point)) {
+    return 0;
+  }
+  out_rgba[0] = native_point.r;
+  out_rgba[1] = native_point.g;
+  out_rgba[2] = native_point.b;
+  out_rgba[3] = native_point.a;
+  return 1;
+}
+
 int project_grease_gp_add_stroke(ProjectGreaseGPHandle *handle,
                                  const ProjectGreaseGPPoint *points,
+                                 const float *colors,
                                  int count,
                                  const PGStrokeInfo *info)
 {
@@ -490,6 +510,12 @@ int project_grease_gp_add_stroke(ProjectGreaseGPHandle *handle,
     dst.pressure = points[i].pressure;
     dst.strength = points[i].strength;
     dst.time = points[i].time;
+    if (colors) {
+      dst.r = colors[i * 4];
+      dst.g = colors[i * 4 + 1];
+      dst.b = colors[i * 4 + 2];
+      dst.a = colors[i * 4 + 3];
+    }
   }
   return handle->backend.add_stroke(native_points.data(), count, *info) ? 1 : 0;
 }

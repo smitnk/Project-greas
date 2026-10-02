@@ -162,10 +162,17 @@ int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      float thickness);
 /* Save/load state (stroke style, layer state, palette); structs live in project_grease_document_state.h. */
 int project_grease_gp_get_stroke_info(const ProjectGreaseGPHandle *handle, int stroke_index, PGStrokeInfo *out);
+/* Vertex colors are passed separately: `colors` holds 4 floats (RGBA) per point and may be NULL
+ * (no vertex color). */
 int project_grease_gp_add_stroke(ProjectGreaseGPHandle *handle,
                                  const ProjectGreaseGPPoint *points,
+                                 const float *colors,
                                  int count,
                                  const PGStrokeInfo *info);
+int project_grease_gp_get_point_color(const ProjectGreaseGPHandle *handle,
+                                      int stroke_index,
+                                      int point_index,
+                                      float out_rgba[4]);
 int project_grease_gp_get_layer_info(const ProjectGreaseGPHandle *handle, int index, PGLayerInfo *out);
 int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index, float opacity);
 int project_grease_gp_get_material_info(const ProjectGreaseGPHandle *handle, int index, PGMaterialInfo *out);

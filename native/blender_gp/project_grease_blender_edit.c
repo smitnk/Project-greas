@@ -797,6 +797,97 @@ int pg_gp_mod_tint(bGPdata *gpd, const bGPDlayer *only_layer,
   PGE_EDITABLE_STROKES_END;
   return changed;
 }
+
+/* rgb_to_hsv() (blenlib/intern/math_color.c) */
+void pg_rgb_to_hsv(const float rgb[3], float r_hsv[3])
+{
+  float r = rgb[0], g = rgb[1], b = rgb[2];
+  float k = 0.0f;
+  float chroma;
+  float min_gb;
+  if (g < b) {
+    const float t = g; g = b; b = t;
+    k = -1.0f;
+  }
+  min_gb = b;
+  if (r < g) {
+    const float t = r; r = g; g = t;
+    k = -2.0f / 6.0f - k;
+    min_gb = (g < b) ? g : b;
+  }
+  chroma = r - min_gb;
+  r_hsv[0] = fabsf(k + (g - b) / (6.0f * chroma + 1e-20f));
+  r_hsv[1] = chroma / (r + 1e-20f);
+  r_hsv[2] = r;
+}
+
+/* hsv_to_rgb() (blenlib/intern/math_color.c) */
+void pg_hsv_to_rgb(const float hsv[3], float r_rgb[3])
+{
+  const float h = hsv[0], sat = hsv[1], v = hsv[2];
+  float nr = fabsf(h * 6.0f - 3.0f) - 1.0f;
+  float ng = 2.0f - fabsf(h * 6.0f - 2.0f);
+  float nb = 2.0f - fabsf(h * 6.0f - 4.0f);
+  nr = pge_clampf(nr, 0.0f, 1.0f);
+  nb = pge_clampf(nb, 0.0f, 1.0f);
+  ng = pge_clampf(ng, 0.0f, 1.0f);
+  r_rgb[0] = ((nr - 1.0f) * sat + 1.0f) * v;
+  r_rgb[1] = ((ng - 1.0f) * sat + 1.0f) * v;
+  r_rgb[2] = ((nb - 1.0f) * sat + 1.0f) * v;
+}
+
+static float pge_fractf(float a)
+{
+  return a - floorf(a); /* fractf() */
+}
+
+static void pge_apply_hsv(float color[3], const float factor[3])
+{
+  float hsv[3];
+  pg_rgb_to_hsv(color, hsv);
+  hsv[0] = pge_fractf(hsv[0] + factor[0] + 0.5f);
+  hsv[1] = pge_clampf(hsv[1] * factor[1], 0.0f, 1.0f);
+  hsv[2] = hsv[2] * factor[2];
+  pg_hsv_to_rgb(hsv, color);
+}
+
+int pg_gp_mod_color(bGPdata *gpd, const bGPDlayer *only_layer, int modify_color, const float f[3])
+{
+  if (gpd == NULL || f == NULL || !isfinite(f[0]) || !isfinite(f[1]) || !isfinite(f[2]) ||
+      modify_color < PG_MODIFY_COLOR_BOTH || modify_color > PG_MODIFY_COLOR_FILL)
+  {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
+      continue;
+    }
+    MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
+    changed = 1;
+    /* Fill */
+    if (modify_color != PG_MODIFY_COLOR_STROKE) {
+      if ((gp_style != NULL) && (gps->vert_color_fill[3] == 0.0f) && (gp_style->fill_rgba[3] > 0.0f)) {
+        memcpy(gps->vert_color_fill, gp_style->fill_rgba, sizeof(float[4]));
+        gps->vert_color_fill[3] = 1.0f;
+      }
+      pge_apply_hsv(gps->vert_color_fill, f);
+    }
+    /* Stroke */
+    if (modify_color != PG_MODIFY_COLOR_FILL) {
+      for (int i = 0; i < gps->totpoints; i++) {
+        bGPDspoint *pt = &gps->points[i];
+        if ((gp_style != NULL) && (pt->vert_color[3] == 0.0f) && (gp_style->stroke_rgba[3] > 0.0f)) {
+          memcpy(pt->vert_color, gp_style->stroke_rgba, sizeof(float[4]));
+          pt->vert_color[3] = 1.0f;
+        }
+        pge_apply_hsv(pt->vert_color, f);
+      }
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -890,6 +981,14 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
       }
       const float rgb[3] = {args[2], args[3], args[4]};
       changed = pg_gp_mod_tint(gpd, scope, (int)lroundf(args[0]), args[1], rgb);
+      break;
+    }
+    case PG_EDIT_CMD_MOD_COLOR: {
+      if (arg_count < 4) {
+        return 0;
+      }
+      const float hsv[3] = {args[1], args[2], args[3]};
+      changed = pg_gp_mod_color(gpd, scope, (int)lroundf(args[0]), hsv);
       break;
     }
     default:

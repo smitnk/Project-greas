@@ -496,6 +496,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(
 // Save/load state (see project_grease_document_state.h). Float layouts, mirrored in
 // ProjectDocumentCodec.kt:
 //   stroke info   [material, thickness, cyclic, fillOpacity, fillR, fillG, fillB, fillA]
+//   point color   [r, g, b, a]  (bGPDspoint.vert_color; alpha 0 = no vertex color)
 //   layer info    [visible, locked, opacity]
 //   material info [strokeR, strokeG, strokeB, strokeA, fillR, fillG, fillB, fillA, visible, fillEnabled]
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -518,14 +519,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetStrokeInfo(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(
-    JNIEnv *env, jobject, jlong handle, jfloatArray points, jint count, jfloatArray info_values)
+    JNIEnv *env, jobject, jlong handle, jfloatArray points, jint count, jfloatArray info_values,
+    jfloatArray point_colors)
 {
-  if (!points || !info_values || count < 1 ||
-      env->GetArrayLength(points) < count * 6 || env->GetArrayLength(info_values) < 8) {
+  if (!points || !info_values || !point_colors || count < 1 ||
+      env->GetArrayLength(points) < count * 6 || env->GetArrayLength(info_values) < 8 ||
+      env->GetArrayLength(point_colors) < count * 4) {
     return JNI_FALSE;
   }
   std::vector<jfloat> raw(static_cast<size_t>(count) * 6u);
   env->GetFloatArrayRegion(points, 0, count * 6, raw.data());
+  std::vector<jfloat> colors(static_cast<size_t>(count) * 4u);
+  env->GetFloatArrayRegion(point_colors, 0, count * 4, colors.data());
   jfloat v[8];
   env->GetFloatArrayRegion(info_values, 0, 8, v);
 
@@ -544,7 +549,21 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(
   info.fill_color[2] = v[6];
   info.fill_color[3] = v[7];
   return project_grease_gp_add_stroke(
-             from_handle(handle), native_points.data(), count, &info) != 0;
+             from_handle(handle), native_points.data(), colors.data(), count, &info) != 0;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPointColor(
+    JNIEnv *env, jobject, jlong handle, jint stroke_index, jint point_index)
+{
+  float rgba[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  if (!project_grease_gp_get_point_color(from_handle(handle), stroke_index, point_index, rgba)) {
+    return nullptr;
+  }
+  jfloatArray result = env->NewFloatArray(4);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, 4, rgba);
+  return result;
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL

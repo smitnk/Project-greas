@@ -466,6 +466,61 @@ static void test_tint_modifier(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_TINT, args, 4) == 0, "tint needs 5 args");
 }
 
+
+static void test_hsv_conversion(void)
+{
+  const float cases[][6] = {
+      /* rgb -> expected hsv */
+      {1, 0, 0, 0.0f, 1, 1},       {0, 1, 0, 1.0f / 3.0f, 1, 1}, {0, 0, 1, 2.0f / 3.0f, 1, 1},
+      {1, 1, 0, 1.0f / 6.0f, 1, 1}, {0.5f, 0.5f, 0.5f, 0, 0, 0.5f}, {1, 0, 1, 5.0f / 6.0f, 1, 1},
+  };
+  for (int c = 0; c < 6; c++) {
+    float hsv[3], rgb[3];
+    pg_rgb_to_hsv(cases[c], hsv);
+    CHECK(NEAR(hsv[0], cases[c][3]) && NEAR(hsv[1], cases[c][4]) && NEAR(hsv[2], cases[c][5]), "rgb_to_hsv known values");
+    pg_hsv_to_rgb(hsv, rgb);
+    CHECK(NEAR(rgb[0], cases[c][0]) && NEAR(rgb[1], cases[c][1]) && NEAR(rgb[2], cases[c][2]), "hsv_to_rgb round trip");
+  }
+}
+
+static void test_color_modifier(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 2, 0, 0, 0, 10, 0);
+  bGPDstroke *b = add_stroke(f, 2, 0, 0, 20, 10, 0);
+  MaterialGPencilStyle *st = gpd->mat[0]->gp_style;
+  st->stroke_rgba[0] = 1; st->stroke_rgba[3] = 1; /* red */
+  st->fill_rgba[2] = 1; st->fill_rgba[3] = 1;     /* blue */
+  select_points(gpd, a, 3);
+
+  /* defaults (0.5, 1, 1) leave the color unchanged: hue + 0.5 + 0.5 wraps */
+  const float identity[3] = {0.5f, 1.0f, 1.0f};
+  CHECK(pg_gp_mod_color(gpd, NULL, PG_MODIFY_COLOR_BOTH, identity) == 1, "color modifier runs");
+  CHECK(NEAR(a->points[0].vert_color[0], 1) && NEAR(a->points[0].vert_color[1], 0) && NEAR(a->points[0].vert_color[3], 1),
+        "identity factors keep red (material color copied first)");
+  CHECK(NEAR(a->vert_color_fill[2], 1) && NEAR(a->vert_color_fill[3], 1), "fill starts from the material fill color");
+
+  /* hue +1/3 (factor 0.5 + 1/3): red -> green */
+  const float to_green[3] = {0.5f + 1.0f / 3.0f, 1.0f, 1.0f};
+  pg_gp_mod_color(gpd, NULL, PG_MODIFY_COLOR_STROKE, to_green);
+  CHECK(NEAR(a->points[1].vert_color[1], 1) && NEAR(a->points[1].vert_color[0], 0), "hue shift red -> green");
+  CHECK(NEAR(a->vert_color_fill[2], 1), "stroke mode leaves the fill");
+
+  /* saturation 0 -> grey of value 1 = white; value 0.5 halves brightness */
+  const float desat[3] = {0.5f, 0.0f, 0.5f};
+  pg_gp_mod_color(gpd, NULL, PG_MODIFY_COLOR_FILL, desat);
+  CHECK(NEAR(a->vert_color_fill[0], 0.5f) && NEAR(a->vert_color_fill[1], 0.5f) && NEAR(a->vert_color_fill[2], 0.5f),
+        "fill desaturated and darkened");
+  CHECK(NEAR(a->points[1].vert_color[1], 1), "fill mode leaves the points");
+  CHECK(b->points[0].vert_color[3] == 0.0f, "unselected stroke untouched");
+  CHECK(pg_gp_mod_color(gpd, NULL, PG_MODIFY_COLOR_HARDNESS, identity) == 0, "hardness is not a color mode here");
+  const float args[4] = {PG_MODIFY_COLOR_BOTH, 0.5f, 1, 1};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_COLOR, args, 4) == 1, "dispatch color");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_COLOR, args, 3) == 0, "color needs 4 args");
+}
+
 int main(void)
 {
   test_pick();
@@ -478,6 +533,8 @@ int main(void)
   test_modifiers();
   test_length_modifier();
   test_tint_modifier();
+  test_hsv_conversion();
+  test_color_modifier();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

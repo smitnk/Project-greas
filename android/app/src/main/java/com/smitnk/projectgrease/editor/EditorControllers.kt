@@ -69,8 +69,9 @@ class NativeEditorBridge {
     fun splitStroke(index: Int, beforeIndex: Int) = handle != 0L && GPNative.nativeSplitStroke(handle, index, beforeIndex)
     fun getPoint(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPoint(handle, stroke, point) else null
     fun strokeInfo(stroke: Int) = if (handle != 0L) GPNative.nativeGetStrokeInfo(handle, stroke) else null
-    fun addStroke(points: FloatArray, count: Int, info: FloatArray) =
-        handle != 0L && GPNative.nativeAddStroke(handle, points, count, info)
+    fun addStroke(points: FloatArray, count: Int, info: FloatArray, pointColors: FloatArray) =
+        handle != 0L && GPNative.nativeAddStroke(handle, points, count, info, pointColors)
+    fun pointColor(stroke: Int, point: Int) = if (handle != 0L) GPNative.nativeGetPointColor(handle, stroke, point) else null
     fun layerInfo(index: Int) = if (handle != 0L) GPNative.nativeGetLayerInfo(handle, index) else null
     fun layerName(index: Int) = if (handle != 0L) GPNative.nativeGetLayerName(handle, index) else null
     fun setLayerOpacity(index: Int, opacity: Float) = handle != 0L && GPNative.nativeSetLayerOpacity(handle, index, opacity)
@@ -1159,6 +1160,8 @@ class EditorController {
         val b = (argb and 0xFF) / 255f
         return runSelectCommand(ProjectGreaseSelect.tintModifier(mode, factor, r, g, b))
     }
+    fun applyColorModifier(hue:Float=0.5f, saturation:Float=1f, value:Float=1f, mode:Int=ProjectGreaseSelect.MODIFY_BOTH) =
+        runSelectCommand(ProjectGreaseSelect.colorModifier(mode, hue, saturation, value))
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}

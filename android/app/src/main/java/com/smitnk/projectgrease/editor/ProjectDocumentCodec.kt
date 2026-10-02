@@ -3,7 +3,11 @@ package com.smitnk.projectgrease.editor
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** One stroke as saved: points are [x, y, z, pressure, strength, time]. */
+/**
+ * One stroke as saved. Each point is [x, y, z, pressure, strength, time, r, g, b, a]: the last four
+ * are bGPDspoint.vert_color, and alpha 0 means "no vertex color" (the material color shows).
+ * [fillColor] is bGPDstroke.vert_color_fill with the same convention.
+ */
 class StrokeRecord(
     val points: List<FloatArray>,
     val materialIndex: Int = 0,
@@ -13,7 +17,12 @@ class StrokeRecord(
     val fillColor: FloatArray = floatArrayOf(0f, 0f, 0f, 0f),
     /** false for strokes read from a version-1 file, which stored no style. */
     val hasStyle: Boolean = true
-)
+) {
+    companion object {
+        /** Floats per point: position/pressure/strength/time plus RGBA vertex color. */
+        const val POINT_SIZE = 10
+    }
+}
 
 class LayerRecord(val name: String, val visible: Boolean, val locked: Boolean, val opacity: Float)
 
@@ -64,10 +73,11 @@ class ParsedDocument(
 /**
  * Project file format. Version 1 stored only layers, frames, strokes and points; version 2 adds
  * per-stroke style (material, thickness, cyclic, fill), layer state (name, visibility, lock,
- * opacity) and the material palette. Version-1 files still load, with the old defaults.
+ * opacity) and the material palette; version 3 adds per-point vertex color (points may carry four
+ * more values). Older files still load: missing fields read as zero, which is "no vertex color".
  */
 object ProjectDocumentCodec {
-    const val VERSION = 2
+    const val VERSION = 3
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int): String {
@@ -191,7 +201,10 @@ object ProjectDocumentCodec {
     private fun parseStroke(json: JSONObject): StrokeRecord? {
         val pointsJson = json.optJSONArray("points") ?: return null
         val points = (0 until pointsJson.length()).mapNotNull { index ->
-            pointsJson.optJSONArray(index)?.let { a -> FloatArray(6) { a.optDouble(it, 0.0).toFloat() } }
+            // Missing vertex-color values (files before version 3) read as 0 = no vertex color.
+            pointsJson.optJSONArray(index)?.let { a ->
+                FloatArray(StrokeRecord.POINT_SIZE) { a.optDouble(it, 0.0).toFloat() }
+            }
         }
         if (points.isEmpty()) return null
         return StrokeRecord(
@@ -214,7 +227,12 @@ object ProjectDocumentCodec {
 
     private fun strokeJson(stroke: StrokeRecord): JSONObject {
         val points = JSONArray()
-        for (p in stroke.points) points.put(JSONArray().apply { for (v in p) put(num(v)) })
+        for (p in stroke.points) {
+            // Points without vertex color (the usual case) keep the compact 6-value form.
+            val hasColor = (6 until StrokeRecord.POINT_SIZE).any { p.getOrElse(it) { 0f } != 0f }
+            val size = if (hasColor) StrokeRecord.POINT_SIZE else 6
+            points.put(JSONArray().apply { for (i in 0 until size) put(num(p.getOrElse(i) { 0f })) })
+        }
         return JSONObject()
             .put("points", points)
             .put("material", stroke.materialIndex)

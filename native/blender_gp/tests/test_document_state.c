@@ -172,6 +172,38 @@ static void test_material_roundtrip(void)
   CHECK(!pg_doc_material_info_apply(&no_style, &palette[0]));
 }
 
+static void test_point_color_roundtrip(void)
+{
+  bGPDspoint src;
+  memset(&src, 0, sizeof(src));
+  const float tint[4] = {0.25f, 0.5f, 0.75f, 0.6f};
+  memcpy(src.vert_color, tint, sizeof(tint));
+
+  float saved[4];
+  CHECK(pg_doc_point_color_get(&src, saved));
+  CHECK(same4(saved, tint));
+
+  bGPDspoint dst;
+  memset(&dst, 0, sizeof(dst));
+  dst.vert_color[0] = dst.vert_color[1] = dst.vert_color[2] = dst.vert_color[3] = 1.0f; /* white, the old default */
+  CHECK(pg_doc_point_color_apply(&dst, saved));
+  CHECK(same4(dst.vert_color, tint));
+
+  /* a zero color is restored as zero (no vertex color), not forced to white */
+  const float none[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  CHECK(pg_doc_point_color_apply(&dst, none));
+  CHECK(same4(dst.vert_color, none));
+
+  /* hostile values are clamped */
+  const float wild[4] = {5.0f, -1.0f, NAN, 2.0f};
+  const float clamped[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+  CHECK(pg_doc_point_color_apply(&dst, wild));
+  CHECK(same4(dst.vert_color, clamped));
+
+  CHECK(!pg_doc_point_color_get(NULL, saved));
+  CHECK(!pg_doc_point_color_apply(&dst, NULL));
+}
+
 /* Whole-document pass: save every layer/stroke/material into flat arrays, wipe a second document,
  * restore it, and compare field by field. */
 static void test_document_roundtrip(void)
@@ -239,6 +271,7 @@ int main(void)
   test_stroke_roundtrip();
   test_layer_roundtrip();
   test_material_roundtrip();
+  test_point_color_roundtrip();
   test_document_roundtrip();
   if (failures) {
     printf("%d FAILED\n", failures);

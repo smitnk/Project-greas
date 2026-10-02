@@ -42,4 +42,13 @@ class ReferenceCameraTest {
         assertEquals(200f, s[0][4], 0f); assertEquals(100f, s[0][5], 0f)
         assertEquals(0, ReferenceScene.parseStrokes(floatArrayOf(5f, 9f), 10, 10).size)
     }
+
+    @Test
+    fun orbitAtInterpolatesYawAndClamps() {
+        val c = ReferenceCamera(yaw = 0.3f, lens = 35f)
+        assertEquals(1f, c.orbitAt(1f, 3f, 0f).yaw, 1e-6f)
+        assertEquals(2f, c.orbitAt(1f, 3f, 0.5f).yaw, 1e-6f)
+        assertEquals(3f, c.orbitAt(1f, 3f, 2f).yaw, 1e-6f)
+        assertEquals(35f, c.orbitAt(1f, 3f, 0.5f).lens, 0f)
+    }
 }

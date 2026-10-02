@@ -1391,6 +1391,54 @@ class EditorController {
         return importStrokes(StrokeImport.plan(sources, fit, existingMaterials()), newLayer = "Line Art")
     }
 
+    /**
+     * Bake Line Art to frames: for every frame of [fromFrame, toFrame] the reference camera orbits
+     * linearly from yawFrom to yawTo (ReferenceCamera.orbitAt) and that frame's Line Art strokes are
+     * written to the same keyframe of a new "Line Art bake" layer. The reference camera is restored.
+     * Returns the number of frames that received strokes.
+     */
+    fun bakeLineArt(fromFrame:Int, toFrame:Int, yawFrom:Float, yawTo:Float, thickness:Float = 3f, includeHidden:Boolean = false):Int {
+        if (native.handle == 0L || toFrame < fromFrame || reference.isEmpty) return 0
+        val w = document.canvasWidth
+        val h = document.canvasHeight
+        val saved = reference.camera
+        val color = materials.colorArgb or (0xFF shl 24)
+        val fit = StrokeImport.fit(0f, 0f, w.toFloat(), h.toFloat(), w, h)
+        if (!native.createLayer("Line Art bake")) return 0
+        selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)
+        var baked = 0
+        try {
+            for (f in fromFrame..toFrame) {
+                val t = if (toFrame == fromFrame) 0f else (f - fromFrame).toFloat() / (toFrame - fromFrame)
+                reference.setCamera(saved.orbitAt(yawFrom, yawTo, t), w, h)
+                val strokes = reference.lineArtStrokes(w, h, if (includeHidden) 1 else 0)
+                native.createFrame(f)
+                native.selectFrameOrHold(f)
+                if (strokes.isEmpty()) continue
+                val sources = strokes.map { xy -> StrokeImport.Source((0 until xy.size / 2).map { floatArrayOf(xy[it * 2], xy[it * 2 + 1]) }, false, color, null, thickness) }
+                val plan = StrokeImport.plan(sources, fit, existingMaterials())
+                for (m in plan.newMaterials) {
+                    val index = native.materialCount()
+                    if (!native.createMaterial()) break
+                    native.setMaterialColors(index, m.stroke, m.fill)
+                    native.setMaterialFillEnabled(index, m.fillEnabled)
+                }
+                var created = 0
+                for (s in plan.strokes) {
+                    if (s.material >= native.materialCount()) continue
+                    if (GPNative.nativeCreatePolyline(native.handle, s.xy, s.xy.size / 2, s.material, s.thickness, s.cyclic)) created++
+                }
+                if (created > 0) baked++
+            }
+        } finally {
+            reference.setCamera(saved, w, h)
+            animation.initialize()
+            animation.setFrame(animation.currentFrame)
+            history.markEdit(); document.markDirty(); render()
+        }
+        return baked
+    }
+
     /** Import SVG: every shape becomes a stroke on the active layer/frame; the viewBox is fitted into the canvas. */
     fun importSvg(svg:String):Int {
         val sources = StrokeImport.fromSvg(SvgImport.parse(svg))

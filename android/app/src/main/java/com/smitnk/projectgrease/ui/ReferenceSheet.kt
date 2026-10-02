@@ -77,6 +77,8 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
     var camera by remember { mutableStateOf(reference.camera) }
     var lineThickness by remember { mutableFloatStateOf(3f) }
     var includeHidden by remember { mutableStateOf(false) }
+    var bakeFrames by remember { mutableIntStateOf(24) }
+    var bakeSweep by remember { mutableFloatStateOf((Math.PI / 2).toFloat()) }
     fun apply(value: com.smitnk.projectgrease.editor.ReferenceCamera) {
         camera = value
         reference.setCamera(value, cw, ch)
@@ -128,6 +130,19 @@ internal fun ReferenceSheet(controller: EditorController, context: Context, onDi
                 toast(context, if (n > 0) "Line Art: $n strokes on layer \"Line Art\"" else "No Line Art lines in view")
                 redraw()
             }, enabled = !reference.isEmpty) { Text("Generate Line Art strokes") }
+            Text("Bake to frames", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
+            Text("The camera orbits from the start angle to the end angle; each frame gets its own Line Art on a new \"Line Art bake\" layer.",
+                style = MaterialTheme.typography.bodySmall)
+            Text("Frames 1 to $bakeFrames")
+            Slider(bakeFrames.toFloat(), { bakeFrames = it.toInt() }, valueRange = 2f..120f)
+            Text("Orbit %.0f° to %.0f°".format(Math.toDegrees(camera.yaw.toDouble()), Math.toDegrees((camera.yaw + bakeSweep).toDouble())))
+            Slider(bakeSweep, { bakeSweep = it }, valueRange = (-2 * Math.PI).toFloat()..(2 * Math.PI).toFloat())
+            OutlinedButton(onClick = {
+                val n = controller.bakeLineArt(1, bakeFrames, camera.yaw, camera.yaw + bakeSweep, lineThickness, includeHidden)
+                toast(context, if (n > 0) "Line Art baked on $n frames" else "No Line Art lines in view")
+                tick++
+                redraw()
+            }, enabled = !reference.isEmpty) { Text("Bake Line Art to frames") }
             Text("Camera", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !camera.orthographic, onClick = { apply(camera.copy(orthographic = false)) }, label = { Text("Perspective") })

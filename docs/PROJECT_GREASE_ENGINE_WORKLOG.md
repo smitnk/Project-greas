@@ -363,3 +363,11 @@ otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the
   lines", "Generate Line Art strokes" -> strokes on a new "Line Art" layer at the current frame,
   in the active color (image-space points mapped to the canvas). LINE_ART stays IN_PROGRESS:
   unverified on device, no shadows / material settings / collections / per-frame re-bake.
+
+## Line Art — bake to frames — 2026-10-02
+
+- Spec item "bake to frames for animation": `EditorController.bakeLineArt(from, to, yawFrom, yawTo, ...)`
+  orbits the reference camera (`ReferenceCamera.orbitAt`, linear yaw) over the frame range and writes
+  each frame's Line Art strokes to its own keyframe on a new "Line Art bake" layer; the camera is
+  restored afterwards. Sheet: frame count, orbit sweep, "Bake Line Art to frames". Unit test for
+  `orbitAt`; CI checks the button string in the APK.

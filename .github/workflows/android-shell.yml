@@ -256,6 +256,7 @@ jobs:
               assert text in dex, "APK lacks the registry text " + text.decode()
           assert b"BATCH 3 OF 3" in dex, "APK lacks the Line Art batch 3 registry entry"
           assert b"Generate Line Art strokes" in dex, "APK lacks the Line Art stroke button"
+          assert b"Bake Line Art to frames" in dex, "APK lacks the Line Art bake button"
           assert b"Line Art preview" in dex, "APK lacks the Line Art preview switch"
           assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"

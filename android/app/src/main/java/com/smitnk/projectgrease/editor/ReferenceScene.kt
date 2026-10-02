@@ -31,6 +31,10 @@ data class ReferenceCamera(
     override fun equals(other: Any?) = other is ReferenceCamera && params(1, 1).contentEquals(other.params(1, 1))
     override fun hashCode() = params(1, 1).contentHashCode()
 
+    /** This camera with its orbit yaw linearly interpolated from yawFrom (t = 0) to yawTo (t = 1). */
+    fun orbitAt(yawFrom: Float, yawTo: Float, t: Float): ReferenceCamera =
+        copy(yaw = yawFrom + (yawTo - yawFrom) * t.coerceIn(0f, 1f))
+
     companion object {
         /** Line Art frame-buffer coordinates (-1..1, y up) to canvas coordinates (y down); the render size is the canvas. */
         fun fbToCanvas(fbX: Float, fbY: Float, canvasW: Int, canvasH: Int): Pair<Float, Float> =

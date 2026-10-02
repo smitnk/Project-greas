@@ -3795,4 +3795,8 @@ bool Backend::fill_at_screen(const float* rgba,
 
 const char *Backend::last_error() const { return impl_->last_error.c_str(); }
 
+bGPdata *Backend::document_data() const { return impl_->gpd; }
+
+bGPDlayer *Backend::active_layer_data() const { return impl_->layer; }
+
 }  // namespace project_grease::gp

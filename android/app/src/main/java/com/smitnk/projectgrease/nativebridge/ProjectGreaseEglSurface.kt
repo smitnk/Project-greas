@@ -310,7 +310,7 @@ private class ProjectGreaseDrawingSurfaceView(
                             controller.render()
                         }
                         strokeOpen -> {
-                            addPoint(event, pointerIndex)
+                            addPointsWithHistory(event, pointerIndex)
                             controller.render()
                         }
                     }
@@ -338,7 +338,6 @@ private class ProjectGreaseDrawingSurfaceView(
                         if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) {
                             controller.cancelStroke()
                         } else {
-                            addPoint(event, event.actionIndex)
                             controller.endStroke()
                         }
                     }
@@ -358,7 +357,6 @@ private class ProjectGreaseDrawingSurfaceView(
                     commitMirror(up.first, up.second)
                 } else if (strokeOpen) {
                     if (pointerIndex >= 0) {
-                        addPoint(event, pointerIndex)
                         controller.endStroke()
                     } else {
                         controller.cancelStroke()
@@ -453,13 +451,47 @@ private class ProjectGreaseDrawingSurfaceView(
     }
 
     private fun addPoint(event: MotionEvent, pointerIndex: Int) {
-        val pressure = event.getPressure(pointerIndex).coerceIn(0f, 1f)
-        val p = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))
+        addSample(
+            event.getX(pointerIndex),
+            event.getY(pointerIndex),
+            event.getPressure(pointerIndex),
+            event.getToolType(pointerIndex),
+            event.eventTime,
+            event.downTime
+        )
+    }
+
+    /** Android batches touch samples between frames; each one is a real input event. */
+    private fun addPointsWithHistory(event: MotionEvent, pointerIndex: Int) {
+        for (h in 0 until event.historySize) {
+            addSample(
+                event.getHistoricalX(pointerIndex, h),
+                event.getHistoricalY(pointerIndex, h),
+                event.getHistoricalPressure(pointerIndex, h),
+                event.getToolType(pointerIndex),
+                event.getHistoricalEventTime(h),
+                event.downTime
+            )
+        }
+        addPoint(event, pointerIndex)
+    }
+
+    private fun addSample(
+        rawX: Float,
+        rawY: Float,
+        rawPressure: Float,
+        toolType: Int,
+        eventTimeMs: Long,
+        gestureStartMs: Long
+    ) {
+        val isPen = toolType == MotionEvent.TOOL_TYPE_STYLUS ||
+            toolType == MotionEvent.TOOL_TYPE_ERASER
+        val p = canvasPoint(rawX, rawY)
         controller.addStrokePoint(
             p.first,
             p.second,
-            pressure,
-            event.eventTime.toFloat() / 1000f
+            com.smitnk.projectgrease.editor.TouchInputRules.pressureFor(isPen, rawPressure),
+            com.smitnk.projectgrease.editor.TouchInputRules.elapsedSeconds(eventTimeMs, gestureStartMs)
         )
     }
 }

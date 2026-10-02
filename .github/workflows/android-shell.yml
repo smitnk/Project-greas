@@ -103,6 +103,9 @@ jobs:
       - name: Run native primitive tests
         run: bash tools/run_native_primitive_tests.sh
 
+      - name: Run native selection tests
+        run: bash tools/run_native_select_tests.sh
+
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 

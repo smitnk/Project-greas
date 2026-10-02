@@ -309,6 +309,9 @@ class Backend {
   // (Blender selection port). Valid until the document is reset or shut down.
   bGPdata* document_data() const;
   bGPDlayer* active_layer_data() const;
+  /* Re-reads the active frame from the active layer's actframe after an edit command that adds,
+   * moves or removes frames behind the backend (blank keyframe, clean duplicate frames). */
+  void sync_active_frame();
 
   // Opaque implementation storage.
   struct Impl;

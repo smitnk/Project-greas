@@ -305,4 +305,34 @@ object ProjectGreaseSelect {
     fun sample(length: Float, sharpThreshold: Float = 0.1f): Command? =
         if (finite(length, sharpThreshold) && length > 0f) Command(CMD_SAMPLE, floatArrayOf(length, sharpThreshold)) else null
     fun extrude() = Command(CMD_EXTRUDE, FloatArray(0))
+
+    // project_grease_blender_edit3.h
+    const val CMD_SELECT_RANDOM = 66
+    const val CMD_BLANK_FRAME = 67
+    const val CMD_FILL_COLOR = 68
+    const val CMD_CLEAN_LOOSE = 69
+    const val CMD_CLEAN_DUP_FRAMES = 70
+    const val CMD_VCOLOR_SET = 71
+    const val CMD_VCOLOR_INVERT = 72
+    const val CMD_VCOLOR_BC = 73
+    const val CMD_VCOLOR_HSV = 74
+    const val CMD_VCOLOR_LEVELS = 75
+
+    fun selectRandom(ratio: Float, seed: Int, select: Boolean = true): Command? =
+        if (finite(ratio) && seed >= 0) Command(CMD_SELECT_RANDOM, floatArrayOf(ratio.coerceIn(0f, 1f), seed.toFloat(), flag(select))) else null
+    fun blankFrame(frame: Int): Command? = if (frame >= 0) Command(CMD_BLANK_FRAME, floatArrayOf(frame.toFloat())) else null
+    fun fillColor(material: Int, r: Float, g: Float, b: Float, a: Float): Command? =
+        if (material >= 0 && finite(r, g) && finite(b, a)) Command(CMD_FILL_COLOR, floatArrayOf(material.toFloat(), r, g, b, a)) else null
+    fun cleanLoose(limit: Int = 1): Command? = if (limit >= 1) Command(CMD_CLEAN_LOOSE, floatArrayOf(limit.toFloat())) else null
+    fun cleanDuplicateFrames() = Command(CMD_CLEAN_DUP_FRAMES, FloatArray(0))
+    private fun paintMode(mode: Int) = mode in PAINT_STROKE..PAINT_BOTH
+    fun vcolorSet(mode: Int, r: Float, g: Float, b: Float, factor: Float = 1f): Command? =
+        if (paintMode(mode) && finite(r, g) && finite(b, factor)) Command(CMD_VCOLOR_SET, floatArrayOf(mode.toFloat(), r, g, b, factor)) else null
+    fun vcolorInvert(mode: Int): Command? = if (paintMode(mode)) Command(CMD_VCOLOR_INVERT, floatArrayOf(mode.toFloat())) else null
+    fun vcolorBrightnessContrast(mode: Int, brightness: Float, contrast: Float): Command? =
+        if (paintMode(mode) && finite(brightness, contrast)) Command(CMD_VCOLOR_BC, floatArrayOf(mode.toFloat(), brightness, contrast)) else null
+    fun vcolorHsv(mode: Int, h: Float = 0.5f, s: Float = 1f, v: Float = 1f): Command? =
+        if (paintMode(mode) && finite(h, s) && finite(v)) Command(CMD_VCOLOR_HSV, floatArrayOf(mode.toFloat(), h, s, v)) else null
+    fun vcolorLevels(mode: Int, offset: Float, gain: Float): Command? =
+        if (paintMode(mode) && finite(offset, gain)) Command(CMD_VCOLOR_LEVELS, floatArrayOf(mode.toFloat(), offset, gain)) else null
 }

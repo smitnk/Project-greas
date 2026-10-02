@@ -959,7 +959,18 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             "Normalize opacity" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_OPACITY, 1f) },
             "Simplify (fixed)" to { controller.simplifySelectionFixed() },
             "Resample (8 px)" to { controller.sampleSelection(8f) },
-            "Extrude ends" to { controller.extrudeSelection() }
+            "Extrude ends" to { controller.extrudeSelection() },
+            "Select random 50%" to { controller.selectRandom() },
+            "Insert blank keyframe" to { controller.insertBlankFrame() },
+            "Use color as fill color" to { controller.setFillColor(controller.materials.colorArgb) },
+            "Clean loose points" to { controller.cleanLoosePoints() },
+            "Clean duplicate frames" to { controller.cleanDuplicateFrames() },
+            "Set vertex color" to { controller.setSelectionVertexColor() },
+            "Invert vertex color" to { controller.invertSelectionVertexColor() },
+            "Vertex color brighter" to { controller.selectionVertexColorBrightnessContrast(0.1f, 0f) },
+            "Vertex color more contrast" to { controller.selectionVertexColorBrightnessContrast(0f, 0.2f) },
+            "Vertex color hue +30°" to { controller.selectionVertexColorHsv(h = 0.5f + 1f / 12f) },
+            "Vertex color levels x0.8" to { controller.selectionVertexColorLevels(0f, 0.8f) }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

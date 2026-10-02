@@ -4652,4 +4652,11 @@ bGPdata *Backend::document_data() const { return impl_->gpd; }
 
 bGPDlayer *Backend::active_layer_data() const { return impl_->layer; }
 
+void Backend::sync_active_frame()
+{
+  impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
+  impl_->frame_created = impl_->frame != nullptr;
+  project_grease_gp_tag(impl_->gpd);
+}
+
 }  // namespace project_grease::gp

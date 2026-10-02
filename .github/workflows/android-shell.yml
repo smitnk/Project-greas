@@ -110,6 +110,8 @@ jobs:
         run: bash tools/run_native_eraser_tests.sh
 
       - name: Run native edit tests
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_edit_tests.sh
 
       - name: Run native document-state tests

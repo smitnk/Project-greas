@@ -34,6 +34,7 @@ C|native/blender_gp/project_grease_blender_select.c
 C|native/blender_gp/project_grease_blender_eraser.c
 C|native/blender_gp/project_grease_blender_edit.c
 C|native/blender_gp/project_grease_blender_edit2.c
+C|native/blender_gp/project_grease_blender_edit3.c
 C|native/blender_gp/project_grease_modifier_stack.c
 C|native/blender_gp/project_grease_shader_fx.c
 C|native/blender_gp/project_grease_document_state.c

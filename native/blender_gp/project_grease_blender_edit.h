@@ -62,7 +62,7 @@ enum {
   PG_EDIT_CMD_WEIGHT_PAINT = 57, /* args: def_nr, x, y, radius, strength, target_weight */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 65 /* 58..65 live in project_grease_blender_edit2.c */
+#define PG_EDIT_CMD_LAST 80 /* 58..65: edit2.c, 66..80: edit3.c */
 
 /* GPENCIL_OT_dissolve types */
 enum { PG_DISSOLVE_POINTS = 0, PG_DISSOLVE_BETWEEN = 1, PG_DISSOLVE_UNSELECT = 2 };

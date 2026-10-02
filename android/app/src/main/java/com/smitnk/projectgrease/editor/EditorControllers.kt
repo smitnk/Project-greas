@@ -224,6 +224,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=native.frameEnd().coerceAtLeast(1); return true
     }
     fun frameNumbers(): IntArray = native.frameNumbers()
+    /** Re-reads frame count/end and re-selects the current frame (or its hold) after native frame edits. */
+    fun refreshFromNative(): Boolean = setFrame(currentFrame)
 
     /** Interpolation easing (Blender's gpencil_interpolate easing): type Linear..Bounce, mode In/Out/In-Out. */
     var easingType = ProjectGreaseSelect.EASE_LINEAR
@@ -1382,6 +1384,28 @@ class EditorController {
     fun simplifySelectionFixed(steps:Int=1) = runSelectCommand(ProjectGreaseSelect.simplifyFixed(steps))
     fun sampleSelection(length:Float) = runSelectCommand(ProjectGreaseSelect.sample(length))
     fun extrudeSelection() = runSelectCommand(ProjectGreaseSelect.extrude())
+    private var randomSeed = 0
+    fun selectRandom(ratio:Float=0.5f) = runSelectCommand(ProjectGreaseSelect.selectRandom(ratio, randomSeed++))
+    /** Insert a blank keyframe at the current frame, shifting later frames (GPENCIL_OT_blank_frame_add). */
+    fun insertBlankFrame() = runSelectCommand(ProjectGreaseSelect.blankFrame(animation.currentFrame))
+        .also { if (it) { animation.refreshFromNative(); render() } }
+    fun setFillColor(argb:Int) = runSelectCommand(ProjectGreaseSelect.fillColor(materials.activeMaterial,
+        ((argb shr 16) and 0xFF)/255f, ((argb shr 8) and 0xFF)/255f, (argb and 0xFF)/255f, ((argb ushr 24) and 0xFF)/255f))
+    fun cleanLoosePoints(limit:Int=1) = runSelectCommand(ProjectGreaseSelect.cleanLoose(limit))
+    fun cleanDuplicateFrames() = runSelectCommand(ProjectGreaseSelect.cleanDuplicateFrames())
+        .also { if (it) { animation.refreshFromNative(); render() } }
+    fun setSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_STROKE):Boolean {
+        val argb = materials.colorArgb
+        return runSelectCommand(ProjectGreaseSelect.vcolorSet(mode, ((argb shr 16) and 0xFF)/255f,
+            ((argb shr 8) and 0xFF)/255f, (argb and 0xFF)/255f))
+    }
+    fun invertSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = runSelectCommand(ProjectGreaseSelect.vcolorInvert(mode))
+    fun selectionVertexColorBrightnessContrast(b:Float, c:Float, mode:Int=ProjectGreaseSelect.PAINT_BOTH) =
+        runSelectCommand(ProjectGreaseSelect.vcolorBrightnessContrast(mode, b, c))
+    fun selectionVertexColorHsv(h:Float=0.5f, s:Float=1f, v:Float=1f, mode:Int=ProjectGreaseSelect.PAINT_BOTH) =
+        runSelectCommand(ProjectGreaseSelect.vcolorHsv(mode, h, s, v))
+    fun selectionVertexColorLevels(offset:Float, gain:Float, mode:Int=ProjectGreaseSelect.PAINT_BOTH) =
+        runSelectCommand(ProjectGreaseSelect.vcolorLevels(mode, offset, gain))
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}

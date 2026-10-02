@@ -21,6 +21,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit2.h"
+#include "project_grease_blender_edit3.h"
 
 static float pe2_clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -274,7 +275,7 @@ int pg_gp_edit2_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
       changed = pg_gp_extrude(gpd, scope);
       break;
     default:
-      return 0;
+      return pg_gp_edit3_dispatch(gpd, active_layer, command, args, arg_count);
   }
   if (changed) {
     gpd->flag |= GP_DATA_CACHE_IS_DIRTY;

@@ -8,6 +8,7 @@
 #include "project_grease_legacy_primitive.h"
 #include "project_grease_blender_select.h"
 #include "project_grease_blender_edit.h"
+#include "project_grease_blender_edit3.h"
 
 struct ProjectGreaseGPHandle {
   project_grease::gp::Backend backend;
@@ -427,11 +428,16 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
     default:
       // Selection-aware editing (ids 31..37), then the selection operators (20..30).
       if (command >= PG_EDIT_CMD_FIRST && command <= PG_EDIT_CMD_LAST) {
-        return pg_gp_edit_dispatch(handle->backend.document_data(),
-                                   handle->backend.active_layer_data(),
-                                   command,
-                                   args,
-                                   arg_count);
+        const int changed = pg_gp_edit_dispatch(handle->backend.document_data(),
+                                                handle->backend.active_layer_data(),
+                                                command,
+                                                args,
+                                                arg_count);
+        if (changed && (command == PG_EDIT3_CMD_BLANK_FRAME || command == PG_EDIT3_CMD_CLEAN_DUP_FRAMES)) {
+          /* these move the layer's actframe (and clean may free the cached one) */
+          handle->backend.sync_active_frame();
+        }
+        return changed;
       }
       return pg_gp_select_dispatch(handle->backend.document_data(),
                                    handle->backend.active_layer_data(),

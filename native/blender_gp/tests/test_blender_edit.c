@@ -13,6 +13,8 @@
 #include "DNA_meshdata_types.h"
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit2.h"
+#include "project_grease_blender_edit3.h"
+#include "BLI_rand.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -144,6 +146,32 @@ bool BKE_gpencil_stroke_sample(bGPdata *gpd, bGPDstroke *gps, float dist, bool s
   return dist > 0.0f;
 }
 
+bGPDframe *BKE_gpencil_frame_addnew(bGPDlayer *gpl, int cframe)
+{
+  bGPDframe *n = calloc(1, sizeof(bGPDframe));
+  n->framenum = cframe;
+  bGPDframe *at = gpl->frames.first;
+  while (at && at->framenum < cframe) at = at->next;
+  if (at == NULL) {
+    n->prev = gpl->frames.last; n->next = NULL;
+    if (gpl->frames.last) ((bGPDframe *)gpl->frames.last)->next = n; else gpl->frames.first = n;
+    gpl->frames.last = n;
+  }
+  else {
+    n->next = at; n->prev = at->prev;
+    if (at->prev) at->prev->next = n; else gpl->frames.first = n;
+    at->prev = n;
+  }
+  return n;
+}
+bool BKE_gpencil_layer_frame_delete(bGPDlayer *gpl, bGPDframe *gpf)
+{
+  BLI_remlink(&gpl->frames, gpf);
+  for (bGPDstroke *s = gpf->strokes.first, *n; s; s = n) { n = s->next; free(s->points); free(s); }
+  free(gpf);
+  return true;
+}
+
 /* ---- fixtures ------------------------------------------------------------------ */
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s (line %d)\n", msg, __LINE__); failures++; } } while (0)
@@ -196,14 +224,14 @@ static bGPDstroke *add_stroke(bGPDframe *gpf, int n, int mat, float x0, float y0
 static void select_points(bGPdata *gpd, bGPDstroke *gps, unsigned mask)
 {
   for (int i = 0; i < gps->totpoints; i++) {
-    if (mask & (1u << i)) gps->points[i].flag |= GP_SPOINT_SELECT; else gps->points[i].flag &= ~GP_SPOINT_SELECT;
+    if (i < 32 && (mask & (1u << i))) gps->points[i].flag |= GP_SPOINT_SELECT; else gps->points[i].flag &= ~GP_SPOINT_SELECT;
   }
   BKE_gpencil_stroke_sync_selection(gpd, gps);
 }
 static unsigned sel_mask(const bGPDstroke *gps)
 {
   unsigned m = 0;
-  for (int i = 0; i < gps->totpoints; i++) if (gps->points[i].flag & GP_SPOINT_SELECT) m |= 1u << i;
+  for (int i = 0; i < gps->totpoints; i++) if (i < 32 && (gps->points[i].flag & GP_SPOINT_SELECT)) m |= 1u << i;
   return m;
 }
 static int stroke_count(const bGPDframe *gpf)
@@ -984,6 +1012,94 @@ static void test_edit2_operators(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, 66, NULL, 0) == 0, "unknown id beyond the range");
 }
 
+static void test_edit3(void)
+{
+  /* select random draws from the real pinned BLI_rng (rand.cc): same sequence as lrand48 */
+  RNG *rng = BLI_rng_new(12345);
+  CHECK(BLI_rng_get_int(rng) == 483889296 && BLI_rng_get_int(rng) == 1973930609 && BLI_rng_get_int(rng) == 444188209,
+        "rng matches the drand48 sequence");
+  BLI_rng_seed(rng, 7);
+  for (int i = 0; i < 100; i++) { float f = BLI_rng_get_float(rng); if (f < 0.0f || f >= 1.0f) { CHECK(0, "rng float in [0,1)"); break; } }
+  BLI_rng_free(rng);
+
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 200, 0, 0, 0, 1, 0);
+  CHECK(pg_gp_select_random(gpd, NULL, 0.5f, 3, 1) == 1, "select random");
+  int n = 0; for (int i = 0; i < 200; i++) n += (a->points[i].flag & GP_SPOINT_SELECT) != 0;
+  CHECK(n > 70 && n < 130 && (a->flag & GP_STROKE_SELECT), "about half selected; stroke flag synced");
+  unsigned m1 = sel_mask(a);
+  select_points(gpd, a, 0); pg_gp_select_random(gpd, NULL, 0.5f, 3, 1);
+  CHECK(sel_mask(a) == m1, "same seed, same selection");
+  CHECK(pg_gp_select_random(gpd, NULL, 0.0f, 3, 1) == 0, "ratio 0 changes nothing");
+  pg_gp_select_random(gpd, NULL, 1.0f, 1, 0);
+  CHECK(sel_mask(a) == 0 && !(a->flag & GP_STROKE_SELECT), "ratio 1 deselect clears all");
+
+  /* blank keyframe: shifts later frames when the current one is occupied */
+  bGPDframe *f2 = BKE_gpencil_frame_addnew(l, 3);
+  CHECK(pg_gp_blank_frame_add(gpd, l, 1) == 1, "insert blank at occupied frame 1");
+  CHECK(f->framenum == 2 && f2->framenum == 4 && l->actframe->framenum == 1 && l->actframe->strokes.first == NULL,
+        "frames at/after 1 moved one later; new empty active frame at 1");
+  CHECK(pg_gp_blank_frame_add(gpd, l, 10) == 1 && f2->framenum == 4, "free frame: nothing shifts");
+
+  /* fill color */
+  const float rgba[4] = {0.2f, 0.4f, 0.6f, 2.0f};
+  CHECK(pg_gp_material_fill_color(gpd, 0, rgba) == 1 && NEAR(gpd->mat[0]->gp_style->fill_rgba[1], 0.4f) &&
+        NEAR(gpd->mat[0]->gp_style->fill_rgba[3], 1.0f), "fill color set separately (clamped)");
+  CHECK(gpd->mat[0]->gp_style->stroke_rgba[0] == 0.0f, "stroke color untouched");
+  CHECK(pg_gp_material_fill_color(gpd, 9, rgba) == 0, "bad material index");
+
+  /* clean loose */
+  bGPdata *g2 = make_gpd();
+  bGPDlayer *l2 = add_layer(g2, 0);
+  bGPDframe *f3 = add_frame(l2);
+  add_stroke(f3, 1, 0, 0, 0, 0, 0);
+  bGPDstroke *keep = add_stroke(f3, 3, 0, 0, 0, 1, 0);
+  add_stroke(f3, 2, 0, 0, 0, 1, 0);
+  CHECK(pg_gp_frame_clean_loose(g2, NULL, 2) == 1 && stroke_count(f3) == 1 && f3->strokes.first == keep,
+        "strokes with <= limit points removed");
+
+  /* clean duplicate frames */
+  bGPDframe *d1 = BKE_gpencil_frame_addnew(l2, 5);
+  bGPDframe *d2 = BKE_gpencil_frame_addnew(l2, 6);
+  bGPDframe *d3 = BKE_gpencil_frame_addnew(l2, 7);
+  add_stroke(d1, 2, 0, 5, 5, 1, 0); add_stroke(d2, 2, 0, 5, 5, 1, 0); add_stroke(d3, 2, 0, 9, 9, 1, 0);
+  l2->actframe = d2;
+  CHECK(pg_gp_frame_clean_duplicate(g2, l2) == 1, "clean duplicate frames");
+  int frames = 0; for (bGPDframe *x = l2->frames.first; x; x = x->next) frames++;
+  CHECK(frames == 3 && d1->next == d3 && l2->actframe == d1, "identical next frame removed, first kept, active moved");
+
+  /* vertex color operators on selected points */
+  bGPdata *g3 = make_gpd();
+  bGPDlayer *l3 = add_layer(g3, 0);
+  bGPDstroke *v = add_stroke(add_frame(l3), 3, 0, 0, 0, 10, 0);
+  select_points(g3, v, (1u << 0) | (1u << 1));
+  const float red[3] = {1, 0, 0};
+  CHECK(pg_gp_vcolor_set(g3, NULL, PG_PAINT_MODE_STROKE, red, 1.0f) == 1 && NEAR(v->points[0].vert_color[0], 1) &&
+        NEAR(v->points[0].vert_color[3], 1) && v->points[2].vert_color[3] == 0.0f, "set on selected points only");
+  pg_gp_vcolor_invert(g3, NULL, PG_PAINT_MODE_STROKE);
+  CHECK(NEAR(v->points[0].vert_color[0], 0) && NEAR(v->points[0].vert_color[1], 1), "invert");
+  CHECK(v->points[2].vert_color[0] == 0.0f && v->points[2].vert_color[3] == 0.0f, "unpainted unselected point untouched");
+  pg_gp_vcolor_set(g3, NULL, PG_PAINT_MODE_STROKE, red, 1.0f);
+  pg_gp_vcolor_hsv(g3, NULL, PG_PAINT_MODE_STROKE, 0.5f + 1.0f / 3.0f, 1, 1);
+  CHECK(NEAR(v->points[0].vert_color[1], 1) && NEAR(v->points[0].vert_color[0], 0), "hsv: hue +1/3 turns red green");
+  pg_gp_vcolor_levels(g3, NULL, PG_PAINT_MODE_STROKE, 0.0f, 0.5f);
+  CHECK(NEAR(v->points[0].vert_color[1], 0.5f), "levels gain halves");
+  pg_gp_vcolor_brightness_contrast(g3, NULL, PG_PAINT_MODE_STROKE, 0.25f, 0.0f);
+  CHECK(NEAR(v->points[0].vert_color[1], 0.75f) && NEAR(v->points[0].vert_color[0], 0.25f), "brightness +0.25 at zero contrast");
+  pg_gp_vcolor_brightness_contrast(g3, NULL, PG_PAINT_MODE_STROKE, 0.0f, 0.5f);
+  /* contrast 0.5: gain = 1/(1-0.5) = 2, offset = 2*(0-0.25) = -0.5 -> 0.75 -> 1.0, 0.25 -> 0.0 */
+  CHECK(NEAR(v->points[0].vert_color[1], 1.0f) && NEAR(v->points[0].vert_color[0], 0.0f), "contrast stretches around 0.5");
+  CHECK(pg_gp_vcolor_invert(g3, NULL, 5) == 0, "invalid mode");
+
+  const float sr[3] = {0.5f, 3, 1};
+  l->actframe = f; /* the blank-frame checks made an empty frame active */
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT3_CMD_SELECT_RANDOM, sr, 3) == 1, "routed edit.c -> edit2.c -> edit3.c");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT3_CMD_VCOLOR_SET, sr, 3) == 0, "vcolor set needs 5 args");
+  CHECK(pg_gp_edit_dispatch(gpd, l, 81, NULL, 0) == 0, "beyond the routed range");
+}
+
 int main(void)
 {
   test_pick();
@@ -1009,6 +1125,7 @@ int main(void)
   test_point_weight();
   test_thickness_vgroup();
   test_edit2_operators();
+  test_edit3();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

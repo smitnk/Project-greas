@@ -21,3 +21,5 @@ bGPDstroke *BKE_gpencil_stroke_duplicate(bGPDstroke *gps_src, bool dup_points, b
 void BKE_gpencil_stroke_join(bGPDstroke *gps_a, bGPDstroke *gps_b, bool leave_gaps, bool fit_thickness, bool smooth, bool auto_flip);
 void BKE_gpencil_stroke_simplify_fixed(bGPdata *gpd, bGPDstroke *gps);
 bool BKE_gpencil_stroke_sample(bGPdata *gpd, bGPDstroke *gps, float dist, bool select, float sharp_threshold);
+bGPDframe *BKE_gpencil_frame_addnew(bGPDlayer *gpl, int cframe);
+bool BKE_gpencil_layer_frame_delete(bGPDlayer *gpl, bGPDframe *gpf);

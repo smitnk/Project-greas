@@ -14,6 +14,7 @@ private class FakeDocument : DocumentNative {
         var record: LayerRecord,
         val frames: MutableList<Frame> = mutableListOf(),
         val modifiers: MutableList<ModifierRecord> = mutableListOf(),
+        val effects: MutableList<FxRecord> = mutableListOf(),
         var useMask: Boolean = false,
         val masks: MutableList<MaskRecord> = mutableListOf()
     )
@@ -70,6 +71,14 @@ private class FakeDocument : DocumentNative {
     override fun addModifier(layer: Int, record: ModifierRecord): Boolean {
         val target = layers.getOrNull(layer) ?: return false
         target.modifiers.add(record)
+        return true
+    }
+
+    override fun fxCount(layer: Int) = layers.getOrNull(layer)?.effects?.size ?: 0
+    override fun fxRecord(layer: Int, index: Int) = layers.getOrNull(layer)?.effects?.getOrNull(index)
+    override fun addFx(layer: Int, record: FxRecord): Boolean {
+        val target = layers.getOrNull(layer) ?: return false
+        target.effects.add(record)
         return true
     }
 
@@ -162,6 +171,9 @@ class ProjectDocumentRoundTripTest {
         doc.layers[2].useMask = true
         doc.layers[2].masks.add(MaskRecord("Sketch", hidden = false, inverted = true))
         doc.layers[2].masks.add(MaskRecord("Inks", hidden = true, inverted = false))
+        doc.layers[0].effects.add(FxRecord(FxType.PIXEL, true, floatArrayOf(7f, 3f, 1f)))
+        doc.layers[0].effects.add(FxRecord(FxType.SHADOW, false, FxSpecs.defaults(FxType.SHADOW).also { it[0] = -12f; it[13] = 0.5f }))
+        doc.layers[2].effects.add(FxRecord(FxType.SWIRL, true, floatArrayOf(0.25f, 0.75f, 80f, -1.5f)))
         doc.layers[1].masks.add(MaskRecord("Sketch")) // a mask list with use-mask off still round-trips
         return doc
     }
@@ -194,6 +206,13 @@ class ProjectDocumentRoundTripTest {
                 assertEquals("layer $li modifier $mi type", em.type, am.type)
                 assertEquals("layer $li modifier $mi enabled", em.enabled, am.enabled)
                 assertArrayEquals("layer $li modifier $mi params", em.params, am.params, 0f)
+            }
+            assertEquals("layer $li effect count", el.effects.size, al.effects.size)
+            el.effects.forEachIndexed { xi, ex ->
+                val ax = al.effects[xi]
+                assertEquals("layer $li effect $xi type", ex.type, ax.type)
+                assertEquals("layer $li effect $xi enabled", ex.enabled, ax.enabled)
+                assertArrayEquals("layer $li effect $xi params", ex.params, ax.params, 0f)
             }
             el.frames.forEachIndexed { fi, ef ->
                 val af = al.frames[fi]
@@ -256,6 +275,38 @@ class ProjectDocumentRoundTripTest {
         assertTrue(restored.layers[1].modifiers.isEmpty())
         assertEquals(listOf(ModifierType.SMOOTH), restored.layers[2].modifiers.map { it.type })
         assertArrayEquals(floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f), restored.layers[2].modifiers[0].params, 0f)
+    }
+
+    @Test
+    fun theEffectListOfEachLayerSurvivesARoundTripInOrder() {
+        val restored = load(save(sampleDocument()))
+        assertEquals(listOf(FxType.PIXEL, FxType.SHADOW), restored.layers[0].effects.map { it.type })
+        assertEquals(listOf(true, false), restored.layers[0].effects.map { it.enabled })
+        assertTrue(restored.layers[1].effects.isEmpty())
+        assertArrayEquals(floatArrayOf(0.25f, 0.75f, 80f, -1.5f), restored.layers[2].effects[0].params, 0f)
+    }
+
+    @Test
+    fun oldFilesAndLayersWithoutEffectsCarryNoEffectsKey() {
+        val doc = ProjectDocumentCodec.parse(save(sampleDocument()))!!
+        assertTrue(doc.version >= 5)
+        val noFx = FakeDocument()
+        noFx.applyLayerRecord(0, LayerRecord("A", true, false, 1f))
+        assertFalse(save(noFx).contains("effects"))
+        val v4 = """{"version":4,"layers":[{"index":0,"frames":[],"modifiers":[]}]}"""
+        assertTrue(load(v4).layers[0].effects.isEmpty())
+    }
+
+    @Test
+    fun unknownEffectTypesAreDroppedAndMissingParametersKeepBlendersDefaults() {
+        val raw = """{"version":5,"layers":[{"index":0,"frames":[],"effects":[
+            {"type":99,"enabled":true,"params":[1]},{"type":3,"enabled":true},
+            {"type":${FxType.BLUR},"enabled":false,"params":[12]},{"enabled":true}]}]}"""
+        val effects = load(raw).layers[0].effects
+        assertEquals(listOf(FxType.BLUR), effects.map { it.type })
+        assertFalse(effects[0].enabled)
+        // radius X given; the rest (radius Y 50, samples 8) come from Blender's defaults, not zero
+        assertArrayEquals(floatArrayOf(12f, 50f, 8f, 0f), effects[0].params, 0f)
     }
 
     @Test

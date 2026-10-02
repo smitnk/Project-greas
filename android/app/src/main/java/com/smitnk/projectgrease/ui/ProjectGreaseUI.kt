@@ -677,6 +677,70 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
+/**
+ * Shader effects of the selected layer: a 2D post-pass over the rendered layer, run top to bottom.
+ * Sizes are canvas pixels; the strokes are never changed.
+ */
+@Composable private fun LayerEffectsSection(controller:EditorController,redraw:()->Unit){
+    val layer=controller.selectedLayer
+    var tick by remember{mutableStateOf(0)}
+    var addMenu by remember{mutableStateOf(false)}
+    var expanded by remember(layer){mutableStateOf(setOf<Int>())}
+    val effects=remember(tick,layer){controller.effects(layer)}
+    fun changed(ok:Boolean){if(ok){tick++;redraw()}}
+    Text("Effects",Modifier.padding(horizontal=12.dp,vertical=8.dp),fontWeight=FontWeight.Bold)
+    if(effects.isEmpty())Text("No effects. Effects are drawn live over this layer; the strokes stay untouched. Sizes are canvas pixels.",Modifier.padding(horizontal=12.dp))
+    effects.forEachIndexed{index,effect->
+        val open=index in expanded
+        Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp).border(1.dp,MaterialTheme.colorScheme.outline,RoundedCornerShape(8.dp)).padding(8.dp)){
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                Text(com.smitnk.projectgrease.editor.FxType.name(effect.type),Modifier.weight(1f).clickable{expanded=if(open)expanded-index else expanded+index},fontWeight=FontWeight.Bold)
+                Switch(checked=effect.enabled,onCheckedChange={changed(controller.setEffectEnabled(index,it))})
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+                TextButton(onClick={expanded=if(open)expanded-index else expanded+index}){Text(if(open)"Hide" else "Edit")}
+                TextButton(onClick={changed(controller.moveEffect(index,-1))},enabled=index>0){Text("Up")}
+                TextButton(onClick={changed(controller.moveEffect(index,1))},enabled=index<effects.size-1){Text("Down")}
+                TextButton(onClick={expanded=emptySet();changed(controller.removeEffect(index))}){Text("Remove")}
+            }
+            if(open){
+                com.smitnk.projectgrease.editor.FxSpecs.specs(effect.type).forEach{spec->
+                    val value=effect.params.getOrElse(spec.index){0f}
+                    when(spec.kind){
+                        com.smitnk.projectgrease.editor.ParamKind.BOOL->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                            Text(spec.label,Modifier.weight(1f));Switch(checked=value!=0f,onCheckedChange={changed(controller.setEffectParam(index,spec.index,if(it)1f else 0f))})
+                        }
+                        com.smitnk.projectgrease.editor.ParamKind.ENUM->OutlinedButton(
+                            onClick={changed(controller.setEffectParam(index,spec.index,((value.toInt()+1)%spec.options.size).toFloat()))},
+                            modifier=Modifier.fillMaxWidth()
+                        ){Text(spec.label+": "+spec.options.getOrElse(value.toInt()){"?"})}
+                        else->{
+                            val shown=value*spec.displayFactor
+                            Text(spec.label+" "+(if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)shown.toInt().toString() else "%.2f".format(shown)))
+                            Slider(
+                                value=value.coerceIn(spec.min,spec.max),
+                                onValueChange={changed(controller.setEffectParam(index,spec.index,if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)Math.round(it).toFloat() else it,commit=false))},
+                                onValueChangeFinished={controller.commitEffectEdit()},
+                                valueRange=spec.min..spec.max
+                            )
+                        }
+                    }
+                }
+                val note=com.smitnk.projectgrease.editor.FxSpecs.note(effect.type)
+                if(note.isNotEmpty())Text(note,style=MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+    Box(Modifier.padding(horizontal=12.dp)){
+        Button(onClick={addMenu=true},enabled=effects.size<com.smitnk.projectgrease.editor.FxType.MAX_STACK,modifier=Modifier.fillMaxWidth()){Text("Add effect")}
+        DropdownMenu(expanded=addMenu,onDismissRequest={addMenu=false}){
+            com.smitnk.projectgrease.editor.FxType.all.forEach{type->
+                DropdownMenuItem(text={Text(com.smitnk.projectgrease.editor.FxType.name(type))},onClick={addMenu=false;changed(controller.addEffect(type))})
+            }
+        }
+    }
+}
+
 @Composable private fun LayersSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     // Switch and name state come from the native layer, not from fixed defaults, and are re-read
     // whenever the selected layer or the layer list changes.
@@ -709,6 +773,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Switch(checked=locked,onCheckedChange={locked=it;controller.setLayerLocked(controller.selectedLayer,it);redraw()})
         }
         LayerMaskSection(controller,redraw)
+        LayerEffectsSection(controller,redraw)
         Spacer(Modifier.height(20.dp))
       }
     }

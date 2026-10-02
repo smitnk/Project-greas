@@ -66,6 +66,12 @@ interface DocumentNative {
     /** Appends a modifier to the layer's stack exactly as recorded (type, enabled flag, parameters). */
     fun addModifier(layer: Int, record: ModifierRecord): Boolean = true
 
+    /** The layer's shader effects (version 5 files); documents without any report an empty list. */
+    fun fxCount(layer: Int): Int = 0
+    fun fxRecord(layer: Int, index: Int): FxRecord? = null
+    /** Appends an effect to the layer's list exactly as recorded (type, enabled flag, parameters). */
+    fun addFx(layer: Int, record: FxRecord): Boolean = true
+
     /** Vertex groups (names; the group number is the position) and the active one, -1 for none. */
     fun vertexGroups(): List<String> = emptyList()
     fun activeVertexGroup(): Int = -1
@@ -86,7 +92,9 @@ class ParsedLayer(
     /** The layer's modifier stack; empty for files before version 4. */
     val modifiers: List<ModifierRecord> = emptyList(),
     val useMask: Boolean = false,
-    val masks: List<MaskRecord> = emptyList()
+    val masks: List<MaskRecord> = emptyList(),
+    /** The layer's shader effects; empty for files before version 5. */
+    val effects: List<FxRecord> = emptyList()
 )
 class ParsedDocument(
     val version: Int,
@@ -105,11 +113,12 @@ class ParsedDocument(
  * Project file format. Version 1 stored only layers, frames, strokes and points; version 2 adds
  * per-stroke style (material, thickness, cyclic, fill), layer state (name, visibility, lock,
  * opacity) and the material palette; version 3 adds per-point vertex color (points may carry four
- * more values); version 4 adds the per-layer live modifier stack ("modifiers"). Older files still
- * load: missing fields read as zero, which is "no vertex color", and a missing stack is empty.
+ * more values); version 4 adds the per-layer live modifier stack ("modifiers") and layer masks; version 5
+ * adds the per-layer shader effect list ("effects"). Older files still load: missing fields read as
+ * zero, which is "no vertex color", and a missing stack or effect list is empty.
  */
 object ProjectDocumentCodec {
-    const val VERSION = 4
+    const val VERSION = 5
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int): String {
@@ -154,6 +163,8 @@ object ProjectDocumentCodec {
             layerJson.put("frames", frames)
             val modifiers = (0 until native.modifierCount(layerIndex)).mapNotNull { native.modifierRecord(layerIndex, it) }
             if (modifiers.isNotEmpty()) layerJson.put("modifiers", ModifierStackJson.toJson(modifiers))
+            val effects = (0 until native.fxCount(layerIndex)).mapNotNull { native.fxRecord(layerIndex, it) }
+            if (effects.isNotEmpty()) layerJson.put("effects", FxJson.toJson(effects))
             val masks = native.layerMasks(layerIndex)
             if (masks.isNotEmpty() || native.layerUseMask(layerIndex)) {
                 layerJson.put("useMask", native.layerUseMask(layerIndex))
@@ -228,6 +239,9 @@ object ProjectDocumentCodec {
             for (modifier in layer.modifiers) {
                 if (!native.addModifier(layerIndex, modifier)) return false
             }
+            for (effect in layer.effects) {
+                if (!native.addFx(layerIndex, effect)) return false
+            }
         }
         // Masks name other layers, so they are restored once every layer exists and has its name.
         for ((layerIndex, layer) in layers.withIndex()) {
@@ -258,7 +272,7 @@ object ProjectDocumentCodec {
             }
         } ?: emptyList()
         return ParsedLayer(record, frames, ModifierStackJson.fromJson(json.optJSONArray("modifiers")),
-            json.optBoolean("useMask", false), masks)
+            json.optBoolean("useMask", false), masks, FxJson.fromJson(json.optJSONArray("effects")))
     }
 
     private fun parseFrame(json: JSONObject): ParsedFrame {

@@ -9,6 +9,7 @@
 struct bGPdata;
 struct bGPDlayer;
 struct bGPDframe;
+struct PGFxEntry;
 
 namespace project_grease::gp {
 
@@ -183,6 +184,17 @@ class Backend {
   const bGPDframe* evaluated_frame(const bGPDlayer* layer, const bGPDframe* current, int frame_number);
   // Number of stack evaluations run so far (cache hits do not count); for tests.
   uint64_t modifier_eval_count() const;
+  // Per-layer shader effects (2D post-pass over the rendered layer, see project_grease_shader_fx.h).
+  // Document state like the modifier stack: saved, in undo snapshots; strokes are never touched.
+  int fx_count(int layer_index) const;
+  int fx_add(int layer_index, int type);
+  bool fx_remove(int layer_index, int fx_index);
+  bool fx_move(int layer_index, int from_index, int to_index);
+  bool fx_set_enabled(int layer_index, int fx_index, bool enabled);
+  bool fx_set_params(int layer_index, int fx_index, const float* params, int count);
+  int fx_get(int layer_index, int fx_index, int* type, int* enabled, float* params, int capacity) const;
+  // The effect list of `layer` for the presenter (valid until the next fx_* edit); returns its length.
+  int fx_for_layer(const bGPDlayer* layer, const PGFxEntry** entries) const;
   bool set_layer_opacity(int index, float opacity);
   bool get_material_info(int index, PGMaterialInfo* out) const;
   bool smooth_stroke(int index, float influence, int iterations);

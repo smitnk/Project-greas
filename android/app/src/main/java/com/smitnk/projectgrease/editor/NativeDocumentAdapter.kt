@@ -104,6 +104,17 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             native.modifierSetEnabled(layer, index, record.enabled)
     }
 
+    override fun fxCount(layer: Int) = native.fxCount(layer)
+
+    override fun fxRecord(layer: Int, index: Int) = FxPacking.unpack(native.fxGet(layer, index))
+
+    override fun addFx(layer: Int, record: FxRecord): Boolean {
+        val index = FxCommands.add(native, layer, record.type)
+        if (index < 0) return false
+        return native.fxSetParams(layer, index, FxPacking.paramsFor(record.type, record.params)) &&
+            native.fxSetEnabled(layer, index, record.enabled)
+    }
+
     override fun vertexGroups(): List<String> =
         (0 until native.vertexGroupCount()).map { native.vertexGroupName(it) ?: "Group" }
 

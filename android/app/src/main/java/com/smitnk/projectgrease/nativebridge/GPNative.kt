@@ -155,6 +155,14 @@ object GPNative {
     external fun nativeModifierSetParams(handle: Long, layer: Int, index: Int, params: FloatArray): Boolean
     external fun nativeModifierGet(handle: Long, layer: Int, index: Int): FloatArray?
     external fun nativeModifierApply(handle: Long, layer: Int, index: Int): Boolean
+    // Per-layer shader effects (project_grease_shader_fx.h). nativeFxGet returns [type, enabled, params...].
+    external fun nativeFxCount(handle: Long, layer: Int): Int
+    external fun nativeFxAdd(handle: Long, layer: Int, type: Int): Int
+    external fun nativeFxRemove(handle: Long, layer: Int, index: Int): Boolean
+    external fun nativeFxMove(handle: Long, layer: Int, from: Int, to: Int): Boolean
+    external fun nativeFxSetEnabled(handle: Long, layer: Int, index: Int, enabled: Boolean): Boolean
+    external fun nativeFxSetParams(handle: Long, layer: Int, index: Int, params: FloatArray): Boolean
+    external fun nativeFxGet(handle: Long, layer: Int, index: Int): FloatArray?
     external fun nativeGetMaterialInfo(handle: Long, index: Int): FloatArray?
     external fun nativeMaterialCount(handle: Long): Int
     external fun nativeCreateMaterial(handle: Long): Boolean

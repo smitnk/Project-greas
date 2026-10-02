@@ -15,6 +15,7 @@
 #include "project_grease_gp_color.h"
 #include "project_grease_shader_fx.h"
 #include "project_grease_stroke_outline.h"
+#include "project_grease_blender_edit4.h"
 
 namespace {
 struct Vertex { float x; float y; };
@@ -34,6 +35,11 @@ enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT, DRAW_PREMULT };
 DrawMode g_draw_mode=DRAW_NORMAL;
 // Weight Paint view: >= 0 draws strokes tinted by the weight of this vertex group (blue 0 .. red 1).
 int g_weight_group=-1;
+// Fill boundary source (brush fill_draw_mode): 0 GP_FILL_DMODE_BOTH, 1 STROKE, 2 CONTROL.
+int g_fill_draw_mode=0;
+// Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
+// open sbuffer are not part of an export.
+int g_export_mode=0;
 float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
 int g_canvas_width=1280;
 int g_canvas_height=720;
@@ -180,7 +186,7 @@ void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=t
   if(g_draw_mode==DRAW_REVEALAGE){glEnable(GL_BLEND);glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);}
   else if(g_draw_mode==DRAW_INVERT){glEnable(GL_BLEND);glBlendFunc(GL_ONE_MINUS_DST_COLOR,GL_ZERO);}
   else if(g_draw_mode==DRAW_PREMULT){glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);}
-  else if(blend){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);}
+  else if(blend){glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);}
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
   if(blend||g_draw_mode!=DRAW_NORMAL)glDisable(GL_BLEND);
   if(masked){glBindTexture(GL_TEXTURE_2D,0);}
@@ -359,7 +365,9 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
-  glClearColor(0.08f,0.08f,0.08f,1.0f);glClear(GL_COLOR_BUFFER_BIT);
+  if(g_export_mode==2)glClearColor(0.0f,0.0f,0.0f,0.0f);
+  else glClearColor(0.08f,0.08f,0.08f,1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
   update_canvas_map(w,h);
   std::vector<Vertex> canvas;
   const float x0=g_map_origin_x, y0=g_map_origin_y;
@@ -369,7 +377,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
   });
   const float canvas_color[4]={0.96f,0.96f,0.96f,1.0f};
-  draw_vertices(canvas,canvas_color,false);
+  if(g_export_mode!=2)draw_vertices(canvas,canvas_color,false);
   (void)x0; (void)y0; (void)x1; (void)y1;
   for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
     if(layer->flag&GP_LAYER_HIDE)continue;
@@ -387,18 +395,17 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     PGFxView fx_view{w,h,g_map_scale,g_map_origin_x,g_map_origin_y,g_canvas_width,g_canvas_height};
     const bool use_fx=fx_count>0&&project_grease_fx_pass_count(fx_entries,fx_count,&fx_view)>0&&project_grease_fx_begin_layer(w,h)!=0;
     if(use_fx)g_draw_mode=DRAW_PREMULT;
-    if(layer->onion_flag&GP_LAYER_ONIONSKIN){
-      const float base=std::max(0.0f,std::min(gpd->onion_factor,1.0f));
-      int steps=std::max(0,(int)layer->gstep);
-      for(bGPDframe*f=current->prev;f&&current->framenum-f->framenum<=steps;f=f->prev) {
-        float fac=base*(1.0f-float(current->framenum-f->framenum)/float(steps+1));
-        draw_frame(gpd,layer,f,w,h,fac);
-      }
-      steps=std::max(0,(int)layer->gstep_next);
-      for(bGPDframe*f=current->next;f&&f->framenum-current->framenum<=steps;f=f->next) {
-        float fac=base*(1.0f-float(f->framenum-current->framenum)/float(steps+1));
-        draw_frame(gpd,layer,f,w,h,fac);
-      }
+    // Onion skin (relative mode, Blender's default): gstep keyframes before / gstep_next after,
+    // shown when the overlay switch (GP_DATA_SHOW_ONIONSKINS) and the layer's GP_LAYER_ONIONSKIN
+    // are on; ghost opacity from gpencil_layer_final_tint_and_alpha_get (pg_gp_onion_alpha).
+    if((gpd->flag&GP_DATA_SHOW_ONIONSKINS)&&(layer->onion_flag&GP_LAYER_ONIONSKIN)){
+      const bool fade=(gpd->onion_flag&GP_ONION_FADE)!=0;
+      int k=1;
+      for(bGPDframe*f=current->prev;f&&k<=std::max(0,(int)gpd->gstep);f=f->prev,k++)
+        draw_frame(gpd,layer,f,w,h,pg_gp_onion_alpha(-k,fade,gpd->onion_factor));
+      k=1;
+      for(bGPDframe*f=current->next;f&&k<=std::max(0,(int)gpd->gstep_next);f=f->next,k++)
+        draw_frame(gpd,layer,f,w,h,pg_gp_onion_alpha(k,fade,gpd->onion_factor));
     }
     const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
     if(g_weight_group>=0)draw_frame_weights(gpd,shown?shown:current,w,h);
@@ -407,7 +414,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     g_active_mask_tex=0;
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
-  draw_sbuffer(gpd, 1.0f, w, h);
+  if(!g_export_mode)draw_sbuffer(gpd, 1.0f, w, h);
   return glGetError()==GL_NO_ERROR?1:0;
 }
 
@@ -448,7 +455,14 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
       const MaterialGPencilStyle* style = ma ? ma->gp_style : nullptr;
       if (style && (style->flag & GP_MATERIAL_HIDE)) continue;
 
-      append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
+      // gpencil_fill.c gpencil_draw_datablock(): STROKE / BOTH draw the strokes as they look,
+      // CONTROL ("Edit Lines") only the thin basic lines (gpencil_draw_basic_stroke, 1 px).
+      if (g_fill_draw_mode == 2) {
+        append_stroke_outline(strokes, stroke, 1.0f / std::max(g_map_scale, 1e-6f), w, h);
+      }
+      else {
+        append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
+      }
     }
     draw_vertices(strokes, mask_color, false);
   }
@@ -461,6 +475,7 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
 // independent of zoom), drawn over the document like Blender's annotation overlay.
 extern "C" const bGPDframe *pg_annot_frame_at(const bGPdata *annot, int frame);
 extern "C" int project_grease_android_present_annotations(const bGPdata* annot,int frame_number){
+  if(g_export_mode)return 1;
   if(!annot||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
   update_canvas_map(w,h);
@@ -503,6 +518,10 @@ extern "C" void project_grease_android_present_set_canvas_size(int width,int hei
   g_canvas_height=std::max(1,height);
 }
 extern "C" void project_grease_android_present_set_weight_view(int group){g_weight_group=group;}
+extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_fill_draw_mode=std::clamp(mode,0,2);}
+extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
+extern "C" void project_grease_android_present_get_view_transform(float*zoom,float*pan_x,float*pan_y){
+  if(zoom)*zoom=g_view_zoom;if(pan_x)*pan_x=g_view_pan_x;if(pan_y)*pan_y=g_view_pan_y;}
 extern "C" void project_grease_android_present_set_view_transform(float zoom,float pan_x,float pan_y){
   g_view_zoom=std::clamp(zoom,0.1f,8.0f);
   g_view_pan_x=pan_x;

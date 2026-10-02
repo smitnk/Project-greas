@@ -114,6 +114,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_edit_tests.sh
 
+      - name: Run native segment select / material / onion tests
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_edit4_tests.sh
+
       - name: Run native annotation tests
         run: bash tools/run_native_annotation_tests.sh
 

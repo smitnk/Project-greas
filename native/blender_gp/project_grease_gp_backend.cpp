@@ -825,8 +825,10 @@ bool Backend::create_document() {
     impl_->last_error = "Android bGPdata allocation failed";
     return false;
   }
+  // Onion skinning starts off (the editor's onion switch); GP_DATA_SHOW_ONIONSKINS is the overlay
+  // toggle, GP_LAYER_ONIONSKIN (on for new layers, BKE_gpencil_layer_addnew) the per-layer one.
   impl_->gpd->flag = GP_DATA_DISPINFO | GP_DATA_EXPAND | GP_DATA_VIEWALIGN |
-                     GP_DATA_SHOW_ONIONSKINS | GP_DATA_CURVE_ADAPTIVE_RESOLUTION;
+                     GP_DATA_CURVE_ADAPTIVE_RESOLUTION;
   impl_->gpd->line_color[0] = 0.6f;
   impl_->gpd->line_color[1] = 0.6f;
   impl_->gpd->line_color[2] = 0.6f;
@@ -4536,10 +4538,12 @@ bool Backend::set_onion_skin(bool enabled, int before, int after, float opacity)
     impl_->last_error = "layer is not selected";
     return false;
   }
-  impl_->layer->onion_flag = enabled ? (impl_->layer->onion_flag | GP_LAYER_ONIONSKIN) :
-                                       (impl_->layer->onion_flag & ~GP_LAYER_ONIONSKIN);
-  impl_->layer->gstep = static_cast<short>(std::max(0, std::min(before, 100)));
-  impl_->layer->gstep_next = static_cast<short>(std::max(0, std::min(after, 100)));
+  // Overlay switch and keyframe counts of the data (Blender: overlay "Onion Skins",
+  // bGPdata.gstep / gstep_next); each layer keeps its own GP_LAYER_ONIONSKIN.
+  if (enabled) impl_->gpd->flag |= GP_DATA_SHOW_ONIONSKINS;
+  else impl_->gpd->flag &= ~GP_DATA_SHOW_ONIONSKINS;
+  impl_->gpd->gstep = static_cast<short>(std::max(0, std::min(before, 100)));
+  impl_->gpd->gstep_next = static_cast<short>(std::max(0, std::min(after, 100)));
   impl_->gpd->onion_factor = std::max(0.0f, std::min(opacity, 1.0f));
   project_grease_gp_tag(impl_->gpd);
   return true;

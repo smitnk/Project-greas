@@ -39,9 +39,26 @@ enum {
   /* Legacy GP modifiers applied ("baked") to the selected strokes. */
   PG_EDIT_CMD_MOD_THICKNESS = 40, /* args: normalize, thickness, thickness_factor */
   PG_EDIT_CMD_MOD_OPACITY = 41,   /* args: modify_color, factor, normalize, hardness */
+  /* args: mode, start, end, overshoot, use_curvature, point_density, segment_influence,
+   * max_angle, invert_curvature */
+  PG_EDIT_CMD_MOD_LENGTH = 42,
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 41
+#define PG_EDIT_CMD_LAST 42
+
+/* eLengthGpencil_Type */
+enum { PG_LENGTH_RELATIVE = 0, PG_LENGTH_ABSOLUTE = 1 };
+
+typedef struct PGLengthParams {
+  int mode;
+  float start_fac, end_fac, overshoot_fac;
+  int use_curvature;
+  float point_density, segment_influence, max_angle;
+  int invert_curvature;
+} PGLengthParams;
+
+/* MOD_gpencil_legacy_length.c applyLength() without the random offsets. */
+int pg_gp_mod_length(struct bGPdata *gpd, const struct bGPDlayer *only_layer, const PGLengthParams *p);
 
 /* eModifyColorGpencil_Flag (DNA_gpencil_modifier_types.h) */
 enum {

@@ -22,6 +22,7 @@
  * is keyed off the data flag only.
  */
 
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
@@ -646,6 +647,81 @@ int pg_gp_mod_opacity(bGPdata *gpd, const bGPDlayer *only_layer,
   PGE_EDITABLE_STROKES_END;
   return changed;
 }
+
+/* gpencil_modify_stroke() (MOD_gpencil_legacy_length.c) */
+static bool pge_length_modify_stroke(bGPDstroke *gps, const float length, const float overshoot_fac,
+                                     const short len_mode, const bool use_curvature,
+                                     const int extra_point_count, const float segment_influence,
+                                     const float max_angle, const bool invert_curvature)
+{
+  bool changed = false;
+  if (length == 0.0f) {
+    return changed;
+  }
+  if (length > 0.0f) {
+    changed = BKE_gpencil_stroke_stretch(gps, length, overshoot_fac, len_mode, use_curvature,
+                                         extra_point_count, segment_influence, max_angle,
+                                         invert_curvature);
+  }
+  else {
+    changed = BKE_gpencil_stroke_shrink(gps, fabsf(length), len_mode);
+  }
+  return changed;
+}
+
+int pg_gp_mod_length(bGPdata *gpd, const bGPDlayer *only_layer, const PGLengthParams *p)
+{
+  if (gpd == NULL || p == NULL || !isfinite(p->start_fac) || !isfinite(p->end_fac) ||
+      !isfinite(p->overshoot_fac) || !isfinite(p->point_density) ||
+      (p->mode != PG_LENGTH_RELATIVE && p->mode != PG_LENGTH_ABSOLUTE))
+  {
+    return 0;
+  }
+  int any = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
+      continue;
+    }
+    if ((gps->flag & GP_STROKE_CYCLIC) != 0) {
+      /* Don't affect cyclic strokes as they have no start/end. */
+      continue;
+    }
+    /* applyLength() */
+    bool changed = false;
+    const float len = (p->mode == PG_LENGTH_ABSOLUTE) ? 1.0f : BKE_gpencil_stroke_length(gps, true);
+    const int totpoints = gps->totpoints;
+    if (len < FLT_EPSILON) {
+      continue;
+    }
+    float first_fac = p->start_fac;
+    int first_mode = 1;
+    float second_fac = p->end_fac;
+    int second_mode = 2;
+    if (first_fac < 0) {
+      const float tf = first_fac; first_fac = second_fac; second_fac = tf; /* SWAP */
+      const int tm = first_mode; first_mode = second_mode; second_mode = tm;
+    }
+    const int first_extra_point_count = (int)ceilf(first_fac * p->point_density);
+    const int second_extra_point_count = (int)ceilf(second_fac * p->point_density);
+
+    changed |= pge_length_modify_stroke(gps, len * first_fac, p->overshoot_fac, (short)first_mode,
+                                        p->use_curvature != 0, first_extra_point_count,
+                                        p->segment_influence, p->max_angle, p->invert_curvature != 0);
+    const float second_overshoot_fac = p->overshoot_fac * (totpoints - 2) /
+                                       ((float)gps->totpoints - 2) *
+                                       (1.0f - 0.1f / (totpoints - 1.0f));
+    changed |= pge_length_modify_stroke(gps, len * second_fac, second_overshoot_fac,
+                                        (short)second_mode, p->use_curvature != 0,
+                                        second_extra_point_count, p->segment_influence,
+                                        p->max_angle, p->invert_curvature != 0);
+    if (changed) {
+      BKE_gpencil_stroke_geometry_update(gpd, gps);
+      any = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return any;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -724,6 +800,15 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
       changed = pg_gp_mod_opacity(
           gpd, scope, (int)lroundf(args[0]), args[1], args[2] != 0.0f, args[3]);
       break;
+    case PG_EDIT_CMD_MOD_LENGTH: {
+      if (arg_count < 9) {
+        return 0;
+      }
+      const PGLengthParams lp = {(int)lroundf(args[0]), args[1], args[2], args[3],
+                                 args[4] != 0.0f, args[5], args[6], args[7], args[8] != 0.0f};
+      changed = pg_gp_mod_length(gpd, scope, &lp);
+      break;
+    }
     default:
       return 0;
   }

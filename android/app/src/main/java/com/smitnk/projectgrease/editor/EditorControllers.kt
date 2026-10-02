@@ -4,6 +4,11 @@ import kotlin.math.pow
 
 import com.smitnk.projectgrease.nativebridge.GPNative
 
+// Fill boundary source (Blender brush fill_draw_mode): All, Strokes, Edit Lines.
+const val FILL_BOUNDARY_ALL = 0
+const val FILL_BOUNDARY_STROKES = 1
+const val FILL_BOUNDARY_EDIT_LINES = 2
+
 class NativeEditorBridge : ModifierNative, FxNative {
     var handle: Long = 0L
         private set
@@ -361,6 +366,22 @@ class ViewController {
     fun setZoom(value:Float){zoom=value.coerceIn(0.1f,8f)}
     fun panBy(dx:Float,dy:Float){panX+=dx;panY+=dy}
     fun reset(){zoom=1f;panX=0f;panY=0f}
+    /**
+     * Fit canvas: the presenter (update_canvas_map) shows the canvas at 92% of the fitting scale
+     * times the zoom, centered plus the pan, so zoom 1 without pan is the whole canvas in view with
+     * a 4% margin on each side of the limiting axis.
+     */
+    fun fitCanvas(){zoom=FIT_ZOOM;panX=0f;panY=0f}
+    companion object {
+        const val FIT_ZOOM = 1f
+        const val FIT_MARGIN = 0.04f
+        /** Canvas rectangle (left, top, width, height) in viewport pixels for a zoom / pan, as the presenter lays it out. */
+        fun canvasRect(viewW:Float, viewH:Float, canvasW:Float, canvasH:Float, zoom:Float, panX:Float, panY:Float):FloatArray {
+            val scale = minOf(viewW/canvasW.coerceAtLeast(1f), viewH/canvasH.coerceAtLeast(1f)) * (1f - 2f*FIT_MARGIN) * zoom
+            val w = canvasW*scale; val h = canvasH*scale
+            return floatArrayOf((viewW-w)*0.5f+panX, (viewH-h)*0.5f+panY, w, h)
+        }
+    }
     fun toggleGrid(){showGrid=!showGrid}
     fun toggleGuides(){showGuides=!showGuides}
     fun toggleSnapping(){snapEnabled=!snapEnabled}
@@ -454,6 +475,7 @@ class OnionSkinController {
     fun setBefore(value:Int){beforeFrames=value.coerceIn(0,12)}
     fun setAfter(value:Int){afterFrames=value.coerceIn(0,12)}
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
+    fun setFade(value:Boolean){fade=value}
 }
 
 enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
@@ -511,6 +533,7 @@ class EditorController {
         if (rendererHandle == 0L) return false
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
         if(ok){
+            reapplyOnion()
             selectedLayer=0
             animation.setSceneEnd(0)
             animation.initialize()
@@ -866,7 +889,7 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
-            runSelectCommand(ProjectGreaseSelect.lasso(selectOp, selectMode, noose))
+            runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(selectMode), noose))
             return
         }
         if (tools.activeTool == GreaseTool.DRAW) {
@@ -941,17 +964,19 @@ class EditorController {
         }
     }
     fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean =
-        runSelectCommand(ProjectGreaseSelect.lasso(selectOp, selectMode, points))
+        runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(selectMode), points))
 
     // ---- Blender 3.6.23 Legacy GP selection (native/blender_gp/project_grease_blender_select.c) ----
     // Point vs. stroke select mode and the eSelectOp used by lasso/box/circle selection.
-    var selectMode = ProjectGreaseSelect.MODE_POINT
+    // Edit-mode select mode switch (Point / Stroke / Segment); Stroke picks whole strokes as before.
+    var selectMode = ProjectGreaseSelect.MODE_STROKE
         private set
     var selectOp = ProjectGreaseSelect.OP_SET
         private set
     fun setSelectMode(value:Int):Boolean {
-        if (!ProjectGreaseSelect.isValidMode(value)) return false
+        if (!ProjectGreaseSelect.isValidSelectMode(value)) return false
         selectMode = value
+        pickEntireStrokes = value == ProjectGreaseSelect.MODE_STROKE
         return true
     }
     fun setSelectOp(value:Int):Boolean {
@@ -981,10 +1006,10 @@ class EditorController {
     fun selectLastPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false) =
         runSelectCommand(ProjectGreaseSelect.last(onlySelectedStrokes, extend))
     fun selectBox(x0:Float, y0:Float, x1:Float, y1:Float) =
-        runSelectCommand(ProjectGreaseSelect.box(selectOp, selectMode, x0, y0, x1, y1))
+        runSelectCommand(ProjectGreaseSelect.box(selectOp, ProjectGreaseSelect.areaMode(selectMode), x0, y0, x1, y1))
     /** One dab of a circle-select gesture; only the first dab of a SET gesture replaces the selection. */
     fun selectCircleAt(x:Float, y:Float, radius:Float, isFirst:Boolean) =
-        runSelectCommand(ProjectGreaseSelect.circle(selectOp, selectMode, x, y, radius, isFirst))
+        runSelectCommand(ProjectGreaseSelect.circle(selectOp, ProjectGreaseSelect.areaMode(selectMode), x, y, radius, isFirst))
 
     fun fillSelectedStroke():Boolean {
         val i=selection.selectedStroke
@@ -994,6 +1019,27 @@ class EditorController {
         return ok
     }
 
+    /** GP_ONION_FADE: ghosts fade with their keyframe distance. */
+    fun setOnionFade(enabled:Boolean):Boolean {
+        if (native.handle == 0L) return false
+        native.applyEditCommand(ProjectGreaseSelect.CMD_ONION_FADE, ProjectGreaseSelect.onionFade(enabled).args)
+        onion.setFade(enabled)
+        render()
+        return true
+    }
+    /** Per-layer "Use onion skinning" (GP_LAYER_ONIONSKIN). */
+    fun layerOnion(index:Int = selectedLayer):Boolean = (native.layerInfo(index)?.getOrNull(3) ?: 1f) != 0f
+    fun setLayerOnion(index:Int, enabled:Boolean):Boolean {
+        val command = ProjectGreaseSelect.onionLayer(index, enabled) ?: return false
+        val ok = native.applyEditCommand(command.id, command.args)
+        if (ok) { history.markEdit(); document.markDirty(); render() }
+        return ok
+    }
+    /** The onion overlay settings live in the editor; re-apply them after the document is replaced. */
+    private fun reapplyOnion() {
+        native.setOnionSkin(onion.enabled, onion.beforeFrames, onion.afterFrames, onion.opacity)
+        native.applyEditCommand(ProjectGreaseSelect.CMD_ONION_FADE, ProjectGreaseSelect.onionFade(onion.fade).args)
+    }
     fun setOnionSkin(enabled:Boolean,before:Int=2,after:Int=2,opacity:Float=0.35f):Boolean {
         val ok = native.setOnionSkin(enabled,before,after,opacity)
         if (ok) { if (enabled != onion.enabled) onion.toggle(); onion.setBefore(before); onion.setAfter(after); onion.setOpacity(opacity); render() }
@@ -1043,6 +1089,7 @@ class EditorController {
         if (native.handle == 0L) return false
         val parsed = ProjectDocumentCodec.parse(raw) ?: return false
         if (!GPNative.nativeResetDocumentEgl(rendererHandle)) return false
+        reapplyOnion()
         document.canvasWidth = (parsed.width ?: document.canvasWidth).coerceAtLeast(1)
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
         animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
@@ -1068,6 +1115,9 @@ class EditorController {
     private fun syncActiveMaterial(material:MaterialRecord?) {
         materials.select(0)
         if (material == null) return
+        syncMaterialUi(material)
+    }
+    private fun syncMaterialUi(material:MaterialRecord) {
         val s = material.stroke
         fun channel(v:Float) = (v.coerceIn(0f,1f) * 255f + 0.5f).toInt()
         materials.setColor((channel(s[3]) shl 24) or (channel(s[0]) shl 16) or (channel(s[1]) shl 8) or channel(s[2]))
@@ -1102,6 +1152,15 @@ class EditorController {
         if(ok){ multiframeEditing=enabled; render() }
         return ok
     }
+    // Fill tool options (Blender fill brush): leak size, dilate (negative contracts), boundary source.
+    var fillLeak = 3; private set
+    var fillDilate = 1; private set
+    var fillBoundary = FILL_BOUNDARY_ALL; private set
+    fun setFillOptions(leak:Int = fillLeak, dilate:Int = fillDilate, boundary:Int = fillBoundary) {
+        fillLeak = leak.coerceIn(1, 100)
+        fillDilate = dilate.coerceIn(-40, 40)
+        fillBoundary = boundary.coerceIn(FILL_BOUNDARY_ALL, FILL_BOUNDARY_EDIT_LINES)
+    }
     fun fillAt(x: Float, y: Float): Boolean {
         if (rendererHandle == 0L) return false
         // Blender Legacy GP Fill creates a closed filled stroke using the active material.
@@ -1109,6 +1168,7 @@ class EditorController {
         if (!materials.fillEnabled) {
             setMaterialFillEnabled(true)
         }
+        GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
         return ok
@@ -1155,6 +1215,43 @@ class EditorController {
         materials.select(index)
         return true
     }
+    /**
+     * Delete material slot `index` (edit4 pg_gp_material_slot_remove): its strokes are deleted, higher
+     * slots move down; the last slot stays. The active material follows its slot. Undoable.
+     */
+    fun deleteMaterial(index:Int = materials.activeMaterial):Boolean {
+        val count = native.materialCount()
+        if (index < 0 || index >= count || count <= 1) return false
+        val command = ProjectGreaseSelect.materialRemove(index) ?: return false
+        if (!native.applyEditCommand(command.id, command.args)) return false
+        val active = materials.activeMaterial
+        val next = when {
+            active > index -> active - 1
+            active == index -> index.coerceAtMost(count - 2)
+            else -> active
+        }
+        materials.select(next)
+        NativeDocumentAdapter(native).materialRecord(next)?.let { syncMaterialUi(it) }
+        selection.clear()
+        history.markEdit(); document.markDirty(); render()
+        return true
+    }
+    fun materialCount():Int = native.materialCount()
+
+    /** Fit canvas: whole canvas in view (see ViewController.fitCanvas). */
+    fun fitCanvas() { view.fitCanvas(); render() }
+
+    /**
+     * The current frame as the screen shows it (modifiers, masks, effects; no annotations), rendered
+     * offscreen at canvas size: ARGB pixels, top row first, or null when the renderer cannot.
+     */
+    fun renderCanvasPixels(transparent:Boolean):IntArray? {
+        if (rendererHandle == 0L) return null
+        val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent)
+        render()
+        return px?.takeIf { it.size == document.canvasWidth * document.canvasHeight }
+    }
+
     fun setMaterialFillEnabled(enabled:Boolean):Boolean {
         materials.setFillEnabled(enabled)
         return native.setMaterialFillEnabled(materials.activeMaterial,enabled)
@@ -1589,7 +1686,9 @@ class EditorController {
         val flags = ProjectGreaseSelect.PICK_DESELECT_ALL or
             (if (pickEntireStrokes) ProjectGreaseSelect.PICK_ENTIRE else 0)
         val radiusSquared = ProjectGreaseSelect.pickRadiusSquared(view.zoom)
-        val changed = runSelectCommand(ProjectGreaseSelect.pick(x, y, radiusSquared, flags, selectMode))
+        val changed = runSelectCommand(
+            if (selectMode == ProjectGreaseSelect.MODE_SEGMENT) ProjectGreaseSelect.segmentPick(x, y, radiusSquared, ProjectGreaseSelect.PICK_DESELECT_ALL)
+            else ProjectGreaseSelect.pick(x, y, radiusSquared, flags, ProjectGreaseSelect.areaMode(selectMode)))
         val index = native.hitTestStroke(x, y, 24f)
         if (index >= 0) selection.note(index) else if (changed) selection.clear()
         return changed || index >= 0
@@ -1778,6 +1877,7 @@ class EditorController {
     fun undo():Boolean {
         val ok = history.undo()
         if (ok) {
+            reapplyOnion()
             selection.clear()
             animation.initialize()
             document.markDirty()
@@ -1788,6 +1888,7 @@ class EditorController {
     fun redo():Boolean {
         val ok = history.redo()
         if (ok) {
+            reapplyOnion()
             selection.clear()
             animation.initialize()
             document.markDirty()

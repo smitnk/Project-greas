@@ -582,10 +582,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetLayerInfo(
   if (!project_grease_gp_get_layer_info(from_handle(handle), index, &info)) {
     return nullptr;
   }
-  const jfloat values[] = {info.visible ? 1.0f : 0.0f, info.locked ? 1.0f : 0.0f, info.opacity};
-  jfloatArray result = env->NewFloatArray(3);
+  const jfloat values[] = {info.visible ? 1.0f : 0.0f, info.locked ? 1.0f : 0.0f, info.opacity,
+                           info.onion ? 1.0f : 0.0f};
+  jfloatArray result = env->NewFloatArray(4);
   if (!result) return nullptr;
-  env->SetFloatArrayRegion(result, 0, 3, values);
+  env->SetFloatArrayRegion(result, 0, 4, values);
   return result;
 }
 

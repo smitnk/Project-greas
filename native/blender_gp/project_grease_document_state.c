@@ -84,6 +84,7 @@ int pg_doc_layer_info_get(const bGPDlayer *gpl, PGLayerInfo *r_info)
   r_info->visible = (gpl->flag & GP_LAYER_HIDE) == 0;
   r_info->locked = (gpl->flag & GP_LAYER_LOCKED) != 0;
   r_info->opacity = gpl->opacity;
+  r_info->onion = (gpl->onion_flag & GP_LAYER_ONIONSKIN) != 0;
   return 1;
 }
 

@@ -22,6 +22,10 @@ extern "C" void project_grease_android_present_set_color(float r, float g, float
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" void project_grease_android_present_set_weight_view(int group);
+extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
+extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
+extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 
@@ -37,6 +41,10 @@ struct Renderer {
   bool gp_connected = false;
   std::vector<ProjectGreaseGPPoint> preview_points;
   float preview_thickness = 1.0f;
+  // Fill tool options (Blender brush defaults: fill_leak 3, dilate 1, fill_draw_mode BOTH).
+  int fill_leak = 3;
+  int fill_dilate = 1;
+  int fill_draw_mode = 0;
 };
 
 Renderer *from_handle(jlong value)
@@ -554,6 +562,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
     return JNI_FALSE;
   }
 
+  project_grease_android_present_set_fill_draw_mode(renderer->fill_draw_mode);
   if (!project_grease_gp_render_fill_mask(renderer->gp_handle)) {
     return JNI_FALSE;
   }
@@ -581,8 +590,8 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
       height,
       seed_x,
       seed_y,
-      3,
-      0,
+      renderer->fill_leak,
+      renderer->fill_dilate,
       material_index,
       thickness) != 0;
 
@@ -636,4 +645,97 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBlenderGpConnected(
 {
   Renderer *renderer = from_handle(handle);
   return renderer && renderer->gp_connected ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Fill tool options: leak size (px, >= 1), dilate (px, negative contracts) and the boundary source
+ * (fill_draw_mode: 0 All, 1 Strokes, 2 Edit Lines). */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillOptionsEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint leak, jint dilate, jint draw_mode)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  renderer->fill_leak = std::max(1, std::min(100, static_cast<int>(leak)));
+  renderer->fill_dilate = std::max(-40, std::min(40, static_cast<int>(dilate)));
+  renderer->fill_draw_mode = std::max(0, std::min(2, static_cast<int>(draw_mode)));
+  return JNI_TRUE;
+}
+
+/* Renders the current frame (modifiers, masks and effects as on screen; no annotations, no open
+ * stroke) offscreen at canvas size and returns ARGB pixels, top row first, or null. */
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderCanvasPixelsEglRenderer(
+    JNIEnv *env, jobject, jlong handle, jint width, jint height, jboolean transparent)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected || width <= 0 || height <= 0 ||
+      renderer->display == EGL_NO_DISPLAY || renderer->surface == EGL_NO_SURFACE ||
+      renderer->context == EGL_NO_CONTEXT) {
+    return nullptr;
+  }
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    return nullptr;
+  }
+  GLint max_size = 0, max_rb = 0;
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
+  glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &max_rb);
+  if (width > max_size || height > max_size || width > max_rb || height > max_rb) return nullptr;
+  GLint prev_fbo = 0, vp[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+  glGetIntegerv(GL_VIEWPORT, vp);
+  GLuint tex = 0, fbo = 0;
+  glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+  jintArray result = nullptr;
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+    float zoom = 1.0f, pan_x = 0.0f, pan_y = 0.0f;
+    project_grease_android_present_get_view_transform(&zoom, &pan_x, &pan_y);
+    // The presenter fits the canvas at 92% x zoom; 1 / 0.92 maps one canvas unit to one pixel.
+    project_grease_android_present_set_view_transform(1.0f / 0.92f, 0.0f, 0.0f);
+    project_grease_android_present_set_export_mode(transparent ? 2 : 1);
+    glViewport(0, 0, width, height);
+    const bool ok = project_grease_gp_render_external_context(renderer->gp_handle) != 0;
+    std::vector<GLubyte> pixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+    if (ok) glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    project_grease_android_present_set_export_mode(0);
+    project_grease_android_present_set_view_transform(zoom, pan_x, pan_y);
+    if (ok && glGetError() == GL_NO_ERROR) {
+      std::vector<jint> argb(static_cast<size_t>(width) * static_cast<size_t>(height));
+      for (int y = 0; y < height; ++y) {
+        const GLubyte *row = &pixels[static_cast<size_t>(height - 1 - y) * static_cast<size_t>(width) * 4u];
+        for (int x = 0; x < width; ++x) {
+          const GLubyte *p = row + static_cast<size_t>(x) * 4u;
+          unsigned a = p[3], r = p[0], g = p[1], b = p[2];
+          if (!transparent) {
+            a = 255;
+          }
+          else if (a > 0 && a < 255) {
+            // Blending accumulates premultiplied color over the cleared (0,0,0,0) target.
+            r = std::min(255u, (r * 255u + a / 2u) / a);
+            g = std::min(255u, (g * 255u + a / 2u) / a);
+            b = std::min(255u, (b * 255u + a / 2u) / a);
+          }
+          else if (a == 0) {
+            r = g = b = 0;
+          }
+          argb[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)] =
+              static_cast<jint>((a << 24) | (r << 16) | (g << 8) | b);
+        }
+      }
+      result = env->NewIntArray(width * height);
+      if (result) env->SetIntArrayRegion(result, 0, width * height, argb.data());
+    }
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prev_fbo));
+  glDeleteFramebuffers(1, &fbo);
+  glDeleteTextures(1, &tex);
+  glViewport(vp[0], vp[1], vp[2], vp[3]);
+  return result;
 }

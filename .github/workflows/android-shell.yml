@@ -267,12 +267,15 @@ jobs:
           assert b"BATCH 3 OF 3" in dex, "APK lacks the Line Art batch 3 registry entry"
           assert b"Generate Line Art strokes" in dex, "APK lacks the Line Art stroke button"
           assert b"Bake Line Art to frames" in dex, "APK lacks the Line Art bake button"
+          for text in (b"Fit canvas", b"Delete material", b"Segment", b"Use onion skinning", b"Edit Lines",
+                       b"Transparent background", b"Save as failed", b"PNG export failed"):
+              assert text in dex, "APK lacks UI text %r" % text
           assert b"Line Art preview" in dex, "APK lacks the Line Art preview switch"
           assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
-          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes"):
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes", b"nativeSetFillOptionsEglRenderer", b"nativeRenderCanvasPixelsEglRenderer"):
               owners = [name for name, data in libs.items() if sym in data]
               assert owners, "no native library exports " + sym.decode()
               print(sym.decode(), "in", owners)

@@ -12,6 +12,7 @@
 #define GP_FRAME_SELECT (1 << 1)
 #define GP_LAYER_HIDE (1 << 0)
 #define GP_LAYER_LOCKED (1 << 1)
+#define GP_LAYER_ONIONSKIN (1 << 0) /* eGPDlayer_OnionFlag */
 #define GP_LAYER_UNLOCK_COLOR (1 << 12)
 #define GP_DATA_STROKE_MULTIEDIT (1 << 9)
 #define GP_DATA_CACHE_IS_DIRTY (1 << 22)
@@ -58,6 +59,7 @@ typedef struct bGPDlayer {
   float opacity;
   float color[4];   /* annotation layer color */
   short thickness;  /* annotation layer thickness (px) */
+  short onion_flag; /* GP_LAYER_ONIONSKIN */
 } bGPDlayer;
 
 typedef struct bGPdata {

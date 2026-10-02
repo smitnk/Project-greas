@@ -35,6 +35,10 @@ object GPNative {
     external fun nativePickColorEglRenderer(handle: Long, x: Int, y: Int): Int
     external fun nativeSetCanvasSize(handle: Long, width: Int, height: Int): Boolean
     external fun nativeSetViewTransform(handle: Long, zoom: Float, panX: Float, panY: Float): Boolean
+    /** Fill tool options: leak (px, Blender fill_leak), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
+    external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
+    /** Current frame rendered offscreen at width x height (canvas units = pixels): ARGB, top row first. */
+    external fun nativeRenderCanvasPixelsEglRenderer(handle: Long, width: Int, height: Int, transparent: Boolean): IntArray?
 
     external fun nativeCreate(): Long
     external fun nativeDestroy(handle: Long)
@@ -134,7 +138,7 @@ object GPNative {
     ): Boolean
     // Save/load state. Float layouts (see project_grease_gp_jni.cpp):
     //   stroke info   [material, thickness, cyclic, fillOpacity, fillR, fillG, fillB, fillA]
-    //   layer info    [visible, locked, opacity]
+    //   layer info    [visible, locked, opacity, onion (GP_LAYER_ONIONSKIN)]
     //   material info [strokeRGBA(4), fillRGBA(4), visible, fillEnabled]
     external fun nativeGetStrokeInfo(handle: Long, strokeIndex: Int): FloatArray?
     //   point color   [r, g, b, a]  (bGPDspoint.vert_color; alpha 0 = no vertex color)

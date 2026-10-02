@@ -31,10 +31,11 @@ typedef struct bGPDstroke {
   int totpoints;
   int flag;
   int mat_nr;
+  int select_index;
   short thickness;
+  float hardeness;
   float fill_opacity_fac;
   float vert_color_fill[4];
-  int select_index;
   void *editcurve;
   bGPDstroke_Runtime runtime;
 } bGPDstroke;

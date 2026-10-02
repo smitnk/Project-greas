@@ -319,6 +319,43 @@ static void test_dispatch(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_DELETE_STROKES, NULL, 0) == 1, "dispatch delete strokes");
 }
 
+
+static void test_modifiers(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 3, 0, 0, 0, 10, 0);
+  bGPDstroke *b = add_stroke(f, 3, 0, 0, 20, 10, 0);
+  for (int i = 0; i < 3; i++) { a->points[i].pressure = b->points[i].pressure = 0.8f; a->points[i].strength = b->points[i].strength = 0.6f; }
+  a->thickness = 20; a->hardeness = 0.5f; a->fill_opacity_fac = 1.0f; b->fill_opacity_fac = 1.0f;
+  select_points(gpd, a, 7); /* only stroke a is selected */
+
+  CHECK(pg_gp_mod_thickness(gpd, NULL, 0, 0, 1.5f) == 1, "thickness factor changes pressure");
+  CHECK(NEAR(a->points[0].pressure, 1.2f) && NEAR(b->points[0].pressure, 0.8f), "factor multiplies pressure of selected strokes only");
+  pg_gp_mod_thickness(gpd, NULL, 1, 10, 1.0f);
+  CHECK(NEAR(a->points[1].pressure, 0.5f), "normalized: pressure = thickness / stroke thickness (10/20)");
+  pg_gp_mod_thickness(gpd, NULL, 0, 0, -2.0f);
+  CHECK(a->points[2].pressure == 0.0f, "pressure clamps at 0");
+
+  CHECK(pg_gp_mod_opacity(gpd, NULL, PG_MODIFY_COLOR_STROKE, 0.5f, 0, 1.0f) == 1, "opacity stroke");
+  CHECK(NEAR(a->points[0].strength, 0.1f) && NEAR(a->fill_opacity_fac, 1.0f), "non-normalized adds factor-1; fill untouched in stroke mode");
+  pg_gp_mod_opacity(gpd, NULL, PG_MODIFY_COLOR_BOTH, 0.7f, 1, 1.0f);
+  CHECK(NEAR(a->points[0].strength, 0.7f) && NEAR(a->fill_opacity_fac, 0.7f), "normalized sets strength; both mode sets fill factor");
+  pg_gp_mod_opacity(gpd, NULL, PG_MODIFY_COLOR_FILL, 3.0f, 0, 1.0f);
+  CHECK(NEAR(a->fill_opacity_fac, 1.0f) && NEAR(a->points[0].strength, 0.7f), "fill mode clamps fill, leaves strength");
+  pg_gp_mod_opacity(gpd, NULL, PG_MODIFY_COLOR_HARDNESS, 1.0f, 0, 0.5f);
+  CHECK(NEAR(a->hardeness, 0.25f), "hardness multiplies stroke hardness");
+  CHECK(NEAR(b->points[0].strength, 0.6f) && NEAR(b->fill_opacity_fac, 1.0f), "unselected stroke untouched");
+  CHECK(pg_gp_mod_opacity(gpd, NULL, 9, 1.0f, 0, 1.0f) == 0, "invalid mode rejected");
+
+  const float th[] = {0, 0, 2.0f};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_THICKNESS, th, 3) == 0, "pressure 0 stays 0 -> no change on that point only");
+  const float op[] = {PG_MODIFY_COLOR_STROKE, 0.9f, 1, 1.0f};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_OPACITY, op, 4) == 1 && NEAR(a->points[1].strength, 0.9f), "dispatch opacity");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_OPACITY, op, 2) == 0, "opacity needs 4 args");
+}
+
 int main(void)
 {
   test_pick();
@@ -328,6 +365,7 @@ int main(void)
   test_transform_skips_locked_and_other_layers();
   test_delete();
   test_dispatch();
+  test_modifiers();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

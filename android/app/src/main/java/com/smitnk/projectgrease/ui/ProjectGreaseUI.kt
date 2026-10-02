@@ -682,6 +682,14 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             ){Text(label)}
         }
         Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
+        listOf(
+            "Thickness x0.5" to { controller.applyThicknessModifier(0.5f) },
+            "Thickness x2" to { controller.applyThicknessModifier(2f) },
+            "Opacity 50%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 0.5f, normalize = true) },
+            "Opacity 100%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 1f, normalize = true) }
+        ).forEach { (label, action) ->
+            Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
+        }
         listOf("SMOOTH","SIMPLIFY","SUBDIVIDE").forEach { modifier ->
             Button(
                 onClick={if(controller.applySelectedModifier(modifier)){redraw()}},

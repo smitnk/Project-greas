@@ -1145,6 +1145,10 @@ class EditorController {
     }
     fun deleteSelectedStrokes() = runSelectCommand(ProjectGreaseSelect.deleteStrokes()).also { if (it) selection.clear() }
     fun deleteSelectedPoints() = runSelectCommand(ProjectGreaseSelect.deletePoints()).also { if (it) selection.clear() }
+    fun applyThicknessModifier(factor:Float, normalize:Boolean=false, thickness:Int=0) =
+        runSelectCommand(ProjectGreaseSelect.thicknessModifier(factor, normalize, thickness))
+    fun applyOpacityModifier(mode:Int, factor:Float, normalize:Boolean=false, hardness:Float=1f) =
+        runSelectCommand(ProjectGreaseSelect.opacityModifier(mode, factor, normalize, hardness))
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}

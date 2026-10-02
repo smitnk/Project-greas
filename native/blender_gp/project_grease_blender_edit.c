@@ -549,6 +549,103 @@ int pg_gp_edit_delete_points(bGPdata *gpd, const bGPDlayer *only_layer)
   return changed;
 }
 
+
+/* ---------------------------------------------------------------------------------------- */
+/* Legacy GP modifiers, applied to the selected strokes like "Apply modifier".               */
+/* The per-stroke code mirrors deformStroke() of the pinned modifier files with no vertex   */
+/* group (def_nr = -1, so get_modifier_point_weight() returns 1) and no custom curve.        */
+
+static float pge_clampf(float v, float lo, float hi)
+{
+  return v < lo ? lo : (v > hi ? hi : v); /* CLAMP() */
+}
+
+static float pge_interpf(float target, float origin, float t)
+{
+  return (t * target) + ((1.0f - t) * origin); /* interpf() */
+}
+
+int pg_gp_mod_thickness(bGPdata *gpd, const bGPDlayer *only_layer,
+                        int normalize, int thickness, float thickness_fac)
+{
+  if (gpd == NULL || !isfinite(thickness_fac)) {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
+      continue;
+    }
+    const float stroke_thickness_inv = 1.0f / (float)(gps->thickness > 1 ? gps->thickness : 1) /* max_ii */;
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      const float weight = 1.0f; /* no vertex group */
+      const float curvef = 1.0f; /* no custom curve */
+      float target;
+      if (normalize) {
+        target = (float)thickness * stroke_thickness_inv;
+        target *= curvef;
+      }
+      else {
+        target = pt->pressure * thickness_fac;
+      }
+      const float before = pt->pressure;
+      pt->pressure = pge_interpf(target, pt->pressure, weight);
+      if (pt->pressure < 0.0f) {
+        pt->pressure = 0.0f;
+      }
+      changed |= (pt->pressure != before);
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+int pg_gp_mod_opacity(bGPdata *gpd, const bGPDlayer *only_layer,
+                      int modify_color, float factor, int normalize, float hardness)
+{
+  if (gpd == NULL || !isfinite(factor) || !isfinite(hardness) ||
+      modify_color < PG_MODIFY_COLOR_BOTH || modify_color > PG_MODIFY_COLOR_HARDNESS)
+  {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!(gps->flag & GP_STROKE_SELECT)) {
+      continue;
+    }
+    /* Hardness (at stroke level). */
+    if (modify_color == PG_MODIFY_COLOR_HARDNESS) {
+      gps->hardeness *= hardness;
+      gps->hardeness = pge_clampf(gps->hardeness, 0.0f, 1.0f);
+      changed = 1;
+      continue;
+    }
+    if (modify_color != PG_MODIFY_COLOR_FILL && gps->points != NULL) {
+      for (int i = 0; i < gps->totpoints; i++) {
+        bGPDspoint *pt = &gps->points[i];
+        const float factor_curve = factor; /* no custom curve */
+        /* def_nr < 0 */
+        if (normalize) {
+          pt->strength = factor_curve;
+        }
+        else {
+          pt->strength += factor_curve - 1.0f;
+        }
+        pt->strength = pge_clampf(pt->strength, 0.0f, 1.0f);
+      }
+      changed = 1;
+    }
+    /* Fill using opacity factor. */
+    if (modify_color != PG_MODIFY_COLOR_STROKE) {
+      gps->fill_opacity_fac = factor;
+      gps->fill_opacity_fac = pge_clampf(gps->fill_opacity_fac, 0.0f, 1.0f);
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -613,6 +710,19 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
       break;
     case PG_EDIT_CMD_DELETE_POINTS:
       changed = pg_gp_edit_delete_points(gpd, scope);
+      break;
+    case PG_EDIT_CMD_MOD_THICKNESS:
+      if (arg_count < 3) {
+        return 0;
+      }
+      changed = pg_gp_mod_thickness(gpd, scope, args[0] != 0.0f, (int)lroundf(args[1]), args[2]);
+      break;
+    case PG_EDIT_CMD_MOD_OPACITY:
+      if (arg_count < 4) {
+        return 0;
+      }
+      changed = pg_gp_mod_opacity(
+          gpd, scope, (int)lroundf(args[0]), args[1], args[2] != 0.0f, args[3]);
       break;
     default:
       return 0;

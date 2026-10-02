@@ -36,9 +36,27 @@ enum {
   PG_EDIT_CMD_MIRROR = 35,        /* args: mirror_x, mirror_y [, cx, cy] */
   PG_EDIT_CMD_DELETE_STROKES = 36, /* args: - */
   PG_EDIT_CMD_DELETE_POINTS = 37,  /* args: - */
+  /* Legacy GP modifiers applied ("baked") to the selected strokes. */
+  PG_EDIT_CMD_MOD_THICKNESS = 40, /* args: normalize, thickness, thickness_factor */
+  PG_EDIT_CMD_MOD_OPACITY = 41,   /* args: modify_color, factor, normalize, hardness */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 37
+#define PG_EDIT_CMD_LAST 41
+
+/* eModifyColorGpencil_Flag (DNA_gpencil_modifier_types.h) */
+enum {
+  PG_MODIFY_COLOR_BOTH = 0,
+  PG_MODIFY_COLOR_STROKE = 1,
+  PG_MODIFY_COLOR_FILL = 2,
+  PG_MODIFY_COLOR_HARDNESS = 3,
+};
+
+/* MOD_gpencil_legacy_thick.c deformStroke() without vertex groups or custom curve. */
+int pg_gp_mod_thickness(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
+                        int normalize, int thickness, float thickness_fac);
+/* MOD_gpencil_legacy_opacity.c deformStroke() without vertex groups or custom curve. */
+int pg_gp_mod_opacity(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
+                      int modify_color, float factor, int normalize, float hardness);
 
 /* GP_SELECTMODE_* values accepted by pg_gp_edit_pick(): 0 = point, 1 = stroke. */
 int pg_gp_edit_pick(struct bGPdata *gpd,

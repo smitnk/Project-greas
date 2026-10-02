@@ -148,4 +148,19 @@ object ProjectGreaseSelect {
 
     fun deleteStrokes() = Command(CMD_DELETE_STROKES, FloatArray(0))
     fun deletePoints() = Command(CMD_DELETE_POINTS, FloatArray(0))
+
+    // Legacy GP modifiers baked into the selected strokes (MOD_gpencil_legacy_thick/opacity.c)
+    const val CMD_MOD_THICKNESS = 40
+    const val CMD_MOD_OPACITY = 41
+    const val MODIFY_BOTH = 0
+    const val MODIFY_STROKE = 1
+    const val MODIFY_FILL = 2
+    const val MODIFY_HARDNESS = 3
+
+    fun thicknessModifier(factor: Float, normalize: Boolean = false, thickness: Int = 0): Command? =
+        if (finite(factor) && thickness >= 0) Command(CMD_MOD_THICKNESS, floatArrayOf(flag(normalize), thickness.toFloat(), factor)) else null
+
+    fun opacityModifier(mode: Int, factor: Float, normalize: Boolean = false, hardness: Float = 1f): Command? =
+        if (mode in MODIFY_BOTH..MODIFY_HARDNESS && finite(factor, hardness))
+            Command(CMD_MOD_OPACITY, floatArrayOf(mode.toFloat(), factor, flag(normalize), hardness)) else null
 }

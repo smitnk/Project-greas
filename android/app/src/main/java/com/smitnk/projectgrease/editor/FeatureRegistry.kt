@@ -193,7 +193,7 @@ object FeatureRegistry {
         FeatureId.NOISE to missing("Modifier source not traced yet."),
         FeatureId.DASH to missing("Modifier source not traced yet."),
         FeatureId.OUTLINE to missing("Modifier source not traced yet."),
-        FeatureId.THICKNESS_MODIFIER to missing("Modifier source not traced yet."),
+        FeatureId.THICKNESS_MODIFIER to wired("Thickness modifier baked into selected strokes (MOD_gpencil_legacy_thick.c, no vertex groups/curve); Opacity modifier likewise. No live stack. $DEVICE"),
         FeatureId.COLOR_MODIFIER to missing("Modifier source not traced yet."),
         FeatureId.DEFORM to missing("Modifier source not traced yet."),
         FeatureId.GENERATE to missing("Generators are outside the focused closure."),

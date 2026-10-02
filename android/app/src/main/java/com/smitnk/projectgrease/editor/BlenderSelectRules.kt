@@ -163,4 +163,18 @@ object ProjectGreaseSelect {
     fun opacityModifier(mode: Int, factor: Float, normalize: Boolean = false, hardness: Float = 1f): Command? =
         if (mode in MODIFY_BOTH..MODIFY_HARDNESS && finite(factor, hardness))
             Command(CMD_MOD_OPACITY, floatArrayOf(mode.toFloat(), factor, flag(normalize), hardness)) else null
+
+    // MOD_gpencil_legacy_length.c (no random offsets). Defaults follow DNA_gpencil_modifier_defaults.h.
+    const val CMD_MOD_LENGTH = 42
+    const val LENGTH_RELATIVE = 0
+    const val LENGTH_ABSOLUTE = 1
+
+    fun lengthModifier(start: Float, end: Float, mode: Int = LENGTH_RELATIVE, overshoot: Float = 0.1f,
+                       useCurvature: Boolean = false, pointDensity: Float = 30f, segmentInfluence: Float = 0f,
+                       maxAngle: Float = 2.9670597f, invertCurvature: Boolean = false): Command? {
+        if (mode != LENGTH_RELATIVE && mode != LENGTH_ABSOLUTE) return null
+        if (!finite(start, end) || !finite(overshoot, pointDensity) || !finite(segmentInfluence, maxAngle)) return null
+        return Command(CMD_MOD_LENGTH, floatArrayOf(mode.toFloat(), start, end, overshoot, flag(useCurvature),
+            pointDensity, segmentInfluence, maxAngle, flag(invertCurvature)))
+    }
 }

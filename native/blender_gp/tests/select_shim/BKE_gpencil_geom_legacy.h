@@ -11,3 +11,8 @@ bGPDstroke *BKE_gpencil_stroke_delete_tagged_points(bGPdata *gpd,
                                                     bool select,
                                                     bool flat_cap,
                                                     int limit);
+bool BKE_gpencil_stroke_stretch(bGPDstroke *gps, float dist, float overshoot_fac, short mode,
+                                bool follow_curvature, int extra_point_count, float segment_influence,
+                                float max_angle, bool invert_curvature);
+bool BKE_gpencil_stroke_shrink(bGPDstroke *gps, float dist, short mode);
+float BKE_gpencil_stroke_length(const bGPDstroke *gps, bool use_3d);

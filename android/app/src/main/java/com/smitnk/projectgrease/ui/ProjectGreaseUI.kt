@@ -686,7 +686,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             "Thickness x0.5" to { controller.applyThicknessModifier(0.5f) },
             "Thickness x2" to { controller.applyThicknessModifier(2f) },
             "Opacity 50%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 0.5f, normalize = true) },
-            "Opacity 100%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 1f, normalize = true) }
+            "Opacity 100%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 1f, normalize = true) },
+            "Lengthen ends 10%" to { controller.applyLengthModifier(0.1f, 0.1f) },
+            "Shorten ends 10%" to { controller.applyLengthModifier(-0.1f, -0.1f) }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

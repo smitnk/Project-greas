@@ -65,6 +65,33 @@ bGPDstroke *BKE_gpencil_stroke_delete_tagged_points(bGPdata *gpd, bGPDframe *gpf
 void BLI_lasso_boundbox(rcti *r, const int m[][2], unsigned int n) { (void)r; (void)m; (void)n; }
 bool BLI_lasso_is_point_inside(const int m[][2], unsigned int n, int x, int y, int e) { (void)m; (void)n; (void)x; (void)y; (void)e; return false; }
 
+
+/* stand-ins recording the BKE calls of the Length modifier */
+typedef struct { int kind; float dist, overshoot; short mode; int extra; } LenCall;
+static LenCall len_calls[8];
+static int len_ncalls = 0;
+bool BKE_gpencil_stroke_stretch(bGPDstroke *gps, float dist, float overshoot_fac, short mode,
+                                bool follow_curvature, int extra_point_count, float segment_influence,
+                                float max_angle, bool invert_curvature)
+{
+  (void)gps; (void)follow_curvature; (void)segment_influence; (void)max_angle; (void)invert_curvature;
+  if (len_ncalls < 8) len_calls[len_ncalls++] = (LenCall){1, dist, overshoot_fac, mode, extra_point_count};
+  return true;
+}
+bool BKE_gpencil_stroke_shrink(bGPDstroke *gps, float dist, short mode)
+{
+  (void)gps;
+  if (len_ncalls < 8) len_calls[len_ncalls++] = (LenCall){2, dist, 0, mode, 0};
+  return true;
+}
+float BKE_gpencil_stroke_length(const bGPDstroke *gps, bool use_3d)
+{
+  (void)use_3d;
+  float l = 0;
+  for (int i = 1; i < gps->totpoints; i++) l += hypotf(gps->points[i].x - gps->points[i - 1].x, gps->points[i].y - gps->points[i - 1].y);
+  return l;
+}
+
 /* ---- fixtures ------------------------------------------------------------------ */
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s (line %d)\n", msg, __LINE__); failures++; } } while (0)
@@ -356,6 +383,54 @@ static void test_modifiers(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_OPACITY, op, 2) == 0, "opacity needs 4 args");
 }
 
+
+static void test_length_modifier(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 11, 0, 0, 0, 10, 0); /* length 100 */
+  bGPDstroke *cyc = add_stroke(f, 4, 0, 0, 50, 10, 0);
+  cyc->flag |= GP_STROKE_CYCLIC;
+  select_points(gpd, a, 0x7FF); select_points(gpd, cyc, 15);
+  cyc->flag |= GP_STROKE_CYCLIC;
+
+  PGLengthParams p = {PG_LENGTH_RELATIVE, 0.1f, 0.2f, 0.1f, 0, 30.0f, 0.0f, 2.97f, 0};
+  len_ncalls = 0; geometry_updates = 0;
+  CHECK(pg_gp_mod_length(gpd, NULL, &p) == 1, "length modifier reports a change");
+  CHECK(len_ncalls == 2, "two calls: start then end (cyclic stroke skipped)");
+  CHECK(len_calls[0].kind == 1 && NEAR(len_calls[0].dist, 10.0f) && len_calls[0].mode == 1, "start: stretch by len*start_fac, mode 1");
+  CHECK(len_calls[1].kind == 1 && NEAR(len_calls[1].dist, 20.0f) && len_calls[1].mode == 2, "end: stretch by len*end_fac, mode 2");
+  CHECK(len_calls[0].extra == 3 && len_calls[1].extra == 6, "extra points = ceil(fac * point_density)");
+  /* second_overshoot_fac = 0.1 * 9 / 9 * (1 - 0.1/10) = 0.099 */
+  CHECK(NEAR(len_calls[1].overshoot, 0.099f), "second overshoot follows Blender's adjustment");
+  CHECK(geometry_updates == 1, "geometry refreshed for the changed stroke");
+
+  /* fractional density: 0.1 * 25 = 2.5 -> ceil 3 */
+  p.point_density = 25.0f; len_ncalls = 0;
+  pg_gp_mod_length(gpd, NULL, &p);
+  CHECK(len_calls[0].extra == 3 && len_calls[1].extra == 5, "extra points round up (ceil)");
+  p.point_density = 30.0f;
+
+  /* negative start: shrink comes second after the swap */
+  p.start_fac = -0.1f; p.end_fac = 0.3f; len_ncalls = 0;
+  pg_gp_mod_length(gpd, NULL, &p);
+  CHECK(len_calls[0].kind == 1 && len_calls[0].mode == 2 && NEAR(len_calls[0].dist, 30.0f), "swap: end stretch first");
+  CHECK(len_calls[1].kind == 2 && len_calls[1].mode == 1 && NEAR(len_calls[1].dist, 10.0f), "then start shrink by |len*fac|");
+
+  /* absolute mode uses len = 1 */
+  p.mode = PG_LENGTH_ABSOLUTE; p.start_fac = 5.0f; p.end_fac = 0.0f; len_ncalls = 0;
+  pg_gp_mod_length(gpd, NULL, &p);
+  CHECK(len_ncalls == 1 && NEAR(len_calls[0].dist, 5.0f), "absolute: distance is the factor; zero end does nothing");
+
+  select_points(gpd, a, 0); len_ncalls = 0;
+  CHECK(pg_gp_mod_length(gpd, NULL, &p) == 0 && len_ncalls == 0, "unselected strokes are skipped");
+  p.mode = 7;
+  CHECK(pg_gp_mod_length(gpd, NULL, &p) == 0, "invalid mode rejected");
+  const float args[9] = {0, 0.1f, 0.1f, 0.1f, 0, 30, 0, 2.97f, 0};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_LENGTH, args, 8) == 0, "length needs 9 args");
+}
+
 int main(void)
 {
   test_pick();
@@ -366,6 +441,7 @@ int main(void)
   test_delete();
   test_dispatch();
   test_modifiers();
+  test_length_modifier();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

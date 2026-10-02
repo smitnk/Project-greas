@@ -16,6 +16,7 @@ class ImportTraceTemplatesTest {
         assertTrue(s[0].closed); assertEquals(4, s[0].points.size); near(40f, s[0].points[2][0])
         assertEquals(0xFFFF0000.toInt(), s[0].strokeArgb); assertEquals(0xFF00FF00.toInt(), s[0].fillArgb); near(3f, s[0].width)
         assertNull(s[1].fillArgb)
+        near(5f, s[1].points[1][0]); near(5f, s[1].points[1][1]) // x2/y2: attribute names with digits
         assertEquals(SvgImport.CIRCLE_SEGMENTS, s[2].points.size); assertNull(s[2].fillArgb)
     }
 

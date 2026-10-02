@@ -26,7 +26,7 @@ public final class SvgImport {
     public static final int CIRCLE_SEGMENTS = 32;
 
     private static final Pattern ELEMENT = Pattern.compile("<(path|polyline|polygon|line|rect|circle|ellipse)\\b([^>]*)>", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ATTR = Pattern.compile("([a-zA-Z_:-]+)\\s*=\\s*\"([^\"]*)\"");
+    private static final Pattern ATTR = Pattern.compile("([a-zA-Z_:][a-zA-Z0-9_:.-]*)\\s*=\\s*\"([^\"]*)\"");
     private static final Pattern NUMBER = Pattern.compile("[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?");
 
     private SvgImport() {}

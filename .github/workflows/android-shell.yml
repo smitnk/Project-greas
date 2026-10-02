@@ -115,6 +115,11 @@ jobs:
       - name: Run native document-state tests
         run: bash tools/run_native_document_state_tests.sh
 
+      - name: Run native vertex-color tests
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_color_tests.sh
+
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 

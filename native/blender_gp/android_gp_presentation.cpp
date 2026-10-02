@@ -10,6 +10,7 @@
 #include "DNA_material_types.h"
 
 #include "project_grease_gp_backend.h"
+#include "project_grease_gp_color.h"
 
 namespace {
 struct Vertex { float x; float y; };
@@ -128,39 +129,32 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     const MaterialGPencilStyle *style=ma?ma->gp_style:nullptr;
     if(style&&(style->flag&GP_MATERIAL_HIDE))continue;
     float avg_strength = 0.0f;
-    float avg_vertex_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     for (int i = 0; i < s->totpoints; ++i) {
       avg_strength += std::max(0.0f, std::min(s->points[i].strength, 1.0f));
-      for (int channel = 0; channel < 4; ++channel) {
-        avg_vertex_color[channel] +=
-            std::max(0.0f, std::min(s->points[i].vert_color[channel], 1.0f));
-      }
     }
-    const float point_count = float(std::max(1, s->totpoints));
-    avg_strength /= point_count;
-    for (float &channel : avg_vertex_color) channel /= point_count;
-    // Older Project Grease strokes predate explicit Legacy GP vertex-color
-    // initialization. Treat an all-zero vertex color as the material default.
-    if (avg_vertex_color[3] <= 0.001f) {
-      avg_vertex_color[0] = avg_vertex_color[1] =
-          avg_vertex_color[2] = avg_vertex_color[3] = 1.0f;
-    }
-    float color[4]={
-        g_stroke_color[0] * avg_vertex_color[0],
-        g_stroke_color[1] * avg_vertex_color[1],
-        g_stroke_color[2] * avg_vertex_color[2],
-        g_stroke_color[3] * alpha * layer->opacity * avg_strength * avg_vertex_color[3]};
-    float fill_color[4]={color[0],color[1],color[2],color[3]};
-    if(style){
-      color[0]=style->stroke_rgba[0]*avg_vertex_color[0];
-      color[1]=style->stroke_rgba[1]*avg_vertex_color[1];
-      color[2]=style->stroke_rgba[2]*avg_vertex_color[2];
-      color[3]=style->stroke_rgba[3]*alpha*layer->opacity*avg_strength*avg_vertex_color[3];
-      fill_color[0]=style->fill_rgba[0]*avg_vertex_color[0];
-      fill_color[1]=style->fill_rgba[1]*avg_vertex_color[1];
-      fill_color[2]=style->fill_rgba[2]*avg_vertex_color[2];
-      fill_color[3]=style->fill_rgba[3]*alpha*layer->opacity*avg_strength*avg_vertex_color[3];
-    }
+    avg_strength /= float(std::max(1, s->totpoints));
+    // Vertex colors follow Blender 3.6.23 gpencil_color_output(): rgb is
+    // mix(material.rgb, vert.rgb, vert.a), vertex alpha is not multiplied into the result alpha,
+    // and zero alpha (the default) means "no vertex color". Stroke color mixes the point
+    // vert_color, fill color mixes the stroke's vert_color_fill. One color per draw call, so the
+    // stroke gets the mean of its per-point mixes (see project_grease_gp_color.h).
+    const float stroke_base_rgb[3] = {
+        style ? style->stroke_rgba[0] : g_stroke_color[0],
+        style ? style->stroke_rgba[1] : g_stroke_color[1],
+        style ? style->stroke_rgba[2] : g_stroke_color[2]};
+    const float fill_base_rgb[3] = {
+        style ? style->fill_rgba[0] : g_stroke_color[0],
+        style ? style->fill_rgba[1] : g_stroke_color[1],
+        style ? style->fill_rgba[2] : g_stroke_color[2]};
+    float stroke_rgb[3], fill_rgb[3];
+    pg_gp_stroke_mean_mix(stroke_base_rgb, s->points[0].vert_color, sizeof(bGPDspoint),
+                          s->totpoints, PG_GP_VERTEX_COLOR_OPACITY, stroke_rgb);
+    pg_gp_mix_vertex_color(fill_base_rgb, s->vert_color_fill, PG_GP_VERTEX_COLOR_OPACITY, fill_rgb);
+    const float stroke_base_alpha = style ? style->stroke_rgba[3] : g_stroke_color[3];
+    const float fill_base_alpha = style ? style->fill_rgba[3] : g_stroke_color[3];
+    const float alpha_scale = alpha * layer->opacity * avg_strength;
+    float color[4]={stroke_rgb[0],stroke_rgb[1],stroke_rgb[2],stroke_base_alpha*alpha_scale};
+    float fill_color[4]={fill_rgb[0],fill_rgb[1],fill_rgb[2],fill_base_alpha*alpha_scale};
     if(style==nullptr||((style->flag&GP_MATERIAL_STROKE_SHOW)!=0)){
       if(s->totpoints==1) append_dot(stroke,s[0].points[0],float(s->thickness)*std::max(s->points[0].pressure,0.01f),w,h);
       else {

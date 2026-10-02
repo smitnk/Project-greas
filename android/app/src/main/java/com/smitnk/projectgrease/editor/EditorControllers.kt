@@ -340,7 +340,7 @@ class SculptController(private val native: NativeEditorBridge) {
     private val settings = LegacyGpSculptEngine.Settings()
 
     fun isAvailable() =
-        FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+        FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
 
     fun select(value: SculptBrush) { brush = value }
 
@@ -503,7 +503,7 @@ class EditorController {
     fun setMode(value:GreaseMode):Boolean {
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
-            GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state == FeatureState.AVAILABLE
+            GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
             GreaseMode.VERTEX_PAINT, GreaseMode.WEIGHT_PAINT -> false
         }
         if (!supported) return false
@@ -554,7 +554,7 @@ class EditorController {
     }
     fun setSpacing(value:Float) {
         spacing=value.coerceIn(0f,100f)
-        if (value > 0f) legacyEuclideanThreshold=value
+        legacyEuclideanThreshold = if (value > 0f) value else 1f // 0 restores Blender's default filter
     }
 
     /** Active smoothing of the Legacy GP brush (0 = off, 1 = strongest). */

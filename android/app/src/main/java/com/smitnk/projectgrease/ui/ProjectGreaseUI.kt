@@ -336,7 +336,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     val selected=controller.mode==mode
                     val supported=selected || when(mode){
                         GreaseMode.DRAW,GreaseMode.EDIT->true
-                        GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state==FeatureState.AVAILABLE
+                        GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state!=FeatureState.NOT_IMPLEMENTED
                         GreaseMode.VERTEX_PAINT,GreaseMode.WEIGHT_PAINT->false
                     }
                     FilterChip(
@@ -625,7 +625,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp))
             Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},valueRange=.5f..100f)
             Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
-            Slider(opacity,{opacity=it;controller.materials.setOpacity(it);redraw()},valueRange=0f..1f)
+            Slider(opacity,{opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()},valueRange=0f..1f)
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
                 Text("Fill closed strokes",Modifier.weight(1f))
                 Switch(
@@ -658,7 +658,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it);redraw()})
         }
         Text("Stabilizer factor " + (controller.stabilizerFactor*100).toInt() + "%",Modifier.padding(horizontal=20.dp))
-        Slider(controller.stabilizerFactor,{controller.setStabilizer(true,it);redraw()},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
+        Slider(controller.stabilizerFactor,{controller.setStabilizer(controller.stabilizerEnabled,it);redraw()},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
         Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=20.dp))
         Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it);redraw()},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=20.dp))
         Text("Legacy GP sculpt brush",Modifier.padding(horizontal=20.dp,vertical=8.dp),fontWeight=FontWeight.Bold)

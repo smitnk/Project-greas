@@ -4,10 +4,12 @@
 
 #include <GLES2/gl2.h>
 
+#include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
 #include "ED_gpencil_legacy.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
+#include "DNA_meshdata_types.h"
 
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_color.h"
@@ -28,6 +30,8 @@ int g_active_w=1, g_active_h=1;
 // DRAW_INVERT replaces the target by 1 - target.
 enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT };
 DrawMode g_draw_mode=DRAW_NORMAL;
+// Weight Paint view: >= 0 draws strokes tinted by the weight of this vertex group (blue 0 .. red 1).
+int g_weight_group=-1;
 float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
 int g_canvas_width=1280;
 int g_canvas_height=720;
@@ -245,6 +249,42 @@ extern "C" void project_grease_android_set_frame_evaluator(FrameEvaluator fn,voi
 }
 
 namespace {
+float point_group_weight(const bGPDstroke* s,int i,int group){
+  if(!s->dvert)return 0.0f;
+  const MDeformVert& dv=s->dvert[i];
+  for(int k=0;k<dv.totweight;k++)if(int(dv.dw[k].def_nr)==group)return dv.dw[k].weight;
+  return 0.0f;
+}
+// Weight Paint display: every segment gets the mean weight of its end points through Blender's
+// weight colour ramp (BKE_defvert_weight_to_rgb), every point a dot of its own weight.
+void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
+  if(!frame||!gpd)return;
+  for(const bGPDstroke* s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
+    if(!s->points||s->totpoints<=0)continue;
+    const float base=float(std::max<short>(s->thickness,1));
+    for(int i=0;i+1<s->totpoints;i++){
+      // Split the segment so the weight ramp is visible along it (about one piece per 6 px).
+      const float w0=point_group_weight(s,i,g_weight_group),w1=point_group_weight(s,i+1,g_weight_group);
+      const float len=std::hypot(s->points[i+1].x-s->points[i].x,s->points[i+1].y-s->points[i].y)*g_map_scale;
+      const int pieces=std::clamp(int(std::ceil(len/6.0f)),1,48);
+      for(int k=0;k<pieces;k++){
+        const float t0=float(k)/float(pieces),t1=float(k+1)/float(pieces);
+        bGPDspoint a{},b{};
+        a.x=s->points[i].x+(s->points[i+1].x-s->points[i].x)*t0;a.y=s->points[i].y+(s->points[i+1].y-s->points[i].y)*t0;
+        b.x=s->points[i].x+(s->points[i+1].x-s->points[i].x)*t1;b.y=s->points[i].y+(s->points[i+1].y-s->points[i].y)*t1;
+        float rgb[3];BKE_defvert_weight_to_rgb(rgb,w0+(w1-w0)*(0.5f*(t0+t1)));
+        const float pressure=0.5f*(std::max(s->points[i].pressure,0.01f)+std::max(s->points[i+1].pressure,0.01f));
+        std::vector<Vertex> seg;append_segment(seg,a,b,base*pressure,w,h,1.0f);
+        const float color[4]={rgb[0],rgb[1],rgb[2],1.0f};draw_vertices(seg,color);
+      }
+    }
+    for(int i=0;i<s->totpoints;i++){
+      float rgb[3];BKE_defvert_weight_to_rgb(rgb,point_group_weight(s,i,g_weight_group));
+      std::vector<Vertex> dot;append_dot(dot,s->points[i],std::max(base*std::max(s->points[i].pressure,0.01f),4.0f/std::max(g_map_scale,0.01f)),w,h);
+      const float color[4]={rgb[0],rgb[1],rgb[2],1.0f};draw_vertices(dot,color);
+    }
+  }
+}
 // A layer is masked when it has GP_LAYER_USE_MASK and at least one valid mask entry: a layer other
 // than itself that is visible, with an entry that is not hidden (gpencil_cache_utils.c).
 const bGPDlayer_Mask* valid_mask_entry(const bGPdata* gpd,const bGPDlayer* layer,const bGPDlayer* mask_layer){
@@ -334,7 +374,8 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       }
     }
     const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
-    draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
+    if(g_weight_group>=0)draw_frame_weights(gpd,shown?shown:current,w,h);
+    else draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
     g_active_mask_tex=0;
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
@@ -442,6 +483,7 @@ extern "C" void project_grease_android_present_set_canvas_size(int width,int hei
   g_canvas_width=std::max(1,width);
   g_canvas_height=std::max(1,height);
 }
+extern "C" void project_grease_android_present_set_weight_view(int group){g_weight_group=group;}
 extern "C" void project_grease_android_present_set_view_transform(float zoom,float pan_x,float pan_y){
   g_view_zoom=std::clamp(zoom,0.1f,8.0f);
   g_view_pan_x=pan_x;

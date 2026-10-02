@@ -21,8 +21,10 @@
 #include "BLI_lasso_2d.h"
 #include "BLI_math_geom.h"
 
+#include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
+#include "BLI_string_utils.h"
 #include "DNA_gpencil_modifier_types.h"
 #ifndef __ANDROID__
 #include "BKE_idtype.h"
@@ -323,6 +325,7 @@ static void history_snapshot_free(HistorySnapshot *snapshot)
   }
   if (snapshot->data) {
     BKE_gpencil_free_layers(&snapshot->data->layers);
+    BLI_freelistN(&snapshot->data->vertex_group_names);
     MEM_SAFE_FREE(snapshot->data->mat);
     MEM_freeN(snapshot->data);
   }
@@ -348,6 +351,10 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   // Runtime/cache state belongs to the live owner, never to the snapshot.
   std::memset(&destination->runtime, 0, sizeof(destination->runtime));
 
+  // Vertex group names are a list of nodes: copy them, do not alias the source's nodes.
+  BLI_listbase_clear(&destination->vertex_group_names);
+  BKE_defgroup_copy_list(&destination->vertex_group_names, &source->vertex_group_names);
+
   if (source->mat) {
     destination->mat = static_cast<Material **>(MEM_dupallocN(source->mat));
   }
@@ -358,6 +365,7 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
     bGPDlayer *destination_layer =
         BKE_gpencil_layer_duplicate(source_layer, true, true);
     if (!destination_layer) {
+      BLI_freelistN(&destination->vertex_group_names);
       BKE_gpencil_free_layers(&destination->layers);
       MEM_SAFE_FREE(destination->mat);
       MEM_freeN(destination);
@@ -438,6 +446,10 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   impl->gpd->mat = nullptr;
 
   history_copy_settings(snapshot->data, impl->gpd);
+  BLI_freelistN(&impl->gpd->vertex_group_names);
+  impl->gpd->vertex_group_names = restored->vertex_group_names;
+  BLI_listbase_clear(&restored->vertex_group_names);
+  impl->gpd->vertex_group_active_index = snapshot->data->vertex_group_active_index;
   impl->gpd->layers = restored->layers;
   impl->gpd->mat = restored->mat;
   BLI_listbase_clear(&restored->layers);
@@ -634,6 +646,7 @@ void Backend::shutdown()
       layer = next_layer;
     }
     gp_materials_free(impl_->gpd);
+    BLI_freelistN(&impl_->gpd->vertex_group_names);
     MEM_freeN(impl_->gpd);
     impl_->gpd = nullptr;
   }
@@ -730,6 +743,7 @@ bool Backend::reset_document()
       layer = next_layer;
     }
     gp_materials_free(impl_->gpd);
+    BLI_freelistN(&impl_->gpd->vertex_group_names);
     MEM_freeN(impl_->gpd);
 #else
     if (impl_->bmain) {
@@ -3803,6 +3817,146 @@ bool Backend::mask_set_flags(int layer_index, int mask_index, int flags)
   bGPDlayer_Mask *mask = mask_at(layer, mask_index);
   if (!mask) { impl_->last_error = "mask index out of range"; return false; }
   mask->flag = static_cast<short>(((flags & 1) ? GP_MASK_HIDE : 0) | ((flags & 2) ? GP_MASK_INVERT : 0));
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::vertex_group_count() const
+{
+  return impl_->gpd ? BLI_listbase_count(&impl_->gpd->vertex_group_names) : 0;
+}
+
+static bDeformGroup *vgroup_at(const bGPdata *gpd, int group)
+{
+  return gpd && group >= 0 ? static_cast<bDeformGroup *>(BLI_findlink(&gpd->vertex_group_names, group))
+                           : nullptr;
+}
+
+bool Backend::vertex_group_name(int group, char *name, int name_capacity) const
+{
+  const bDeformGroup *dg = vgroup_at(impl_->gpd, group);
+  if (!dg || !name || name_capacity <= 0) return false;
+  std::strncpy(name, dg->name, static_cast<size_t>(name_capacity) - 1);
+  name[name_capacity - 1] = '\0';
+  return true;
+}
+
+int Backend::vertex_group_add(const char *name)
+{
+  if (!impl_->gpd) { impl_->last_error = "document is not created"; return -1; }
+  if (vertex_group_count() >= 255) { impl_->last_error = "too many vertex groups"; return -1; }
+  bDeformGroup *dg = static_cast<bDeformGroup *>(MEM_callocN(sizeof(bDeformGroup), "Project Grease vertex group"));
+  if (!dg) return -1;
+  std::strncpy(dg->name, (name && name[0]) ? name : "Group", sizeof(dg->name) - 1);
+  BLI_addtail(&impl_->gpd->vertex_group_names, dg);
+  BLI_uniquename(&impl_->gpd->vertex_group_names, dg, "Group", '.', offsetof(bDeformGroup, name), sizeof(dg->name));
+  const int index = vertex_group_count() - 1;
+  if (impl_->gpd->vertex_group_active_index <= 0) impl_->gpd->vertex_group_active_index = index + 1;
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return index;
+}
+
+bool Backend::vertex_group_remove(int group)
+{
+  bDeformGroup *dg = vgroup_at(impl_->gpd, group);
+  if (!dg) { impl_->last_error = "vertex group index out of range"; return false; }
+  /* Drop the weights of this group and shift the higher group numbers down, in every frame. */
+  LISTBASE_FOREACH (bGPDlayer *, layer, &impl_->gpd->layers) {
+    LISTBASE_FOREACH (bGPDframe *, frame, &layer->frames) {
+      LISTBASE_FOREACH (bGPDstroke *, stroke, &frame->strokes) {
+        if (!stroke->dvert) continue;
+        for (int i = 0; i < stroke->totpoints; ++i) {
+          MDeformVert *dv = &stroke->dvert[i];
+          if (MDeformWeight *dw = BKE_defvert_find_index(dv, group)) {
+            BKE_defvert_remove_group(dv, dw);
+          }
+          for (int k = 0; k < dv->totweight; ++k) {
+            if (static_cast<int>(dv->dw[k].def_nr) > group) dv->dw[k].def_nr--;
+          }
+        }
+      }
+    }
+  }
+  BLI_freelinkN(&impl_->gpd->vertex_group_names, dg);
+  const int count = vertex_group_count();
+  int &active = impl_->gpd->vertex_group_active_index; /* 1-based, 0 = none */
+  if (active > group + 1) active--;
+  else if (active == group + 1) active = count > 0 ? std::min(group + 1, count) : 0;
+  if (active > count) active = count;
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::vertex_group_rename(int group, const char *name)
+{
+  bDeformGroup *dg = vgroup_at(impl_->gpd, group);
+  if (!dg || !name || !name[0]) { impl_->last_error = "invalid vertex group rename"; return false; }
+  std::strncpy(dg->name, name, sizeof(dg->name) - 1);
+  dg->name[sizeof(dg->name) - 1] = '\0';
+  BLI_uniquename(&impl_->gpd->vertex_group_names, dg, "Group", '.', offsetof(bDeformGroup, name), sizeof(dg->name));
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::vertex_group_active() const
+{
+  if (!impl_->gpd) return -1;
+  const int active = impl_->gpd->vertex_group_active_index - 1;
+  return active >= 0 && active < vertex_group_count() ? active : -1;
+}
+
+bool Backend::set_vertex_group_active(int group)
+{
+  if (!vgroup_at(impl_->gpd, group)) { impl_->last_error = "vertex group index out of range"; return false; }
+  impl_->gpd->vertex_group_active_index = group + 1;
+  impl_->last_error.clear();
+  return true;
+}
+
+static bGPDstroke *frame_stroke_at(bGPDframe *frame, int index)
+{
+  return frame && index >= 0 ? static_cast<bGPDstroke *>(BLI_findlink(&frame->strokes, index)) : nullptr;
+}
+
+int Backend::point_weight_count(int stroke_index, int point_index) const
+{
+  const bGPDstroke *stroke = frame_stroke_at(impl_->frame, stroke_index);
+  if (!stroke || !stroke->dvert || point_index < 0 || point_index >= stroke->totpoints) return 0;
+  return stroke->dvert[point_index].totweight;
+}
+
+bool Backend::point_weight_at(int stroke_index, int point_index, int k, int *group, float *weight) const
+{
+  const bGPDstroke *stroke = frame_stroke_at(impl_->frame, stroke_index);
+  if (!stroke || !stroke->dvert || point_index < 0 || point_index >= stroke->totpoints) return false;
+  const MDeformVert &dv = stroke->dvert[point_index];
+  if (k < 0 || k >= dv.totweight) return false;
+  if (group) *group = static_cast<int>(dv.dw[k].def_nr);
+  if (weight) *weight = dv.dw[k].weight;
+  return true;
+}
+
+bool Backend::set_point_weight(int stroke_index, int point_index, int group, float weight)
+{
+  bGPDstroke *stroke = frame_stroke_at(impl_->frame, stroke_index);
+  if (!stroke || point_index < 0 || point_index >= stroke->totpoints || group < 0 ||
+      !std::isfinite(weight))
+  {
+    impl_->last_error = "invalid point weight target";
+    return false;
+  }
+  if (!stroke->dvert) {
+    stroke->dvert = static_cast<MDeformVert *>(
+        MEM_callocN(sizeof(MDeformVert) * static_cast<size_t>(stroke->totpoints), "gp_stroke_weights"));
+    if (!stroke->dvert) return false;
+  }
+  MDeformWeight *dw = BKE_defvert_ensure_index(&stroke->dvert[point_index], group);
+  if (!dw) return false;
+  dw->weight = std::min(1.0f, std::max(0.0f, weight));
   project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;

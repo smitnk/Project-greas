@@ -16,7 +16,9 @@ class StrokeRecord(
     val fillOpacity: Float = 1f,
     val fillColor: FloatArray = floatArrayOf(0f, 0f, 0f, 0f),
     /** false for strokes read from a version-1 file, which stored no style. */
-    val hasStyle: Boolean = true
+    val hasStyle: Boolean = true,
+    /** Vertex-group weights of the points, sparse: point index to [group, weight, group, weight, ...]. */
+    val weights: Map<Int, FloatArray> = emptyMap()
 ) {
     companion object {
         /** Floats per point: position/pressure/strength/time plus RGBA vertex color. */
@@ -64,6 +66,11 @@ interface DocumentNative {
     /** Appends a modifier to the layer's stack exactly as recorded (type, enabled flag, parameters). */
     fun addModifier(layer: Int, record: ModifierRecord): Boolean = true
 
+    /** Vertex groups (names; the group number is the position) and the active one, -1 for none. */
+    fun vertexGroups(): List<String> = emptyList()
+    fun activeVertexGroup(): Int = -1
+    fun restoreVertexGroups(names: List<String>, active: Int): Boolean = true
+
     /** Layer masks (version 4 files): use-mask flag and the mask list, which refers to layers by name. */
     fun layerUseMask(layer: Int): Boolean = false
     fun layerMasks(layer: Int): List<MaskRecord> = emptyList()
@@ -88,6 +95,8 @@ class ParsedDocument(
     val fps: Int?,
     val frame: Int,
     val materials: List<MaterialRecord>,
+    val vertexGroups: List<String> = emptyList(),
+    val activeVertexGroup: Int = -1,
     /** null when the file has no "layers" key at all. */
     val layers: List<ParsedLayer>?
 )
@@ -116,6 +125,11 @@ object ProjectDocumentCodec {
             native.materialRecord(i)?.let { materials.put(materialJson(it)) }
         }
         root.put("materials", materials)
+        val groups = native.vertexGroups()
+        if (groups.isNotEmpty()) {
+            root.put("vertexGroups", JSONArray().apply { groups.forEach { put(it) } })
+            root.put("activeVertexGroup", native.activeVertexGroup())
+        }
 
         val layers = JSONArray()
         for (layerIndex in 0 until native.layerCount()) {
@@ -170,6 +184,10 @@ object ProjectDocumentCodec {
             fps = if (root.has("fps")) root.optInt("fps") else null,
             frame = root.optInt("frame", 1),
             materials = materials,
+            vertexGroups = root.optJSONArray("vertexGroups")?.let { a ->
+                (0 until a.length()).map { a.optString(it, "").ifEmpty { "Group" } }
+            } ?: emptyList(),
+            activeVertexGroup = root.optInt("activeVertexGroup", -1),
             layers = layers
         )
     }
@@ -185,6 +203,9 @@ object ProjectDocumentCodec {
             }
             if (!native.applyMaterialRecord(index, material)) return false
         }
+        // Groups first: the weights of the strokes refer to them by number.
+        if (parsed.vertexGroups.isNotEmpty() &&
+            !native.restoreVertexGroups(parsed.vertexGroups, parsed.activeVertexGroup)) return false
         val layers = parsed.layers ?: return true
         for ((layerIndex, layer) in layers.withIndex()) {
             if (layerIndex > 0 && !native.createLayer("Layer " + (layerIndex + 1))) return false
@@ -199,7 +220,7 @@ object ProjectDocumentCodec {
                 if (!native.selectFrame(number)) return false
                 for (stroke in frame.strokes) {
                     if (stroke.points.isEmpty()) continue
-                    val styled = if (stroke.hasStyle) stroke else StrokeRecord(stroke.points, 0, legacyThickness)
+                    val styled = if (stroke.hasStyle) stroke else StrokeRecord(stroke.points, 0, legacyThickness, weights = stroke.weights)
                     if (!native.addStroke(styled)) return false
                 }
             }
@@ -263,8 +284,22 @@ object ProjectDocumentCodec {
             cyclic = json.optBoolean("cyclic", false),
             fillOpacity = json.optDouble("fillOpacity", 1.0).toFloat(),
             fillColor = floats(json.optJSONArray("fillColor"), 4),
-            hasStyle = json.has("thickness")
+            hasStyle = json.has("thickness"),
+            weights = parseWeights(json.optJSONArray("weights"), points.size)
         )
+    }
+
+    /** [[point, group, weight, group, weight, ...], ...]; malformed rows and out-of-range points are dropped. */
+    private fun parseWeights(array: JSONArray?, pointCount: Int): Map<Int, FloatArray> {
+        if (array == null) return emptyMap()
+        val out = LinkedHashMap<Int, FloatArray>()
+        for (i in 0 until array.length()) {
+            val row = array.optJSONArray(i) ?: continue
+            val point = row.optInt(0, -1)
+            if (point !in 0 until pointCount || row.length() < 3 || (row.length() - 1) % 2 != 0) continue
+            out[point] = FloatArray(row.length() - 1) { row.optDouble(it + 1, 0.0).toFloat() }
+        }
+        return out
     }
 
     private fun parseMaterial(json: JSONObject) = MaterialRecord(
@@ -282,13 +317,21 @@ object ProjectDocumentCodec {
             val size = if (hasColor) StrokeRecord.POINT_SIZE else 6
             points.put(JSONArray().apply { for (i in 0 until size) put(num(p.getOrElse(i) { 0f })) })
         }
-        return JSONObject()
+        val json = JSONObject()
             .put("points", points)
             .put("material", stroke.materialIndex)
             .put("thickness", num(stroke.thickness))
             .put("cyclic", stroke.cyclic)
             .put("fillOpacity", num(stroke.fillOpacity))
             .put("fillColor", floatsJson(stroke.fillColor))
+        if (stroke.weights.isNotEmpty()) {
+            json.put("weights", JSONArray().apply {
+                for ((point, values) in stroke.weights.toSortedMap()) {
+                    put(JSONArray().apply { put(point); for (v in values) put(num(v)) })
+                }
+            })
+        }
+        return json
     }
 
     private fun materialJson(material: MaterialRecord) = JSONObject()

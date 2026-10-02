@@ -25,6 +25,15 @@ private class FakeDocument : DocumentNative {
     /** Mirrors the editing rules: a locked layer refuses new strokes. */
     var lockedLayersRejectStrokes = false
     var failCreateLayer = false
+    val vertexGroups = mutableListOf<String>()
+    var activeGroup = -1
+    override fun vertexGroups() = vertexGroups.toList()
+    override fun activeVertexGroup() = activeGroup
+    override fun restoreVertexGroups(names: List<String>, active: Int): Boolean {
+        vertexGroups.addAll(names)
+        activeGroup = if (active in names.indices) active else -1
+        return true
+    }
 
     override fun layerCount() = layers.size
     override fun layerRecord(index: Int) = layers.getOrNull(index)?.record
@@ -127,6 +136,13 @@ class ProjectDocumentRoundTripTest {
         doc.addStroke(stroke(4, 2, 17f, true, 0.4f, floatArrayOf(0.2f, 0.4f, 0.6f, 0.8f)))
         doc.createFrame(5)
         doc.addStroke(stroke(3, 1, 3f, false, 0.9f, floatArrayOf(0f, 0f, 0f, 0f)))
+        // vertex groups and per-point weights (sparse: point 0 in groups 0 and 1, point 2 in group 1)
+        doc.vertexGroups.addAll(listOf("Arm", "Leg"))
+        doc.activeGroup = 1
+        doc.layers[0].frames.last().strokes[0] = StrokeRecord(
+            doc.layers[0].frames.last().strokes[0].points, 1, 3f, false, 0.9f, floatArrayOf(0f, 0f, 0f, 0f), true,
+            mapOf(0 to floatArrayOf(0f, 0.25f, 1f, 1f), 2 to floatArrayOf(1f, 0.5f))
+        )
 
         doc.createLayer("Inks")
         doc.createFrame(1)
@@ -151,6 +167,8 @@ class ProjectDocumentRoundTripTest {
     }
 
     private fun assertSameDocument(expected: FakeDocument, actual: FakeDocument) {
+        assertEquals("vertex groups", expected.vertexGroups, actual.vertexGroups)
+        assertEquals("active vertex group", expected.activeGroup, actual.activeGroup)
         assertEquals("material count", expected.materials.size, actual.materials.size)
         expected.materials.forEachIndexed { i, e ->
             val a = actual.materials[i]
@@ -188,6 +206,8 @@ class ProjectDocumentRoundTripTest {
                     assertEquals("$where cyclic", es.cyclic, a.cyclic)
                     assertEquals("$where fill opacity", es.fillOpacity, a.fillOpacity, 0f)
                     assertArrayEquals("$where fill color", es.fillColor, a.fillColor, 0f)
+                    assertEquals("$where weighted points", es.weights.keys, a.weights.keys)
+                    es.weights.forEach { (point, values) -> assertArrayEquals("$where weights of point $point", values, a.weights[point]!!, 0f) }
                     assertEquals("$where points", es.points.size, a.points.size)
                     es.points.forEachIndexed { pi, ep -> assertArrayEquals("$where point $pi", ep, a.points[pi], 0f) }
                 }
@@ -236,6 +256,29 @@ class ProjectDocumentRoundTripTest {
         assertTrue(restored.layers[1].modifiers.isEmpty())
         assertEquals(listOf(ModifierType.SMOOTH), restored.layers[2].modifiers.map { it.type })
         assertArrayEquals(floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f), restored.layers[2].modifiers[0].params, 0f)
+    }
+
+    @Test
+    fun vertexGroupsAndWeightsSurviveARoundTripAndOldFilesHaveNone() {
+        val restored = load(save(sampleDocument()))
+        assertEquals(listOf("Arm", "Leg"), restored.vertexGroups)
+        assertEquals(1, restored.activeGroup)
+        val weighted = restored.layers[0].frames.last().strokes[0]
+        assertEquals(setOf(0, 2), weighted.weights.keys)
+        assertArrayEquals(floatArrayOf(0f, 0.25f, 1f, 1f), weighted.weights[0]!!, 0f)
+        // strokes without weights write no "weights" key; a file without groups restores none
+        val plain = FakeDocument().apply { createFrame(1); addStroke(StrokeRecord(listOf(FloatArray(10)))) }
+        assertFalse(org.json.JSONObject(save(plain)).has("vertexGroups"))
+        val stroke = org.json.JSONObject(save(plain)).getJSONArray("layers").getJSONObject(0).getJSONArray("frames")
+            .getJSONObject(0).getJSONArray("strokes").getJSONObject(0)
+        assertFalse(stroke.has("weights"))
+        val v3 = """{"version":3,"layers":[{"index":0,"frames":[{"number":1,"strokes":[{"points":[[1,2,0,1,1,0]]}]}]}]}"""
+        assertTrue(load(v3).vertexGroups.isEmpty())
+        // malformed rows are dropped: bad point index, odd pair count
+        val bad = """{"version":4,"vertexGroups":["A"],"layers":[{"index":0,"frames":[{"number":1,"strokes":[
+            {"points":[[1,2,0,1,1,0],[3,4,0,1,1,0]],"weights":[[0,0,0.5],[9,0,1],[1,0],[1,0,1,2]]}]}]}]}"""
+        val doc = load(bad)
+        assertEquals(setOf(0), doc.layers[0].frames[0].strokes[0].weights.keys)
     }
 
     @Test

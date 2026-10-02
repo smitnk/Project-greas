@@ -177,6 +177,18 @@ int project_grease_gp_get_point_color(const ProjectGreaseGPHandle *handle,
                                       float out_rgba[4]);
 int project_grease_gp_get_layer_info(const ProjectGreaseGPHandle *handle, int index, PGLayerInfo *out);
 int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index, float opacity);
+/* Vertex groups and point weights (see Backend::vertex_group_*). */
+int project_grease_gp_vertex_group_count(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_vertex_group_name(const ProjectGreaseGPHandle *handle, int group, char *name, int name_capacity);
+int project_grease_gp_vertex_group_add(ProjectGreaseGPHandle *handle, const char *name); /* index or -1 */
+int project_grease_gp_vertex_group_remove(ProjectGreaseGPHandle *handle, int group);
+int project_grease_gp_vertex_group_rename(ProjectGreaseGPHandle *handle, int group, const char *name);
+int project_grease_gp_vertex_group_active(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_set_vertex_group_active(ProjectGreaseGPHandle *handle, int group);
+int project_grease_gp_point_weight_count(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index);
+int project_grease_gp_point_weight_at(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, int k, int *group, float *weight);
+int project_grease_gp_set_point_weight(ProjectGreaseGPHandle *handle, int stroke_index, int point_index, int group, float weight);
+
 /* Layer masks (names refer to layers; flags: bit 0 hidden, bit 1 inverted). */
 int project_grease_gp_layer_use_mask(const ProjectGreaseGPHandle *handle, int layer_index);
 int project_grease_gp_set_layer_use_mask(ProjectGreaseGPHandle *handle, int layer_index, int enabled);

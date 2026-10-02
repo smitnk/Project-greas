@@ -124,6 +124,18 @@ object GPNative {
     external fun nativeGetLayerInfo(handle: Long, index: Int): FloatArray?
     external fun nativeGetLayerName(handle: Long, index: Int): String?
     external fun nativeSetLayerOpacity(handle: Long, index: Int, opacity: Float): Boolean
+    // Vertex groups and point weights. nativeGetPointWeights returns [group, weight, ...] pairs.
+    external fun nativeVertexGroupCount(handle: Long): Int
+    external fun nativeVertexGroupName(handle: Long, group: Int): String?
+    external fun nativeVertexGroupAdd(handle: Long, name: String): Int
+    external fun nativeVertexGroupRemove(handle: Long, group: Int): Boolean
+    external fun nativeVertexGroupRename(handle: Long, group: Int, name: String): Boolean
+    external fun nativeVertexGroupActive(handle: Long): Int
+    external fun nativeSetVertexGroupActive(handle: Long, group: Int): Boolean
+    external fun nativeGetPointWeights(handle: Long, stroke: Int, point: Int): FloatArray?
+    external fun nativeSetPointWeight(handle: Long, stroke: Int, point: Int, group: Int, weight: Float): Boolean
+    // Weight Paint view of the renderer: group >= 0 tints strokes by that group's weights, -1 = normal.
+    external fun nativeSetWeightView(handle: Long, group: Int): Boolean
     // Layer masks: names refer to layers; flags bit 0 = hidden, bit 1 = inverted (-1 = no such entry).
     external fun nativeLayerUseMask(handle: Long, layer: Int): Boolean
     external fun nativeSetLayerUseMask(handle: Long, layer: Int, enabled: Boolean): Boolean

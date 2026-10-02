@@ -24,15 +24,21 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             points.add(point.copyOf(StrokeRecord.POINT_SIZE).also { System.arraycopy(color, 0, it, 6, 4) })
         }
         if (points.isEmpty()) return null
+        val weights = LinkedHashMap<Int, FloatArray>()
+        for (p in points.indices) {
+            val pairs = native.pointWeights(index, p)
+            if (pairs != null && pairs.size >= 2) weights[p] = pairs
+        }
         val info = native.strokeInfo(index)
-        if (info == null || info.size < 8) return StrokeRecord(points)
+        if (info == null || info.size < 8) return StrokeRecord(points, weights = weights)
         return StrokeRecord(
             points = points,
             materialIndex = info[0].toInt(),
             thickness = info[1],
             cyclic = info[2] != 0f,
             fillOpacity = info[3],
-            fillColor = info.copyOfRange(4, 8)
+            fillColor = info.copyOfRange(4, 8),
+            weights = weights
         )
     }
 
@@ -72,7 +78,18 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             record.materialIndex.toFloat(), record.thickness, if (record.cyclic) 1f else 0f, record.fillOpacity,
             record.fillColor[0], record.fillColor[1], record.fillColor[2], record.fillColor[3]
         )
-        return native.addStroke(flat, record.points.size, info, colors)
+        if (!native.addStroke(flat, record.points.size, info, colors)) return false
+        if (record.weights.isNotEmpty()) {
+            val stroke = native.strokeCount() - 1 // the stroke was appended to the selected frame
+            for ((point, values) in record.weights) {
+                var i = 0
+                while (i + 1 < values.size) {
+                    if (!native.setPointWeight(stroke, point, values[i].toInt(), values[i + 1])) return false
+                    i += 2
+                }
+            }
+        }
+        return true
     }
 
     override fun modifierCount(layer: Int) = native.modifierCount(layer)
@@ -85,6 +102,16 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         if (index < 0) return false
         return native.modifierSetParams(layer, index, ModifierStackPacking.paramsFor(record.type, record.params)) &&
             native.modifierSetEnabled(layer, index, record.enabled)
+    }
+
+    override fun vertexGroups(): List<String> =
+        (0 until native.vertexGroupCount()).map { native.vertexGroupName(it) ?: "Group" }
+
+    override fun activeVertexGroup() = native.vertexGroupActive()
+
+    override fun restoreVertexGroups(names: List<String>, active: Int): Boolean {
+        for (name in names) if (native.vertexGroupAdd(name) < 0) return false
+        return active < 0 || active >= names.size || native.setVertexGroupActive(active)
     }
 
     override fun layerUseMask(layer: Int) = native.layerUseMask(layer)

@@ -80,6 +80,16 @@ class FeatureRegistryTest {
     }
 
     @Test
+    fun vertexPaintModeChipIsEnabledButNotClaimedVerified() {
+        // The mode chip and EditorController.setMode gate on "not NOT_IMPLEMENTED".
+        val capability = FeatureRegistry.capability(FeatureId.VERTEX_PAINT)
+        assertEquals(FeatureState.IN_PROGRESS, capability.state)
+        assertFalse(capability.deviceVerified)
+        // Weight paint has no brushes yet and stays gated.
+        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).state)
+    }
+
+    @Test
     fun sculptModeStaysUsableWhileUnverified() {
         // The sculpt mode chip and controller gate on "not NOT_IMPLEMENTED" now that nothing is
         // AVAILABLE; this keeps that assumption visible.

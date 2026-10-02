@@ -1307,6 +1307,170 @@ int pg_gp_join(bGPdata *gpd, const bGPDlayer *only_layer, int leave_gaps)
   }
   return changed;
 }
+
+/* ---------------------------------------------------------------------------------------- */
+/* Vertex Paint mode (behaviour of editors/gpencil_legacy/gpencil_vertex_paint.c brushes).  */
+/* Influence = strength * falloff; the falloff uses Blender's default "Smooth" brush curve   */
+/* (3t^2 - 2t^3 of t = 1 - d/r). Pen pressure is folded into `strength` by the caller.      */
+
+static float pge_vpaint_influence(const PGVertexPaint *vp, float px, float py)
+{
+  const float d = hypotf(px - vp->x, py - vp->y);
+  if (d >= vp->radius) return 0.0f;
+  const float t = 1.0f - d / vp->radius;
+  return pge_clampf(vp->strength, 0.0f, 1.0f) * (t * t * (3.0f - 2.0f * t));
+}
+
+static void copy_v3_v3_pge(float r[3], const float a[3])
+{
+  r[0] = a[0];
+  r[1] = a[1];
+  r[2] = a[2];
+}
+
+static void pge_ensure_vcolor(float col[4], const float *material_rgba, const float fallback_rgb[3])
+{
+  /* points without vertex color start from the material color, like the modifiers; without a
+   * material style (or a transparent one) they start from the paint color itself */
+  if (col[3] == 0.0f) {
+    if (material_rgba != NULL && material_rgba[3] > 0.0f) {
+      memcpy(col, material_rgba, sizeof(float[4]));
+    }
+    else {
+      copy_v3_v3_pge(col, fallback_rgb);
+    }
+    col[3] = 0.0f; /* alpha is the vertex-color mix factor; it grows with painting */
+  }
+}
+
+static void pge_mix_toward(float col[4], const float target[3], float f)
+{
+  pge_interp_v3(col, col, target, f);
+  col[3] = col[3] + (1.0f - col[3]) * f; /* coverage of the vertex color */
+}
+
+int pg_gp_vertex_paint(bGPdata *gpd, const bGPDlayer *only_layer, const PGVertexPaint *vp)
+{
+  if (gpd == NULL || vp == NULL || !isfinite(vp->x) || !isfinite(vp->y) || !(vp->radius > 0.0f) ||
+      !isfinite(vp->strength) || vp->brush < PG_VPAINT_DRAW || vp->brush > PG_VPAINT_REPLACE ||
+      vp->target < PG_PAINT_MODE_STROKE || vp->target > PG_PAINT_MODE_BOTH)
+  {
+    return 0;
+  }
+  const bool do_stroke = vp->target != PG_PAINT_MODE_FILL;
+  const bool do_fill = vp->target != PG_PAINT_MODE_STROKE;
+
+  /* Average brush: mean color of the affected points first (gpencil_vertexpaint_average_brush). */
+  float avg[3] = {0, 0, 0};
+  int avg_n = 0;
+  if (vp->brush == PG_VPAINT_AVERAGE) {
+    PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+      if (gps->points == NULL) continue;
+      for (int i = 0; i < gps->totpoints; i++) {
+        const bGPDspoint *pt = &gps->points[i];
+        if (pge_vpaint_influence(vp, pt->x, pt->y) > 0.0f && pt->vert_color[3] > 0.0f) {
+          avg[0] += pt->vert_color[0]; avg[1] += pt->vert_color[1]; avg[2] += pt->vert_color[2];
+          avg_n++;
+        }
+      }
+    }
+    PGE_EDITABLE_STROKES_END;
+    if (avg_n == 0) return 0;
+    avg[0] /= avg_n; avg[1] /= avg_n; avg[2] /= avg_n;
+  }
+
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (gps->points == NULL || gps->totpoints == 0) continue;
+    MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
+    float stroke_max = 0.0f;
+    /* colors before this dab, for blur/smear neighbours */
+    float (*orig)[4] = NULL;
+    if (vp->brush == PG_VPAINT_BLUR || vp->brush == PG_VPAINT_SMEAR) {
+      orig = malloc(sizeof(float[4]) * (size_t)gps->totpoints);
+      if (orig == NULL) continue;
+      for (int i = 0; i < gps->totpoints; i++) memcpy(orig[i], gps->points[i].vert_color, sizeof(float[4]));
+    }
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      const float f = pge_vpaint_influence(vp, pt->x, pt->y);
+      if (f <= 0.0f) continue;
+      if (f > stroke_max) stroke_max = f;
+      if (!do_stroke) continue;
+      switch (vp->brush) {
+        case PG_VPAINT_DRAW:
+          pge_ensure_vcolor(pt->vert_color, gp_style ? gp_style->stroke_rgba : NULL, vp->rgb);
+          pge_mix_toward(pt->vert_color, vp->rgb, f);
+          changed = 1;
+          break;
+        case PG_VPAINT_REPLACE:
+          /* only points that already carry vertex color */
+          if (pt->vert_color[3] > 0.0f) {
+            pge_interp_v3(pt->vert_color, pt->vert_color, vp->rgb, f);
+            changed = 1;
+          }
+          break;
+        case PG_VPAINT_AVERAGE:
+          if (pt->vert_color[3] > 0.0f) {
+            pge_interp_v3(pt->vert_color, pt->vert_color, avg, f);
+            changed = 1;
+          }
+          break;
+        case PG_VPAINT_BLUR: {
+          /* mean of the point and its stroke neighbours (before this dab) */
+          float sum[4] = {0, 0, 0, 0};
+          int n = 0;
+          for (int k = i - 1; k <= i + 1; k++) {
+            if (k < 0 || k >= gps->totpoints) continue;
+            for (int c = 0; c < 4; c++) sum[c] += orig[k][c];
+            n++;
+          }
+          if (sum[3] > 0.0f) {
+            const float mean[3] = {sum[0] / n, sum[1] / n, sum[2] / n};
+            pge_interp_v3(pt->vert_color, pt->vert_color, mean, f);
+            pt->vert_color[3] = pt->vert_color[3] + (sum[3] / n - pt->vert_color[3]) * f;
+            changed = 1;
+          }
+          break;
+        }
+        case PG_VPAINT_SMEAR: {
+          /* take the color from the neighbour behind the drag direction */
+          if (vp->dx == 0.0f && vp->dy == 0.0f) break;
+          int src = -1;
+          float best = 0.0f;
+          for (int k = i - 1; k <= i + 1; k += 2) {
+            if (k < 0 || k >= gps->totpoints) continue;
+            /* neighbour lying against the drag: (pk - pi) . drag < 0 */
+            const float dot = (gps->points[k].x - pt->x) * vp->dx + (gps->points[k].y - pt->y) * vp->dy;
+            if (dot < best) { best = dot; src = k; }
+          }
+          if (src >= 0 && orig[src][3] > 0.0f) {
+            pge_interp_v3(pt->vert_color, pt->vert_color, orig[src], f);
+            pt->vert_color[3] = pt->vert_color[3] + (orig[src][3] - pt->vert_color[3]) * f;
+            changed = 1;
+          }
+          break;
+        }
+      }
+    }
+    free(orig);
+    /* fill color follows the strongest influence on the stroke (Draw/Replace only) */
+    if (do_fill && stroke_max > 0.0f &&
+        (vp->brush == PG_VPAINT_DRAW || (vp->brush == PG_VPAINT_REPLACE && gps->vert_color_fill[3] > 0.0f)))
+    {
+      if (vp->brush == PG_VPAINT_DRAW) {
+        pge_ensure_vcolor(gps->vert_color_fill, gp_style ? gp_style->fill_rgba : NULL, vp->rgb);
+        pge_mix_toward(gps->vert_color_fill, vp->rgb, stroke_max);
+      }
+      else {
+        pge_interp_v3(gps->vert_color_fill, gps->vert_color_fill, vp->rgb, stroke_max);
+      }
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -1446,6 +1610,13 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
     case PG_EDIT_CMD_JOIN:
       changed = pg_gp_join(gpd, scope, arg_count >= 1 && args[0] != 0.0f);
       break;
+    case PG_EDIT_CMD_VERTEX_PAINT: {
+      if (arg_count < 11) return 0;
+      const PGVertexPaint vp = {(int)lroundf(args[0]), args[1], args[2], args[3], args[4],
+                                {args[5], args[6], args[7]}, (int)lroundf(args[8]), args[9], args[10]};
+      changed = pg_gp_vertex_paint(gpd, scope, &vp);
+      break;
+    }
     default:
       return 0;
   }

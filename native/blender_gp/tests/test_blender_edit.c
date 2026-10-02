@@ -741,6 +741,81 @@ static void test_dissolve_keeps_weights_aligned(void)
   d->dvert = NULL;
 }
 
+static void test_vertex_paint(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 5, 0, 0, 0, 10, 0); /* x = 0..40 */
+  MaterialGPencilStyle *st = gpd->mat[0]->gp_style;
+  st->stroke_rgba[0] = 1; st->stroke_rgba[3] = 1;   /* red material */
+  st->fill_rgba[1] = 1; st->fill_rgba[3] = 1;       /* green fill */
+
+  /* Draw: centre gets full influence, edge none; color starts from the material */
+  PGVertexPaint vp = {PG_VPAINT_DRAW, 20, 0, 20, 1.0f, {0, 0, 1}, PG_PAINT_MODE_STROKE, 0, 0};
+  CHECK(pg_gp_vertex_paint(gpd, NULL, &vp) == 1, "draw dab");
+  CHECK(NEAR(a->points[2].vert_color[2], 1) && NEAR(a->points[2].vert_color[3], 1), "centre point fully blue");
+  CHECK(a->points[1].vert_color[2] > 0.1f && a->points[1].vert_color[2] < 0.9f && a->points[1].vert_color[0] > 0.1f,
+        "half-radius point is a red/blue mix (smooth falloff)");
+  CHECK(a->points[0].vert_color[3] == 0.0f && a->points[4].vert_color[3] == 0.0f, "points at the radius are untouched");
+  CHECK(a->vert_color_fill[3] == 0.0f, "stroke target leaves the fill");
+  /* falloff value: t = 0.5 -> 3*0.25 - 2*0.125 = 0.5 */
+  CHECK(NEAR(a->points[1].vert_color[3], 0.5f), "smooth falloff at half radius is 0.5");
+  {
+    bGPDstroke *q = add_stroke(f, 4, 0, 0, 300, 10, 0); /* x = 0..30 */
+    PGVertexPaint qv = {PG_VPAINT_DRAW, 0, 300, 40, 1.0f, {0, 0, 1}, PG_PAINT_MODE_STROKE, 0, 0};
+    pg_gp_vertex_paint(gpd, NULL, &qv);
+    /* d = 30, t = 0.25 -> 3*0.0625 - 2*0.015625 = 0.15625 (a straight line would give 0.25) */
+    CHECK(NEAR(q->points[3].vert_color[3], 0.15625f), "Blender's smooth curve, not linear, at a quarter radius");
+  }
+
+  /* Replace only touches points that already have vertex color */
+  bGPDstroke *b = add_stroke(f, 3, 0, 0, 50, 10, 0);
+  vp = (PGVertexPaint){PG_VPAINT_REPLACE, 10, 50, 15, 1.0f, {0, 1, 0}, PG_PAINT_MODE_STROKE, 0, 0};
+  CHECK(pg_gp_vertex_paint(gpd, NULL, &vp) == 0 && b->points[1].vert_color[3] == 0.0f, "replace ignores unpainted points");
+  vp = (PGVertexPaint){PG_VPAINT_REPLACE, 20, 0, 20, 1.0f, {0, 1, 0}, PG_PAINT_MODE_STROKE, 0, 0};
+  pg_gp_vertex_paint(gpd, NULL, &vp);
+  CHECK(NEAR(a->points[2].vert_color[1], 1) && NEAR(a->points[2].vert_color[2], 0), "replace recolors painted points");
+
+  /* Average pulls painted points toward their mean */
+  a->points[1].vert_color[0] = 1; a->points[1].vert_color[1] = 0; a->points[1].vert_color[2] = 0; a->points[1].vert_color[3] = 1;
+  a->points[3].vert_color[0] = 0; a->points[3].vert_color[1] = 0; a->points[3].vert_color[2] = 1; a->points[3].vert_color[3] = 1;
+  vp = (PGVertexPaint){PG_VPAINT_AVERAGE, 20, 0, 100, 1.0f, {0, 0, 0}, PG_PAINT_MODE_STROKE, 0, 0};
+  CHECK(pg_gp_vertex_paint(gpd, NULL, &vp) == 1, "average dab");
+  CHECK(a->points[1].vert_color[2] > 0.0f && a->points[3].vert_color[0] > 0.0f, "painted points move toward the mean");
+
+  /* Blur mixes with neighbours */
+  bGPDstroke *c = add_stroke(f, 3, 0, 0, 100, 10, 0);
+  c->points[0].vert_color[0] = 1; c->points[0].vert_color[3] = 1;
+  c->points[2].vert_color[2] = 1; c->points[2].vert_color[3] = 1;
+  vp = (PGVertexPaint){PG_VPAINT_BLUR, 10, 100, 30, 1.0f, {0, 0, 0}, PG_PAINT_MODE_STROKE, 0, 0};
+  pg_gp_vertex_paint(gpd, NULL, &vp);
+  CHECK(c->points[1].vert_color[0] > 0.0f && c->points[1].vert_color[2] > 0.0f, "blur brings neighbour colors into the middle point");
+
+  /* Smear drags color along the movement: moving +x pulls from the left neighbour */
+  bGPDstroke *d = add_stroke(f, 3, 0, 0, 150, 10, 0);
+  d->points[0].vert_color[1] = 1; d->points[0].vert_color[3] = 1;
+  vp = (PGVertexPaint){PG_VPAINT_SMEAR, 10, 150, 30, 1.0f, {0, 0, 0}, PG_PAINT_MODE_STROKE, 5, 0};
+  pg_gp_vertex_paint(gpd, NULL, &vp);
+  CHECK(d->points[1].vert_color[1] > 0.5f, "smear moves the left color into the middle when dragging right");
+  CHECK(d->points[2].vert_color[1] == 0.0f || d->points[2].vert_color[3] == 0.0f, "...but not past an unpainted source");
+  vp.dx = 0; vp.dy = 0;
+  CHECK(pg_gp_vertex_paint(gpd, NULL, &vp) == 0, "smear without movement does nothing");
+
+  /* Fill target */
+  vp = (PGVertexPaint){PG_VPAINT_DRAW, 20, 0, 20, 1.0f, {1, 1, 0}, PG_PAINT_MODE_FILL, 0, 0};
+  float before = a->points[2].vert_color[0];
+  pg_gp_vertex_paint(gpd, NULL, &vp);
+  CHECK(NEAR(a->vert_color_fill[0], 1) && NEAR(a->vert_color_fill[1], 1) && NEAR(a->vert_color_fill[3], 1), "fill painted from the strongest influence");
+  CHECK(NEAR(a->points[2].vert_color[0], before), "fill target leaves the points");
+
+  vp.brush = 9;
+  CHECK(pg_gp_vertex_paint(gpd, NULL, &vp) == 0, "invalid brush");
+  const float args[11] = {PG_VPAINT_DRAW, 20, 0, 20, 1, 1, 0, 0, PG_PAINT_MODE_BOTH, 0, 0};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_VERTEX_PAINT, args, 11) == 1, "dispatch vertex paint");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_VERTEX_PAINT, args, 10) == 0, "vertex paint needs 11 args");
+}
+
 int main(void)
 {
   test_pick();
@@ -759,6 +834,7 @@ int main(void)
   test_stroke_operator_edges();
   test_structure_operators();
   test_dissolve_keeps_weights_aligned();
+  test_vertex_paint();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

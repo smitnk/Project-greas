@@ -337,7 +337,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     val supported=selected || when(mode){
                         GreaseMode.DRAW,GreaseMode.EDIT->true
                         GreaseMode.SCULPT->FeatureRegistry.capability(FeatureId.SCULPT).state!=FeatureState.NOT_IMPLEMENTED
-                        GreaseMode.VERTEX_PAINT,GreaseMode.WEIGHT_PAINT->false
+                        GreaseMode.VERTEX_PAINT->FeatureRegistry.capability(FeatureId.VERTEX_PAINT).state!=FeatureState.NOT_IMPLEMENTED
+                        GreaseMode.WEIGHT_PAINT->false
                     }
                     FilterChip(
                         selected=selected,
@@ -356,6 +357,42 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                         label={Text(preset.name,fontSize=10.sp)},
                         modifier=Modifier.padding(end=3.dp)
                     )
+                }
+            }
+            if (controller.mode == GreaseMode.VERTEX_PAINT) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+                    verticalAlignment=Alignment.CenterVertically
+                ) {
+                    Text("Paint",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+                    listOf(
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_DRAW to "Draw",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_BLUR to "Blur",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_AVERAGE to "Average",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_SMEAR to "Smear",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_REPLACE to "Replace"
+                    ).forEach { (brush,label) ->
+                        FilterChip(
+                            selected=controller.vertexPaintBrush == brush,
+                            onClick={controller.setVertexPaintBrush(brush);redraw()},
+                            label={Text(label,fontSize=10.sp)},
+                            modifier=Modifier.padding(end=3.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(7.dp))
+                    Text("Target",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+                    listOf(
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.PAINT_STROKE to "Stroke",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.PAINT_FILL to "Fill",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.PAINT_BOTH to "Both"
+                    ).forEach { (target,label) ->
+                        FilterChip(
+                            selected=controller.vertexPaintTarget == target,
+                            onClick={controller.setVertexPaintTarget(target);redraw()},
+                            label={Text(label,fontSize=10.sp)},
+                            modifier=Modifier.padding(end=3.dp)
+                        )
+                    }
                 }
             }
             if (controller.tools.activeTool == GreaseTool.ERASE) {

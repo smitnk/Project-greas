@@ -93,6 +93,10 @@ private class ProjectGreaseDrawingSurfaceView(
     private var mirrorStartX = 0f
     private var mirrorStartY = 0f
     private var panOpen = false
+    // Vertex Paint mode: true while a drag paints; the last canvas sample gives the smear direction.
+    private var vertexPaintOpen = false
+    private var vertexPaintLastX = 0f
+    private var vertexPaintLastY = 0f
     private var lastPanX = 0f
     private var eraseLastX = Float.NaN
     private var eraseLastY = Float.NaN
@@ -114,6 +118,23 @@ private class ProjectGreaseDrawingSurfaceView(
             MotionEvent.ACTION_DOWN -> {
                 val start = canvasPoint(event.x, event.y)
                 activePointerId = event.getPointerId(0)
+                // Vertex Paint mode paints with every tool except the view/pick tools.
+                val paintsVertexColor = controller.mode == com.smitnk.projectgrease.editor.GreaseMode.VERTEX_PAINT &&
+                    controller.tools.activeTool != com.smitnk.projectgrease.editor.GreaseTool.PAN &&
+                    controller.tools.activeTool != com.smitnk.projectgrease.editor.GreaseTool.EYEDROPPER
+                if (paintsVertexColor) {
+                    vertexPaintOpen = true
+                    vertexPaintLastX = start.first
+                    vertexPaintLastY = start.second
+                    controller.vertexPaintDab(
+                        start.first, start.second, 0f, 0f,
+                        com.smitnk.projectgrease.editor.TouchInputRules.pressureFor(
+                            isPenTool(event.getToolType(0)), event.getPressure(0)
+                        )
+                    )
+                    controller.render()
+                    return true
+                }
                 when (controller.tools.activeTool) {
                     com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
                         controller.beginSculpt(start.first, start.second, event.getPressure(0).coerceAtLeast(0.01f))
@@ -213,6 +234,10 @@ private class ProjectGreaseDrawingSurfaceView(
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (event.pointerCount >= 2) {
+                    if (vertexPaintOpen) {
+                        controller.endVertexPaint()
+                        vertexPaintOpen = false
+                    }
                     if (strokeOpen) {
                         controller.cancelStroke()
                         strokeOpen = false
@@ -245,6 +270,10 @@ private class ProjectGreaseDrawingSurfaceView(
                     val x = canvas.first
                     val y = canvas.second
                     when {
+                        vertexPaintOpen -> {
+                            paintVertexColorWithHistory(event, pointerIndex)
+                            controller.render()
+                        }
                         controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
                             if (controller.sculptAt(x, y, event.getPressure(pointerIndex).coerceAtLeast(0.01f))) controller.render()
                         }
@@ -332,7 +361,9 @@ private class ProjectGreaseDrawingSurfaceView(
                 val pointerId = event.getPointerId(event.actionIndex)
                 if (pointerId == activePointerId) {
                     val up = canvasPoint(event.getX(event.actionIndex), event.getY(event.actionIndex))
-                    if (mirrorOpen) {
+                    if (vertexPaintOpen) {
+                        controller.endVertexPaint()
+                    } else if (mirrorOpen) {
                         commitMirror(up.first, up.second)
                     } else if (strokeOpen) {
                         if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) {
@@ -348,7 +379,10 @@ private class ProjectGreaseDrawingSurfaceView(
             }
             MotionEvent.ACTION_UP -> {
                 val pointerIndex = event.findPointerIndex(activePointerId)
-                if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) {
+                if (vertexPaintOpen) {
+                    if (pointerIndex >= 0) paintVertexColorWithHistory(event, pointerIndex)
+                    controller.endVertexPaint()
+                } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) {
                     controller.endSculpt()
                 } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) {
                     controller.endErase()
@@ -367,6 +401,7 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                if (vertexPaintOpen) controller.endVertexPaint()
                 if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) controller.endSculpt()
                 if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) controller.endErase()
                 if (strokeOpen) controller.cancelStroke()
@@ -439,6 +474,7 @@ private class ProjectGreaseDrawingSurfaceView(
         scaleOpen = false
         mirrorOpen = false
         panOpen = false
+        vertexPaintOpen = false
         eraseLastX = Float.NaN
         eraseLastY = Float.NaN
         pinchOpen = false
@@ -448,6 +484,27 @@ private class ProjectGreaseDrawingSurfaceView(
         lastScaleRadius = 0f
         activePointerId = MotionEvent.INVALID_POINTER_ID
         strokeOpen = false
+    }
+
+    private fun isPenTool(toolType: Int) =
+        toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
+
+    /** One dab per input sample, historical samples included, in canvas coordinates. */
+    private fun paintVertexColorWithHistory(event: MotionEvent, pointerIndex: Int) {
+        val isPen = isPenTool(event.getToolType(pointerIndex))
+        for (h in 0..event.historySize) {
+            val rawX = if (h < event.historySize) event.getHistoricalX(pointerIndex, h) else event.getX(pointerIndex)
+            val rawY = if (h < event.historySize) event.getHistoricalY(pointerIndex, h) else event.getY(pointerIndex)
+            val rawPressure = if (h < event.historySize) event.getHistoricalPressure(pointerIndex, h) else event.getPressure(pointerIndex)
+            val p = canvasPoint(rawX, rawY)
+            controller.vertexPaintDab(
+                p.first, p.second, p.first - vertexPaintLastX, p.second - vertexPaintLastY,
+                com.smitnk.projectgrease.editor.TouchInputRules.pressureFor(isPen, rawPressure),
+                render = false
+            )
+            vertexPaintLastX = p.first
+            vertexPaintLastY = p.second
+        }
     }
 
     private fun addPoint(event: MotionEvent, pointerIndex: Int) {

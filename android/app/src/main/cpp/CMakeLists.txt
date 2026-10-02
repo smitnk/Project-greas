@@ -141,6 +141,7 @@ target_compile_options(projectgrease_jni PRIVATE
     -fvisibility=hidden
 )
 
+# Continuous native Legacy GP build verification.
 find_library(log-lib log)
 find_library(android-lib android)
 find_library(egl-lib EGL)

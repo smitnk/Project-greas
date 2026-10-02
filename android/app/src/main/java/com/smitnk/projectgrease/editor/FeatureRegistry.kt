@@ -210,8 +210,8 @@ object FeatureRegistry {
         FeatureId.OPEN_PROJECT to wired("Restores points (incl. vertex color), stroke material/thickness/cyclic/fill (incl. fill vertex color), layer name/visibility/lock/opacity and the material palette (round-trip tested); older files load with the old defaults and no vertex color. $DEVICE"),
         FeatureId.SAVE to wired("Saves everything OPEN_PROJECT restores, including each layer's modifier stack (format version 4). $DEVICE"),
         FeatureId.SAVE_AS to missing("The menu item just saves."),
-        FeatureId.EXPORT to missing("The menu shows 'Export pipeline is not connected yet'."),
-        FeatureId.EXPORT_PNG to missing("No export pipeline."),
+        FeatureId.EXPORT to wired("Project > Export writes SVG (current frame, or a folder with one file per frame) and PDF (one page per frame) through the Storage Access Framework; see VectorExport for what is drawn (saved strokes without modifiers, masks or effects; one color and width per stroke). Raster export is not implemented. $DEVICE"),
+        FeatureId.EXPORT_PNG to missing("Only SVG and PDF are exported; no raster pipeline."),
         FeatureId.EXPORT_GIF to missing("No export pipeline."),
         FeatureId.EXPORT_ANIMATION to missing("No export pipeline."),
         FeatureId.PROJECT_SETTINGS to missing("Only app settings exist; no per-project settings.")

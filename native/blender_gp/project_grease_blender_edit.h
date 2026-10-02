@@ -16,6 +16,7 @@ extern "C" {
 
 struct bGPdata;
 struct bGPDlayer;
+struct bGPDstroke;
 
 /* flags of pg_gp_edit_pick(); the first five are the properties of GPENCIL_OT_select. */
 enum {
@@ -125,6 +126,18 @@ int pg_gp_mod_thickness(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
 /* MOD_gpencil_legacy_opacity.c deformStroke() without vertex groups or custom curve. */
 int pg_gp_mod_opacity(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
                       int modify_color, float factor, int normalize, float hardness);
+
+/* Per-stroke forms of the five modifiers above, used by the live modifier stack. They apply to the
+ * given stroke regardless of selection or layer state; the pg_gp_mod_* functions above call them
+ * for each selected stroke. Return 1 when the stroke may have changed, 0 otherwise. */
+int pg_gp_modstroke_thickness(struct bGPDstroke *gps, int normalize, int thickness, float thickness_fac);
+int pg_gp_modstroke_opacity(struct bGPDstroke *gps, int modify_color, float factor, int normalize,
+                            float hardness);
+int pg_gp_modstroke_tint(struct bGPdata *gpd, struct bGPDstroke *gps, int vertex_mode, float factor,
+                         const float rgb[3]);
+int pg_gp_modstroke_color(struct bGPdata *gpd, struct bGPDstroke *gps, int modify_color,
+                          const float hsv_factor[3]);
+int pg_gp_modstroke_length(struct bGPdata *gpd, struct bGPDstroke *gps, const PGLengthParams *p);
 
 /* GP_SELECTMODE_* values accepted by pg_gp_edit_pick(): 0 = point, 1 = stroke. */
 int pg_gp_edit_pick(struct bGPdata *gpd,

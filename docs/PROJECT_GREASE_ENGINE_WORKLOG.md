@@ -275,3 +275,12 @@ Pinned Blender 3.6.23 `gpencil_fill.c` source review identified a concrete misma
 
 This remains an extraction of the Blender Legacy GP fill image algorithm, not a claim that the complete desktop fill operator is ported. The operator still has a larger dependency closure around offscreen rendering, stroke extension/collision, depth projection, layer selection and final stroke transfer.
 
+
+## Live modifier stack (non-destructive, per layer)
+
+- A layer owns an ordered list of `PGModEntry {type, enabled, params[]}` (`native/blender_gp/project_grease_modifier_stack.{h,c}`), held by `Backend` by layer index, carried by layer move/duplicate/delete and by undo/redo snapshots, and saved per layer in the project file (format version 4, key `modifiers`; older files load with an empty stack).
+- Evaluation (`pg_mod_eval_frame`) duplicates the layer's current frame strokes with `BKE_gpencil_stroke_duplicate`, runs each enabled modifier's deform function in order on the copies and hands the copies to the presenter. Original strokes are never modified; editing, hit testing, saving and the fill-tool mask use the originals. The evaluated frame is cached and invalidated by any document edit (`project_grease_gp_tag`), a frame change or a stack change.
+- Apply (`pg_mod_apply`) bakes one modifier into every frame of the layer and removes it from the stack.
+- Thickness, Opacity, Tint, Hue/Saturation and Length reuse the per-stroke functions of `project_grease_blender_edit.c` (the code that mirrors `deformStroke()`); Smooth, Simplify, Subdivide, Offset and Noise carry the pinned Blender `deformStroke()` bodies as `BEGIN/END VERBATIM` regions (checked by `tools/verify_blender_verbatim.py`) with documented adapted glue. Offset and Noise run in an object-space view of the canvas (y flipped; Noise in units of 100 px) and use Blender's `BLI_hash_*` / `BLI_halton_*` (`rand.cc`, `noise.c`).
+- Not supported: vertex-group weights, layer/material/pass filters, custom intensity curves; onion-skin ghosts are drawn unmodified.
+- Tests: `tools/run_native_modifier_stack_tests.sh` (links the real pinned BKE code; compares Offset and Noise results with an independent Python reference), `ModifierStackTest`, `ProjectDocumentRoundTripTest`.

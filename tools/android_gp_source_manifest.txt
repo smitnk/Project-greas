@@ -23,6 +23,7 @@ CXX|third_party/blender/source/blender/gpu/intern/gpu_batch.cc
 CXX|third_party/blender/source/blender/gpu/intern/gpu_vertex_format.cc
 CXX|third_party/blender/source/blender/gpu/intern/gpu_capabilities.cc
 CXX|third_party/blender/source/blender/blenlib/intern/listbase.cc
+CXX|third_party/blender/source/blender/blenlib/intern/rand.cc
 CXX|native/blender_gp/project_grease_legacy_curve_helpers.cc
 CXX|third_party/blender/intern/guardedalloc/intern/leak_detector.cc
 CXX|third_party/blender/intern/guardedalloc/intern/memory_usage.cc
@@ -31,11 +32,13 @@ C|native/blender_gp/project_grease_blender_primitive.c
 C|native/blender_gp/project_grease_blender_select.c
 C|native/blender_gp/project_grease_blender_eraser.c
 C|native/blender_gp/project_grease_blender_edit.c
+C|native/blender_gp/project_grease_modifier_stack.c
 C|native/blender_gp/project_grease_document_state.c
 C|build/blender-dna/dna.c
 C|third_party/blender/source/blender/makesdna/intern/dna_utils.c
 C|native/blender_gp/android_legacy_runtime_compat.c
 C|third_party/blender/source/blender/blenlib/intern/array_utils.c
+C|third_party/blender/source/blender/blenlib/intern/noise.c
 C|native/blender_gp/android_blender_math_vector_compat.c
 C|native/blender_gp/android_blender_math_matrix_compat.c
 C|native/blender_gp/android_blender_math_rotation_compat.c

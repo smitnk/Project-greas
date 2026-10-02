@@ -656,9 +656,71 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp));Slider(opacity, {opacity=it;controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,controller.onion.afterFrames,it);redraw()}, valueRange = 0f..1f);Spacer(Modifier.height(20.dp))}
 }
 
+/**
+ * The selected layer's live modifier stack (non-destructive): modifiers run top to bottom on a copy
+ * of the frame that is drawn; the strokes change only when one is applied.
+ */
+@Composable private fun ModifierStackSection(controller:EditorController,redraw:()->Unit){
+    val layer=controller.selectedLayer
+    var tick by remember{mutableStateOf(0)}
+    var addMenu by remember{mutableStateOf(false)}
+    var expanded by remember(layer){mutableStateOf(setOf<Int>())}
+    val stack=remember(tick,layer){controller.modifiers(layer)}
+    fun changed(ok:Boolean){if(ok){tick++;redraw()}}
+    Text("Modifier stack (layer "+(layer+1)+")",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
+    if(stack.isEmpty())Text("No modifiers. Add one; it is applied live and the strokes stay untouched until you press Apply.",Modifier.padding(horizontal=20.dp))
+    stack.forEachIndexed{index,modifier->
+        val open=index in expanded
+        Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=4.dp).border(1.dp,MaterialTheme.colorScheme.outline,RoundedCornerShape(8.dp)).padding(8.dp)){
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                Text(com.smitnk.projectgrease.editor.ModifierType.name(modifier.type),Modifier.weight(1f).clickable{expanded=if(open)expanded-index else expanded+index},fontWeight=FontWeight.Bold)
+                Switch(checked=modifier.enabled,onCheckedChange={changed(controller.setModifierEnabled(index,it))})
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+                TextButton(onClick={expanded=if(open)expanded-index else expanded+index}){Text(if(open)"Hide" else "Edit")}
+                TextButton(onClick={changed(controller.moveModifier(index,-1))},enabled=index>0){Text("Up")}
+                TextButton(onClick={changed(controller.moveModifier(index,1))},enabled=index<stack.size-1){Text("Down")}
+                TextButton(onClick={expanded=emptySet();changed(controller.applyLayerModifier(index))}){Text("Apply")}
+                TextButton(onClick={expanded=emptySet();changed(controller.removeModifier(index))}){Text("Remove")}
+            }
+            if(open)com.smitnk.projectgrease.editor.ModifierSpecs.specs(modifier.type).forEach{spec->
+                val value=modifier.params.getOrElse(spec.index){0f}
+                when(spec.kind){
+                    com.smitnk.projectgrease.editor.ParamKind.BOOL->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                        Text(spec.label,Modifier.weight(1f));Switch(checked=value!=0f,onCheckedChange={changed(controller.setModifierParam(index,spec.index,if(it)1f else 0f))})
+                    }
+                    com.smitnk.projectgrease.editor.ParamKind.ENUM->OutlinedButton(
+                        onClick={changed(controller.setModifierParam(index,spec.index,((value.toInt()+1)%spec.options.size).toFloat()))},
+                        modifier=Modifier.fillMaxWidth()
+                    ){Text(spec.label+": "+spec.options.getOrElse(value.toInt()){"?"})}
+                    else->{
+                        val shown=value*spec.displayFactor
+                        Text(spec.label+" "+(if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)shown.toInt().toString() else "%.2f".format(shown)))
+                        Slider(
+                            value=value.coerceIn(spec.min,spec.max),
+                            onValueChange={changed(controller.setModifierParam(index,spec.index,if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)Math.round(it).toFloat() else it,commit=false))},
+                            onValueChangeFinished={controller.commitModifierEdit()},
+                            valueRange=spec.min..spec.max
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Box(Modifier.padding(horizontal=20.dp)){
+        Button(onClick={addMenu=true},modifier=Modifier.fillMaxWidth()){Text("Add modifier")}
+        DropdownMenu(expanded=addMenu,onDismissRequest={addMenu=false}){
+            com.smitnk.projectgrease.editor.ModifierType.all.forEach{type->
+                DropdownMenuItem(text={Text(com.smitnk.projectgrease.editor.ModifierType.name(type))},onClick={addMenu=false;changed(controller.addModifier(type))})
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun AdvancedSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){
+      Column(Modifier.verticalScroll(rememberScrollState())){
         Text("Advanced drawing",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
             Text("Stabilization",Modifier.weight(1f))
@@ -686,16 +748,6 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         }
         Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
         listOf(
-            "Thickness x0.5" to { controller.applyThicknessModifier(0.5f) },
-            "Thickness x2" to { controller.applyThicknessModifier(2f) },
-            "Opacity 50%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 0.5f, normalize = true) },
-            "Opacity 100%" to { controller.applyOpacityModifier(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODIFY_BOTH, 1f, normalize = true) },
-            "Lengthen ends 10%" to { controller.applyLengthModifier(0.1f, 0.1f) },
-            "Shorten ends 10%" to { controller.applyLengthModifier(-0.1f, -0.1f) },
-            "Tint 50% (current color)" to { controller.applyTintModifier(0.5f) },
-            "Hue shift +30°" to { controller.applyColorModifier(hue = 0.5f + 1f / 12f) },
-            "Desaturate 50%" to { controller.applyColorModifier(saturation = 0.5f) },
-            "Darken 20%" to { controller.applyColorModifier(value = 0.8f) },
             "Bring to front" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_TOP) },
             "Bring forward" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_UP) },
             "Send backward" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_DOWN) },
@@ -714,13 +766,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }
-        listOf("SMOOTH","SIMPLIFY","SUBDIVIDE").forEach { modifier ->
-            Button(
-                onClick={if(controller.applySelectedModifier(modifier)){redraw()}},
-                modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp),
-                enabled=controller.selection.selectedStroke>=0
-            ){Text(modifier)}
-        }
+        ModifierStackSection(controller,redraw)
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
             Text("Multiframe editing",Modifier.weight(1f))
             Switch(
@@ -738,6 +784,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Text("Snapping",Modifier.weight(1f));Switch(checked=controller.view.snapEnabled,onCheckedChange={controller.view.toggleSnapping();redraw()})
         }
         Spacer(Modifier.height(20.dp))
+      }
     }
 }
 

@@ -54,11 +54,22 @@ interface DocumentNative {
     fun addStroke(record: StrokeRecord): Boolean
     fun createMaterial(): Boolean
     fun applyMaterialRecord(index: Int, record: MaterialRecord): Boolean
+
+    /** The layer's live modifier stack (version 4 files); documents without one report an empty stack. */
+    fun modifierCount(layer: Int): Int = 0
+    fun modifierRecord(layer: Int, index: Int): ModifierRecord? = null
+    /** Appends a modifier to the layer's stack exactly as recorded (type, enabled flag, parameters). */
+    fun addModifier(layer: Int, record: ModifierRecord): Boolean = true
 }
 
 class ParsedFrame(val number: Int, val strokes: List<StrokeRecord>)
 /** [record] is null for version-1 files, which stored no layer state. */
-class ParsedLayer(val record: LayerRecord?, val frames: List<ParsedFrame>)
+class ParsedLayer(
+    val record: LayerRecord?,
+    val frames: List<ParsedFrame>,
+    /** The layer's modifier stack; empty for files before version 4. */
+    val modifiers: List<ModifierRecord> = emptyList()
+)
 class ParsedDocument(
     val version: Int,
     val width: Int?,
@@ -74,10 +85,11 @@ class ParsedDocument(
  * Project file format. Version 1 stored only layers, frames, strokes and points; version 2 adds
  * per-stroke style (material, thickness, cyclic, fill), layer state (name, visibility, lock,
  * opacity) and the material palette; version 3 adds per-point vertex color (points may carry four
- * more values). Older files still load: missing fields read as zero, which is "no vertex color".
+ * more values); version 4 adds the per-layer live modifier stack ("modifiers"). Older files still
+ * load: missing fields read as zero, which is "no vertex color", and a missing stack is empty.
  */
 object ProjectDocumentCodec {
-    const val VERSION = 3
+    const val VERSION = 4
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int): String {
@@ -115,6 +127,8 @@ object ProjectDocumentCodec {
                 frames.put(JSONObject().put("number", frameNumber).put("strokes", strokes))
             }
             layerJson.put("frames", frames)
+            val modifiers = (0 until native.modifierCount(layerIndex)).mapNotNull { native.modifierRecord(layerIndex, it) }
+            if (modifiers.isNotEmpty()) layerJson.put("modifiers", ModifierStackJson.toJson(modifiers))
             layers.put(layerJson)
         }
         root.put("layers", layers)
@@ -172,6 +186,9 @@ object ProjectDocumentCodec {
                 }
             }
             layer.record?.let { if (!native.applyLayerRecord(layerIndex, it)) return false }
+            for (modifier in layer.modifiers) {
+                if (!native.addModifier(layerIndex, modifier)) return false
+            }
         }
         return true
     }
@@ -188,7 +205,7 @@ object ProjectDocumentCodec {
                 opacity = json.optDouble("opacity", 1.0).toFloat()
             )
         } else null
-        return ParsedLayer(record, frames)
+        return ParsedLayer(record, frames, ModifierStackJson.fromJson(json.optJSONArray("modifiers")))
     }
 
     private fun parseFrame(json: JSONObject): ParsedFrame {

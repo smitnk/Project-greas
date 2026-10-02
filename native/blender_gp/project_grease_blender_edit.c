@@ -568,6 +568,35 @@ static float pge_interpf(float target, float origin, float t)
   return (t * target) + ((1.0f - t) * origin); /* interpf() */
 }
 
+int pg_gp_modstroke_thickness(bGPDstroke *gps, int normalize, int thickness, float thickness_fac)
+{
+  if (gps == NULL || gps->points == NULL || !isfinite(thickness_fac)) {
+    return 0;
+  }
+  int changed = 0;
+  const float stroke_thickness_inv = 1.0f / (float)(gps->thickness > 1 ? gps->thickness : 1) /* max_ii */;
+  for (int i = 0; i < gps->totpoints; i++) {
+    bGPDspoint *pt = &gps->points[i];
+    const float weight = 1.0f; /* no vertex group */
+    const float curvef = 1.0f; /* no custom curve */
+    float target;
+    if (normalize) {
+      target = (float)thickness * stroke_thickness_inv;
+      target *= curvef;
+    }
+    else {
+      target = pt->pressure * thickness_fac;
+    }
+    const float before = pt->pressure;
+    pt->pressure = pge_interpf(target, pt->pressure, weight);
+    if (pt->pressure < 0.0f) {
+      pt->pressure = 0.0f;
+    }
+    changed |= (pt->pressure != before);
+  }
+  return changed;
+}
+
 int pg_gp_mod_thickness(bGPdata *gpd, const bGPDlayer *only_layer,
                         int normalize, int thickness, float thickness_fac)
 {
@@ -579,28 +608,48 @@ int pg_gp_mod_thickness(bGPdata *gpd, const bGPDlayer *only_layer,
     if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
       continue;
     }
-    const float stroke_thickness_inv = 1.0f / (float)(gps->thickness > 1 ? gps->thickness : 1) /* max_ii */;
-    for (int i = 0; i < gps->totpoints; i++) {
-      bGPDspoint *pt = &gps->points[i];
-      const float weight = 1.0f; /* no vertex group */
-      const float curvef = 1.0f; /* no custom curve */
-      float target;
-      if (normalize) {
-        target = (float)thickness * stroke_thickness_inv;
-        target *= curvef;
-      }
-      else {
-        target = pt->pressure * thickness_fac;
-      }
-      const float before = pt->pressure;
-      pt->pressure = pge_interpf(target, pt->pressure, weight);
-      if (pt->pressure < 0.0f) {
-        pt->pressure = 0.0f;
-      }
-      changed |= (pt->pressure != before);
-    }
+    changed |= pg_gp_modstroke_thickness(gps, normalize, thickness, thickness_fac);
   }
   PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+int pg_gp_modstroke_opacity(bGPDstroke *gps, int modify_color, float factor, int normalize,
+                            float hardness)
+{
+  if (gps == NULL || !isfinite(factor) || !isfinite(hardness) ||
+      modify_color < PG_MODIFY_COLOR_BOTH || modify_color > PG_MODIFY_COLOR_HARDNESS)
+  {
+    return 0;
+  }
+  int changed = 0;
+  /* Hardness (at stroke level). */
+  if (modify_color == PG_MODIFY_COLOR_HARDNESS) {
+    gps->hardeness *= hardness;
+    gps->hardeness = pge_clampf(gps->hardeness, 0.0f, 1.0f);
+    return 1;
+  }
+  if (modify_color != PG_MODIFY_COLOR_FILL && gps->points != NULL) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      const float factor_curve = factor; /* no custom curve */
+      /* def_nr < 0 */
+      if (normalize) {
+        pt->strength = factor_curve;
+      }
+      else {
+        pt->strength += factor_curve - 1.0f;
+      }
+      pt->strength = pge_clampf(pt->strength, 0.0f, 1.0f);
+    }
+    changed = 1;
+  }
+  /* Fill using opacity factor. */
+  if (modify_color != PG_MODIFY_COLOR_STROKE) {
+    gps->fill_opacity_fac = factor;
+    gps->fill_opacity_fac = pge_clampf(gps->fill_opacity_fac, 0.0f, 1.0f);
+    changed = 1;
+  }
   return changed;
 }
 
@@ -617,34 +666,7 @@ int pg_gp_mod_opacity(bGPdata *gpd, const bGPDlayer *only_layer,
     if (!(gps->flag & GP_STROKE_SELECT)) {
       continue;
     }
-    /* Hardness (at stroke level). */
-    if (modify_color == PG_MODIFY_COLOR_HARDNESS) {
-      gps->hardeness *= hardness;
-      gps->hardeness = pge_clampf(gps->hardeness, 0.0f, 1.0f);
-      changed = 1;
-      continue;
-    }
-    if (modify_color != PG_MODIFY_COLOR_FILL && gps->points != NULL) {
-      for (int i = 0; i < gps->totpoints; i++) {
-        bGPDspoint *pt = &gps->points[i];
-        const float factor_curve = factor; /* no custom curve */
-        /* def_nr < 0 */
-        if (normalize) {
-          pt->strength = factor_curve;
-        }
-        else {
-          pt->strength += factor_curve - 1.0f;
-        }
-        pt->strength = pge_clampf(pt->strength, 0.0f, 1.0f);
-      }
-      changed = 1;
-    }
-    /* Fill using opacity factor. */
-    if (modify_color != PG_MODIFY_COLOR_STROKE) {
-      gps->fill_opacity_fac = factor;
-      gps->fill_opacity_fac = pge_clampf(gps->fill_opacity_fac, 0.0f, 1.0f);
-      changed = 1;
-    }
+    changed |= pg_gp_modstroke_opacity(gps, modify_color, factor, normalize, hardness);
   }
   PGE_EDITABLE_STROKES_END;
   return changed;
@@ -671,6 +693,53 @@ static bool pge_length_modify_stroke(bGPDstroke *gps, const float length, const 
   return changed;
 }
 
+int pg_gp_modstroke_length(bGPdata *gpd, bGPDstroke *gps, const PGLengthParams *p)
+{
+  if (gpd == NULL || gps == NULL || gps->points == NULL || p == NULL || !isfinite(p->start_fac) ||
+      !isfinite(p->end_fac) || !isfinite(p->overshoot_fac) || !isfinite(p->point_density) ||
+      (p->mode != PG_LENGTH_RELATIVE && p->mode != PG_LENGTH_ABSOLUTE))
+  {
+    return 0;
+  }
+  if ((gps->flag & GP_STROKE_CYCLIC) != 0) {
+    /* Don't affect cyclic strokes as they have no start/end. */
+    return 0;
+  }
+  /* applyLength() */
+  bool changed = false;
+  const float len = (p->mode == PG_LENGTH_ABSOLUTE) ? 1.0f : BKE_gpencil_stroke_length(gps, true);
+  const int totpoints = gps->totpoints;
+  if (len < FLT_EPSILON) {
+    return 0;
+  }
+  float first_fac = p->start_fac;
+  int first_mode = 1;
+  float second_fac = p->end_fac;
+  int second_mode = 2;
+  if (first_fac < 0) {
+    const float tf = first_fac; first_fac = second_fac; second_fac = tf; /* SWAP */
+    const int tm = first_mode; first_mode = second_mode; second_mode = tm;
+  }
+  const int first_extra_point_count = (int)ceilf(first_fac * p->point_density);
+  const int second_extra_point_count = (int)ceilf(second_fac * p->point_density);
+
+  changed |= pge_length_modify_stroke(gps, len * first_fac, p->overshoot_fac, (short)first_mode,
+                                      p->use_curvature != 0, first_extra_point_count,
+                                      p->segment_influence, p->max_angle, p->invert_curvature != 0);
+  const float second_overshoot_fac = p->overshoot_fac * (totpoints - 2) /
+                                     ((float)gps->totpoints - 2) *
+                                     (1.0f - 0.1f / (totpoints - 1.0f));
+  changed |= pge_length_modify_stroke(gps, len * second_fac, second_overshoot_fac,
+                                      (short)second_mode, p->use_curvature != 0,
+                                      second_extra_point_count, p->segment_influence,
+                                      p->max_angle, p->invert_curvature != 0);
+  if (changed) {
+    BKE_gpencil_stroke_geometry_update(gpd, gps);
+    return 1;
+  }
+  return 0;
+}
+
 int pg_gp_mod_length(bGPdata *gpd, const bGPDlayer *only_layer, const PGLengthParams *p)
 {
   if (gpd == NULL || p == NULL || !isfinite(p->start_fac) || !isfinite(p->end_fac) ||
@@ -684,42 +753,7 @@ int pg_gp_mod_length(bGPdata *gpd, const bGPDlayer *only_layer, const PGLengthPa
     if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
       continue;
     }
-    if ((gps->flag & GP_STROKE_CYCLIC) != 0) {
-      /* Don't affect cyclic strokes as they have no start/end. */
-      continue;
-    }
-    /* applyLength() */
-    bool changed = false;
-    const float len = (p->mode == PG_LENGTH_ABSOLUTE) ? 1.0f : BKE_gpencil_stroke_length(gps, true);
-    const int totpoints = gps->totpoints;
-    if (len < FLT_EPSILON) {
-      continue;
-    }
-    float first_fac = p->start_fac;
-    int first_mode = 1;
-    float second_fac = p->end_fac;
-    int second_mode = 2;
-    if (first_fac < 0) {
-      const float tf = first_fac; first_fac = second_fac; second_fac = tf; /* SWAP */
-      const int tm = first_mode; first_mode = second_mode; second_mode = tm;
-    }
-    const int first_extra_point_count = (int)ceilf(first_fac * p->point_density);
-    const int second_extra_point_count = (int)ceilf(second_fac * p->point_density);
-
-    changed |= pge_length_modify_stroke(gps, len * first_fac, p->overshoot_fac, (short)first_mode,
-                                        p->use_curvature != 0, first_extra_point_count,
-                                        p->segment_influence, p->max_angle, p->invert_curvature != 0);
-    const float second_overshoot_fac = p->overshoot_fac * (totpoints - 2) /
-                                       ((float)gps->totpoints - 2) *
-                                       (1.0f - 0.1f / (totpoints - 1.0f));
-    changed |= pge_length_modify_stroke(gps, len * second_fac, second_overshoot_fac,
-                                        (short)second_mode, p->use_curvature != 0,
-                                        second_extra_point_count, p->segment_influence,
-                                        p->max_angle, p->invert_curvature != 0);
-    if (changed) {
-      BKE_gpencil_stroke_geometry_update(gpd, gps);
-      any = 1;
-    }
+    any |= pg_gp_modstroke_length(gpd, gps, p);
   }
   PGE_EDITABLE_STROKES_END;
   return any;
@@ -731,6 +765,65 @@ static void pge_interp_v3(float r[3], const float a[3], const float b[3], float 
   r[0] = s * a[0] + t * b[0];
   r[1] = s * a[1] + t * b[1];
   r[2] = s * a[2] + t * b[2];
+}
+
+int pg_gp_modstroke_tint(bGPdata *gpd, bGPDstroke *gps, int vertex_mode, float factor,
+                         const float rgb[3])
+{
+  if (gpd == NULL || gps == NULL || gps->points == NULL || rgb == NULL || !isfinite(factor) ||
+      !isfinite(rgb[0]) || !isfinite(rgb[1]) || !isfinite(rgb[2]) ||
+      vertex_mode < PG_PAINT_MODE_STROKE || vertex_mode > PG_PAINT_MODE_BOTH)
+  {
+    return 0;
+  }
+  MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
+
+  /* If factor > 1.0, affect the strength of the stroke. */
+  if (factor > 1.0f) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      pt->strength += factor - 1.0f;
+      pt->strength = pge_clampf(pt->strength, 0.0f, 1.0f);
+    }
+  }
+
+  /* loop points and apply color. */
+  bool fill_done = false;
+  for (int i = 0; i < gps->totpoints; i++) {
+    bGPDspoint *pt = &gps->points[i];
+
+    if (!fill_done) {
+      /* Apply to fill. */
+      if (vertex_mode != PG_PAINT_MODE_STROKE) {
+        const float fill_factor = factor;
+        /* If not using Vertex Color, use the material color. */
+        if ((gp_style != NULL) && (gps->vert_color_fill[3] == 0.0f) &&
+            (gp_style->fill_rgba[3] > 0.0f))
+        {
+          memcpy(gps->vert_color_fill, gp_style->fill_rgba, sizeof(float[4]));
+          gps->vert_color_fill[3] = 1.0f;
+        }
+        pge_interp_v3(gps->vert_color_fill, gps->vert_color_fill, rgb,
+                      pge_clampf(fill_factor, 0.0f, 1.0f));
+        /* If no stroke, cancel loop. */
+        if (vertex_mode != PG_PAINT_MODE_BOTH) {
+          break;
+        }
+      }
+      fill_done = true;
+    }
+
+    if (vertex_mode != PG_PAINT_MODE_FILL) {
+      const float weight = 1.0f; /* no vertex group, no curve */
+      /* If not using Vertex Color, use the material color. */
+      if ((gp_style != NULL) && (pt->vert_color[3] == 0.0f) && (gp_style->stroke_rgba[3] > 0.0f)) {
+        memcpy(pt->vert_color, gp_style->stroke_rgba, sizeof(float[4]));
+        pt->vert_color[3] = 1.0f;
+      }
+      pge_interp_v3(pt->vert_color, pt->vert_color, rgb, pge_clampf(factor * weight, 0.0f, 1.0f));
+    }
+  }
+  return 1;
 }
 
 int pg_gp_mod_tint(bGPdata *gpd, const bGPDlayer *only_layer,
@@ -747,54 +840,7 @@ int pg_gp_mod_tint(bGPdata *gpd, const bGPDlayer *only_layer,
     if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
       continue;
     }
-    MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
-    changed = 1;
-
-    /* If factor > 1.0, affect the strength of the stroke. */
-    if (factor > 1.0f) {
-      for (int i = 0; i < gps->totpoints; i++) {
-        bGPDspoint *pt = &gps->points[i];
-        pt->strength += factor - 1.0f;
-        pt->strength = pge_clampf(pt->strength, 0.0f, 1.0f);
-      }
-    }
-
-    /* loop points and apply color. */
-    bool fill_done = false;
-    for (int i = 0; i < gps->totpoints; i++) {
-      bGPDspoint *pt = &gps->points[i];
-
-      if (!fill_done) {
-        /* Apply to fill. */
-        if (vertex_mode != PG_PAINT_MODE_STROKE) {
-          const float fill_factor = factor;
-          /* If not using Vertex Color, use the material color. */
-          if ((gp_style != NULL) && (gps->vert_color_fill[3] == 0.0f) &&
-              (gp_style->fill_rgba[3] > 0.0f))
-          {
-            memcpy(gps->vert_color_fill, gp_style->fill_rgba, sizeof(float[4]));
-            gps->vert_color_fill[3] = 1.0f;
-          }
-          pge_interp_v3(gps->vert_color_fill, gps->vert_color_fill, rgb,
-                        pge_clampf(fill_factor, 0.0f, 1.0f));
-          /* If no stroke, cancel loop. */
-          if (vertex_mode != PG_PAINT_MODE_BOTH) {
-            break;
-          }
-        }
-        fill_done = true;
-      }
-
-      if (vertex_mode != PG_PAINT_MODE_FILL) {
-        const float weight = 1.0f; /* no vertex group, no curve */
-        /* If not using Vertex Color, use the material color. */
-        if ((gp_style != NULL) && (pt->vert_color[3] == 0.0f) && (gp_style->stroke_rgba[3] > 0.0f)) {
-          memcpy(pt->vert_color, gp_style->stroke_rgba, sizeof(float[4]));
-          pt->vert_color[3] = 1.0f;
-        }
-        pge_interp_v3(pt->vert_color, pt->vert_color, rgb, pge_clampf(factor * weight, 0.0f, 1.0f));
-      }
-    }
+    changed |= pg_gp_modstroke_tint(gpd, gps, vertex_mode, factor, rgb);
   }
   PGE_EDITABLE_STROKES_END;
   return changed;
@@ -853,6 +899,37 @@ static void pge_apply_hsv(float color[3], const float factor[3])
   pg_hsv_to_rgb(hsv, color);
 }
 
+int pg_gp_modstroke_color(bGPdata *gpd, bGPDstroke *gps, int modify_color, const float f[3])
+{
+  if (gpd == NULL || gps == NULL || gps->points == NULL || f == NULL || !isfinite(f[0]) ||
+      !isfinite(f[1]) || !isfinite(f[2]) || modify_color < PG_MODIFY_COLOR_BOTH ||
+      modify_color > PG_MODIFY_COLOR_FILL)
+  {
+    return 0;
+  }
+  MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
+  /* Fill */
+  if (modify_color != PG_MODIFY_COLOR_STROKE) {
+    if ((gp_style != NULL) && (gps->vert_color_fill[3] == 0.0f) && (gp_style->fill_rgba[3] > 0.0f)) {
+      memcpy(gps->vert_color_fill, gp_style->fill_rgba, sizeof(float[4]));
+      gps->vert_color_fill[3] = 1.0f;
+    }
+    pge_apply_hsv(gps->vert_color_fill, f);
+  }
+  /* Stroke */
+  if (modify_color != PG_MODIFY_COLOR_FILL) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      if ((gp_style != NULL) && (pt->vert_color[3] == 0.0f) && (gp_style->stroke_rgba[3] > 0.0f)) {
+        memcpy(pt->vert_color, gp_style->stroke_rgba, sizeof(float[4]));
+        pt->vert_color[3] = 1.0f;
+      }
+      pge_apply_hsv(pt->vert_color, f);
+    }
+  }
+  return 1;
+}
+
 int pg_gp_mod_color(bGPdata *gpd, const bGPDlayer *only_layer, int modify_color, const float f[3])
 {
   if (gpd == NULL || f == NULL || !isfinite(f[0]) || !isfinite(f[1]) || !isfinite(f[2]) ||
@@ -865,27 +942,7 @@ int pg_gp_mod_color(bGPdata *gpd, const bGPDlayer *only_layer, int modify_color,
     if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
       continue;
     }
-    MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
-    changed = 1;
-    /* Fill */
-    if (modify_color != PG_MODIFY_COLOR_STROKE) {
-      if ((gp_style != NULL) && (gps->vert_color_fill[3] == 0.0f) && (gp_style->fill_rgba[3] > 0.0f)) {
-        memcpy(gps->vert_color_fill, gp_style->fill_rgba, sizeof(float[4]));
-        gps->vert_color_fill[3] = 1.0f;
-      }
-      pge_apply_hsv(gps->vert_color_fill, f);
-    }
-    /* Stroke */
-    if (modify_color != PG_MODIFY_COLOR_FILL) {
-      for (int i = 0; i < gps->totpoints; i++) {
-        bGPDspoint *pt = &gps->points[i];
-        if ((gp_style != NULL) && (pt->vert_color[3] == 0.0f) && (gp_style->stroke_rgba[3] > 0.0f)) {
-          memcpy(pt->vert_color, gp_style->stroke_rgba, sizeof(float[4]));
-          pt->vert_color[3] = 1.0f;
-        }
-        pge_apply_hsv(pt->vert_color, f);
-      }
-    }
+    changed |= pg_gp_modstroke_color(gpd, gps, modify_color, f);
   }
   PGE_EDITABLE_STROKES_END;
   return changed;

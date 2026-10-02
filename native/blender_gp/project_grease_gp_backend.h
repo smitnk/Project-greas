@@ -8,6 +8,7 @@
 // real C structs and not types of project_grease::gp.
 struct bGPdata;
 struct bGPDlayer;
+struct bGPDframe;
 
 namespace project_grease::gp {
 
@@ -128,6 +129,27 @@ class Backend {
   // Restores a stroke exactly as saved: no paint-stage smoothing, selection untouched.
   bool add_stroke(const StrokePoint* points, int count, const PGStrokeInfo& info);
   bool get_layer_info(int index, PGLayerInfo* out) const;
+
+  // Live (non-destructive) per-layer modifier stack, see project_grease_modifier_stack.h. The stack
+  // is document state: strokes are never modified until modifier_apply().
+  int modifier_count(int layer_index) const;
+  // Appends a modifier with Blender's default parameters; returns its index or -1.
+  int modifier_add(int layer_index, int type);
+  bool modifier_remove(int layer_index, int modifier_index);
+  bool modifier_move(int layer_index, int from_index, int to_index);
+  bool modifier_set_enabled(int layer_index, int modifier_index, bool enabled);
+  // Replaces the parameters (count values, sanitised); extra values are ignored.
+  bool modifier_set_params(int layer_index, int modifier_index, const float* params, int count);
+  // Returns the parameter count (and fills type/enabled/params) or -1.
+  int modifier_get(int layer_index, int modifier_index, int* type, int* enabled, float* params,
+                   int capacity) const;
+  // Bakes the modifier into the layer's original strokes and removes it from the stack.
+  bool modifier_apply(int layer_index, int modifier_index);
+  // The frame to draw for `layer`: an evaluated copy of `current` when the layer has enabled
+  // modifiers (cached until an edit, frame change or stack change), else `current` itself.
+  const bGPDframe* evaluated_frame(const bGPDlayer* layer, const bGPDframe* current, int frame_number);
+  // Number of stack evaluations run so far (cache hits do not count); for tests.
+  uint64_t modifier_eval_count() const;
   bool set_layer_opacity(int index, float opacity);
   bool get_material_info(int index, PGMaterialInfo* out) const;
   bool smooth_stroke(int index, float influence, int iterations);

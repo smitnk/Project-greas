@@ -75,6 +75,18 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         return native.addStroke(flat, record.points.size, info, colors)
     }
 
+    override fun modifierCount(layer: Int) = native.modifierCount(layer)
+
+    override fun modifierRecord(layer: Int, index: Int) =
+        ModifierStackPacking.unpack(native.modifierGet(layer, index))
+
+    override fun addModifier(layer: Int, record: ModifierRecord): Boolean {
+        val index = ModifierStackCommands.add(native, layer, record.type)
+        if (index < 0) return false
+        return native.modifierSetParams(layer, index, ModifierStackPacking.paramsFor(record.type, record.params)) &&
+            native.modifierSetEnabled(layer, index, record.enabled)
+    }
+
     override fun createMaterial() = native.createMaterial()
 
     override fun applyMaterialRecord(index: Int, record: MaterialRecord) =

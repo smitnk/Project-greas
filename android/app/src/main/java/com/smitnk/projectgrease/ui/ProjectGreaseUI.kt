@@ -58,6 +58,7 @@ private val tools=listOf(
     ToolEntry(GreaseTool.CIRCLE,Icons.Default.RadioButtonUnchecked,"Circle",FeatureId.CIRCLE),
     ToolEntry(GreaseTool.ARC,Icons.Default.Timeline,"Arc",FeatureId.ARC),
     ToolEntry(GreaseTool.POLYLINE,Icons.Default.Timeline,"Polyline",FeatureId.POLYLINE),
+    ToolEntry(GreaseTool.CURVE,Icons.Default.ShowChart,"Curve",FeatureId.CURVE),
     ToolEntry(GreaseTool.MOVE,Icons.Default.OpenWith,"Move",FeatureId.MOVE),
     ToolEntry(GreaseTool.ROTATE,Icons.Default.RotateRight,"Rotate",FeatureId.ROTATE),
     ToolEntry(GreaseTool.SCALE,Icons.Default.ZoomIn,"Scale",FeatureId.SCALE),
@@ -142,6 +143,39 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 {themeMode=it},
                 {screen=Screen.HOME}
             )
+        }
+    }
+}
+
+/**
+ * Curve tool handles (start, end and the two Bezier control points) over the viewport, mapped with
+ * the same fit/zoom/pan as the EGL surface's canvasPoint(), plus Confirm / Cancel.
+ */
+@Composable private fun CurveHandlesOverlay(controller:EditorController,tick:Int,redraw:()->Unit){
+    @Suppress("UNUSED_VARIABLE") val observed=tick
+    if(!controller.curveEditing) return
+    val handles=controller.curveHandles()
+    Box(Modifier.fillMaxSize()){
+        Canvas(Modifier.fillMaxSize()){
+            val cw=controller.document.canvasWidth.coerceAtLeast(1).toFloat()
+            val ch=controller.document.canvasHeight.coerceAtLeast(1).toFloat()
+            val fit=minOf(size.width/cw,size.height/ch)*0.92f*controller.view.zoom
+            val ox=(size.width-cw*fit)*0.5f+controller.view.panX
+            val oy=(size.height-ch*fit)*0.5f+controller.view.panY
+            fun screen(p:Pair<Float,Float>)=Offset(ox+p.first*fit,oy+p.second*fit)
+            if(handles.size==4){
+                val handleLine=Color(0xAAFFFFFF)
+                drawLine(handleLine,screen(handles[0]),screen(handles[2]),2f)
+                drawLine(handleLine,screen(handles[1]),screen(handles[3]),2f)
+                handles.forEachIndexed{i,h->
+                    drawCircle(Color.Black,11f,screen(h))
+                    drawCircle(if(i<2) Color.White else Accent,8f,screen(h))
+                }
+            }
+        }
+        Row(Modifier.align(Alignment.BottomCenter).padding(8.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            Button(onClick={controller.confirmCurve();redraw()}){Text("Confirm curve")}
+            OutlinedButton(onClick={controller.cancelCurve();redraw()}){Text("Cancel")}
         }
     }
 }
@@ -245,8 +279,13 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var refresh by remember{mutableIntStateOf(0)}
     var fpsDialog by remember{mutableStateOf(false)}
     var savedTick by remember{mutableIntStateOf(0)}
+    var overlayTick by remember{mutableIntStateOf(0)}
     val context=LocalContext.current
     fun redraw(){refresh++}
+    DisposableEffect(controller){
+        controller.onOverlayChanged={overlayTick++}
+        onDispose{controller.onOverlayChanged=null}
+    }
     fun persistProject(){
         controller.saveDocumentJson()?.let {
             ProjectStore(context).saveDocument(controller.document.projectName,it)
@@ -272,6 +311,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Box(Modifier.fillMaxSize().background(CanvasBg)){
             viewport()
             DrawingGuidesOverlay(controller)
+            CurveHandlesOverlay(controller,overlayTick,::redraw)
             IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
                 Icon(Icons.Default.CloseFullscreen,"Exit canvas")
             }
@@ -304,6 +344,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
                 viewport()
                 DrawingGuidesOverlay(controller)
+                CurveHandlesOverlay(controller,overlayTick,::redraw)
             }
             if(state.showProperties)Properties(controller,::redraw)
         }
@@ -484,7 +525,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
 @Composable private fun ToolRail(controller:EditorController,onState:()->Unit,onTools:()->Unit){
     val groups=listOf(
-        "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.PAN),
+        "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.CURVE,GreaseTool.PAN),
         "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
         "SCULPT" to listOf(GreaseTool.SCULPT)
     )

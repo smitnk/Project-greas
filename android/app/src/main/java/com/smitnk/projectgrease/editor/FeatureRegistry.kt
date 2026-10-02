@@ -80,7 +80,7 @@ object FeatureRegistry {
         FeatureId.CIRCLE to wired("Blender circle geometry; committed on release (no handle-edit phase). $DEVICE"),
         FeatureId.ARC to wired("Blender arc geometry; committed on release, bulge direction fixed. $DEVICE"),
         FeatureId.POLYLINE to wired("Touch polyline (tap adds a vertex, tap the last vertex to finish). $DEVICE"),
-        FeatureId.CURVE to missing("Native generator supports the curve primitive; there is no tool, control-point editing or UI."),
+        FeatureId.CURVE to wired("Blender curve geometry (gpencil_primitive.c GP_STROKE_CURVE): drag start->end, drag the end/control handles, tap away or Confirm to commit. No extra Blender keys (extrude, edges, flip). $DEVICE"),
         FeatureId.STABILIZATION to wired("Lazy-mouse semantics ported; radius is in canvas units, not screen pixels. $DEVICE"),
         FeatureId.SMOOTHING to wired("Active smoothing ported but off by default (Blender's preset value not traced). $DEVICE"),
         FeatureId.SPACING to wired("Maps to Blender's Euclidean input filter, not a true spacing control. $DEVICE"),

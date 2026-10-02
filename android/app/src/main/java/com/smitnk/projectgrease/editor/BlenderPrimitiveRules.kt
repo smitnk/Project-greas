@@ -21,6 +21,7 @@ object ProjectGreasePrimitive {
         GreaseTool.POLYLINE -> POLYLINE
         GreaseTool.CIRCLE -> CIRCLE
         GreaseTool.ARC -> ARC
+        GreaseTool.CURVE -> CURVE
         else -> null
     }
 
@@ -98,4 +99,113 @@ class PolylineSession(private val finishRadius: Float = 24f) {
 
     private fun distance(a: Pair<Float, Float>, b: Pair<Float, Float>): Float =
         hypot(a.first - b.first, a.second - b.second)
+}
+
+/**
+ * Touch version of Blender's curve primitive (gpencil_primitive.c, GP_STROKE_CURVE). Blender drags
+ * start -> end, then shows the ends and the two Bezier control points as handles that can be
+ * dragged until the curve is confirmed. Here the first drag sets start -> end; the control points
+ * start where gpencil_primitive_update_cps() puts them; dragging a handle moves it; a press away
+ * from every handle confirms. anchors() is the input of nativeGenerateBlenderPrimitive(CURVE):
+ * start, end while the line is dragged, then start, end, cp1, cp2.
+ */
+class CurveSession {
+    enum class Phase { IDLE, DRAG_LINE, EDIT }
+    enum class Press { LINE, HANDLE, CONFIRM }
+
+    var phase = Phase.IDLE
+        private set
+    private var start = 0f to 0f
+    private var end = 0f to 0f
+    private var cp1 = 0f to 0f
+    private var cp2 = 0f to 0f
+    private var dragging = -1
+    private var dragOrigin: Pair<Float, Float>? = null
+
+    val isActive: Boolean get() = phase != Phase.IDLE
+
+    fun press(x: Float, y: Float, hitRadius: Float): Press {
+        if (phase == Phase.EDIT) {
+            val handles = handles()
+            var best = -1
+            var bestDistance = hitRadius
+            handles.forEachIndexed { i, h ->
+                val d = hypot(h.first - x, h.second - y)
+                if (d <= bestDistance) { best = i; bestDistance = d }
+            }
+            if (best < 0) return Press.CONFIRM
+            dragging = best
+            dragOrigin = handles[best]
+            return Press.HANDLE
+        }
+        start = x to y
+        end = x to y
+        phase = Phase.DRAG_LINE
+        return Press.LINE
+    }
+
+    fun move(x: Float, y: Float) {
+        when (phase) {
+            Phase.DRAG_LINE -> end = x to y
+            Phase.EDIT -> setHandle(dragging, x to y)
+            Phase.IDLE -> Unit
+        }
+    }
+
+    fun release(x: Float, y: Float) {
+        move(x, y)
+        when (phase) {
+            Phase.DRAG_LINE -> {
+                // A tap without a drag is not a curve.
+                if (start == end) { reset(); return }
+                updateControlPoints()
+                phase = Phase.EDIT
+            }
+            Phase.EDIT -> { dragging = -1; dragOrigin = null }
+            Phase.IDLE -> Unit
+        }
+    }
+
+    /** Gesture interrupted: drop a line being dragged, put a dragged handle back. */
+    fun cancelGesture() {
+        when (phase) {
+            Phase.DRAG_LINE -> reset()
+            Phase.EDIT -> { dragOrigin?.let { setHandle(dragging, it) }; dragging = -1; dragOrigin = null }
+            Phase.IDLE -> Unit
+        }
+    }
+
+    fun anchors(): List<Pair<Float, Float>> = when (phase) {
+        Phase.IDLE -> emptyList()
+        Phase.DRAG_LINE -> if (start == end) emptyList() else listOf(start, end)
+        Phase.EDIT -> listOf(start, end, cp1, cp2)
+    }
+
+    /** start, end, cp1, cp2 while the handles are editable. */
+    fun handles(): List<Pair<Float, Float>> = if (phase == Phase.EDIT) listOf(start, end, cp1, cp2) else emptyList()
+
+    fun reset() {
+        phase = Phase.IDLE
+        dragging = -1
+        dragOrigin = null
+    }
+
+    private fun setHandle(index: Int, p: Pair<Float, Float>) {
+        when (index) {
+            0 -> start = p
+            1 -> end = p
+            2 -> cp1 = p
+            3 -> cp2 = p
+        }
+    }
+
+    /** gpencil_primitive_update_cps(), GP_STROKE_CURVE branch. */
+    private fun updateControlPoints() {
+        val mid = (start.first + end.first) * 0.5f to (start.second + end.second) * 0.5f
+        cp1 = interp(mid, start, 0.33f)
+        cp2 = interp(mid, end, 0.33f)
+    }
+
+    private fun interp(a: Pair<Float, Float>, b: Pair<Float, Float>, t: Float) =
+        a.first + (b.first - a.first) * t to a.second + (b.second - a.second) * t
 }

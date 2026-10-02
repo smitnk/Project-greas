@@ -452,7 +452,7 @@ class OnionSkinController {
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
 
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
+enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
 
 class ToolController {
     var activeTool=GreaseTool.DRAW; private set
@@ -463,7 +463,7 @@ class ToolController {
             GreaseTool.FILL->FeatureId.FILL; GreaseTool.EYEDROPPER->FeatureId.STROKE_COLOR
             GreaseTool.LINE->FeatureId.LINE; GreaseTool.RECTANGLE->FeatureId.RECTANGLE
             GreaseTool.CIRCLE->FeatureId.CIRCLE; GreaseTool.ARC->FeatureId.ARC
-            GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.MOVE->FeatureId.MOVE; GreaseTool.ROTATE->FeatureId.ROTATE; GreaseTool.SCALE->FeatureId.SCALE; GreaseTool.MIRROR->FeatureId.MIRROR; GreaseTool.PAN->FeatureId.PAN
+            GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.CURVE->FeatureId.CURVE; GreaseTool.MOVE->FeatureId.MOVE; GreaseTool.ROTATE->FeatureId.ROTATE; GreaseTool.SCALE->FeatureId.SCALE; GreaseTool.MIRROR->FeatureId.MIRROR; GreaseTool.PAN->FeatureId.PAN
             GreaseTool.SCULPT->FeatureId.SCULPT
         }
         if(FeatureRegistry.capability(feature).state==FeatureState.NOT_IMPLEMENTED)return false
@@ -516,6 +516,10 @@ class EditorController {
     fun selectTool(tool:GreaseTool):Boolean {
         // Leaving the polyline tool confirms the polyline, like Blender's confirm keys.
         if (tool != tools.activeTool && polyline.isActive) finishPolyline()
+        // Likewise for the curve once its handles are shown; a curve still being dragged is dropped.
+        if (tool != tools.activeTool && curve.isActive) {
+            if (curve.phase == CurveSession.Phase.EDIT) confirmCurve() else cancelCurve()
+        }
         return tools.select(tool)
     }
     private var sculptGestureChanged = false
@@ -577,6 +581,43 @@ class EditorController {
     private val pendingLassoPoints = mutableListOf<Pair<Float,Float>>()
     private var pendingShapeTool: GreaseTool? = null
     private val polyline = PolylineSession()
+    private val curve = CurveSession()
+    private var curveAwaitingPress = false
+    private var curveConfirmOnRelease = false
+    private var curveLastX = 0f
+    private var curveLastY = 0f
+    /** Called when the curve handles change, so the UI can redraw its handle overlay. */
+    var onOverlayChanged: (() -> Unit)? = null
+    /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
+    fun curveHandles(): List<Pair<Float, Float>> = curve.handles()
+    val curveEditing: Boolean get() = curve.phase == CurveSession.Phase.EDIT
+    /** Commits the edited curve (gpencil_primitive.c confirm). */
+    fun confirmCurve(): Boolean {
+        val anchors = curve.anchors()
+        curve.reset()
+        curveAwaitingPress = false
+        curveConfirmOnRelease = false
+        showPrimitivePreview(null)
+        onOverlayChanged?.invoke()
+        val points = blenderPrimitivePoints(ProjectGreasePrimitive.CURVE, anchors)
+        val ok = points != null && commitPrimitivePoints(points, false)
+        if (!ok) render()
+        return ok
+    }
+    /** Discards the curve being edited. */
+    fun cancelCurve() {
+        curve.reset()
+        curveAwaitingPress = false
+        curveConfirmOnRelease = false
+        showPrimitivePreview(null)
+        onOverlayChanged?.invoke()
+        render()
+    }
+    private fun curveHitRadius(): Float = 32f / view.zoom.coerceAtLeast(0.1f)
+    private fun showCurvePreview() {
+        showPrimitivePreview(blenderPrimitivePoints(ProjectGreasePrimitive.CURVE, curve.anchors()))
+        onOverlayChanged?.invoke()
+    }
     private var polylineAwaitingPress = false
     private var polylineLastX = 0f
     private var polylineLastY = 0f
@@ -667,6 +708,12 @@ class EditorController {
                 polylineAwaitingPress = true
                 true
             }
+            GreaseTool.CURVE -> {
+                // The curve outlives a gesture too: first the line, then handle drags.
+                curveAwaitingPress = true
+                curveConfirmOnRelease = false
+                true
+            }
             GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC -> {
                 pendingShapePoints.clear()
                 pendingShapeTool = tools.activeTool
@@ -702,6 +749,21 @@ class EditorController {
             showPrimitivePreview(
                 blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, polyline.previewVertices())
             )
+        } else if (tools.activeTool == GreaseTool.CURVE) {
+            val snapped=view.snapPoint(x,y)
+            curveLastX = snapped.first
+            curveLastY = snapped.second
+            if (curveAwaitingPress) {
+                curveAwaitingPress = false
+                // A press away from every handle confirms; the rest of that gesture is ignored.
+                if (curve.press(snapped.first, snapped.second, curveHitRadius()) == CurveSession.Press.CONFIRM) {
+                    curveConfirmOnRelease = true
+                    return
+                }
+            } else if (!curveConfirmOnRelease) {
+                curve.move(snapped.first, snapped.second)
+            }
+            if (!curveConfirmOnRelease) showCurvePreview()
         } else if (pendingShapeTool != null) {
             val snapped=view.snapPoint(x,y)
             pendingShapePoints += PendingPoint(snapped.first, snapped.second, pressure.coerceIn(0f,1f), timeSeconds)
@@ -806,6 +868,15 @@ class EditorController {
             }
             return
         }
+        if (tools.activeTool == GreaseTool.CURVE) {
+            if (curveConfirmOnRelease) {
+                confirmCurve()
+            } else {
+                curve.release(curveLastX, curveLastY)
+                showCurvePreview()
+            }
+            return
+        }
         val shapeTool = pendingShapeTool
         val finalPoints = generatedShapePoints()
         showPrimitivePreview(null)
@@ -825,7 +896,12 @@ class EditorController {
         pendingShapePoints.clear()
         pendingShapeTool=null
         pendingLassoPoints.clear()
-        if (tools.activeTool == GreaseTool.POLYLINE) {
+        if (tools.activeTool == GreaseTool.CURVE) {
+            curveAwaitingPress = false
+            curveConfirmOnRelease = false
+            curve.cancelGesture()
+            showCurvePreview()
+        } else if (tools.activeTool == GreaseTool.POLYLINE) {
             polyline.cancelGesture()
             polylineAwaitingPress = false
             showPrimitivePreview(

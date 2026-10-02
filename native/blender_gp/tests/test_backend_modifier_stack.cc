@@ -9,6 +9,7 @@
 
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
+#include "project_grease_blender_edit.h"
 #include "project_grease_gp_backend.h"
 #include "project_grease_modifier_stack.h"
 
@@ -124,6 +125,22 @@ int main()
   CHECK(b.modifier_set_enabled(0, 0, false));
   CHECK(b.evaluated_frame(layer_a, frame_a, 1) == frame_a); /* disabled: draw the original */
   CHECK(b.modifier_set_enabled(0, 0, true));
+
+  /* An edit command applied outside the Backend methods (Vertex Paint through pg_gp_edit_dispatch)
+   * reports through the batch-cache dirty callback and invalidates the evaluated copy. */
+  {
+    const uint64_t before = b.modifier_eval_count();
+    const bGPDframe *e = b.evaluated_frame(layer_a, frame_a, 1);
+    const bGPDstroke *first = static_cast<const bGPDstroke *>(e->strokes.first);
+    CHECK(first->points[0].vert_color[3] == 0.0f);
+    const float args[11] = {PG_VPAINT_DRAW, 100, 100, 50, 1, 1, 0, 0, PG_PAINT_MODE_STROKE, 0, 0};
+    CHECK(pg_gp_edit_dispatch(gpd, layer_a, PG_EDIT_CMD_VERTEX_PAINT, args, 11) == 1);
+    const bGPDframe *e2 = b.evaluated_frame(layer_a, frame_a, 1);
+    CHECK(b.modifier_eval_count() >= before + 1 && b.modifier_eval_count() <= before + 2);
+    const bGPDstroke *painted = static_cast<const bGPDstroke *>(e2->strokes.first);
+    CHECK(painted->points[0].vert_color[3] > 0.0f);
+    CHECK(static_cast<const bGPDstroke *>(frame_a->strokes.first)->points[0].vert_color[3] > 0.0f); /* original painted too */
+  }
 
   /* --- undo / redo carry the stack --- */
   CHECK(b.history_record());

@@ -56,9 +56,11 @@ enum {
   PG_EDIT_CMD_DISSOLVE = 52,     /* args: type (PG_DISSOLVE_*) */
   PG_EDIT_CMD_SPLIT = 53,        /* args: - */
   PG_EDIT_CMD_JOIN = 54,         /* args: leave_gaps */
+  /* args: brush, x, y, radius, strength, r, g, b, target (PG_PAINT_MODE_*), dx, dy */
+  PG_EDIT_CMD_VERTEX_PAINT = 55,
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 54
+#define PG_EDIT_CMD_LAST 55
 
 /* GPENCIL_OT_dissolve types */
 enum { PG_DISSOLVE_POINTS = 0, PG_DISSOLVE_BETWEEN = 1, PG_DISSOLVE_UNSELECT = 2 };
@@ -126,6 +128,26 @@ int pg_gp_mod_thickness(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
 /* MOD_gpencil_legacy_opacity.c deformStroke() without vertex groups or custom curve. */
 int pg_gp_mod_opacity(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
                       int modify_color, float factor, int normalize, float hardness);
+
+/* eGP_Vertex_SculptTool (DNA_brush_enums.h) */
+enum {
+  PG_VPAINT_DRAW = 0,
+  PG_VPAINT_BLUR = 1,
+  PG_VPAINT_AVERAGE = 2,
+  PG_VPAINT_SMEAR = 3,
+  PG_VPAINT_REPLACE = 4,
+};
+
+typedef struct PGVertexPaint {
+  int brush;
+  float x, y, radius, strength;
+  float rgb[3];
+  int target; /* PG_PAINT_MODE_STROKE / FILL / BOTH */
+  float dx, dy; /* drag delta, used by smear */
+} PGVertexPaint;
+
+/* One dab of Vertex Paint mode (gpencil_vertex_paint.c brushes) on the editable strokes. */
+int pg_gp_vertex_paint(struct bGPdata *gpd, const struct bGPDlayer *only_layer, const PGVertexPaint *vp);
 
 /* Per-stroke forms of the five modifiers above, used by the live modifier stack. They apply to the
  * given stroke regardless of selection or layer state; the pg_gp_mod_* functions above call them

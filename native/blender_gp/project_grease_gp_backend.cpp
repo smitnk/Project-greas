@@ -64,6 +64,15 @@ namespace project_grease::gp {
  * only over-invalidate when several backends exist. */
 static uint64_t g_gp_data_revision = 1;
 
+/* Installed as BKE_gpencil_batch_cache_dirty_tag_cb: the Blender-side edit code (edit commands,
+ * BKE_gpencil_tag) reports every stroke change through it, so those changes invalidate the
+ * evaluated modifier frames too, then the draw cache is dirtied as before. */
+static void project_grease_gp_dirty_tag_callback(bGPdata *gpd)
+{
+  g_gp_data_revision++;
+  DRW_gpencil_batch_cache_dirty_tag(gpd);
+}
+
 static void project_grease_gp_tag(bGPdata *gpd)
 {
   g_gp_data_revision++;
@@ -563,7 +572,7 @@ bool Backend::initialize()
   // startup. Project Grease embeds only the legacy GP closure, so install
   // the two callbacks directly and keep Android independent of Blender Main/ID
   // ownership.
-  BKE_gpencil_batch_cache_dirty_tag_cb = DRW_gpencil_batch_cache_dirty_tag;
+  BKE_gpencil_batch_cache_dirty_tag_cb = project_grease_gp_dirty_tag_callback;
   BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
 
   if (!BKE_gpencil_batch_cache_dirty_tag_cb ||

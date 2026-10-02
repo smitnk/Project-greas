@@ -239,4 +239,19 @@ object ProjectGreaseSelect {
         if (type in DISSOLVE_POINTS..DISSOLVE_UNSELECT) Command(CMD_DISSOLVE, floatArrayOf(type.toFloat())) else null
     fun split() = Command(CMD_SPLIT, FloatArray(0))
     fun join(leaveGaps: Boolean = false) = Command(CMD_JOIN, floatArrayOf(flag(leaveGaps)))
+
+    // Vertex Paint mode brushes (gpencil_vertex_paint.c)
+    const val CMD_VERTEX_PAINT = 55
+    const val VPAINT_DRAW = 0
+    const val VPAINT_BLUR = 1
+    const val VPAINT_AVERAGE = 2
+    const val VPAINT_SMEAR = 3
+    const val VPAINT_REPLACE = 4
+
+    fun vertexPaint(brush: Int, x: Float, y: Float, radius: Float, strength: Float,
+                    r: Float, g: Float, b: Float, target: Int, dx: Float = 0f, dy: Float = 0f): Command? {
+        if (brush !in VPAINT_DRAW..VPAINT_REPLACE || target !in PAINT_STROKE..PAINT_BOTH) return null
+        if (!finite(x, y) || !finite(radius, strength) || radius <= 0f || !finite(r, g) || !finite(b) || !finite(dx, dy)) return null
+        return Command(CMD_VERTEX_PAINT, floatArrayOf(brush.toFloat(), x, y, radius, strength, r, g, b, target.toFloat(), dx, dy))
+    }
 }

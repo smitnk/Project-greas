@@ -522,7 +522,8 @@ class EditorController {
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
             GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
-            GreaseMode.VERTEX_PAINT, GreaseMode.WEIGHT_PAINT -> false
+            GreaseMode.VERTEX_PAINT -> FeatureRegistry.capability(FeatureId.VERTEX_PAINT).state != FeatureState.NOT_IMPLEMENTED
+            GreaseMode.WEIGHT_PAINT -> false
         }
         if (!supported) return false
         mode = value
@@ -1203,6 +1204,27 @@ class EditorController {
     fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runSelectCommand(ProjectGreaseSelect.dissolve(type))
     fun splitSelection() = runSelectCommand(ProjectGreaseSelect.split())
     fun joinSelection(leaveGaps:Boolean=false) = runSelectCommand(ProjectGreaseSelect.join(leaveGaps))
+    // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----
+    var vertexPaintBrush = ProjectGreaseSelect.VPAINT_DRAW
+        private set
+    var vertexPaintTarget = ProjectGreaseSelect.PAINT_STROKE
+        private set
+    private var vertexPaintChanged = false
+    fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_REPLACE) vertexPaintBrush = brush }
+    fun setVertexPaintTarget(target:Int) { if (target in ProjectGreaseSelect.PAINT_STROKE..ProjectGreaseSelect.PAINT_BOTH) vertexPaintTarget = target }
+    /** [render] is false when the caller paints several samples and renders once afterwards. */
+    fun vertexPaintDab(x:Float, y:Float, dx:Float=0f, dy:Float=0f, pressure:Float=1f, render:Boolean=true):Boolean {
+        if (native.handle == 0L) return false
+        val argb = materials.colorArgb
+        val cmd = ProjectGreaseSelect.vertexPaint(vertexPaintBrush, x, y, brushes.size.coerceAtLeast(1f),
+            (brushes.strength * pressure).coerceIn(0f, 1f),
+            ((argb shr 16) and 0xFF) / 255f, ((argb shr 8) and 0xFF) / 255f, (argb and 0xFF) / 255f,
+            vertexPaintTarget, dx, dy) ?: return false
+        val changed = native.applyEditCommand(cmd.id, cmd.args)
+        if (changed) { vertexPaintChanged = true; document.markDirty(); if (render) render() }
+        return changed
+    }
+    fun endVertexPaint() { if (vertexPaintChanged) history.markEdit(); vertexPaintChanged = false }
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}

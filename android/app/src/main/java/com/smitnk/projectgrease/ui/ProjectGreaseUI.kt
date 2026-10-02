@@ -701,7 +701,13 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             "Reset vertex color" to { controller.resetSelectionVertexColor() },
             "Flip direction" to { controller.flipSelection() },
             "Toggle closed" to { controller.setSelectionCyclic(com.smitnk.projectgrease.editor.ProjectGreaseSelect.CYCLIC_TOGGLE) },
-            "Snap to grid" to { controller.snapSelectionToGrid() }
+            "Snap to grid" to { controller.snapSelectionToGrid() },
+            "Duplicate selection" to { controller.duplicateSelection() },
+            "Dissolve points" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_POINTS) },
+            "Dissolve between" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_BETWEEN) },
+            "Dissolve unselected" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_UNSELECT) },
+            "Split selection" to { controller.splitSelection() },
+            "Join selected strokes" to { controller.joinSelection() }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

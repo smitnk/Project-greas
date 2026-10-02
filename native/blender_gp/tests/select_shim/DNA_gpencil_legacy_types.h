@@ -30,6 +30,7 @@ typedef struct bGPDstroke {
   struct bGPDstroke *next, *prev;
   bGPDspoint *points;
   int totpoints;
+  struct MDeformVert *dvert;
   int flag;
   int mat_nr;
   int select_index;

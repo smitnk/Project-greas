@@ -91,4 +91,61 @@ object ProjectGreaseSelect {
         if (!isValidOp(op) || !isValidMode(mode) || !finite(x, y, radius) || radius < 0f) return null
         return Command(CMD_CIRCLE, floatArrayOf(op.toFloat(), mode.toFloat(), x, y, radius, flag(isFirst)))
     }
+
+    // ---- selection-aware editing (native/blender_gp/project_grease_blender_edit.h) ----
+    const val PICK_EXTEND = 1
+    const val PICK_DESELECT = 2
+    const val PICK_TOGGLE = 4
+    const val PICK_ENTIRE = 8
+    const val PICK_DESELECT_ALL = 16
+    const val PICK_PASSTHROUGH = 32
+
+    const val CMD_PICK = 31
+    const val CMD_TRANSLATE = 32
+    const val CMD_ROTATE = 33
+    const val CMD_SCALE = 34
+    const val CMD_MIRROR = 35
+    const val CMD_DELETE_STROKES = 36
+    const val CMD_DELETE_POINTS = 37
+
+    /** gpencil_select_exec(): radius = 0.4 * widget_unit (20) = 8, scaled to canvas units by the zoom. */
+    const val PICK_RADIUS = 8f
+
+    /** `(int)(radius * radius)`: Blender compares the Manhattan distance with this squared radius. */
+    fun pickRadiusSquared(zoom: Float): Int {
+        val radius = PICK_RADIUS / zoom.coerceAtLeast(0.1f)
+        return (radius * radius).toInt()
+    }
+
+    fun pick(x: Float, y: Float, radiusSquared: Int, flags: Int, mode: Int): Command? {
+        if (!isValidMode(mode) || radiusSquared < 0 || !finite(x, y)) return null
+        return Command(CMD_PICK, floatArrayOf(x, y, radiusSquared.toFloat(), flags.toFloat(), mode.toFloat()))
+    }
+
+    private fun withPivot(values: FloatArray, pivot: FloatArray?): FloatArray? {
+        if (pivot == null) return values
+        if (pivot.size < 2 || !finite(pivot[0], pivot[1])) return null
+        return values + floatArrayOf(pivot[0], pivot[1])
+    }
+
+    fun translate(dx: Float, dy: Float): Command? =
+        if (finite(dx, dy)) Command(CMD_TRANSLATE, floatArrayOf(dx, dy)) else null
+
+    fun rotate(radians: Float, pivot: FloatArray? = null): Command? {
+        if (!finite(radians)) return null
+        return withPivot(floatArrayOf(radians), pivot)?.let { Command(CMD_ROTATE, it) }
+    }
+
+    fun scale(sx: Float, sy: Float, pivot: FloatArray? = null): Command? {
+        if (!finite(sx, sy) || sx == 0f || sy == 0f) return null
+        return withPivot(floatArrayOf(sx, sy), pivot)?.let { Command(CMD_SCALE, it) }
+    }
+
+    fun mirror(mirrorX: Boolean, mirrorY: Boolean, pivot: FloatArray? = null): Command? {
+        if (!mirrorX && !mirrorY) return null
+        return withPivot(floatArrayOf(flag(mirrorX), flag(mirrorY)), pivot)?.let { Command(CMD_MIRROR, it) }
+    }
+
+    fun deleteStrokes() = Command(CMD_DELETE_STROKES, FloatArray(0))
+    fun deletePoints() = Command(CMD_DELETE_POINTS, FloatArray(0))
 }

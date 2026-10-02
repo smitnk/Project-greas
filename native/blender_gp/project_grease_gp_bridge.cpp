@@ -7,6 +7,7 @@
 #include "DNA_gpencil_modifier_types.h"
 #include "project_grease_legacy_primitive.h"
 #include "project_grease_blender_select.h"
+#include "project_grease_blender_edit.h"
 
 struct ProjectGreaseGPHandle {
   project_grease::gp::Backend backend;
@@ -424,7 +425,14 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
              ? 1
              : 0;
     default:
-      // Blender 3.6.23 Legacy GP selection operators (ids 20..30).
+      // Selection-aware editing (ids 31..37), then the selection operators (20..30).
+      if (command >= PG_EDIT_CMD_FIRST && command <= PG_EDIT_CMD_LAST) {
+        return pg_gp_edit_dispatch(handle->backend.document_data(),
+                                   handle->backend.active_layer_data(),
+                                   command,
+                                   args,
+                                   arg_count);
+      }
       return pg_gp_select_dispatch(handle->backend.document_data(),
                                    handle->backend.active_layer_data(),
                                    command,

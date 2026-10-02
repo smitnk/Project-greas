@@ -888,6 +888,223 @@ int pg_gp_mod_color(bGPdata *gpd, const bGPDlayer *only_layer, int modify_color,
   PGE_EDITABLE_STROKES_END;
   return changed;
 }
+
+/* ---------------------------------------------------------------------------------------- */
+/* Stroke operators. These follow the behaviour of the 3.6.23 operators named below; they   */
+/* are written for this data model, not copied from the operator code.                      */
+
+static bool pge_stroke_selected(const bGPDstroke *gps)
+{
+  return (gps->flag & GP_STROKE_SELECT) != 0;
+}
+
+/* list helpers (BLI_remlink / BLI_insertlinkafter / BLI_insertlinkbefore semantics) */
+static void pge_insert_after(ListBase *lb, Link *prev, Link *link)
+{
+  if (prev == NULL) { /* insert at head */
+    link->prev = NULL;
+    link->next = lb->first;
+    if (lb->first) ((Link *)lb->first)->prev = link; else lb->last = link;
+    lb->first = link;
+    return;
+  }
+  link->prev = prev;
+  link->next = prev->next;
+  if (prev->next) prev->next->prev = link; else lb->last = link;
+  prev->next = link;
+}
+
+/* GPENCIL_OT_stroke_arrange: later strokes draw on top, so "top" is the list tail. */
+int pg_gp_stroke_arrange(bGPdata *gpd, const bGPDlayer *only_layer, int direction)
+{
+  if (gpd == NULL || direction < PG_ARRANGE_TOP || direction > PG_ARRANGE_BOTTOM) {
+    return 0;
+  }
+  int changed = 0;
+  const bool is_multiedit = (gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!pge_layer_in_scope(gpl, only_layer) || !BKE_gpencil_layer_is_editable(gpl)) {
+      continue;
+    }
+    for (bGPDframe *gpf = is_multiedit ? gpl->frames.first : gpl->actframe; gpf; gpf = gpf->next) {
+      if (!((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && is_multiedit))) {
+        continue;
+      }
+      ListBase *lb = &gpf->strokes;
+      if (direction == PG_ARRANGE_TOP || direction == PG_ARRANGE_BOTTOM) {
+        /* collect selected strokes in order, then move them as a block keeping their order */
+        ListBase moved = {NULL, NULL};
+        for (bGPDstroke *gps = lb->first, *next; gps; gps = next) {
+          next = gps->next;
+          if (pge_stroke_selected(gps) && pge_stroke_material_editable(gpd, gpl, gps)) {
+            BLI_remlink(lb, gps);
+            pge_insert_after(&moved, moved.last, (Link *)gps);
+          }
+        }
+        if (moved.first == NULL) {
+          continue;
+        }
+        Link *anchor = (direction == PG_ARRANGE_TOP) ? (Link *)lb->last : NULL;
+        for (Link *link = moved.first, *next; link; link = next) {
+          next = link->next;
+          pge_insert_after(lb, anchor, link);
+          anchor = link;
+        }
+        changed = 1;
+      }
+      else if (direction == PG_ARRANGE_UP) {
+        /* from the end: a selected stroke swaps with an unselected next one */
+        for (bGPDstroke *gps = lb->last, *prev; gps; gps = prev) {
+          prev = gps->prev;
+          bGPDstroke *next = gps->next;
+          if (pge_stroke_selected(gps) && pge_stroke_material_editable(gpd, gpl, gps) && next &&
+              !pge_stroke_selected(next))
+          {
+            BLI_remlink(lb, gps);
+            pge_insert_after(lb, (Link *)next, (Link *)gps);
+            changed = 1;
+          }
+        }
+      }
+      else { /* PG_ARRANGE_DOWN: from the start, swap with an unselected previous one */
+        for (bGPDstroke *gps = lb->first, *next; gps; gps = next) {
+          next = gps->next;
+          bGPDstroke *prev = gps->prev;
+          if (pge_stroke_selected(gps) && pge_stroke_material_editable(gpd, gpl, gps) && prev &&
+              !pge_stroke_selected(prev))
+          {
+            BLI_remlink(lb, gps);
+            pge_insert_after(lb, (Link *)prev->prev, (Link *)gps);
+            changed = 1;
+          }
+        }
+      }
+    }
+    if (!is_multiedit && only_layer != NULL) {
+      continue;
+    }
+  }
+  return changed;
+}
+
+/* GPENCIL_OT_stroke_change_color: assign the active material to the selected strokes. */
+int pg_gp_stroke_set_material(bGPdata *gpd, const bGPDlayer *only_layer, int mat_nr)
+{
+  if (gpd == NULL || mat_nr < 0 || mat_nr >= (int)gpd->totcol) {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (pge_stroke_selected(gps) && gps->mat_nr != mat_nr) {
+      gps->mat_nr = mat_nr;
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+/* GPENCIL_OT_stroke_reset_vertex_color */
+int pg_gp_stroke_reset_vertex_color(bGPdata *gpd, const bGPDlayer *only_layer, int mode)
+{
+  if (gpd == NULL || mode < PG_PAINT_MODE_STROKE || mode > PG_PAINT_MODE_BOTH) {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps)) {
+      continue;
+    }
+    if (mode != PG_PAINT_MODE_FILL && gps->points != NULL) {
+      for (int i = 0; i < gps->totpoints; i++) {
+        memset(gps->points[i].vert_color, 0, sizeof(float[4]));
+      }
+    }
+    if (mode != PG_PAINT_MODE_STROKE) {
+      memset(gps->vert_color_fill, 0, sizeof(float[4]));
+    }
+    changed = 1;
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+/* GPENCIL_OT_stroke_flip */
+int pg_gp_stroke_flip(bGPdata *gpd, const bGPDlayer *only_layer)
+{
+  if (gpd == NULL) {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (pge_stroke_selected(gps) && gps->totpoints > 1) {
+      BKE_gpencil_stroke_flip(gps);
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+/* GPENCIL_OT_stroke_cyclical_set (without the "create geometry" option) */
+int pg_gp_stroke_cyclical_set(bGPdata *gpd, const bGPDlayer *only_layer, int type)
+{
+  if (gpd == NULL || type < PG_CYCLIC_CLOSE || type > PG_CYCLIC_TOGGLE) {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->totpoints < 3) {
+      continue;
+    }
+    const int before = gps->flag;
+    switch (type) {
+      case PG_CYCLIC_CLOSE: gps->flag |= GP_STROKE_CYCLIC; break;
+      case PG_CYCLIC_OPEN: gps->flag &= ~GP_STROKE_CYCLIC; break;
+      case PG_CYCLIC_TOGGLE: gps->flag ^= GP_STROKE_CYCLIC; break;
+    }
+    if (gps->flag != before) {
+      BKE_gpencil_stroke_geometry_update(gpd, gps);
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
+
+/* GPENCIL_OT_snap_to_grid: selected points to the nearest grid intersection (canvas grid). */
+int pg_gp_snap_to_grid(bGPdata *gpd, const bGPDlayer *only_layer, float grid)
+{
+  if (gpd == NULL || !isfinite(grid) || grid <= 0.0f) {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!pge_stroke_selected(gps) || gps->points == NULL) {
+      continue;
+    }
+    bool touched = false;
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      if (!(pt->flag & GP_SPOINT_SELECT)) {
+        continue;
+      }
+      const float sx = grid * roundf(pt->x / grid);
+      const float sy = grid * roundf(pt->y / grid);
+      if (sx != pt->x || sy != pt->y) {
+        pt->x = sx;
+        pt->y = sy;
+        touched = true;
+      }
+    }
+    if (touched) {
+      BKE_gpencil_stroke_geometry_update(gpd, gps);
+      changed = 1;
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -991,6 +1208,29 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
       changed = pg_gp_mod_color(gpd, scope, (int)lroundf(args[0]), hsv);
       break;
     }
+    case PG_EDIT_CMD_ARRANGE:
+      if (arg_count < 1) return 0;
+      changed = pg_gp_stroke_arrange(gpd, scope, (int)lroundf(args[0]));
+      break;
+    case PG_EDIT_CMD_SET_MATERIAL:
+      if (arg_count < 1) return 0;
+      changed = pg_gp_stroke_set_material(gpd, scope, (int)lroundf(args[0]));
+      break;
+    case PG_EDIT_CMD_RESET_VCOLOR:
+      if (arg_count < 1) return 0;
+      changed = pg_gp_stroke_reset_vertex_color(gpd, scope, (int)lroundf(args[0]));
+      break;
+    case PG_EDIT_CMD_FLIP:
+      changed = pg_gp_stroke_flip(gpd, scope);
+      break;
+    case PG_EDIT_CMD_CYCLIC:
+      if (arg_count < 1) return 0;
+      changed = pg_gp_stroke_cyclical_set(gpd, scope, (int)lroundf(args[0]));
+      break;
+    case PG_EDIT_CMD_SNAP_GRID:
+      if (arg_count < 1) return 0;
+      changed = pg_gp_snap_to_grid(gpd, scope, args[0]);
+      break;
     default:
       return 0;
   }

@@ -16,3 +16,4 @@ bool BKE_gpencil_stroke_stretch(bGPDstroke *gps, float dist, float overshoot_fac
                                 float max_angle, bool invert_curvature);
 bool BKE_gpencil_stroke_shrink(bGPDstroke *gps, float dist, short mode);
 float BKE_gpencil_stroke_length(const bGPDstroke *gps, bool use_3d);
+void BKE_gpencil_stroke_flip(bGPDstroke *gps);

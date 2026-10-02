@@ -92,6 +92,14 @@ float BKE_gpencil_stroke_length(const bGPDstroke *gps, bool use_3d)
   return l;
 }
 
+
+void BKE_gpencil_stroke_flip(bGPDstroke *gps)
+{
+  for (int i = 0, j = gps->totpoints - 1; i < j; i++, j--) {
+    bGPDspoint t = gps->points[i]; gps->points[i] = gps->points[j]; gps->points[j] = t;
+  }
+}
+
 /* ---- fixtures ------------------------------------------------------------------ */
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s (line %d)\n", msg, __LINE__); failures++; } } while (0)
@@ -521,6 +529,98 @@ static void test_color_modifier(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_COLOR, args, 3) == 0, "color needs 4 args");
 }
 
+
+static int order_of(const bGPDframe *f, const bGPDstroke *const *s, int n, int *out)
+{
+  int k = 0;
+  for (const bGPDstroke *g = f->strokes.first; g; g = g->next)
+    for (int i = 0; i < n; i++) if (s[i] == g) out[k++] = i;
+  return k;
+}
+
+static void test_stroke_operators(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *s[4];
+  for (int i = 0; i < 4; i++) s[i] = add_stroke(f, 3, 0, 0, i * 20.0f, 10, 0);
+  int o[4];
+
+  /* arrange: select 0 and 2 */
+  select_points(gpd, s[0], 7); select_points(gpd, s[2], 7);
+  CHECK(pg_gp_stroke_arrange(gpd, NULL, PG_ARRANGE_TOP) == 1, "arrange top");
+  order_of(f, (const bGPDstroke *const *)s, 4, o);
+  CHECK(o[0] == 1 && o[1] == 3 && o[2] == 0 && o[3] == 2, "top moves the selection to the end, keeping order");
+  pg_gp_stroke_arrange(gpd, NULL, PG_ARRANGE_BOTTOM);
+  order_of(f, (const bGPDstroke *const *)s, 4, o);
+  CHECK(o[0] == 0 && o[1] == 2 && o[2] == 1 && o[3] == 3, "bottom moves the selection to the start, keeping order");
+  pg_gp_stroke_arrange(gpd, NULL, PG_ARRANGE_UP);
+  order_of(f, (const bGPDstroke *const *)s, 4, o);
+  /* from the end: 2 steps over 1, then 0 steps over 1 (each selected stroke moves up one) */
+  CHECK(o[0] == 1 && o[1] == 0 && o[2] == 2 && o[3] == 3, "up moves each selected stroke one step toward the top");
+  pg_gp_stroke_arrange(gpd, NULL, PG_ARRANGE_DOWN);
+  order_of(f, (const bGPDstroke *const *)s, 4, o);
+  CHECK(o[0] == 0 && o[1] == 2 && o[2] == 1 && o[3] == 3, "down moves each selected stroke one step toward the bottom");
+  CHECK(pg_gp_stroke_arrange(gpd, NULL, 9) == 0, "invalid direction");
+
+  /* material: a locked target material makes the strokes non-editable afterwards */
+  CHECK(pg_gp_stroke_set_material(gpd, NULL, 1) == 1 && pg_gp_stroke_flip(gpd, NULL) == 0, "strokes on a locked material are not edited");
+  gpd->mat[1]->gp_style->flag = 0; /* unlock for the remaining checks */
+  CHECK(pg_gp_stroke_set_material(gpd, NULL, 1) == 0 && s[0]->mat_nr == 1 && s[1]->mat_nr == 0, "assign material to selected");
+  CHECK(pg_gp_stroke_set_material(gpd, NULL, 5) == 0, "material index out of range");
+
+  /* reset vertex color */
+  s[2]->points[0].vert_color[3] = 1; s[2]->vert_color_fill[3] = 1; s[1]->points[0].vert_color[3] = 1;
+  pg_gp_stroke_reset_vertex_color(gpd, NULL, PG_PAINT_MODE_STROKE);
+  CHECK(s[2]->points[0].vert_color[3] == 0 && s[2]->vert_color_fill[3] == 1, "stroke mode clears point colors only");
+  pg_gp_stroke_reset_vertex_color(gpd, NULL, PG_PAINT_MODE_BOTH);
+  CHECK(s[2]->vert_color_fill[3] == 0 && s[1]->points[0].vert_color[3] == 1, "both mode clears fill; unselected kept");
+
+  /* flip */
+  CHECK(pg_gp_stroke_flip(gpd, NULL) == 1 && NEAR(s[2]->points[0].x, 20) && NEAR(s[1]->points[0].x, 0), "flip reverses selected strokes");
+
+  /* cyclic */
+  geometry_updates = 0;
+  CHECK(pg_gp_stroke_cyclical_set(gpd, NULL, PG_CYCLIC_CLOSE) == 1 && (s[2]->flag & GP_STROKE_CYCLIC) && !(s[1]->flag & GP_STROKE_CYCLIC), "close");
+  CHECK(geometry_updates == 2, "geometry refreshed per changed stroke");
+  CHECK(pg_gp_stroke_cyclical_set(gpd, NULL, PG_CYCLIC_CLOSE) == 0, "closing closed strokes is no change");
+  pg_gp_stroke_cyclical_set(gpd, NULL, PG_CYCLIC_TOGGLE);
+  CHECK(!(s[2]->flag & GP_STROKE_CYCLIC), "toggle opens");
+
+  /* snap to grid: only selected points */
+  s[2]->points[2].flag &= ~GP_SPOINT_SELECT; s[2]->points[2].x = 17; /* unselected point of a selected stroke */
+  s[2]->points[1].x = 13; s[2]->points[1].y = 47;
+  s[2]->points[1].flag |= GP_SPOINT_SELECT;
+  s[1]->points[0].x = 13;
+  CHECK(pg_gp_snap_to_grid(gpd, NULL, 10) == 1 && NEAR(s[2]->points[1].x, 10) && NEAR(s[2]->points[1].y, 50), "snap selected points to grid");
+  CHECK(NEAR(s[1]->points[0].x, 13), "unselected points not snapped");
+  CHECK(NEAR(s[2]->points[2].x, 17), "unselected point of a selected stroke not snapped");
+  CHECK(pg_gp_snap_to_grid(gpd, NULL, 0) == 0, "zero grid rejected");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_FLIP, NULL, 0) == 1, "dispatch flip");
+  const float a1[1] = {PG_ARRANGE_TOP};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_ARRANGE, a1, 1) == 1, "dispatch arrange");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_SNAP_GRID, NULL, 0) == 0, "snap needs a grid size");
+}
+
+
+static void test_stroke_operator_edges(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDframe *f = add_frame(add_layer(gpd, 0));
+  bGPDstroke *s[3];
+  for (int i = 0; i < 3; i++) s[i] = add_stroke(f, 3, 0, 0, i * 20.0f, 10, 0);
+  select_points(gpd, s[1], 7); select_points(gpd, s[2], 7);
+  int o[3];
+  CHECK(pg_gp_stroke_arrange(gpd, NULL, PG_ARRANGE_UP) == 0, "selected strokes already at the top cannot move up");
+  order_of(f, (const bGPDstroke *const *)s, 3, o);
+  CHECK(o[0] == 0 && o[1] == 1 && o[2] == 2, "a selected stroke does not jump over another selected one");
+  bGPDstroke *two = add_stroke(f, 2, 0, 0, 90, 10, 0);
+  select_points(gpd, two, 3);
+  pg_gp_stroke_cyclical_set(gpd, NULL, PG_CYCLIC_CLOSE);
+  CHECK(!(two->flag & GP_STROKE_CYCLIC), "strokes with fewer than 3 points are not closed");
+}
+
 int main(void)
 {
   test_pick();
@@ -535,6 +635,8 @@ int main(void)
   test_tint_modifier();
   test_hsv_conversion();
   test_color_modifier();
+  test_stroke_operators();
+  test_stroke_operator_edges();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

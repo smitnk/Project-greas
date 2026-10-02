@@ -692,7 +692,16 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             "Tint 50% (current color)" to { controller.applyTintModifier(0.5f) },
             "Hue shift +30°" to { controller.applyColorModifier(hue = 0.5f + 1f / 12f) },
             "Desaturate 50%" to { controller.applyColorModifier(saturation = 0.5f) },
-            "Darken 20%" to { controller.applyColorModifier(value = 0.8f) }
+            "Darken 20%" to { controller.applyColorModifier(value = 0.8f) },
+            "Bring to front" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_TOP) },
+            "Bring forward" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_UP) },
+            "Send backward" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_DOWN) },
+            "Send to back" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_BOTTOM) },
+            "Assign active material" to { controller.assignActiveMaterialToSelection() },
+            "Reset vertex color" to { controller.resetSelectionVertexColor() },
+            "Flip direction" to { controller.flipSelection() },
+            "Toggle closed" to { controller.setSelectionCyclic(com.smitnk.projectgrease.editor.ProjectGreaseSelect.CYCLIC_TOGGLE) },
+            "Snap to grid" to { controller.snapSelectionToGrid() }
         ).forEach { (label, action) ->
             Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
         }

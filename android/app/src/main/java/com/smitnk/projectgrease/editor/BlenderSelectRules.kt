@@ -196,4 +196,32 @@ object ProjectGreaseSelect {
         if (mode !in MODIFY_BOTH..MODIFY_FILL || !finite(hue, saturation) || !finite(value)) return null
         return Command(CMD_MOD_COLOR, floatArrayOf(mode.toFloat(), hue, saturation, value))
     }
+
+    // Legacy GP stroke operators (stroke_arrange, stroke_change_color, stroke_reset_vertex_color,
+    // stroke_flip, stroke_cyclical_set, snap_to_grid)
+    const val CMD_ARRANGE = 45
+    const val CMD_SET_MATERIAL = 46
+    const val CMD_RESET_VCOLOR = 47
+    const val CMD_FLIP = 48
+    const val CMD_CYCLIC = 49
+    const val CMD_SNAP_GRID = 50
+    const val ARRANGE_TOP = 0
+    const val ARRANGE_UP = 1
+    const val ARRANGE_DOWN = 2
+    const val ARRANGE_BOTTOM = 3
+    const val CYCLIC_CLOSE = 1
+    const val CYCLIC_OPEN = 2
+    const val CYCLIC_TOGGLE = 3
+
+    fun arrange(direction: Int): Command? =
+        if (direction in ARRANGE_TOP..ARRANGE_BOTTOM) Command(CMD_ARRANGE, floatArrayOf(direction.toFloat())) else null
+    fun setMaterial(index: Int): Command? =
+        if (index >= 0) Command(CMD_SET_MATERIAL, floatArrayOf(index.toFloat())) else null
+    fun resetVertexColor(mode: Int): Command? =
+        if (mode in PAINT_STROKE..PAINT_BOTH) Command(CMD_RESET_VCOLOR, floatArrayOf(mode.toFloat())) else null
+    fun flip() = Command(CMD_FLIP, FloatArray(0))
+    fun cyclic(type: Int): Command? =
+        if (type in CYCLIC_CLOSE..CYCLIC_TOGGLE) Command(CMD_CYCLIC, floatArrayOf(type.toFloat())) else null
+    fun snapToGrid(grid: Float): Command? =
+        if (finite(grid) && grid > 0f) Command(CMD_SNAP_GRID, floatArrayOf(grid)) else null
 }

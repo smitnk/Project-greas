@@ -44,9 +44,28 @@ enum {
   PG_EDIT_CMD_MOD_LENGTH = 42,
   PG_EDIT_CMD_MOD_TINT = 43, /* args: vertex_mode, factor, r, g, b */
   PG_EDIT_CMD_MOD_COLOR = 44, /* args: modify_color (BOTH/STROKE/FILL), hue, saturation, value */
+  /* Stroke operators of the Legacy GP editor (gpencil_edit.c / gpencil_data.c) */
+  PG_EDIT_CMD_ARRANGE = 45,      /* args: direction (PG_ARRANGE_*) */
+  PG_EDIT_CMD_SET_MATERIAL = 46, /* args: material index (mat_nr) */
+  PG_EDIT_CMD_RESET_VCOLOR = 47, /* args: mode (PG_PAINT_MODE_*) */
+  PG_EDIT_CMD_FLIP = 48,         /* args: - */
+  PG_EDIT_CMD_CYCLIC = 49,       /* args: type (PG_CYCLIC_*) */
+  PG_EDIT_CMD_SNAP_GRID = 50,    /* args: grid size */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 44
+#define PG_EDIT_CMD_LAST 50
+
+/* GPENCIL_OT_stroke_arrange directions */
+enum { PG_ARRANGE_TOP = 0, PG_ARRANGE_UP = 1, PG_ARRANGE_DOWN = 2, PG_ARRANGE_BOTTOM = 3 };
+/* GPENCIL_OT_stroke_cyclical_set types */
+enum { PG_CYCLIC_CLOSE = 1, PG_CYCLIC_OPEN = 2, PG_CYCLIC_TOGGLE = 3 };
+
+int pg_gp_stroke_arrange(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int direction);
+int pg_gp_stroke_set_material(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int mat_nr);
+int pg_gp_stroke_reset_vertex_color(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int mode);
+int pg_gp_stroke_flip(struct bGPdata *gpd, const struct bGPDlayer *only_layer);
+int pg_gp_stroke_cyclical_set(struct bGPdata *gpd, const struct bGPDlayer *only_layer, int type);
+int pg_gp_snap_to_grid(struct bGPdata *gpd, const struct bGPDlayer *only_layer, float grid);
 
 /* MOD_gpencil_legacy_color.c deformStroke() (Hue/Saturation), no curve. hsv defaults 0.5, 1, 1. */
 int pg_gp_mod_color(struct bGPdata *gpd, const struct bGPDlayer *only_layer,

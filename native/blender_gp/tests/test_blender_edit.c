@@ -431,6 +431,41 @@ static void test_length_modifier(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_LENGTH, args, 8) == 0, "length needs 9 args");
 }
 
+
+static void test_tint_modifier(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  bGPDstroke *a = add_stroke(f, 3, 0, 0, 0, 10, 0);
+  bGPDstroke *b = add_stroke(f, 3, 0, 0, 20, 10, 0);
+  MaterialGPencilStyle *st = gpd->mat[0]->gp_style;
+  st->stroke_rgba[0] = 1; st->stroke_rgba[3] = 1;            /* red stroke material */
+  st->fill_rgba[1] = 1; st->fill_rgba[3] = 1;                /* green fill material */
+  for (int i = 0; i < 3; i++) a->points[i].strength = b->points[i].strength = 0.5f;
+  select_points(gpd, a, 7);
+  const float blue[3] = {0, 0, 1};
+
+  CHECK(pg_gp_mod_tint(gpd, NULL, PG_PAINT_MODE_STROKE, 0.5f, blue) == 1, "tint stroke");
+  CHECK(NEAR(a->points[1].vert_color[0], 0.5f) && NEAR(a->points[1].vert_color[2], 0.5f) &&
+        NEAR(a->points[1].vert_color[3], 1.0f), "no vertex color: starts from the material color, mixes 50% blue");
+  CHECK(a->vert_color_fill[3] == 0.0f, "stroke mode leaves the fill alone");
+  CHECK(b->points[0].vert_color[3] == 0.0f, "unselected stroke untouched");
+
+  pg_gp_mod_tint(gpd, NULL, PG_PAINT_MODE_FILL, 1.0f, blue);
+  CHECK(NEAR(a->vert_color_fill[2], 1.0f) && NEAR(a->vert_color_fill[1], 0.0f) && NEAR(a->vert_color_fill[3], 1.0f),
+        "fill mode: material fill green replaced by blue at factor 1");
+  CHECK(NEAR(a->points[1].vert_color[0], 0.5f), "fill mode breaks before touching points");
+
+  pg_gp_mod_tint(gpd, NULL, PG_PAINT_MODE_BOTH, 2.0f, blue);
+  CHECK(NEAR(a->points[0].strength, 1.0f), "factor > 1 raises strength by factor-1 (clamped)");
+  CHECK(NEAR(a->points[2].vert_color[2], 1.0f) && NEAR(a->points[2].vert_color[0], 0.0f), "color mix factor clamps to 1");
+  CHECK(pg_gp_mod_tint(gpd, NULL, 5, 1.0f, blue) == 0, "invalid mode rejected");
+  const float args[5] = {PG_PAINT_MODE_STROKE, 0.0f, 1, 0, 0};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_TINT, args, 5) == 1, "dispatch tint");
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT_CMD_MOD_TINT, args, 4) == 0, "tint needs 5 args");
+}
+
 int main(void)
 {
   test_pick();
@@ -442,6 +477,7 @@ int main(void)
   test_dispatch();
   test_modifiers();
   test_length_modifier();
+  test_tint_modifier();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

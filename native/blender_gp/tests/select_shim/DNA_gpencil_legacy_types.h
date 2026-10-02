@@ -21,6 +21,7 @@ typedef struct bGPDspoint {
   float x, y, z;
   float pressure, strength, time;
   int flag;
+  float vert_color[4];
   bGPDspoint_Runtime runtime;
 } bGPDspoint;
 

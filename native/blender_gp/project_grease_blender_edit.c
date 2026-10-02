@@ -722,6 +722,81 @@ int pg_gp_mod_length(bGPdata *gpd, const bGPDlayer *only_layer, const PGLengthPa
   PGE_EDITABLE_STROKES_END;
   return any;
 }
+
+static void pge_interp_v3(float r[3], const float a[3], const float b[3], float t)
+{
+  const float s = 1.0f - t; /* interp_v3_v3v3() */
+  r[0] = s * a[0] + t * b[0];
+  r[1] = s * a[1] + t * b[1];
+  r[2] = s * a[2] + t * b[2];
+}
+
+int pg_gp_mod_tint(bGPdata *gpd, const bGPDlayer *only_layer,
+                   int vertex_mode, float factor, const float rgb[3])
+{
+  if (gpd == NULL || rgb == NULL || !isfinite(factor) || !isfinite(rgb[0]) ||
+      !isfinite(rgb[1]) || !isfinite(rgb[2]) || vertex_mode < PG_PAINT_MODE_STROKE ||
+      vertex_mode > PG_PAINT_MODE_BOTH)
+  {
+    return 0;
+  }
+  int changed = 0;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) {
+      continue;
+    }
+    MaterialGPencilStyle *gp_style = pge_material_style(gpd, gps->mat_nr + 1);
+    changed = 1;
+
+    /* If factor > 1.0, affect the strength of the stroke. */
+    if (factor > 1.0f) {
+      for (int i = 0; i < gps->totpoints; i++) {
+        bGPDspoint *pt = &gps->points[i];
+        pt->strength += factor - 1.0f;
+        pt->strength = pge_clampf(pt->strength, 0.0f, 1.0f);
+      }
+    }
+
+    /* loop points and apply color. */
+    bool fill_done = false;
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+
+      if (!fill_done) {
+        /* Apply to fill. */
+        if (vertex_mode != PG_PAINT_MODE_STROKE) {
+          const float fill_factor = factor;
+          /* If not using Vertex Color, use the material color. */
+          if ((gp_style != NULL) && (gps->vert_color_fill[3] == 0.0f) &&
+              (gp_style->fill_rgba[3] > 0.0f))
+          {
+            memcpy(gps->vert_color_fill, gp_style->fill_rgba, sizeof(float[4]));
+            gps->vert_color_fill[3] = 1.0f;
+          }
+          pge_interp_v3(gps->vert_color_fill, gps->vert_color_fill, rgb,
+                        pge_clampf(fill_factor, 0.0f, 1.0f));
+          /* If no stroke, cancel loop. */
+          if (vertex_mode != PG_PAINT_MODE_BOTH) {
+            break;
+          }
+        }
+        fill_done = true;
+      }
+
+      if (vertex_mode != PG_PAINT_MODE_FILL) {
+        const float weight = 1.0f; /* no vertex group, no curve */
+        /* If not using Vertex Color, use the material color. */
+        if ((gp_style != NULL) && (pt->vert_color[3] == 0.0f) && (gp_style->stroke_rgba[3] > 0.0f)) {
+          memcpy(pt->vert_color, gp_style->stroke_rgba, sizeof(float[4]));
+          pt->vert_color[3] = 1.0f;
+        }
+        pge_interp_v3(pt->vert_color, pt->vert_color, rgb, pge_clampf(factor * weight, 0.0f, 1.0f));
+      }
+    }
+  }
+  PGE_EDITABLE_STROKES_END;
+  return changed;
+}
 /* ---------------------------------------------------------------------------------------- */
 
 int pg_gp_edit_dispatch(bGPdata *gpd,
@@ -807,6 +882,14 @@ int pg_gp_edit_dispatch(bGPdata *gpd,
       const PGLengthParams lp = {(int)lroundf(args[0]), args[1], args[2], args[3],
                                  args[4] != 0.0f, args[5], args[6], args[7], args[8] != 0.0f};
       changed = pg_gp_mod_length(gpd, scope, &lp);
+      break;
+    }
+    case PG_EDIT_CMD_MOD_TINT: {
+      if (arg_count < 5) {
+        return 0;
+      }
+      const float rgb[3] = {args[2], args[3], args[4]};
+      changed = pg_gp_mod_tint(gpd, scope, (int)lroundf(args[0]), args[1], rgb);
       break;
     }
     default:

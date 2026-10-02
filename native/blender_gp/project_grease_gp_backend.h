@@ -312,6 +312,13 @@ class Backend {
   /* Re-reads the active frame from the active layer's actframe after an edit command that adds,
    * moves or removes frames behind the backend (blank keyframe, clean duplicate frames). */
   void sync_active_frame();
+  /* Annotation data (project_grease_annotations.h), owned by the document; never null after
+   * the document is created. */
+  bGPdata* annotation_data() const;
+  void set_annotations_visible(bool visible);
+  bool annotations_visible() const;
+  /* Frame number of the active frame (1 without one). */
+  int current_frame_number() const;
 
   // Opaque implementation storage.
   struct Impl;

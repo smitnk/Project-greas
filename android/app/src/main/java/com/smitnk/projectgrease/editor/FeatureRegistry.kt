@@ -32,7 +32,7 @@ enum class FeatureId {
     NOISE, DASH, OUTLINE, THICKNESS_MODIFIER, COLOR_MODIFIER, DEFORM, GENERATE,
     ADVANCED_INTERPOLATION, LAYER_MASKS, MULTIFRAME, ADVANCED_ONION_SKIN, VISUAL_EFFECTS, LINE_ART,
     NEW_PROJECT, OPEN_PROJECT, SAVE, SAVE_AS, EXPORT, EXPORT_PNG, EXPORT_GIF, EXPORT_ANIMATION,
-    PROJECT_SETTINGS, IMPORT_SVG, TRACE_IMAGE
+    PROJECT_SETTINGS, IMPORT_SVG, TRACE_IMAGE, ANNOTATIONS
 }
 
 data class FeatureCapability(
@@ -216,7 +216,8 @@ object FeatureRegistry {
         FeatureId.EXPORT_ANIMATION to missing("No export pipeline."),
         FeatureId.PROJECT_SETTINGS to missing("Only app settings exist; no per-project settings."),
         FeatureId.IMPORT_SVG to wired("Project > Import SVG (Storage Access Framework): path/polyline/polygon/line/rect/circle/ellipse become strokes on the active layer/frame, curves flattened (SvgImport); viewBox fitted into the canvas keeping aspect; one material slot per distinct stroke/fill color pair (existing slots reused); thickness = stroke-width, cyclic = closed, fill on when the shape has a fill. No transforms, arcs (straight to end point), gradients or CSS. $DEVICE"),
-        FeatureId.TRACE_IMAGE to wired("Project > Trace image: threshold (0.5), trace bright areas, tolerance (0.6 px); each outline becomes a closed filled stroke on a new \"Trace\" layer scaled to the canvas, in the active color. DIFFERENCE FROM BLENDER: Blender's Trace Image uses potrace (curve fitting, turd size, corner threshold); Project Grease uses pixel-edge outline tracing + Douglas-Peucker (ImageTrace), so outlines are polygonal. Images are subsampled to <= 1024 px. $DEVICE")
+        FeatureId.TRACE_IMAGE to wired("Project > Trace image: threshold (0.5), trace bright areas, tolerance (0.6 px); each outline becomes a closed filled stroke on a new \"Trace\" layer scaled to the canvas, in the active color. DIFFERENCE FROM BLENDER: Blender's Trace Image uses potrace (curve fitting, turd size, corner threshold); Project Grease uses pixel-edge outline tracing + Douglas-Peucker (ImageTrace), so outlines are polygonal. Images are subsampled to <= 1024 px. $DEVICE"),
+        FeatureId.ANNOTATIONS to wired("Annotate tool (NOTES group): freehand notes in a separate annotation bGPdata (layer \"Note\", own frames that hold like keyframes, Blender annotate_paint.c semantics), drawn over all layers with a fixed screen-space thickness in the layer color; \"Erase notes\" removes annotation points and splits strokes, never the drawing; color, thickness, show/hide, Clear annotations. Saved in the project file (key annotations); left out of SVG/PDF export unless \"Include annotations\" is on. Annotation edits are not undo steps. No raster export exists. $DEVICE")
     )
 
     /** Ids that have an explicit entry (the test requires this to equal every FeatureId). */

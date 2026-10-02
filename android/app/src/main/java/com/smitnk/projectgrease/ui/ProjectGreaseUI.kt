@@ -60,6 +60,7 @@ private val tools=listOf(
     ToolEntry(GreaseTool.ARC,Icons.Default.Timeline,"Arc",FeatureId.ARC),
     ToolEntry(GreaseTool.POLYLINE,Icons.Default.Timeline,"Polyline",FeatureId.POLYLINE),
     ToolEntry(GreaseTool.CURVE,Icons.Default.ShowChart,"Curve",FeatureId.CURVE),
+    ToolEntry(GreaseTool.ANNOTATE,Icons.Default.EditNote,"Annotate",FeatureId.ANNOTATIONS),
     ToolEntry(GreaseTool.MOVE,Icons.Default.OpenWith,"Move",FeatureId.MOVE),
     ToolEntry(GreaseTool.ROTATE,Icons.Default.RotateRight,"Rotate",FeatureId.ROTATE),
     ToolEntry(GreaseTool.SCALE,Icons.Default.ZoomIn,"Scale",FeatureId.SCALE),
@@ -414,6 +415,32 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
+private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34C759.toInt(),0xFFFFCC00.toInt(),0xFF000000.toInt(),0xFFFFFFFF.toInt())
+
+/** Annotate tool: draw / erase notes (notes only), color, thickness (screen px), show, clear. */
+@Composable private fun AnnotationBar(controller:EditorController,redraw:()->Unit){
+    val style=controller.annotationStyle()
+    var thickness by remember{mutableFloatStateOf(style[4])}
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+        verticalAlignment=Alignment.CenterVertically
+    ){
+        Text("Annotate",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+        FilterChip(selected=!controller.annotationEraser,onClick={controller.setAnnotationEraser(false);redraw()},label={Text("Draw",fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+        FilterChip(selected=controller.annotationEraser,onClick={controller.setAnnotationEraser(true);redraw()},label={Text("Erase notes",fontSize=10.sp)},modifier=Modifier.padding(end=6.dp))
+        val current=controller.annotationColorArgb
+        annotationColors.forEach{argb->
+            Box(Modifier.padding(end=4.dp).size(22.dp).background(Color(argb),CircleShape)
+                .border(if(argb==current)3.dp else 1.dp,if(argb==current)Accent else Color.Gray,CircleShape)
+                .clickable{controller.setAnnotationColor(argb);redraw()})
+        }
+        Text("Thickness "+thickness.toInt()+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(84.dp))
+        Slider(thickness,{thickness=it;controller.setAnnotationThickness(it);redraw()},valueRange=1f..20f,modifier=Modifier.width(140.dp))
+        FilterChip(selected=controller.annotationsVisible,onClick={controller.setAnnotationsVisible(!controller.annotationsVisible);redraw()},label={Text("Show",fontSize=10.sp)},modifier=Modifier.padding(horizontal=4.dp))
+        TextButton(onClick={if(controller.clearAnnotations())redraw()}){Text("Clear annotations",fontSize=10.sp)}
+    }
+}
+
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
@@ -490,6 +517,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             if (controller.mode == GreaseMode.WEIGHT_PAINT) {
                 WeightPaintBar(controller,redraw)
             }
+            if (controller.tools.activeTool == GreaseTool.ANNOTATE) AnnotationBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ERASE) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
@@ -536,7 +564,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     val groups=listOf(
         "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.CURVE,GreaseTool.PAN),
         "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
-        "SCULPT" to listOf(GreaseTool.SCULPT)
+        "SCULPT" to listOf(GreaseTool.SCULPT),
+        "NOTES" to listOf(GreaseTool.ANNOTATE)
     )
     Column(Modifier.width(86.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
         groups.forEach{(title,group)->

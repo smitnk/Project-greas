@@ -100,6 +100,12 @@ object GPNative {
      * polyline vertices. edges <= 0 uses Blender's defaults. Returns x,y pairs.
      */
     external fun nativeGenerateBlenderPrimitive(type: Int, anchorsXY: FloatArray, edges: Int, flip: Boolean): FloatArray?
+    // Annotations (project_grease_annotations.h): command ids PG_ANNOT_CMD_* of project_grease_gp_bridge.h.
+    external fun nativeAnnotationCommand(handle: Long, command: Int, args: FloatArray?): Int
+    /** r, g, b, a, thickness (px), visible (1/0); null without a document. */
+    external fun nativeAnnotationStyle(handle: Long): FloatArray?
+    external fun nativeAnnotationDump(handle: Long): FloatArray?
+    external fun nativeAnnotationLoad(handle: Long, data: FloatArray): Boolean
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean

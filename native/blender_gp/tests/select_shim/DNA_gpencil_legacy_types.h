@@ -56,6 +56,8 @@ typedef struct bGPDlayer {
   int flag;
   char info[128];
   float opacity;
+  float color[4];   /* annotation layer color */
+  short thickness;  /* annotation layer thickness (px) */
 } bGPDlayer;
 
 typedef struct bGPdata {

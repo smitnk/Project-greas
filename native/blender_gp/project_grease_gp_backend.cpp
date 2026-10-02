@@ -1,4 +1,5 @@
 #include "project_grease_gp_backend.h"
+#include "project_grease_annotations.h"
 #include "project_grease_legacy_fill.h"
 #include "project_grease_legacy_primitive.h"
 #include "project_grease_legacy_eraser.h"
@@ -46,6 +47,7 @@ extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, 
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
+extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 typedef const bGPDframe *(*ProjectGreaseGPFrameEvaluator)(void *user, const bGPDlayer *layer,
                                                           const bGPDframe *current, int frame_number);
@@ -229,6 +231,10 @@ struct Backend::Impl {
   FxStacks fx_stacks;
   uint64_t stack_revision = 1;
   uint64_t eval_count = 0;
+  // Annotation data (project_grease_annotations.h): a second bGPdata drawn on top of the
+  // drawing, not part of the drawing's layers, undo snapshots or modifier evaluation.
+  bGPdata *annotations = nullptr;
+  bool annotations_visible = true;
   std::vector<std::unique_ptr<EvalCacheEntry>> eval_cache;
 };
 
@@ -639,6 +645,8 @@ void Backend::shutdown()
   if (!impl_) {
     return;
   }
+  pg_annot_free(impl_->annotations);
+  impl_->annotations = nullptr;
 
   eval_cache_clear(impl_);
   impl_->stacks.clear();
@@ -744,6 +752,8 @@ bool Backend::reset_document()
   impl_->stacks.clear();
   impl_->fx_stacks.clear();
   impl_->stack_revision++;
+  pg_annot_free(impl_->annotations); /* a new document starts without annotations */
+  impl_->annotations = nullptr;
   if (impl_->gpd) {
     if (impl_->gpu_initialized) {
       DRW_gpencil_batch_cache_free(impl_->gpd);
@@ -843,6 +853,9 @@ bool Backend::create_document() {
   if (!gp_material_ensure_slot(impl_->gpd, 0)) {
     impl_->last_error = "Legacy GP material slot allocation failed";
     return false;
+  }
+  if (!impl_->annotations) {
+    impl_->annotations = pg_annot_create();
   }
   impl_->document_created = true;
   return true;
@@ -3353,8 +3366,12 @@ bool Backend::render_with_gpu_context()
   }
   project_grease_android_set_frame_evaluator(eval_frame_trampoline, this);
   project_grease_android_set_fx_provider(fx_provider_trampoline, this);
-  const bool presented =
+  bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
+  // Annotations are drawn over every layer, in screen-space thickness.
+  if (presented && impl_->annotations && impl_->annotations_visible) {
+    presented = project_grease_android_present_annotations(impl_->annotations, impl_->frame->framenum) != 0;
+  }
   project_grease_android_set_frame_evaluator(nullptr, nullptr);
   project_grease_android_set_fx_provider(nullptr, nullptr);
 #else
@@ -4651,6 +4668,11 @@ const char *Backend::last_error() const { return impl_->last_error.c_str(); }
 bGPdata *Backend::document_data() const { return impl_->gpd; }
 
 bGPDlayer *Backend::active_layer_data() const { return impl_->layer; }
+
+bGPdata *Backend::annotation_data() const { return impl_->annotations; }
+void Backend::set_annotations_visible(bool visible) { impl_->annotations_visible = visible; }
+bool Backend::annotations_visible() const { return impl_->annotations_visible; }
+int Backend::current_frame_number() const { return impl_->frame ? impl_->frame->framenum : 1; }
 
 void Backend::sync_active_frame()
 {

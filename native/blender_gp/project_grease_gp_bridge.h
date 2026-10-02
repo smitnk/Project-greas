@@ -222,6 +222,24 @@ int project_grease_gp_get_material_info(const ProjectGreaseGPHandle *handle, int
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 int project_grease_gp_set_point(ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint point);
 
+/* Annotations (project_grease_annotations.h) at the active frame. */
+enum {
+  PG_ANNOT_CMD_BEGIN = 0,      /* - */
+  PG_ANNOT_CMD_ADD_POINT = 1,  /* x, y */
+  PG_ANNOT_CMD_END = 2,        /* - */
+  PG_ANNOT_CMD_CANCEL = 3,     /* - */
+  PG_ANNOT_CMD_ERASE = 4,      /* x, y, radius */
+  PG_ANNOT_CMD_CLEAR = 5,      /* - */
+  PG_ANNOT_CMD_SET_STYLE = 6,  /* r, g, b, a, thickness_px */
+  PG_ANNOT_CMD_SET_VISIBLE = 7,/* visible */
+  PG_ANNOT_CMD_COUNT = 8,      /* -: returns the stroke count */
+};
+int project_grease_gp_annotation_command(ProjectGreaseGPHandle *handle, int command, const float *args, int arg_count);
+/* r, g, b, a, thickness, visible. */
+int project_grease_gp_annotation_style(const ProjectGreaseGPHandle *handle, float out[6]);
+int project_grease_gp_annotation_dump(const ProjectGreaseGPHandle *handle, float *out, int capacity);
+int project_grease_gp_annotation_load(ProjectGreaseGPHandle *handle, const float *data, int count);
+
 const char *project_grease_gp_last_error(
     const ProjectGreaseGPHandle *handle);
 

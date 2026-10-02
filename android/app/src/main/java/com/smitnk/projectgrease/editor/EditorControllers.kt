@@ -456,7 +456,7 @@ class OnionSkinController {
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
 
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
+enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
 
 class ToolController {
     var activeTool=GreaseTool.DRAW; private set
@@ -467,7 +467,7 @@ class ToolController {
             GreaseTool.FILL->FeatureId.FILL; GreaseTool.EYEDROPPER->FeatureId.STROKE_COLOR
             GreaseTool.LINE->FeatureId.LINE; GreaseTool.RECTANGLE->FeatureId.RECTANGLE
             GreaseTool.CIRCLE->FeatureId.CIRCLE; GreaseTool.ARC->FeatureId.ARC
-            GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.CURVE->FeatureId.CURVE; GreaseTool.MOVE->FeatureId.MOVE; GreaseTool.ROTATE->FeatureId.ROTATE; GreaseTool.SCALE->FeatureId.SCALE; GreaseTool.MIRROR->FeatureId.MIRROR; GreaseTool.PAN->FeatureId.PAN
+            GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.CURVE->FeatureId.CURVE; GreaseTool.ANNOTATE->FeatureId.ANNOTATIONS; GreaseTool.MOVE->FeatureId.MOVE; GreaseTool.ROTATE->FeatureId.ROTATE; GreaseTool.SCALE->FeatureId.SCALE; GreaseTool.MIRROR->FeatureId.MIRROR; GreaseTool.PAN->FeatureId.PAN
             GreaseTool.SCULPT->FeatureId.SCULPT
         }
         if(FeatureRegistry.capability(feature).state==FeatureState.NOT_IMPLEMENTED)return false
@@ -713,6 +713,10 @@ class EditorController {
                 polylineAwaitingPress = true
                 true
             }
+            GreaseTool.ANNOTATE -> {
+                if (annotationEraser) true
+                else GPNative.nativeAnnotationCommand(native.handle, ANNOT_BEGIN, null) != 0
+            }
             GreaseTool.CURVE -> {
                 // The curve outlives a gesture too: first the line, then handle drags.
                 curveAwaitingPress = true
@@ -754,6 +758,14 @@ class EditorController {
             showPrimitivePreview(
                 blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, polyline.previewVertices())
             )
+        } else if (tools.activeTool == GreaseTool.ANNOTATE) {
+            if (annotationEraser) {
+                if (GPNative.nativeAnnotationCommand(native.handle, ANNOT_ERASE, floatArrayOf(x, y, annotationEraserRadius())) != 0) {
+                    document.markDirty()
+                }
+            } else {
+                GPNative.nativeAnnotationCommand(native.handle, ANNOT_ADD_POINT, floatArrayOf(x, y))
+            }
         } else if (tools.activeTool == GreaseTool.CURVE) {
             val snapped=view.snapPoint(x,y)
             curveLastX = snapped.first
@@ -873,6 +885,13 @@ class EditorController {
             }
             return
         }
+        if (tools.activeTool == GreaseTool.ANNOTATE) {
+            if (!annotationEraser && GPNative.nativeAnnotationCommand(native.handle, ANNOT_END, null) != 0) {
+                document.markDirty()
+            }
+            render()
+            return
+        }
         if (tools.activeTool == GreaseTool.CURVE) {
             if (curveConfirmOnRelease) {
                 confirmCurve()
@@ -901,6 +920,9 @@ class EditorController {
         pendingShapePoints.clear()
         pendingShapeTool=null
         pendingLassoPoints.clear()
+        if (tools.activeTool == GreaseTool.ANNOTATE && !annotationEraser && native.handle != 0L) {
+            GPNative.nativeAnnotationCommand(native.handle, ANNOT_CANCEL, null)
+        }
         if (tools.activeTool == GreaseTool.CURVE) {
             curveAwaitingPress = false
             curveConfirmOnRelease = false
@@ -976,11 +998,19 @@ class EditorController {
         return ok
     }
     /** Vector pages (SVG/PDF export) for [frames]; the layer/frame selection is restored afterwards. */
-    fun exportPages(frames:List<Int>):List<VectorPage> {
+    fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false):List<VectorPage> {
         if (native.handle == 0L || frames.isEmpty()) return emptyList()
         val originalLayer = selectedLayer
         val originalFrame = animation.currentFrame
-        val pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames)
+        var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames)
+        if (includeAnnotations) {
+            val dump = annotationDump()
+            val style = annotationStyle()
+            pages = pages.map { page ->
+                val notes = AnnotationData.exportLayer(dump, style, page.frame)
+                if (notes == null) page else VectorPage(page.frame, page.width, page.height, page.layers + notes)
+            }
+        }
         if (native.layerCount() > 0) {
             native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
             native.selectFrameOrHold(originalFrame)
@@ -1002,7 +1032,9 @@ class EditorController {
             native.selectFrameOrHold(originalFrame)
         }
         render()
-        return json
+        // Annotations are separate data with their own key (older files have none).
+        val notes = AnnotationData.toJson(annotationDump(), annotationStyle()) ?: return json
+        return runCatching { org.json.JSONObject(json).put("annotations", notes).toString() }.getOrDefault(json)
     }
 
     fun loadDocumentJson(raw:String):Boolean {
@@ -1014,6 +1046,11 @@ class EditorController {
         animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
         animation.setSceneEnd(parsed.frameEnd)
         if (!ProjectDocumentCodec.restore(parsed, NativeDocumentAdapter(native), brushes.size)) return false
+        val notes = AnnotationData.fromJson(runCatching { org.json.JSONObject(raw).optJSONObject("annotations") }.getOrNull())
+        if (notes != null) {
+            notes.style?.let { GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_STYLE, it) }
+            GPNative.nativeAnnotationLoad(native.handle, notes.dump)
+        }
         if (parsed.layers == null) return true
         syncActiveMaterial(parsed.materials.firstOrNull())
         val targetFrame = parsed.frame.coerceAtLeast(1)
@@ -1251,6 +1288,52 @@ class EditorController {
         render()
         return true
     }
+
+    // ---- Annotations (native/blender_gp/project_grease_annotations.h) ------------------------------
+    // Separate overlay data like Blender's annotation tool: drawn over the drawing with a fixed
+    // screen-space thickness, saved in the project file, left out of export unless asked. Edits
+    // are saved with the project but are not undo steps (they are not part of the drawing).
+    private companion object {
+        const val ANNOT_BEGIN = 0; const val ANNOT_ADD_POINT = 1; const val ANNOT_END = 2; const val ANNOT_CANCEL = 3
+        const val ANNOT_ERASE = 4; const val ANNOT_CLEAR = 5; const val ANNOT_SET_STYLE = 6; const val ANNOT_SET_VISIBLE = 7
+        const val ANNOT_COUNT = 8
+    }
+    /** Annotate tool mode: false draws notes, true erases notes only. */
+    var annotationEraser = false
+        private set
+    fun setAnnotationEraser(value:Boolean) { annotationEraser = value }
+    private fun annotationEraserRadius():Float = 16f / view.zoom.coerceAtLeast(0.1f)
+    /** r, g, b, a, thickness (px), visible. */
+    fun annotationStyle():FloatArray = (if (native.handle != 0L) GPNative.nativeAnnotationStyle(native.handle) else null)
+        ?: floatArrayOf(0f, 0.6f, 1f, 1f, 3f, 1f)
+    val annotationColorArgb:Int get() {
+        val s = annotationStyle()
+        fun c(v:Float) = (v.coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+        return (c(s[3]) shl 24) or (c(s[0]) shl 16) or (c(s[1]) shl 8) or c(s[2])
+    }
+    private fun setAnnotationStyle(rgba:FloatArray, thickness:Float):Boolean {
+        if (native.handle == 0L) return false
+        val ok = GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_STYLE, floatArrayOf(rgba[0], rgba[1], rgba[2], rgba[3], thickness)) != 0
+        if (ok) { document.markDirty(); render() }
+        return ok
+    }
+    fun setAnnotationColor(argb:Int):Boolean = setAnnotationStyle(colorToFloats(argb or (0xFF shl 24)), annotationStyle()[4])
+    fun setAnnotationThickness(px:Float):Boolean { val s = annotationStyle(); return setAnnotationStyle(s, px) }
+    fun annotationCount():Int = if (native.handle != 0L) GPNative.nativeAnnotationCommand(native.handle, ANNOT_COUNT, null) else 0
+    fun clearAnnotations():Boolean {
+        if (native.handle == 0L) return false
+        val ok = GPNative.nativeAnnotationCommand(native.handle, ANNOT_CLEAR, null) != 0
+        if (ok) { document.markDirty(); render() }
+        return ok
+    }
+    val annotationsVisible:Boolean get() = annotationStyle()[5] != 0f
+    fun setAnnotationsVisible(visible:Boolean):Boolean {
+        if (native.handle == 0L) return false
+        val ok = GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_VISIBLE, floatArrayOf(if (visible) 1f else 0f)) != 0
+        if (ok) render()
+        return ok
+    }
+    private fun annotationDump():FloatArray? = if (native.handle != 0L) GPNative.nativeAnnotationDump(native.handle) else null
 
     /**
      * Adds planned strokes (StrokeImport) to the active frame as one undo step: first the new

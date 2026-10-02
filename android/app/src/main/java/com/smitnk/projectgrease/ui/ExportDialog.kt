@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -19,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.smitnk.projectgrease.editor.EditorController
@@ -33,6 +35,8 @@ import com.smitnk.projectgrease.editor.VectorExport
 fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -> Unit) {
     var pdf by remember { mutableStateOf(false) }
     var wholeTimeline by remember { mutableStateOf(false) }
+    // Annotations are overlay notes, not part of the drawing: left out unless asked for.
+    var includeAnnotations by remember { mutableStateOf(false) }
     val frames = if (wholeTimeline) (1..controller.animation.timelineEnd.coerceAtLeast(1)).toList()
     else listOf(controller.animation.currentFrame)
     val baseName = controller.document.projectName.ifBlank { "Project Grease" }
@@ -47,7 +51,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         ActivityResultContracts.CreateDocument(if (pdf) "application/pdf" else "image/svg+xml")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val pages = controller.exportPages(frames)
+        val pages = controller.exportPages(frames, includeAnnotations)
         val ok = pages.isNotEmpty() && writeBytes(
             uri,
             if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
@@ -57,7 +61,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
-        val pages = controller.exportPages(frames)
+        val pages = controller.exportPages(frames, includeAnnotations)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         var written = 0
         for (page in pages) {
@@ -85,6 +89,10 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
                 Row {
                     FilterChip(selected = !wholeTimeline, onClick = { wholeTimeline = false }, label = { Text("Current frame") }, modifier = Modifier.padding(end = 6.dp))
                     FilterChip(selected = wholeTimeline, onClick = { wholeTimeline = true }, label = { Text("Timeline (${controller.animation.timelineEnd})") })
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Include annotations", Modifier.weight(1f))
+                    Switch(includeAnnotations, { includeAnnotations = it })
                 }
                 Text(
                     if (pdf) "One PDF, one page per frame." else if (wholeTimeline) "A folder with one SVG per frame." else "One SVG file.",

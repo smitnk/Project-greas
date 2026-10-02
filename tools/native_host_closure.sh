@@ -31,6 +31,7 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_blender_edit.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit2.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit3.c"
+  "$ROOT/native/blender_gp/project_grease_annotations.c"
   "$ROOT/native/blender_gp/android_legacy_runtime_compat.c"
   "$ROOT/native/blender_gp/android_blender_math_vector_compat.c"
   "$ROOT/native/blender_gp/android_blender_math_matrix_compat.c"

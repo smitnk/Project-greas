@@ -9,6 +9,7 @@
 #include "project_grease_blender_select.h"
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit3.h"
+#include "project_grease_annotations.h"
 
 struct ProjectGreaseGPHandle {
   project_grease::gp::Backend backend;
@@ -447,6 +448,62 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
   }
 }
 
+
+int project_grease_gp_annotation_command(ProjectGreaseGPHandle *handle, int command, const float *args, int arg_count)
+{
+  if (!ensure_ready(handle)) return 0;
+  bGPdata *annot = handle->backend.annotation_data();
+  if (!annot) return 0;
+  const int frame = handle->backend.current_frame_number();
+  switch (command) {
+    case PG_ANNOT_CMD_BEGIN:
+      return pg_annot_begin(annot, frame);
+    case PG_ANNOT_CMD_ADD_POINT:
+      return args && arg_count >= 2 ? pg_annot_add_point(annot, args[0], args[1]) : 0;
+    case PG_ANNOT_CMD_END:
+      return pg_annot_end(annot);
+    case PG_ANNOT_CMD_CANCEL:
+      pg_annot_cancel(annot);
+      return 1;
+    case PG_ANNOT_CMD_ERASE:
+      return args && arg_count >= 3 ? pg_annot_erase(annot, frame, args[0], args[1], args[2]) : 0;
+    case PG_ANNOT_CMD_CLEAR:
+      return pg_annot_clear(annot);
+    case PG_ANNOT_CMD_SET_STYLE:
+      if (!args || arg_count < 5) return 0;
+      pg_annot_set_style(annot, args, args[4]);
+      return 1;
+    case PG_ANNOT_CMD_SET_VISIBLE:
+      if (!args || arg_count < 1) return 0;
+      handle->backend.set_annotations_visible(args[0] != 0.0f);
+      return 1;
+    case PG_ANNOT_CMD_COUNT:
+      return pg_annot_stroke_count(annot);
+    default:
+      return 0;
+  }
+}
+
+int project_grease_gp_annotation_style(const ProjectGreaseGPHandle *handle, float out[6])
+{
+  if (!handle || !out) return 0;
+  float th = 0.0f;
+  if (!pg_annot_get_style(handle->backend.annotation_data(), out, &th)) return 0;
+  out[4] = th;
+  out[5] = handle->backend.annotations_visible() ? 1.0f : 0.0f;
+  return 1;
+}
+
+int project_grease_gp_annotation_dump(const ProjectGreaseGPHandle *handle, float *out, int capacity)
+{
+  return handle ? pg_annot_dump(handle->backend.annotation_data(), out, capacity) : 0;
+}
+
+int project_grease_gp_annotation_load(ProjectGreaseGPHandle *handle, const float *data, int count)
+{
+  if (!ensure_ready(handle)) return 0;
+  return pg_annot_load(handle->backend.annotation_data(), data, count);
+}
 
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle,
                                   int stroke_index,

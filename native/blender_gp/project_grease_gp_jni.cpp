@@ -1097,3 +1097,54 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryCanRedo(
 {
   return project_grease_gp_history_can_redo(from_handle(handle)) != 0;
 }
+
+// ---- annotations (project_grease_annotations.h) -------------------------------------------------
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationCommand(
+    JNIEnv *env, jobject, jlong handle, jint command, jfloatArray args)
+{
+  std::vector<float> values;
+  if (args) {
+    const jsize n = env->GetArrayLength(args);
+    values.resize(static_cast<size_t>(n));
+    if (n > 0) env->GetFloatArrayRegion(args, 0, n, values.data());
+  }
+  return project_grease_gp_annotation_command(
+      from_handle(handle), command, values.empty() ? nullptr : values.data(), static_cast<int>(values.size()));
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationStyle(
+    JNIEnv *env, jobject, jlong handle)
+{
+  float style[6];
+  if (!project_grease_gp_annotation_style(from_handle(handle), style)) return nullptr;
+  jfloatArray result = env->NewFloatArray(6);
+  if (result) env->SetFloatArrayRegion(result, 0, 6, style);
+  return result;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationDump(
+    JNIEnv *env, jobject, jlong handle)
+{
+  ProjectGreaseGPHandle *h = from_handle(handle);
+  const int need = project_grease_gp_annotation_dump(h, nullptr, 0);
+  if (need <= 0) return nullptr;
+  std::vector<float> data(static_cast<size_t>(need));
+  if (project_grease_gp_annotation_dump(h, data.data(), need) != need) return nullptr;
+  jfloatArray result = env->NewFloatArray(need);
+  if (result) env->SetFloatArrayRegion(result, 0, need, data.data());
+  return result;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationLoad(
+    JNIEnv *env, jobject, jlong handle, jfloatArray data)
+{
+  if (!data) return JNI_FALSE;
+  const jsize n = env->GetArrayLength(data);
+  std::vector<float> values(static_cast<size_t>(n));
+  if (n > 0) env->GetFloatArrayRegion(data, 0, n, values.data());
+  return project_grease_gp_annotation_load(from_handle(handle), values.data(), static_cast<int>(n)) ? JNI_TRUE : JNI_FALSE;
+}

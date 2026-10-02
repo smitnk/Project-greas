@@ -481,6 +481,29 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
   return glGetError() == GL_NO_ERROR ? 1 : 0;
 }
 
+// Annotations (project_grease_annotations.h): the frame shown at frame_number of every visible
+// annotation layer, in the layer color with a fixed screen-space thickness (layer->thickness px,
+// independent of zoom), drawn over the document like Blender's annotation overlay.
+extern "C" const bGPDframe *pg_annot_frame_at(const bGPdata *annot, int frame);
+extern "C" int project_grease_android_present_annotations(const bGPdata* annot,int frame_number){
+  if(!annot||!ensure_program())return 0;
+  GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
+  update_canvas_map(w,h);
+  const bGPDlayer*layer=static_cast<const bGPDlayer*>(annot->layers.first);
+  if(!layer||(layer->flag&GP_LAYER_HIDE))return 1;
+  const bGPDframe*frame=pg_annot_frame_at(annot,frame_number);
+  if(!frame)return 1;
+  const float px=std::max(1.0f,float(layer->thickness))/std::max(g_map_scale,1e-6f);
+  std::vector<Vertex> v; v.reserve(1024);
+  for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
+    if(!s->points||s->totpoints<=0)continue;
+    if(s->totpoints==1){append_dot(v,s->points[0],px,w,h);continue;}
+    for(int i=0;i+1<s->totpoints;i++){append_segment(v,s->points[i],s->points[i+1],px,w,h,1.0f);append_dot(v,s->points[i+1],px,w,h);}
+  }
+  draw_vertices(v,layer->color);
+  return glGetError()==GL_NO_ERROR?1:0;
+}
+
 extern "C" int project_grease_android_present_gp_frame(const bGPDframe*frame){
   (void)frame;
   return 0;

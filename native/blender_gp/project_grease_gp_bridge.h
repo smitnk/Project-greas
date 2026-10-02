@@ -175,6 +175,16 @@ int project_grease_gp_get_point_color(const ProjectGreaseGPHandle *handle,
                                       float out_rgba[4]);
 int project_grease_gp_get_layer_info(const ProjectGreaseGPHandle *handle, int index, PGLayerInfo *out);
 int project_grease_gp_set_layer_opacity(ProjectGreaseGPHandle *handle, int index, float opacity);
+/* Live per-layer modifier stack (project_grease_modifier_stack.h). */
+int project_grease_gp_modifier_count(const ProjectGreaseGPHandle *handle, int layer_index);
+int project_grease_gp_modifier_add(ProjectGreaseGPHandle *handle, int layer_index, int type); /* index or -1 */
+int project_grease_gp_modifier_remove(ProjectGreaseGPHandle *handle, int layer_index, int modifier_index);
+int project_grease_gp_modifier_move(ProjectGreaseGPHandle *handle, int layer_index, int from_index, int to_index);
+int project_grease_gp_modifier_set_enabled(ProjectGreaseGPHandle *handle, int layer_index, int modifier_index, int enabled);
+int project_grease_gp_modifier_set_params(ProjectGreaseGPHandle *handle, int layer_index, int modifier_index, const float *params, int count);
+/* Returns the parameter count or -1; type/enabled/params are filled when non-NULL. */
+int project_grease_gp_modifier_get(const ProjectGreaseGPHandle *handle, int layer_index, int modifier_index, int *type, int *enabled, float *params, int capacity);
+int project_grease_gp_modifier_apply(ProjectGreaseGPHandle *handle, int layer_index, int modifier_index);
 int project_grease_gp_get_material_info(const ProjectGreaseGPHandle *handle, int index, PGMaterialInfo *out);
 int project_grease_gp_get_point(const ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint *out);
 int project_grease_gp_set_point(ProjectGreaseGPHandle *handle, int stroke_index, int point_index, ProjectGreaseGPPoint point);

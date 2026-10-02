@@ -4,11 +4,14 @@
 #include "project_grease_legacy_eraser.h"
 #include "project_grease_blender_edit.h"
 #include "project_grease_document_state.h"
+#include "project_grease_modifier_stack.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -41,6 +44,9 @@ extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
+typedef const bGPDframe *(*ProjectGreaseGPFrameEvaluator)(void *user, const bGPDlayer *layer,
+                                                          const bGPDframe *current, int frame_number);
+extern "C" void project_grease_android_set_frame_evaluator(ProjectGreaseGPFrameEvaluator fn, void *user);
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 #endif
@@ -53,8 +59,14 @@ extern "C" int project_grease_android_present_pending_stroke(
 
 namespace project_grease::gp {
 
+/* Bumped by every document edit (all edits go through project_grease_gp_tag). The evaluated
+ * modifier-stack frames are keyed by it, so any edit invalidates them. A process-wide counter can
+ * only over-invalidate when several backends exist. */
+static uint64_t g_gp_data_revision = 1;
+
 static void project_grease_gp_tag(bGPdata *gpd)
 {
+  g_gp_data_revision++;
 #ifdef __ANDROID__
   if (gpd) {
     gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
@@ -143,8 +155,21 @@ static void gp_materials_free(bGPdata *gpd)
   gpd->totcol = 0;
 }
 
+using ModifierStacks = std::vector<std::vector<PGModEntry>>;
+
 struct HistorySnapshot {
   bGPdata *data = nullptr;
+  ModifierStacks stacks; /* the live modifier stack of every layer, by layer index */
+};
+
+/* One evaluated copy of a layer's current frame (see pg_mod_eval_frame). */
+struct EvalCacheEntry {
+  const bGPDlayer *layer = nullptr;
+  const bGPDframe *source = nullptr;
+  int cfra = 0;
+  uint64_t revision = 0;
+  uint64_t stack_revision = 0;
+  bGPDframe frame{};
 };
 
 struct Backend::Impl {
@@ -180,7 +205,107 @@ struct Backend::Impl {
 
   std::vector<HistorySnapshot *> undo_history;
   std::vector<HistorySnapshot *> redo_history;
+
+  // Live modifier stacks: stacks[i] belongs to the i-th layer of gpd->layers. They are document
+  // state (saved, in undo snapshots); strokes never carry modifiers.
+  ModifierStacks stacks;
+  uint64_t stack_revision = 1;
+  uint64_t eval_count = 0;
+  std::vector<std::unique_ptr<EvalCacheEntry>> eval_cache;
 };
+
+static void eval_cache_clear(Backend::Impl *impl)
+{
+  for (auto &entry : impl->eval_cache) {
+    pg_mod_eval_free(&entry->frame);
+  }
+  impl->eval_cache.clear();
+}
+
+static int layer_index_of(const bGPdata *gpd, const bGPDlayer *layer)
+{
+  int i = 0;
+  for (const bGPDlayer *l = static_cast<const bGPDlayer *>(gpd->layers.first); l; l = l->next, ++i) {
+    if (l == layer) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+static int layer_total(const bGPdata *gpd)
+{
+  return gpd ? BLI_listbase_count(&gpd->layers) : 0;
+}
+
+/* Keeps stacks[] the same length as the layer list (new layers start empty). */
+static std::vector<PGModEntry> *layer_stack(Backend::Impl *impl, int layer_index)
+{
+  if (!impl->gpd || layer_index < 0 || layer_index >= layer_total(impl->gpd)) {
+    return nullptr;
+  }
+  impl->stacks.resize(static_cast<size_t>(layer_total(impl->gpd)));
+  return &impl->stacks[static_cast<size_t>(layer_index)];
+}
+
+/* Presenter callback (see Backend::evaluated_frame). */
+[[maybe_unused]] static const bGPDframe *eval_frame_trampoline(void *user, const bGPDlayer *layer,
+                                                              const bGPDframe *current,
+                                                              int frame_number)
+{
+  return static_cast<Backend *>(user)->evaluated_frame(layer, current, frame_number);
+}
+
+/* The evaluated copy of `current` for `layer`, or `current` itself when the layer has no enabled
+ * modifier. The copy is cached until an edit, a frame change or a stack change. */
+const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDframe *current,
+                                          int frame_number)
+{
+  Impl *impl = impl_;
+  if (!impl || !impl->gpd || !layer || !current) {
+    return current;
+  }
+  const int index = layer_index_of(impl->gpd, layer);
+  if (index < 0 || static_cast<size_t>(index) >= impl->stacks.size()) {
+    return current;
+  }
+  const std::vector<PGModEntry> &stack = impl->stacks[static_cast<size_t>(index)];
+  bool any_enabled = false;
+  for (const PGModEntry &e : stack) {
+    any_enabled |= e.enabled != 0 && pg_mod_valid_type(e.type) != 0;
+  }
+  if (!any_enabled) {
+    return current;
+  }
+  EvalCacheEntry *target = nullptr;
+  for (auto &entry : impl->eval_cache) {
+    if (entry->layer == layer) {
+      target = entry.get();
+      break;
+    }
+  }
+  if (target != nullptr && target->source == current && target->cfra == frame_number &&
+      target->revision == g_gp_data_revision && target->stack_revision == impl->stack_revision)
+  {
+    return &target->frame;
+  }
+  if (target == nullptr) {
+    impl->eval_cache.push_back(std::make_unique<EvalCacheEntry>());
+    target = impl->eval_cache.back().get();
+    target->layer = layer;
+  }
+  else {
+    pg_mod_eval_free(&target->frame);
+  }
+  target->source = current;
+  target->cfra = frame_number;
+  target->revision = g_gp_data_revision;
+  target->stack_revision = impl->stack_revision;
+  pg_mod_eval_frame(impl->gpd, const_cast<bGPDlayer *>(layer), const_cast<bGPDframe *>(current),
+                    stack.data(), static_cast<int>(stack.size()), frame_number, &target->frame);
+  impl->eval_count++;
+  return &target->frame;
+}
 
 static void history_snapshot_free(HistorySnapshot *snapshot)
 {
@@ -235,7 +360,7 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   return destination;
 }
 
-static HistorySnapshot *history_snapshot_create(const bGPdata *source)
+static HistorySnapshot *history_snapshot_create(const bGPdata *source, const ModifierStacks &stacks)
 {
   if (!source) {
     return nullptr;
@@ -249,6 +374,7 @@ static HistorySnapshot *history_snapshot_create(const bGPdata *source)
   }
 
   snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
+  snapshot->stacks = stacks;
   return snapshot;
 }
 
@@ -327,6 +453,9 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   impl->layer_created = impl->layer != nullptr;
   impl->frame_created = impl->frame != nullptr;
   impl->stroke_open = false;
+  impl->stacks = snapshot->stacks;
+  impl->stack_revision++;
+  eval_cache_clear(impl);
   project_grease_gp_tag(impl->gpd);
   return true;
 }
@@ -358,7 +487,7 @@ bool Backend::history_record()
     return false;
   }
 
-  HistorySnapshot *snapshot = history_snapshot_create(impl_->gpd);
+  HistorySnapshot *snapshot = history_snapshot_create(impl_->gpd, impl_->stacks);
   if (!snapshot) {
     impl_->last_error = "Legacy GP history snapshot allocation failed";
     return false;
@@ -462,6 +591,9 @@ void Backend::shutdown()
     return;
   }
 
+  eval_cache_clear(impl_);
+  impl_->stacks.clear();
+
   // Android does not create a Blender Main/ID database. Free the minimal
   // legacy GP containers directly after releasing their GPU cache.
 #ifdef __ANDROID__
@@ -556,6 +688,9 @@ bool Backend::reset_document()
   if (impl_->stroke_open) {
     cancel_stroke();
   }
+  eval_cache_clear(impl_);
+  impl_->stacks.clear();
+  impl_->stack_revision++;
   if (impl_->gpd) {
     if (impl_->gpu_initialized) {
       DRW_gpencil_batch_cache_free(impl_->gpd);
@@ -670,6 +805,7 @@ bool Backend::create_layer(const char *name) {
     impl_->last_error = "BKE_gpencil_layer_addnew() failed"; return false;
   }
   impl_->layer_created = true;
+  impl_->stacks.resize(static_cast<size_t>(layer_total(impl_->gpd))); /* the new layer's stack is empty */
   return true;
 }
 
@@ -771,6 +907,12 @@ bool Backend::move_layer(int from_index, int to_index)
     impl_->last_error = "layer move index out of range"; return false;
   }
   if (!BLI_listbase_move_index(&impl_->gpd->layers, from_index, to_index)) return false;
+  if (layer_stack(impl_, from_index) != nullptr) {
+    std::vector<PGModEntry> moved = std::move(impl_->stacks[static_cast<size_t>(from_index)]);
+    impl_->stacks.erase(impl_->stacks.begin() + from_index);
+    impl_->stacks.insert(impl_->stacks.begin() + to_index, std::move(moved));
+  }
+  impl_->stack_revision++;
   impl_->layer = layer_at(impl_->gpd, to_index);
   impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
   impl_->frame_created = impl_->frame != nullptr;
@@ -784,7 +926,12 @@ bool Backend::duplicate_layer(int index)
   if (!source) { impl_->last_error = "layer index out of range"; return false; }
   bGPDlayer *copy = BKE_gpencil_layer_duplicate(source, true, true);
   if (!copy) { impl_->last_error = "BKE_gpencil_layer_duplicate() failed"; return false; }
+  const std::vector<PGModEntry> source_stack =
+      layer_stack(impl_, index) ? impl_->stacks[static_cast<size_t>(index)] : std::vector<PGModEntry>();
   BLI_addtail(&impl_->gpd->layers, copy);
+  impl_->stacks.resize(static_cast<size_t>(layer_total(impl_->gpd)) - 1);
+  impl_->stacks.push_back(source_stack); /* a duplicated layer keeps its modifiers */
+  impl_->stack_revision++;
   impl_->layer = copy;
   impl_->frame = copy->actframe;
   impl_->layer_created = true;
@@ -798,6 +945,10 @@ bool Backend::delete_layer(int index)
   bGPDlayer *layer = layer_at(impl_->gpd, index);
   if (!layer) { impl_->last_error = "layer index out of range"; return false; }
   if (layer_count() <= 1) { impl_->last_error = "cannot delete final layer"; return false; }
+  if (layer_stack(impl_, index) != nullptr) {
+    impl_->stacks.erase(impl_->stacks.begin() + index);
+  }
+  impl_->stack_revision++;
   BKE_gpencil_layer_delete(impl_->gpd, layer);
   impl_->layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
   impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
@@ -3108,8 +3259,19 @@ bool Backend::render_with_gpu_context()
   //
   // Keep building the real Blender GP cache when possible, but never make
   // Android's live presentation depend on that cache.
+  // The presenter draws the evaluated copies of layers with live modifiers; the originals stay
+  // untouched. Dropping copies the last render left behind keeps the cache to what is drawn.
+  for (size_t i = impl_->eval_cache.size(); i-- > 0;) {
+    EvalCacheEntry &entry = *impl_->eval_cache[i];
+    if (entry.revision != g_gp_data_revision || entry.stack_revision != impl_->stack_revision) {
+      pg_mod_eval_free(&entry.frame);
+      impl_->eval_cache.erase(impl_->eval_cache.begin() + static_cast<std::ptrdiff_t>(i));
+    }
+  }
+  project_grease_android_set_frame_evaluator(eval_frame_trampoline, this);
   const bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
+  project_grease_android_set_frame_evaluator(nullptr, nullptr);
 #else
   const bool presented = cache_ready;
 #endif
@@ -3387,6 +3549,154 @@ bool Backend::get_layer_info(int index, PGLayerInfo *out) const
     return false;
   }
   return pg_doc_layer_info_get(layer, out) != 0;
+}
+
+uint64_t Backend::modifier_eval_count() const { return impl_->eval_count; }
+
+int Backend::modifier_count(int layer_index) const
+{
+  if (!impl_->gpd || layer_index < 0 || layer_index >= layer_total(impl_->gpd)) {
+    return 0;
+  }
+  return static_cast<size_t>(layer_index) < impl_->stacks.size()
+             ? static_cast<int>(impl_->stacks[static_cast<size_t>(layer_index)].size())
+             : 0;
+}
+
+int Backend::modifier_add(int layer_index, int type)
+{
+  std::vector<PGModEntry> *stack = layer_stack(impl_, layer_index);
+  if (!stack) {
+    impl_->last_error = "layer index out of range";
+    return -1;
+  }
+  if (!pg_mod_valid_type(type)) {
+    impl_->last_error = "unknown modifier type";
+    return -1;
+  }
+  if (stack->size() >= static_cast<size_t>(PG_MOD_MAX_STACK)) {
+    impl_->last_error = "modifier stack is full";
+    return -1;
+  }
+  PGModEntry entry;
+  pg_mod_entry_init(&entry, type);
+  stack->push_back(entry);
+  impl_->stack_revision++;
+  impl_->last_error.clear();
+  return static_cast<int>(stack->size()) - 1;
+}
+
+bool Backend::modifier_remove(int layer_index, int modifier_index)
+{
+  std::vector<PGModEntry> *stack = layer_stack(impl_, layer_index);
+  if (!stack || modifier_index < 0 || static_cast<size_t>(modifier_index) >= stack->size()) {
+    impl_->last_error = "modifier index out of range";
+    return false;
+  }
+  stack->erase(stack->begin() + modifier_index);
+  impl_->stack_revision++;
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::modifier_move(int layer_index, int from_index, int to_index)
+{
+  std::vector<PGModEntry> *stack = layer_stack(impl_, layer_index);
+  const int n = stack ? static_cast<int>(stack->size()) : 0;
+  if (!stack || from_index < 0 || to_index < 0 || from_index >= n || to_index >= n) {
+    impl_->last_error = "modifier index out of range";
+    return false;
+  }
+  if (from_index != to_index) {
+    PGModEntry moved = (*stack)[static_cast<size_t>(from_index)];
+    stack->erase(stack->begin() + from_index);
+    stack->insert(stack->begin() + to_index, moved);
+    impl_->stack_revision++;
+  }
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::modifier_set_enabled(int layer_index, int modifier_index, bool enabled)
+{
+  std::vector<PGModEntry> *stack = layer_stack(impl_, layer_index);
+  if (!stack || modifier_index < 0 || static_cast<size_t>(modifier_index) >= stack->size()) {
+    impl_->last_error = "modifier index out of range";
+    return false;
+  }
+  (*stack)[static_cast<size_t>(modifier_index)].enabled = enabled ? 1 : 0;
+  impl_->stack_revision++;
+  impl_->last_error.clear();
+  return true;
+}
+
+bool Backend::modifier_set_params(int layer_index, int modifier_index, const float *params, int count)
+{
+  std::vector<PGModEntry> *stack = layer_stack(impl_, layer_index);
+  if (!stack || modifier_index < 0 || static_cast<size_t>(modifier_index) >= stack->size() ||
+      !params || count < 0)
+  {
+    impl_->last_error = "invalid modifier parameters";
+    return false;
+  }
+  PGModEntry &entry = (*stack)[static_cast<size_t>(modifier_index)];
+  const int n = std::min(count, pg_mod_param_count(entry.type));
+  for (int i = 0; i < n; ++i) {
+    entry.params[i] = params[i];
+  }
+  pg_mod_sanitize(entry.type, entry.params);
+  impl_->stack_revision++;
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::modifier_get(int layer_index, int modifier_index, int *type, int *enabled,
+                          float *params, int capacity) const
+{
+  if (!impl_->gpd || layer_index < 0 || layer_index >= layer_total(impl_->gpd) ||
+      static_cast<size_t>(layer_index) >= impl_->stacks.size())
+  {
+    return -1;
+  }
+  const std::vector<PGModEntry> &stack = impl_->stacks[static_cast<size_t>(layer_index)];
+  if (modifier_index < 0 || static_cast<size_t>(modifier_index) >= stack.size()) {
+    return -1;
+  }
+  const PGModEntry &entry = stack[static_cast<size_t>(modifier_index)];
+  const int n = pg_mod_param_count(entry.type);
+  if (type) *type = entry.type;
+  if (enabled) *enabled = entry.enabled;
+  if (params) {
+    for (int i = 0; i < n && i < capacity; ++i) {
+      params[i] = entry.params[i];
+    }
+  }
+  return n;
+}
+
+bool Backend::modifier_apply(int layer_index, int modifier_index)
+{
+  std::vector<PGModEntry> *stack = layer_stack(impl_, layer_index);
+  if (!stack || modifier_index < 0 || static_cast<size_t>(modifier_index) >= stack->size()) {
+    impl_->last_error = "modifier index out of range";
+    return false;
+  }
+  bGPDlayer *layer = layer_at(impl_->gpd, layer_index);
+  if (!layer) {
+    impl_->last_error = "layer index out of range";
+    return false;
+  }
+  const PGModEntry entry = (*stack)[static_cast<size_t>(modifier_index)];
+  const int cfra = impl_->frame ? impl_->frame->framenum : 1;
+  /* Bake into the originals. Simplify/Merge may free strokes, so drop the open-stroke pointer. */
+  impl_->stroke = nullptr;
+  pg_mod_apply(impl_->gpd, layer, &entry, cfra);
+  stack->erase(stack->begin() + modifier_index);
+  impl_->stack_revision++;
+  BKE_gpencil_stats_update(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
 }
 
 bool Backend::set_layer_opacity(int index, float opacity)

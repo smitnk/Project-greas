@@ -176,6 +176,18 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
 }
 } // namespace
 
+// Optional live-modifier hook (see project_grease_modifier_stack.h): maps a layer's current frame
+// to the evaluated copy that is drawn instead. Onion-skin frames are always drawn unmodified.
+typedef const bGPDframe*(*FrameEvaluator)(void*,const bGPDlayer*,const bGPDframe*,int);
+namespace {
+FrameEvaluator g_frame_evaluator=nullptr;
+void* g_frame_evaluator_user=nullptr;
+} // namespace
+
+extern "C" void project_grease_android_set_frame_evaluator(FrameEvaluator fn,void* user){
+  g_frame_evaluator=fn;g_frame_evaluator_user=user;
+}
+
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
@@ -208,7 +220,8 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
         draw_frame(gpd,layer,f,w,h,fac);
       }
     }
-    draw_frame(gpd,layer,current,w,h,1.0f);
+    const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
+    draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
   draw_sbuffer(gpd, 1.0f, w, h);

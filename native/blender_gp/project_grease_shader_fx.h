@@ -84,8 +84,13 @@ enum { PG_FXP_WAVE_AMPLITUDE = 0, PG_FXP_WAVE_PERIOD = 1, PG_FXP_WAVE_PHASE = 2,
 typedef struct PGFxEntry {
   int type;    /* PG_FX_* */
   int enabled; /* 0 = skipped */
+  int target;  /* PG_FX_TARGET_*: what of the layer the effect applies to */
   float params[PG_FX_MAX_PARAMS];
 } PGFxEntry;
+
+/* Effect target: the whole layer (Blender's behaviour), only its strokes or only its fills (the layer is
+ * then rendered in two passes, strokes and fills, and the effect runs on its pass only). */
+enum { PG_FX_TARGET_LAYER = 0, PG_FX_TARGET_STROKES = 1, PG_FX_TARGET_FILLS = 2 };
 
 int pg_fx_valid_type(int type);
 int pg_fx_param_count(int type);

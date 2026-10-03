@@ -221,6 +221,8 @@ int project_grease_gp_fx_add(ProjectGreaseGPHandle *handle, int layer_index, int
 int project_grease_gp_fx_remove(ProjectGreaseGPHandle *handle, int layer_index, int fx_index);
 int project_grease_gp_fx_move(ProjectGreaseGPHandle *handle, int layer_index, int from_index, int to_index);
 int project_grease_gp_fx_set_enabled(ProjectGreaseGPHandle *handle, int layer_index, int fx_index, int enabled);
+int project_grease_gp_fx_set_target(ProjectGreaseGPHandle *handle, int layer_index, int fx_index, int target);
+int project_grease_gp_fx_target(const ProjectGreaseGPHandle *handle, int layer_index, int fx_index);
 int project_grease_gp_fx_set_params(ProjectGreaseGPHandle *handle, int layer_index, int fx_index, const float *params, int count);
 /* Returns the parameter count or -1; type/enabled/params are filled when non-NULL. */
 int project_grease_gp_fx_get(const ProjectGreaseGPHandle *handle, int layer_index, int fx_index, int *type, int *enabled, float *params, int capacity);

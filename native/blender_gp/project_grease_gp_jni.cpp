@@ -855,6 +855,21 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxSetEnabled(
   return project_grease_gp_fx_set_enabled(from_handle(handle), layer, index, enabled ? 1 : 0) != 0;
 }
 
+/* Effect target: 0 whole layer, 1 strokes only, 2 fills only. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxSetTarget(
+    JNIEnv *, jobject, jlong handle, jint layer, jint index, jint target)
+{
+  return project_grease_gp_fx_set_target(from_handle(handle), layer, index, target) != 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxGetTarget(
+    JNIEnv *, jobject, jlong handle, jint layer, jint index)
+{
+  return project_grease_gp_fx_target(from_handle(handle), layer, index);
+}
+
 /* params: the float parameters of the effect (see ShaderFx.kt packing). */
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFxSetParams(

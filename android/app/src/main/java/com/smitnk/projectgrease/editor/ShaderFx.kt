@@ -148,7 +148,16 @@ object FxSpecs {
 }
 
 /** One effect of a layer's list as saved and as read back from the native document. */
-class FxRecord(val type: Int, val enabled: Boolean, val params: FloatArray)
+class FxRecord(val type: Int, val enabled: Boolean, val params: FloatArray, val target: Int = FxTarget.LAYER)
+
+/** What of the layer an effect applies to (PG_FX_TARGET_*); Blender's effects always use the whole layer. */
+object FxTarget {
+    const val LAYER = 0
+    const val STROKES = 1
+    const val FILLS = 2
+    fun isValid(target: Int) = target in LAYER..FILLS
+    fun label(target: Int) = when (target) { STROKES -> "Strokes"; FILLS -> "Fills"; else -> "Layer" }
+}
 
 /** What the effect commands need from the native document (implemented by NativeEditorBridge). */
 interface FxNative {
@@ -161,6 +170,9 @@ interface FxNative {
     fun fxSetParams(layer: Int, index: Int, params: FloatArray): Boolean
     /** [type, enabled, param0, param1, ...] or null. */
     fun fxGet(layer: Int, index: Int): FloatArray?
+    /** [FxTarget] of an effect (the defaults keep test doubles without targets working). */
+    fun fxSetTarget(layer: Int, index: Int, target: Int): Boolean = target == FxTarget.LAYER
+    fun fxTarget(layer: Int, index: Int): Int = FxTarget.LAYER
 }
 
 /** Packing between [FxRecord] and the float arrays that cross JNI, like [ModifierStackPacking]. */
@@ -214,8 +226,13 @@ object FxCommands {
         return native.fxSetParams(layer, index, FxPacking.paramsFor(current.type, params))
     }
 
+    fun setTarget(native: FxNative, layer: Int, index: Int, target: Int) =
+        FxTarget.isValid(target) && native.fxSetTarget(layer, index, target)
+
     fun list(native: FxNative, layer: Int): List<FxRecord> =
-        (0 until native.fxCount(layer)).mapNotNull { FxPacking.unpack(native.fxGet(layer, it)) }
+        (0 until native.fxCount(layer)).mapNotNull { i ->
+            FxPacking.unpack(native.fxGet(layer, i))?.let { FxRecord(it.type, it.enabled, it.params, native.fxTarget(layer, i).coerceIn(FxTarget.LAYER, FxTarget.FILLS)) }
+        }
 }
 
 /** The list as stored in a project file (per layer, key "effects"). */
@@ -226,6 +243,7 @@ object FxJson {
             array.put(
                 JSONObject().put("type", record.type).put("enabled", record.enabled)
                     .put("params", JSONArray().apply { for (v in record.params) put(if (v.isFinite()) v.toDouble() else 0.0) })
+                    .apply { if (record.target != FxTarget.LAYER) put("target", record.target) }
             )
         }
         return array
@@ -246,7 +264,8 @@ object FxJson {
                     type,
                     json.optBoolean("enabled", true),
                     // a missing value keeps Blender's default rather than zero (zero is a valid, different value)
-                    FloatArray(defaults.size) { values?.optDouble(it, defaults[it].toDouble())?.toFloat() ?: defaults[it] }
+                    FloatArray(defaults.size) { values?.optDouble(it, defaults[it].toDouble())?.toFloat() ?: defaults[it] },
+                    json.optInt("target", FxTarget.LAYER).let { if (FxTarget.isValid(it)) it else FxTarget.LAYER }
                 )
             )
         }

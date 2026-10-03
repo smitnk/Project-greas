@@ -18,6 +18,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit4.h"
+#include "project_grease_blender_edit6.h"
 
 static MaterialGPencilStyle pe4_default_style;
 static MaterialGPencilStyle *pe4_style(const bGPdata *gpd, int mat_nr)
@@ -347,7 +348,7 @@ int pg_gp_edit4_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
     case PG_EDIT4_CMD_MOVE_TO_LAYER: NEED(1); changed = pg_gp_move_to_layer(gpd, active_layer, I(0)); break;
     case PG_EDIT4_CMD_COPY: pg_gp_copy(gpd, scope); return 1; /* report success; nothing changed */
     case PG_EDIT4_CMD_PASTE: changed = pg_gp_paste(gpd, active_layer); break;
-    default: return 0;
+    default: return pg_gp_edit6_dispatch(gpd, active_layer, command, args, arg_count);
   }
 #undef I
 #undef NEED

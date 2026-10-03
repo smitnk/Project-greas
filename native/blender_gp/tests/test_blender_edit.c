@@ -16,6 +16,7 @@
 #include "project_grease_blender_edit3.h"
 #include "BLI_rand.h"
 #include "project_grease_blender_edit4.h"
+#include "project_grease_blender_edit6.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -1232,6 +1233,100 @@ static void test_edit4(void)
   CHECK(pg_gp_edit_dispatch(g5, l5, 96, NULL, 0) == 0, "beyond the routed range");
 }
 
+/* edit6 stand-in (BKE_gpencil_stroke_uniform_subdivide is linked from Blender in the app). */
+void BKE_gpencil_stroke_uniform_subdivide(bGPdata *gpd, bGPDstroke *gps, uint32_t target, bool select)
+{
+  (void)gpd; (void)select;
+  /* stand-in: resample uniformly by index between the original points */
+  int n = gps->totpoints;
+  bGPDspoint *np = calloc(target, sizeof(bGPDspoint));
+  for (unsigned int i = 0; i < target; i++) {
+    float f = target > 1 ? (float)i * (n - 1) / (float)(target - 1) : 0;
+    int a = (int)f; int b = a + 1 < n ? a + 1 : a; float t = f - a;
+    np[i] = gps->points[a];
+    np[i].x += (gps->points[b].x - gps->points[a].x) * t;
+    np[i].y += (gps->points[b].y - gps->points[a].y) * t;
+  }
+  free(gps->points); gps->points = np; gps->totpoints = (int)target;
+}
+
+static void test_edit6(void)
+{
+  /* outline of a straight horizontal stroke, thickness 10 (radius 5), pressure 1 */
+  bGPdata *gpd = make_gpd(); bGPDlayer *l = add_layer(gpd, 0); bGPDframe *f = add_frame(l);
+  bGPDstroke *s = add_stroke(f, 3, 0, 0, 0, 10, 0);
+  s->thickness = 10;
+  for (int i = 0; i < 3; i++) s->points[i].pressure = 1.0f;
+  select_points(gpd, s, 7);
+  CHECK(pg_gp_outline(gpd, NULL, 2, 4) == 1, "outline");
+  CHECK((s->flag & GP_STROKE_CYCLIC) && s->thickness == 2 && s->totpoints == 2 * 3 + 2 * 3, "closed perimeter with round caps");
+  float miny = 1e9f, maxy = -1e9f, maxx = -1e9f;
+  for (int i = 0; i < s->totpoints; i++) { miny = fminf(miny, s->points[i].y); maxy = fmaxf(maxy, s->points[i].y); maxx = fmaxf(maxx, s->points[i].x); }
+  CHECK(NEAR(miny, -5) && NEAR(maxy, 5) && NEAR(maxx, 25), "perimeter at the stroke radius, cap reaches end + radius");
+  CHECK(NEAR(s->points[0].y, 5) && NEAR(s->points[3 + 3 + 2].y, -5), "left side then right side");
+  CHECK(pg_gp_outline(gpd, NULL, 2, 4) == 0, "outline of the (now closed, unselected) result does nothing");
+
+  /* interpolation of unequal strokes */
+  bGPDstroke *a = add_stroke(f, 2, 0, 0, 0, 10, 0);
+  bGPDstroke *b = add_stroke(f, 3, 0, 0, 100, 10, 0);
+  a->thickness = 4; b->thickness = 8;
+  bGPDstroke *mid = pg_gp_interpolate_strokes(gpd, a, b, 0.5f);
+  CHECK(mid != NULL && mid->totpoints == 3, "fewer points resampled to the larger count");
+  CHECK(mid && NEAR(mid->points[2].x, 15) && NEAR(mid->points[2].y, 50) && mid->thickness == 6, "halfway positions and thickness");
+  CHECK(a->totpoints == 2 && b->totpoints == 3, "inputs untouched");
+  if (mid) { free(mid->points); free(mid); }
+  bGPDstroke *rev = pg_gp_interpolate_strokes(gpd, b, a, 0.0f);
+  CHECK(rev != NULL && rev->totpoints == 3 && NEAR(rev->points[2].x, 20) && NEAR(rev->points[2].y, 100),
+        "from with more points: the 'to' copy is resampled, t=0 keeps 'from'");
+  if (rev) { free(rev->points); free(rev); }
+
+  /* onion ghosts */
+  const int keys[5] = {1, 5, 10, 20, 30};
+  int fr[8]; float al[8];
+  int n = pg_onion_ghosts(PG_ONION_RELATIVE, keys, NULL, 5, 12, 1, 2, 0, 0.5f, fr, al, 8);
+  CHECK(n == 3 && fr[0] == 5 && fr[1] == 20 && fr[2] == 30 && NEAR(al[0], 0.5f), "relative: 1 key before, 2 after the key on screen (10)");
+  n = pg_onion_ghosts(PG_ONION_ABSOLUTE, keys, NULL, 5, 12, 7, 10, 0, 0.5f, fr, al, 8);
+  CHECK(n == 2 && fr[0] == 5 && fr[1] == 20, "absolute: keys within 7 before / 10 after frame 12");
+  n = pg_onion_ghosts(PG_ONION_RELATIVE, keys, NULL, 5, 10, 2, 0, 1, 1.0f, fr, al, 8);
+  CHECK(n == 2 && NEAR(al[0], 0.5f) && NEAR(al[1], 1.0f), "fade: alpha factor/distance");
+  const unsigned char sel[5] = {1, 0, 0, 1, 0};
+  n = pg_onion_ghosts(PG_ONION_SELECTED, keys, sel, 5, 10, 0, 0, 0, 0.5f, fr, al, 8);
+  CHECK(n == 2 && fr[0] == 1 && fr[1] == 20, "selected mode");
+
+  /* fill extend lines */
+  bGPDstroke *e = add_stroke(f, 3, 0, 0, 0, 10, 0);
+  float seg[8];
+  CHECK(pg_fill_extend_segments(e, 0.5f, seg) == 1 && NEAR(seg[2], -10) && NEAR(seg[6], 30), "ends extended outward by fac x length (20 x 0.5)");
+  e->flag |= GP_STROKE_CYCLIC;
+  CHECK(pg_fill_extend_segments(e, 0.5f, seg) == 0, "closed strokes have no ends");
+
+  const float args[2] = {2, 4};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT6_CMD_OUTLINE, args, 1) == 0, "outline needs 2 args");
+  /* onion style: Blender onion_mode + ghost colours with their switches */
+  const float style[9] = {GP_ONION_MODE_SELECTED, 1, 0, 1, 0, 0, 0, 0, 1};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT6_CMD_ONION_STYLE, style, 9) == 1, "onion style");
+  CHECK(gpd->onion_mode == GP_ONION_MODE_SELECTED && (gpd->onion_flag & GP_ONION_GHOST_PREVCOL) &&
+        !(gpd->onion_flag & GP_ONION_GHOST_NEXTCOL) && NEAR(gpd->gcolor_prev[0], 1) && NEAR(gpd->gcolor_next[2], 1),
+        "onion mode, colour switches and colours stored");
+  const float bad[9] = {7, 0, 0, 0, 0, 0, 0, 0, 0};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT6_CMD_ONION_STYLE, bad, 9) == 0, "unknown onion mode rejected");
+
+  /* material texture settings */
+  Material ma = {0}; MaterialGPencilStyle st = {0}; ma.gp_style = &st; Material *mats[1] = {&ma};
+  gpd->mat = mats; gpd->totcol = 1;
+  const float tex[10] = {0, 1, 1, 0.25f, 2, 3, 0.1f, 0.2f, 0.5f, 0};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT6_CMD_MATERIAL_TEXTURE, tex, 10) == 1, "fill texture");
+  CHECK(st.fill_style == GP_MATERIAL_FILL_STYLE_TEXTURE && NEAR(st.mix_factor, 0.25f) && NEAR(st.texture_scale[1], 3) &&
+        NEAR(st.texture_offset[0], 0.1f) && NEAR(st.texture_angle, 0.5f) && st.stroke_style == 0, "fill texture fields");
+  const float stex[10] = {0, 0, 1, 0.5f, 1, 1, 0, 0, 0, 50};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT6_CMD_MATERIAL_TEXTURE, stex, 10) == 1 &&
+        st.stroke_style == GP_MATERIAL_STROKE_STYLE_TEXTURE && NEAR(st.texture_pixsize, 50) && NEAR(st.mix_stroke_factor, 0.5f),
+        "stroke texture fields");
+  const float badslot[10] = {3, 0, 1, 0, 1, 1, 0, 0, 0, 0};
+  CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT6_CMD_MATERIAL_TEXTURE, badslot, 10) == 0, "missing slot rejected");
+  gpd->mat = NULL; gpd->totcol = 0;
+}
+
 int main(void)
 {
   test_pick();
@@ -1259,6 +1354,7 @@ int main(void)
   test_edit2_operators();
   test_edit3();
   test_edit4();
+  test_edit6();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

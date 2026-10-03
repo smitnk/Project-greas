@@ -20,6 +20,7 @@
 #include "DNA_meshdata_types.h"
 #include "MEM_guardedalloc.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_blender_edit6.h"
 
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
@@ -29,6 +30,8 @@ extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
+extern "C" void project_grease_android_present_set_fill_extend(float factor);
+extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
 extern "C" int project_grease_fx_begin_layer(int, int);
@@ -526,6 +529,105 @@ static void test_weight_view_masked()
   CHECK(in.b > in.r && in.b > 60);                          /* weight 0 (blue) inside M */
 }
 
+/* Onion modes and ghost colours: Selected mode shows only selected keyframes; a ghost with its
+ * custom colour switched on is drawn in gcolor_prev / gcolor_next instead of the material colour. */
+static void test_onion_modes_and_colors()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");                  /* frame 1: empty (current) */
+  for (int fn : {2, 3}) {
+    bGPDframe *f = BKE_gpencil_frame_addnew(l, fn);
+    bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 2, 16, false);
+    s->points[0].x = 20; s->points[1].x = 180;
+    const float y = fn == 2 ? 40.0f : 80.0f;
+    for (int i = 0; i < 2; i++) { s->points[i].y = y; s->points[i].pressure = 1; s->points[i].strength = 1; }
+  }
+  d.gpd->flag |= GP_DATA_SHOW_ONIONSKINS;
+  l->onion_flag |= GP_LAYER_ONIONSKIN;
+  d.gpd->gstep = 0; d.gpd->gstep_next = 5; d.gpd->onion_factor = 1.0f;
+  d.gpd->onion_mode = GP_ONION_MODE_RELATIVE;
+  d.gpd->onion_flag = GP_ONION_GHOST_NEXTCOL;
+  d.gpd->gcolor_next[0] = 0; d.gpd->gcolor_next[1] = 0; d.gpd->gcolor_next[2] = 1;
+  present(d);
+  const Rgba g2 = pixel_at_canvas(100, 40), g3 = pixel_at_canvas(100, 80);
+  CHECK(g2.b > g2.r + 40 && g3.b > g3.r + 40);       /* both next ghosts, tinted blue */
+  /* Selected mode: only frame 3 (selected) is a ghost */
+  for (bGPDframe *f = static_cast<bGPDframe *>(l->frames.first); f; f = f->next)
+    f->flag = f->framenum == 3 ? GP_FRAME_SELECT : 0;
+  d.gpd->onion_mode = GP_ONION_MODE_SELECTED;
+  d.gpd->onion_flag = 0;                              /* colours off: material black */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 40), 245, 245, 245));
+  const Rgba s3 = pixel_at_canvas(100, 80);
+  CHECK(s3.r < 200 && std::abs(s3.r - s3.b) < 8);     /* grey ghost, no tint */
+}
+
+/* Fill extend lines: an open stroke prolonged at its ends in the boundary mask (fill_extend_fac). */
+static void test_fill_extend()
+{
+  Doc d = make_doc();
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 60, 140, 60, 4); /* length 80 */
+  present(d); /* the mask uses the canvas mapping of the last presented frame */
+  project_grease_android_present_set_fill_extend(0.0f);
+  CHECK(project_grease_android_present_gp_fill_mask(d.gpd, 1) == 1);
+  read_back();
+  CHECK(pixel_at_canvas(40, 60).r < 50);    /* nothing beyond the end without extension */
+  project_grease_android_present_set_fill_extend(0.5f); /* +40 at each end */
+  CHECK(project_grease_android_present_gp_fill_mask(d.gpd, 1) == 1);
+  read_back();
+  CHECK(pixel_at_canvas(30, 60).r > 200 && pixel_at_canvas(170, 60).r > 200);
+  CHECK(pixel_at_canvas(15, 60).r < 50);    /* not past 60 - 40 */
+  project_grease_android_present_set_fill_extend(0.0f);
+}
+
+/* Stroke / fill textures: a two-colour image along a textured stroke, the material colour back at
+ * mix 1, and a solid image on a textured fill (gpencil_frag.glsl texture * (1 - mix) + colour * mix). */
+static void test_material_textures()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 0);
+  MaterialGPencilStyle *st = d.gpd->mat[0]->gp_style;
+  /* 2x1 image: left half red, right half blue */
+  const unsigned char rb[8] = {255, 0, 0, 255, 0, 0, 255, 255};
+  CHECK(project_grease_android_present_set_material_texture(0, 0, rb, 2, 1) == 1);
+  st->stroke_style = GP_MATERIAL_STROKE_STYLE_TEXTURE;
+  st->texture_pixsize = 100.0f;
+  st->mix_stroke_factor = 0.0f;
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 40, 20);
+  present(d);
+  int red = 0, blue = 0;
+  for (int x = 30; x < 170; x += 2) {
+    const Rgba c = pixel_at_canvas(float(x), 40);
+    if (c.r > 150 && c.b < 100) red++;
+    if (c.b > 150 && c.r < 100) blue++;
+  }
+  CHECK(red > 3 && blue > 3);               /* the image repeats along the stroke */
+  st->mix_stroke_factor = 1.0f;             /* full mix: material colour only */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 40), 0, 0, 0, 3));
+  /* fill texture: closed square with a solid green image */
+  const unsigned char g[4] = {0, 255, 0, 255};
+  CHECK(project_grease_android_present_set_material_texture(0, 1, g, 1, 1) == 1);
+  st->flag |= GP_MATERIAL_FILL_SHOW;
+  st->fill_style = GP_MATERIAL_FILL_STYLE_TEXTURE;
+  st->fill_rgba[3] = 1.0f; /* the texture alpha is multiplied by the fill colour alpha */
+  st->mix_factor = 0.0f;
+  st->texture_scale[0] = st->texture_scale[1] = 1.0f;
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  bGPDstroke *sq = BKE_gpencil_stroke_add(f, 0, 4, 2, false);
+  const float xy[4][2] = {{60, 70}, {140, 70}, {140, 110}, {60, 110}};
+  for (int i = 0; i < 4; i++) { sq->points[i].x = xy[i][0]; sq->points[i].y = xy[i][1]; sq->points[i].pressure = 1; sq->points[i].strength = 1; }
+  sq->flag |= GP_STROKE_CYCLIC;
+  BKE_gpencil_stroke_geometry_update(d.gpd, sq);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 90), 0, 255, 0, 8));
+  CHECK(project_grease_android_present_set_material_texture(0, 0, nullptr, 0, 0) == 1);
+  CHECK(project_grease_android_present_set_material_texture(0, 1, nullptr, 0, 0) == 1);
+}
+
 static PGFxEntry fxe(int type, std::initializer_list<std::pair<int, float>> set = {}) {
   PGFxEntry e;
   pg_fx_entry_init(&e, type);
@@ -654,6 +756,39 @@ static int fx_max_diff(const std::vector<PGFxEntry> &entries, const char *name, 
   return worst;
 }
 
+/* Effect targets: a Flip aimed at fills only mirrors the fill of a closed stroke and leaves its
+ * outline in place; aimed at strokes only it mirrors the outline and leaves the fill. */
+static void test_fx_targets() {
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  MaterialGPencilStyle *st = d.gpd->mat[0]->gp_style;
+  st->flag |= GP_MATERIAL_FILL_SHOW;
+  st->fill_rgba[0] = 0; st->fill_rgba[1] = 1; st->fill_rgba[2] = 0; st->fill_rgba[3] = 1;
+  bGPDlayer *l = add_layer(d, "FX");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  bGPDstroke *sq = BKE_gpencil_stroke_add(f, 0, 4, 4, false);
+  const float xy[4][2] = {{20, 30}, {80, 30}, {80, 90}, {20, 90}}; /* left part of the canvas */
+  for (int i = 0; i < 4; i++) { sq->points[i].x = xy[i][0]; sq->points[i].y = xy[i][1]; sq->points[i].pressure = 1; sq->points[i].strength = 1; }
+  sq->flag |= GP_STROKE_CYCLIC;
+  BKE_gpencil_stroke_geometry_update(d.gpd, sq);
+  g_provider_layer = l;
+  project_grease_android_set_fx_provider(fx_provider, nullptr);
+  PGFxEntry flip = fxe(PG_FX_FLIP);
+  flip.target = PG_FX_TARGET_FILLS;
+  g_provider_entries = {flip};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(150, 60), 0, 255, 0, 8));  /* the fill moved right */
+  CHECK(near_rgb(pixel_at_canvas(20, 60), 255, 0, 0, 8));   /* the outline stayed left */
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 245, 245, 245));  /* no fill left behind */
+  flip.target = PG_FX_TARGET_STROKES;
+  g_provider_entries = {flip};
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 0, 255, 0, 8));   /* the fill stayed left */
+  CHECK(near_rgb(pixel_at_canvas(180, 60), 255, 0, 0, 8));  /* the outline moved right */
+  g_provider_entries = {};
+  project_grease_android_set_fx_provider(nullptr, nullptr);
+}
+
 static void test_shader_fx_gl() {
   const int tol = 12;
   std::vector<unsigned char> baseline;
@@ -723,7 +858,10 @@ int main()
   test_thick_bend();
   test_export_transparent();
   test_fill_mask_modes();
+  test_fill_extend();
+  test_material_textures();
   test_onion();
+  test_onion_modes_and_colors();
   test_selection_overlay();
   test_masks();
   test_weight_view();
@@ -734,6 +872,7 @@ int main()
   test_weight_view_masked();
   test_shader_fx_gl();
   test_fx_through_presenter();
+  test_fx_targets();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

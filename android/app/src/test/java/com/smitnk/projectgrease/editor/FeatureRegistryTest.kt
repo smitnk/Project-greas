@@ -70,18 +70,20 @@ class FeatureRegistryTest {
         // (ProjectDocumentRoundTripTest); the registry must not still call it lossy.
         assertFalse(FeatureRegistry.capability(FeatureId.SAVE).limitation.contains("LOSSY"))
         assertFalse(FeatureRegistry.capability(FeatureId.OPEN_PROJECT).limitation.contains("LOSSY"))
-        // Vector export (SVG/PDF) and PNG export exist but are unverified on a device; GIF is not implemented.
+        // Vector export (SVG/PDF), PNG and GIF export exist but are unverified on a device.
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT).state)
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT_PNG).state)
         assertFalse(FeatureRegistry.capability(FeatureId.EXPORT_PNG).deviceVerified)
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.EXPORT_GIF).state)
-        // The live modifier stack exists but has no device evidence; Dash is baked only and Outline is not ported.
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.EXPORT_GIF).state)
+        assertFalse(FeatureRegistry.capability(FeatureId.EXPORT_GIF).deviceVerified)
+        // The live modifier stack exists but has no device evidence; Dash and Outline are baked only.
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.DASH).state)
         assertTrue(FeatureRegistry.capability(FeatureId.DASH).limitation.contains("baked"))
         assertTrue(FeatureRegistry.capability(FeatureId.GENERATE).limitation.contains("Build is still not ported"))
         assertTrue(FeatureRegistry.capability(FeatureId.COPY_PASTE).limitation.contains("not saved"))
-        assertEquals(FeatureState.NOT_IMPLEMENTED, FeatureRegistry.capability(FeatureId.OUTLINE).state)
+        assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.OUTLINE).state)
+        assertTrue(FeatureRegistry.capability(FeatureId.OUTLINE).limitation.contains("baked"))
         // Line Art: all three batches are in (strokes are generated) but nothing is device-verified and
         // shadows / material settings / collections are missing, so it stays IN_PROGRESS and says so.
         val lineArt = FeatureRegistry.capability(FeatureId.LINE_ART)

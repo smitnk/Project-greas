@@ -69,4 +69,11 @@ typedef struct bGPdata {
   int select_last_index;
   Material **mat;
   short totcol;
+  /* onion skinning (real DNA: bGPdata.onion_mode / onion_flag / gcolor_prev / gcolor_next) */
+  int onion_mode;
+  int onion_flag;
+  float gcolor_prev[3];
+  float gcolor_next[3];
 } bGPdata;
+enum { GP_ONION_GHOST_PREVCOL = (1 << 0), GP_ONION_GHOST_NEXTCOL = (1 << 1), GP_ONION_FADE = (1 << 3) };
+enum { GP_ONION_MODE_ABSOLUTE = 0, GP_ONION_MODE_RELATIVE = 1, GP_ONION_MODE_SELECTED = 2 };

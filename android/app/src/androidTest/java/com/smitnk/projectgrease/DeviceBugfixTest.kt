@@ -332,4 +332,64 @@ class DeviceBugfixTest {
         assertEquals(first, second)
         assertEquals(2, strokes().size)
     }
+
+    // ---- edit5 batch ----
+    @Test fun outlineMakesAClosedStroke() {
+        drag(200f to 300f, 600f to 250f, 1000f to 300f)
+        val ok = onUi { controller.selectAll(); controller.outlineSelection(2) }
+        val stroke = strokes().single()
+        screenshot("13_outline")
+        assertTrue("outline applied", ok)
+        assertTrue("outline is closed", stroke.getBoolean("cyclic"))
+        assertEquals(2.0, stroke.getDouble("thickness"), 1e-6)
+        assertTrue("perimeter has both sides", stroke.getJSONArray("points").length() > 8)
+    }
+
+    @Test fun gifExportDecodes() {
+        drag(200f to 300f, 1000f to 300f)
+        val applied = onUi {
+            val s = com.smitnk.projectgrease.editor.ProjectSettings().apply {
+                width = controller.document.canvasWidth; height = controller.document.canvasHeight
+                fps = 12; frameStart = 1; frameEnd = 3
+            }
+            controller.applyProjectSettings(s)
+        }
+        assertEquals(null, applied)
+        val out = java.io.ByteArrayOutputStream()
+        var frames = 0
+        val ok = onUi {
+            val gif = com.smitnk.projectgrease.editor.GifEncoder(out, controller.document.canvasWidth, controller.document.canvasHeight, 12)
+            gif.begin()
+            val r = controller.renderExportFrames(false) { _, px -> gif.addFrame(px); frames++ }
+            gif.finish(); r
+        }
+        val bytes = out.toByteArray()
+        java.io.File(rule.activity.cacheDir, "export.gif").writeBytes(bytes)
+        shell("cp ${rule.activity.cacheDir}/export.gif $SHOT_DIR/14_export.gif")
+        assertTrue("frames rendered", ok && frames == 3)
+        assertEquals("GIF89a", String(bytes, 0, 6, Charsets.US_ASCII))
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        assertTrue("GIF decodes", bmp != null)
+        assertEquals(onUi { controller.document.canvasWidth }, bmp!!.width)
+    }
+
+    @Test fun projectSettingsSurviveSaveAndLoad() {
+        val err = onUi {
+            controller.applyProjectSettings(com.smitnk.projectgrease.editor.ProjectSettings().apply {
+                width = 1280; height = 720; fps = 12; frameStart = 2; frameEnd = 48
+                background = 0xFF223344.toInt(); transparentBackground = true
+            })
+        }
+        assertEquals(null, err)
+        val json = onUi { controller.saveDocumentJson() }!!
+        assertTrue(onUi { controller.resetDocument() })
+        assertTrue(onUi { controller.loadDocumentJson(json) })
+        val s = onUi { controller.projectSettings }
+        screenshot("15_project_settings")
+        assertEquals(listOf(1280, 720, 12, 2, 48), listOf(s.width, s.height, s.fps, s.frameStart, s.frameEnd))
+        assertEquals(0xFF223344.toInt(), s.background)
+        assertTrue(s.transparentBackground)
+        assertEquals(1280, onUi { controller.document.canvasWidth })
+        assertEquals(48, onUi { controller.animation.timelineEnd })
+    }
 }

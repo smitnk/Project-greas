@@ -141,6 +141,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     controller.createFrame(1)
                     // Layers, material slots, fps and end frame come from the chosen template.
                     template?.let { controller.applyTemplate(it) }
+                    controller.applyProjectSettings(com.smitnk.projectgrease.editor.ProjectSettings().apply {
+                        width=controller.document.canvasWidth; height=controller.document.canvasHeight
+                        fps=controller.animation.fps; frameEnd=(template?.endFrame ?: 250).coerceAtLeast(1)
+                    })
                     controller.saveDocumentJson()?.let { projectStore.saveDocument(projectName,it) }
                 }
                 val record=ProjectRecord(controller.document.projectName,preset.width,preset.height,controller.animation.fps,System.currentTimeMillis())
@@ -320,6 +324,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var overlayTick by remember{mutableIntStateOf(0)}
     val context=LocalContext.current
     fun redraw(){refresh++}
+    // Saved texture images (URIs) of an opened project are decoded once the document is loaded.
+    LaunchedEffect(controller.rendererReady, refresh){ if(controller.rendererReady) loadPendingTextureImages(context,controller) }
     DisposableEffect(controller){
         controller.onOverlayChanged={overlayTick++}
         onDispose{controller.onOverlayChanged=null}
@@ -512,6 +518,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Slider(controller.fillLeak.toFloat(),{controller.setFillOptions(leak=it.toInt());redraw()},valueRange=1f..20f,modifier=Modifier.width(120.dp))
         Text("Dilate "+controller.fillDilate+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
         Slider(controller.fillDilate.toFloat(),{controller.setFillOptions(dilate=Math.round(it));redraw()},valueRange=-10f..10f,modifier=Modifier.width(120.dp))
+        // Extend Lines (fill_extend_fac): open stroke ends are prolonged in the fill boundary.
+        Text("Extend "+"%.2f".format(controller.fillExtend),fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
+        Slider(controller.fillExtend,{controller.setFillExtend(it);redraw()},valueRange=0f..1f,modifier=Modifier.width(120.dp))
     }
 }
 
@@ -791,6 +800,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit,controller:EditorController,context:android.content.Context,onSave:()->Unit){
     var exportOpen by remember{mutableStateOf(false)}
     if(exportOpen)ExportDialog(controller,context,{exportOpen=false;onDismiss()})
+    var projectSettingsOpen by remember{mutableStateOf(false)}
+    if(projectSettingsOpen)ProjectSettingsDialog(controller,{projectSettingsOpen=false},{onSave()})
     val importSvg=rememberSvgImport(controller,context,onDismiss)
     var traceOpen by remember{mutableStateOf(false)}
     if(traceOpen)TraceImageDialog(controller,context,{traceOpen=false;onDismiss()})
@@ -813,7 +824,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         ListItem(headlineContent={Text("Open project")},modifier=Modifier.clickable{onDismiss()})
         ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Save as")},supportingContent={Text("Write the project to a new file and continue under its name")},modifier=Modifier.clickable{saveAs.launch(controller.document.projectName.ifBlank{"Project Grease"}+".gpjson")})
-        ListItem(headlineContent={Text("Export")},modifier=Modifier.clickable{exportOpen=true})
+        ListItem(headlineContent={Text("Export")},supportingContent={Text("SVG, PDF, PNG, GIF, PNG sequence")},modifier=Modifier.clickable{exportOpen=true})
+        ListItem(headlineContent={Text("Project settings")},supportingContent={Text("Canvas size, FPS, frame range, background")},modifier=Modifier.clickable{projectSettingsOpen=true}.testTag("projectSettings"))
         ListItem(headlineContent={Text("Import SVG")},supportingContent={Text("Shapes become strokes on the active layer")},modifier=Modifier.clickable{importSvg()})
         ListItem(headlineContent={Text("Trace image")},supportingContent={Text("Outlines of an image become filled strokes on a new layer")},modifier=Modifier.clickable{traceOpen=true})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});ListItem(headlineContent={Text("Close editor")},modifier=Modifier.clickable{onDismiss();onExit()});Spacer(Modifier.height(20.dp))}
@@ -912,6 +924,14 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick={changed(controller.moveEffect(index,-1))},enabled=index>0){Text("Up")}
                 TextButton(onClick={changed(controller.moveEffect(index,1))},enabled=index<effects.size-1){Text("Down")}
                 TextButton(onClick={expanded=emptySet();changed(controller.removeEffect(index))}){Text("Remove")}
+            }
+            // Target: whole layer (Blender), strokes only or fills only.
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+                Text("Applies to",fontSize=11.sp,modifier=Modifier.padding(end=6.dp))
+                listOf(com.smitnk.projectgrease.editor.FxTarget.LAYER,com.smitnk.projectgrease.editor.FxTarget.STROKES,com.smitnk.projectgrease.editor.FxTarget.FILLS).forEach{t->
+                    FilterChip(selected=effect.target==t,onClick={changed(controller.setEffectTarget(index,t))},
+                        label={Text(com.smitnk.projectgrease.editor.FxTarget.label(t),fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+                }
             }
             if(open){
                 com.smitnk.projectgrease.editor.FxSpecs.specs(effect.type).forEach{spec->
@@ -1063,6 +1083,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick={controller.selectMaterial(controller.materials.activeMaterial+1);redraw()}){Text("Next brush/material")}
                 TextButton(onClick={deleteConfirm=true},enabled=controller.materialCount()>1){Text("Delete material")}
             }
+            MaterialTextureSection(controller,LocalContext.current,redraw)
         }
     }
 }
@@ -1079,6 +1100,25 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){Text("Fade");Text("Ghosts further from the current frame are fainter",fontSize=11.sp)}
             Switch(checked=controller.onion.fade,onCheckedChange={controller.setOnionFade(it);redraw()})
+        }
+        // Blender's onion mode and custom ghost colours (Onion Skinning panel).
+        Text("Mode",Modifier.padding(horizontal=20.dp,vertical=4.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)){
+            listOf(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ONION_MODE_RELATIVE to "Keyframes",
+                com.smitnk.projectgrease.editor.ProjectGreaseSelect.ONION_MODE_ABSOLUTE to "Frames",
+                com.smitnk.projectgrease.editor.ProjectGreaseSelect.ONION_MODE_SELECTED to "Selected").forEach{(m,label)->
+                FilterChip(selected=controller.onion.mode==m,onClick={controller.setOnionStyle(mode=m);redraw()},label={Text(label)},modifier=Modifier.padding(end=6.dp))
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Box(Modifier.size(18.dp).background(Color(controller.onion.prevColor),CircleShape));Spacer(Modifier.width(8.dp))
+            Text("Use colour before",Modifier.weight(1f))
+            Switch(checked=controller.onion.usePrevColor,onCheckedChange={controller.setOnionStyle(usePrevColor=it);redraw()})
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Box(Modifier.size(18.dp).background(Color(controller.onion.nextColor),CircleShape));Spacer(Modifier.width(8.dp))
+            Text("Use colour after",Modifier.weight(1f))
+            Switch(checked=controller.onion.useNextColor,onCheckedChange={controller.setOnionStyle(useNextColor=it);redraw()})
         }
         Text("Layers can opt out in Layers > Use onion skinning.",Modifier.padding(horizontal=20.dp),fontSize=11.sp);Spacer(Modifier.height(20.dp))}
 }
@@ -1202,6 +1242,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             "Thickness x2 by weight" to { controller.applyThicknessModifierWithWeights(2f) },
             "Select by vertex color" to { controller.selectByVertexColor() },
             "Normalize thickness" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_THICKNESS, 1f) },
+            "Outline selected strokes" to { controller.outlineSelection() },
             "Normalize opacity" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_OPACITY, 1f) },
             "Simplify (fixed)" to { controller.simplifySelectionFixed() },
             "Resample (8 px)" to { controller.sampleSelection(8f) },

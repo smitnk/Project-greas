@@ -11,6 +11,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.NonSkippableComposable
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -187,6 +189,26 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
+/** Lasso path feedback: the open noose (dashed, closed back to its start) in canvas mapping. */
+@Composable private fun LassoPathOverlay(controller:EditorController){
+    val path=controller.lassoPath
+    if(path.size<2) return
+    Canvas(Modifier.fillMaxSize().testTag("lassoPath")){
+        val cw=controller.document.canvasWidth.coerceAtLeast(1).toFloat()
+        val ch=controller.document.canvasHeight.coerceAtLeast(1).toFloat()
+        val fit=minOf(size.width/cw,size.height/ch)*0.92f*controller.view.zoom
+        val ox=(size.width-cw*fit)*0.5f+controller.view.panX
+        val oy=(size.height-ch*fit)*0.5f+controller.view.panY
+        val p=androidx.compose.ui.graphics.Path()
+        path.forEachIndexed{i,(x,y)->if(i==0)p.moveTo(ox+x*fit,oy+y*fit) else p.lineTo(ox+x*fit,oy+y*fit)}
+        p.close()
+        val dash=androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f,6f))
+        drawPath(p,Color.Black,style=androidx.compose.ui.graphics.drawscope.Stroke(width=3f))
+        drawPath(p,Color.White,style=androidx.compose.ui.graphics.drawscope.Stroke(width=1.5f,pathEffect=dash))
+    }
+}
+
+@NonSkippableComposable
 @Composable private fun DrawingGuidesOverlay(controller:EditorController){
     Canvas(Modifier.fillMaxSize()) {
         if(controller.view.showGrid){
@@ -323,6 +345,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Box(Modifier.fillMaxSize().background(CanvasBg)){
             viewport()
             DrawingGuidesOverlay(controller)
+            LassoPathOverlay(controller)
             ReferenceOverlay(controller,refresh)
             CurveHandlesOverlay(controller,overlayTick,::redraw)
             IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
@@ -337,7 +360,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     Column(Modifier.fillMaxSize()){
         Surface(tonalElevation=3.dp){
-            Row(Modifier.fillMaxWidth().height(56.dp),verticalAlignment=Alignment.CenterVertically){
+            Row(Modifier.fillMaxWidth().height(56.dp).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
                 IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
                 Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=120.dp))
                 Spacer(Modifier.weight(1f))
@@ -361,6 +384,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
                 viewport()
                 DrawingGuidesOverlay(controller)
+                LassoPathOverlay(controller)
                 ReferenceOverlay(controller,refresh)
                 CurveHandlesOverlay(controller,overlayTick,::redraw)
             }
@@ -383,6 +407,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 /** Weight Paint mode: vertex group chips with add/rename/remove and the weight to paint toward. */
+@NonSkippableComposable
 @Composable private fun WeightPaintBar(controller:EditorController,redraw:()->Unit){
     var renameOpen by remember{mutableStateOf(false)}
     var renameText by remember{mutableStateOf("")}
@@ -439,6 +464,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34C759.toInt(),0xFFFFCC00.toInt(),0xFF000000.toInt(),0xFFFFFFFF.toInt())
 
 /** Annotate tool: draw / erase notes (notes only), color, thickness (screen px), show, clear. */
+@NonSkippableComposable
 @Composable private fun AnnotationBar(controller:EditorController,redraw:()->Unit){
     val style=controller.annotationStyle()
     var thickness by remember{mutableFloatStateOf(style[4])}
@@ -463,6 +489,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 /** Fill tool options: Blender's fill Leak Size, Dilate (negative contracts) and boundary mode. */
+@NonSkippableComposable
 @Composable private fun FillBar(controller:EditorController,redraw:()->Unit){
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
@@ -484,6 +511,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     }
 }
 
+@NonSkippableComposable
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
@@ -624,6 +652,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     }
 }
 
+@NonSkippableComposable
 @Composable private fun ToolRail(controller:EditorController,onState:()->Unit,onTools:()->Unit){
     val groups=listOf(
         "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.CURVE,GreaseTool.PAN),
@@ -650,10 +679,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         IconButton(onClick=onTools){Icon(Icons.Default.Apps,"Tools")}
     }
 }
+@NonSkippableComposable
 @Composable private fun Properties(controller:EditorController,redraw:()->Unit){
-    var thickness by remember{mutableFloatStateOf(controller.materials.thickness)};var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
+    var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     Column(Modifier.width(210.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(10.dp)){
-        Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+thickness.toInt());Slider(thickness, {thickness=it;controller.materials.setThickness(it);redraw()}, valueRange = .5f..100f)
+        Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+controller.brushes.size.toInt());Slider(controller.brushes.size, {controller.brushes.setSize(it);redraw()}, valueRange = .5f..100f)
         Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity, {opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()}, valueRange = 0f..1f)
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
             Text("Stabilizer",Modifier.weight(1f))
@@ -673,23 +703,26 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@NonSkippableComposable
 @Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
     Surface(tonalElevation=4.dp){
-        Column(Modifier.fillMaxWidth().heightIn(min=120.dp,max=190.dp)){
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                verticalAlignment=Alignment.CenterVertically
+        Column(Modifier.fillMaxWidth()){
+            // Wrapping rows (no side-scroll strip): every timeline action stays reachable on narrow screens.
+            FlowRow(
+                Modifier.fillMaxWidth().padding(horizontal=4.dp),
+                verticalArrangement=Arrangement.Center
             ){
                 IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
                 IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
                 IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
-                Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd)
+                Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd,
+                    Modifier.align(Alignment.CenterVertically).padding(horizontal=4.dp))
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
                 TextButton(
                     enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
                     onClick={if(controller.animation.interpolateAt(controller.animation.currentFrame)){redraw()}}
                 ){Text("Interpolate")}
-                Spacer(Modifier.weight(1f))
                 FilterChip(selected=controller.animation.loop,onClick={controller.animation.toggleLoop();redraw()},label={Text("Loop")})
                 TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
                 TextButton(onClick={controller.animation.duplicateFrame(controller.animation.currentFrame,controller.animation.currentFrame+1);redraw()}){Text("Duplicate")}
@@ -700,7 +733,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick={if(controller.cleanDuplicateFrames())redraw()}){Text("Clean duplicate frames")}
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
-                val keyframes=controller.frameNumbers().toSet()
+                val keyframes=controller.animation.keyframes.toSet()
                 (1..controller.animation.timelineEnd.coerceAtLeast(1)).forEach{frame->
                     val key=frame in keyframes
                     Surface(
@@ -723,6 +756,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
 @Composable private fun FpsDialog(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     var fps by remember{mutableIntStateOf(controller.animation.fps)}
     AlertDialog(
@@ -782,6 +816,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
 @Composable private fun ToolsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){
         Text("Tools",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
@@ -812,6 +847,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 
 @OptIn(ExperimentalMaterial3Api::class)
 /** Mask list of the selected layer: it is drawn only where the union of its mask layers has coverage. */
+@NonSkippableComposable
 @Composable private fun LayerMaskSection(controller:EditorController,redraw:()->Unit){
     val layer=controller.selectedLayer
     var tick by remember{mutableStateOf(0)}
@@ -850,6 +886,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
  * Shader effects of the selected layer: a 2D post-pass over the rendered layer, run top to bottom.
  * Sizes are canvas pixels; the strokes are never changed.
  */
+@NonSkippableComposable
 @Composable private fun LayerEffectsSection(controller:EditorController,redraw:()->Unit){
     val layer=controller.selectedLayer
     var tick by remember{mutableStateOf(0)}
@@ -910,6 +947,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     }
 }
 
+@NonSkippableComposable
 @Composable private fun LayersSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     // Switch and name state come from the native layer, not from fixed defaults, and are re-read
     // whenever the selected layer or the layer list changes.
@@ -969,6 +1007,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
 @Composable private fun MaterialsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     var deleteConfirm by remember{mutableStateOf(false)}
     if(deleteConfirm){
@@ -981,7 +1020,6 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             dismissButton={TextButton(onClick={deleteConfirm=false}){Text("Cancel")}}
         )
     }
-    var thickness by remember{mutableFloatStateOf(controller.materials.thickness)}
     var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     val palette=listOf(
         Color.Black,Color.White,Color(0xFFE53935),Color(0xFFFF9800),
@@ -1005,8 +1043,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Color picker",Modifier.padding(horizontal=20.dp))
             BlenderColorPicker(controller.materials.colorArgb,{controller.setMaterialColor(it);redraw()})
             Spacer(Modifier.height(12.dp))
-            Text("Thickness "+thickness.toInt(),Modifier.padding(horizontal=20.dp))
-            Slider(thickness,{thickness=it;controller.materials.setThickness(it);redraw()},valueRange=.5f..100f)
+            Text("Thickness "+controller.brushes.size.toInt(),Modifier.padding(horizontal=20.dp))
+            Slider(controller.brushes.size,{controller.brushes.setSize(it);redraw()},valueRange=.5f..100f)
             Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
             Slider(opacity,{opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()},valueRange=0f..1f)
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
@@ -1026,6 +1064,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
 @Composable private fun OnionSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     var opacity by remember{mutableFloatStateOf(controller.onion.opacity)}
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Onion Skin",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
@@ -1044,6 +1083,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
  * The selected layer's live modifier stack (non-destructive): modifiers run top to bottom on a copy
  * of the frame that is drawn; the strokes change only when one is applied.
  */
+@NonSkippableComposable
 @Composable private fun ModifierStackSection(controller:EditorController,redraw:()->Unit){
     val layer=controller.selectedLayer
     var tick by remember{mutableStateOf(0)}
@@ -1102,6 +1142,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
 @Composable private fun AdvancedSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){
       Column(Modifier.verticalScroll(rememberScrollState())){
@@ -1207,6 +1248,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
 @Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit,onReference:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Edit actions",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("3D reference (Line Art)")},supportingContent={Text("Import OBJ meshes and set the camera Line Art will use")},modifier=Modifier.clickable{onReference()})

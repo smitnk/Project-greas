@@ -1,6 +1,8 @@
 package com.smitnk.projectgrease.editor
 
 import kotlin.math.pow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 import com.smitnk.projectgrease.nativebridge.GPNative
 
@@ -48,6 +50,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun selectFrame(frame: Int) = handle != 0L && GPNative.nativeSelectFrame(handle, frame)
     fun strokeCount() = if (handle != 0L) GPNative.nativeStrokeCount(handle) else 0
     fun pointCount() = if (handle != 0L) GPNative.nativePointCount(handle) else 0
+    fun selectedPointCount() = if (handle != 0L) GPNative.nativeSelectedPointCount(handle) else 0
     fun selectStroke(index: Int) = handle != 0L && GPNative.nativeSelectStroke(handle, index)
     fun strokeCenter(index: Int) = if (handle != 0L) GPNative.nativeStrokeCenter(handle, index) else null
     fun hitTestStroke(x: Float, y: Float, radius: Float) =
@@ -163,15 +166,21 @@ class DocumentController {
 }
 
 class AnimationController(private val native: NativeEditorBridge, private val renderFrame: () -> Unit) {
-    var currentFrame = 1; private set
-    var fps = 12; private set
-    var playing = false; private set
-    var loop = true; private set
-    var frameCount = 1; private set
-    var timelineEnd = 1; private set
+    // Snapshot state: the timeline composable is skipped under strong skipping unless the values it
+    // reads are observable, so "+ Frame"/playback would otherwise leave the counter at "Frame 1 / 1".
+    var currentFrame by androidx.compose.runtime.mutableIntStateOf(1); private set
+    private val fpsState = androidx.compose.runtime.mutableIntStateOf(12)
+    val fps: Int get() = fpsState.intValue
+    var playing by androidx.compose.runtime.mutableStateOf(false); private set
+    var loop by androidx.compose.runtime.mutableStateOf(true); private set
+    var frameCount by androidx.compose.runtime.mutableIntStateOf(1); private set
+    var timelineEnd by androidx.compose.runtime.mutableIntStateOf(1); private set
+    /** Native keyframe numbers, re-read after every frame operation. */
+    var keyframes by androidx.compose.runtime.mutableStateOf(IntArray(0)); private set
     /** Scene end frame (a template's frame_end); the timeline shows at least this many frames. 0 = none. */
-    var sceneEnd = 0; private set
-    fun setSceneEnd(value:Int) { sceneEnd = value.coerceIn(0, 100000); timelineEnd = endFrame() }
+    private val sceneEndState = androidx.compose.runtime.mutableIntStateOf(0)
+    val sceneEnd: Int get() = sceneEndState.intValue
+    fun setSceneEnd(value:Int) { sceneEndState.intValue = value.coerceIn(0, 100000); timelineEnd = endFrame() }
     private fun endFrame() = maxOf(native.frameEnd(), sceneEnd).coerceAtLeast(1)
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -200,7 +209,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             native.selectFrameOrHold(1)
             currentFrame = 1
             frameCount = native.frameCount().coerceAtLeast(1)
-            timelineEnd = endFrame()
+            timelineEnd = endFrame(); keyframes = native.frameNumbers()
         }
     }
     fun setFrame(value: Int): Boolean {
@@ -209,7 +218,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (!native.selectFrameOrHold(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers()
         return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
@@ -218,21 +227,21 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (native.selectFrame(target)) {
             currentFrame = target
             frameCount = native.frameCount().coerceAtLeast(1)
-            timelineEnd = endFrame()
+            timelineEnd = endFrame(); keyframes = native.frameNumbers()
             return true
         }
         if (!native.createFrame(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers()
         return true
     }
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int):Boolean {
         if (native.handle == 0L || targetFrame < 1) return false
         if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
-        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd=endFrame(); return true
+        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd = endFrame(); keyframes = native.frameNumbers(); return true
     }
-    fun frameNumbers(): IntArray = native.frameNumbers()
+    fun frameNumbers(): IntArray = native.frameNumbers().also { keyframes = it }
     /** Re-reads frame count/end and re-selects the current frame (or its hold) after native frame edits. */
     fun refreshFromNative(): Boolean = setFrame(currentFrame)
 
@@ -255,7 +264,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (!native.interpolateFrame(previous,next,frame,factor,easingType,easingMode)) return false
         currentFrame=frame
         frameCount=native.frameCount().coerceAtLeast(1)
-        timelineEnd=endFrame()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers()
         return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {
@@ -269,12 +278,12 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         native.selectFrameOrHold(target)
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers()
         return true
     }
 
     fun setFps(value:Int){
-        fps=value.coerceIn(1,120)
+        fpsState.intValue=value.coerceIn(1,120)
         if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))}
     }
     fun togglePlayback(){
@@ -309,8 +318,9 @@ enum class BrushPreset {
 class BrushController(private val materials: MaterialController) {
     var preset = BrushPreset.PENCIL
         private set
-    var size = materials.thickness
-        private set
+    /** Brush Size is the stroke thickness (one value, as Blender's brush size): every thickness slider,
+     *  preset and the Size slider read and write materials.thickness, so the label always matches. */
+    val size: Float get() = materials.thickness
     var strength = 1f
         private set
     var pressureCurve = 1f
@@ -328,8 +338,7 @@ class BrushController(private val materials: MaterialController) {
     }
 
     fun setSize(value: Float) {
-        size = value.coerceIn(0.5f, 100f)
-        materials.setThickness(size)
+        materials.setThickness(value.coerceIn(0.5f, 100f))
     }
 
     fun setStrength(value: Float) {
@@ -344,10 +353,9 @@ class BrushController(private val materials: MaterialController) {
         input.coerceIn(0f, 1f).let { it.toDouble().pow(pressureCurve.toDouble()).toFloat() }
 
     private fun apply(newSize: Float, newStrength: Float, curve: Float) {
-        size = newSize
         strength = newStrength
         pressureCurve = curve
-        materials.setThickness(size)
+        materials.setThickness(newSize)
     }
 }
 
@@ -443,6 +451,10 @@ class OnionSkinController {
     fun setFade(value:Boolean){fade=value}
 }
 
+/** Tools that select or act on the selection: the edit overlay is shown while one is active. */
+val SELECTION_TOOLS = setOf(GreaseTool.SELECT, GreaseTool.LASSO, GreaseTool.MOVE, GreaseTool.ROTATE,
+    GreaseTool.SCALE, GreaseTool.MIRROR)
+
 enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
 
 class ToolController {
@@ -515,7 +527,8 @@ class EditorController {
         if (tool != tools.activeTool && curve.isActive) {
             if (curve.phase == CurveSession.Phase.EDIT) confirmCurve() else cancelCurve()
         }
-        return tools.select(tool)
+        // Re-render so the edit overlay follows the tool at once.
+        return tools.select(tool).also { if (it) render() }
     }
     // ---- Native tool session (ToolSession.kt / project_grease_tool_session.h) ----
     /** The session tool the current gesture uses, or -1. */
@@ -543,13 +556,13 @@ class EditorController {
         val b = (argb and 0xFF) / 255f
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
-                ToolSession.sculptTool(sculpt.brush), (brushes.size * 2.0f).coerceIn(8f, 180f),
+                ToolSession.sculptTool(sculpt.brush), (brushes.size * pxPerUnit).coerceAtLeast(1f),
                 brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(vertexPaintBrush), brushes.size.coerceAtLeast(1f), brushes.strength,
+                ToolSession.vertexTool(vertexPaintBrush), (brushes.size * pxPerUnit).coerceAtLeast(1f), brushes.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
-                weightPaintBrush, brushes.size.coerceAtLeast(1f), brushes.strength, pxPerUnit,
+                weightPaintBrush, (brushes.size * pxPerUnit).coerceAtLeast(1f), brushes.strength, pxPerUnit,
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
                 material = materials.activeMaterial, thickness = materials.thickness,
@@ -619,7 +632,10 @@ class EditorController {
     }
     private data class PendingPoint(val x:Float,val y:Float,val pressure:Float,val time:Float)
     private val pendingShapePoints = mutableListOf<PendingPoint>()
-    private val pendingLassoPoints = mutableListOf<Pair<Float,Float>>()
+    // Snapshot list: the UI draws the noose live while the lasso is dragged (path feedback).
+    private val pendingLassoPoints = androidx.compose.runtime.mutableStateListOf<Pair<Float,Float>>()
+    /** The lasso path being drawn, canvas units (empty when no lasso is open). */
+    val lassoPath: List<Pair<Float,Float>> get() = pendingLassoPoints
     private var pendingShapeTool: GreaseTool? = null
     private val polyline = PolylineSession()
     private val curve = CurveSession()
@@ -1213,12 +1229,12 @@ class EditorController {
     fun pushMaterialColor(){
         if(rendererHandle==0L)return
         val c=colorToFloats(materials.colorArgb)
-        // Strength is the active material alpha for the focused Android
-        // presentation path. The previous implementation sent the palette
-        // alpha unchanged, so the Strength control had no visible effect.
+        // Material colour and opacity only. Strength is the per-point strength the draw session writes
+        // (Blender's brush draw_strength); the presenter applies it once, for the open stroke as for
+        // committed ones. Multiplying it in here as well made Strength apply twice.
         GPNative.nativeSetStrokeColorEglRenderer(
             rendererHandle,
-            c[0], c[1], c[2], c[3] * materials.opacity * brushes.strength
+            c[0], c[1], c[2], c[3] * materials.opacity
         )
     }
     private fun colorToFloats(argb:Int):FloatArray = floatArrayOf(
@@ -1233,11 +1249,13 @@ class EditorController {
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
-            // Edit mode shows the points of the editable strokes, selected ones highlighted.
-            GPNative.nativeSetSelectionOverlay(rendererHandle, mode == GreaseMode.EDIT)
+            // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
+            // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
+            GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())
             GPNative.nativeRenderEgl(rendererHandle)
         }
     }
+    fun selectionOverlayVisible():Boolean = mode == GreaseMode.EDIT || tools.activeTool in SELECTION_TOOLS
     fun layerCount() = native.layerCount()
 
     // Live modifier stack of the selected layer (see ModifierStack.kt). Every change is an undo step
@@ -1553,6 +1571,10 @@ class EditorController {
     }
     fun frameNumbers(): IntArray = native.frameNumbers()
     fun strokeCount() = native.strokeCount()
+    fun pointCount() = native.pointCount()
+    fun selectedPointCount() = native.selectedPointCount()
+    /** True once the EGL surface (and with it the native document) is up. */
+    val rendererReady:Boolean get() = rendererHandle != 0L && native.handle != 0L
     fun selectStroke(index:Int)=selection.selectStroke(index)
     fun joinSelectedStrokes():Boolean {
         val ok=native.applyEditCommand(7)
@@ -1591,7 +1613,8 @@ class EditorController {
         private set
     private var eraseGestureChanged = false
     fun setEraserMode(value:EraserMode) { eraserMode = value }
-    fun eraserRadius():Float = brushes.size.coerceIn(8f, 96f)
+    /** Eraser radius in canvas units: the brush Size, as Blender's eraser brush size. */
+    fun eraserRadius():Float = brushes.size.coerceAtLeast(0.5f)
 
     fun eraseAt(x:Float, y:Float, radius:Float = eraserRadius(), recordHistory:Boolean = true):Boolean {
         val ok = when (eraserMode) {

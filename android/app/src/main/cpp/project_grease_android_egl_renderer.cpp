@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <iterator>
 #include <jni.h>
 
 #include <android/native_window_jni.h>
@@ -68,12 +69,24 @@ bool choose_config(Renderer &renderer, EGLConfig &config, bool es3)
       EGL_GREEN_SIZE, 8,
       EGL_BLUE_SIZE, 8,
       EGL_ALPHA_SIZE, 8,
+      // Per-stroke single coverage in the presenter (a self-overlapping stroke is blended once).
+      EGL_STENCIL_SIZE, 8,
       EGL_NONE,
   };
 
   EGLint config_count = 0;
-  return eglChooseConfig(
-             renderer.display, config_attributes, &config, 1, &config_count) == EGL_TRUE &&
+  if (eglChooseConfig(renderer.display, config_attributes, &config, 1, &config_count) == EGL_TRUE &&
+      config_count == 1) {
+    return true;
+  }
+  // No stencil config: render without per-stroke coverage rather than not at all.
+  EGLint no_stencil[sizeof(config_attributes) / sizeof(config_attributes[0])];
+  std::copy(std::begin(config_attributes), std::end(config_attributes), no_stencil);
+  for (size_t i = 0; no_stencil[i] != EGL_NONE; i += 2) {
+    if (no_stencil[i] == EGL_STENCIL_SIZE) no_stencil[i + 1] = 0;
+  }
+  config_count = 0;
+  return eglChooseConfig(renderer.display, no_stencil, &config, 1, &config_count) == EGL_TRUE &&
          config_count == 1;
 }
 
@@ -697,6 +710,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderCanvasPixelsEglR
   glGenFramebuffers(1, &fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+  // Stencil for the presenter's per-stroke coverage; dropped if the driver rejects it.
+  GLuint stencil = 0;
+  glGenRenderbuffers(1, &stencil);
+  glBindRenderbuffer(GL_RENDERBUFFER, stencil);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, stencil);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+    glDeleteRenderbuffers(1, &stencil);
+    stencil = 0;
+  }
   jintArray result = nullptr;
   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
     float zoom = 1.0f, pan_x = 0.0f, pan_y = 0.0f;
@@ -739,6 +764,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderCanvasPixelsEglR
   }
   glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prev_fbo));
   glDeleteFramebuffers(1, &fbo);
+  if (stencil) glDeleteRenderbuffers(1, &stencil);
   glDeleteTextures(1, &tex);
   glViewport(vp[0], vp[1], vp[2], vp[3]);
   return result;

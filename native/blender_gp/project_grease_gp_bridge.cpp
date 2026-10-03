@@ -160,6 +160,14 @@ int project_grease_gp_point_count(const ProjectGreaseGPHandle *handle)
   return handle->backend.point_count();
 }
 
+int project_grease_gp_selected_point_count(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) {
+    return 0;
+  }
+  return handle->backend.frame_selected_point_count();
+}
+
 const char *project_grease_gp_last_error(
     const ProjectGreaseGPHandle *handle)
 {

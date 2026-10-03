@@ -18,7 +18,8 @@
 
 namespace {
 
-struct Plane { GLuint tex = 0, fbo = 0; };
+// rb: stencil renderbuffer of the layer plane (strokes are drawn into it with per-stroke coverage).
+struct Plane { GLuint tex = 0, fbo = 0, rb = 0; };
 struct Buffer { Plane color, reveal; };
 
 int g_w = 0, g_h = 0;
@@ -253,9 +254,11 @@ bool ensure_convert_composite() {
   return g_vbo != 0;
 }
 
-bool make_plane(Plane& p, int w, int h) {
+bool make_plane(Plane& p, int w, int h, bool stencil = false) {
   if (p.tex) glDeleteTextures(1, &p.tex);
   if (p.fbo) glDeleteFramebuffers(1, &p.fbo);
+  if (p.rb) glDeleteRenderbuffers(1, &p.rb);
+  p.rb = 0;
   glGenTextures(1, &p.tex);
   glBindTexture(GL_TEXTURE_2D, p.tex);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -266,12 +269,25 @@ bool make_plane(Plane& p, int w, int h) {
   glGenFramebuffers(1, &p.fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, p.fbo);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, p.tex, 0);
+  if (stencil) {
+    glGenRenderbuffers(1, &p.rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, p.rb);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, w, h);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, p.rb);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+      /* No stencil-only attachment on this driver: keep the colour-only plane. */
+      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+      glDeleteRenderbuffers(1, &p.rb);
+      p.rb = 0;
+    }
+  }
   return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
 }
 
 bool ensure_targets(int w, int h) {
   if (g_layer.fbo && g_w == w && g_h == h) return true;
-  bool ok = make_plane(g_layer, w, h);
+  bool ok = make_plane(g_layer, w, h, true);
   for (Buffer& b : g_bufs) ok = make_plane(b.color, w, h) && make_plane(b.reveal, w, h) && ok;
   glBindTexture(GL_TEXTURE_2D, 0);
   g_w = w; g_h = h;
@@ -439,6 +455,7 @@ extern "C" void project_grease_fx_reset() {
   g_convert = Program(); g_composite = Program();
   if (g_layer.tex) glDeleteTextures(1, &g_layer.tex);
   if (g_layer.fbo) glDeleteFramebuffers(1, &g_layer.fbo);
+  if (g_layer.rb) glDeleteRenderbuffers(1, &g_layer.rb);
   g_layer = Plane();
   for (Buffer& b : g_bufs) {
     for (Plane* pl : {&b.color, &b.reveal}) {

@@ -68,7 +68,7 @@ fun ProjectGreaseEglViewport(
     )
 }
 
-private class ProjectGreaseDrawingSurfaceView(
+internal class ProjectGreaseDrawingSurfaceView(
     context: android.content.Context,
     private val controller: EditorController
 ) : SurfaceView(context) {

@@ -22,6 +22,12 @@ struct Vertex { float x; float y; };
 
 GLuint g_program=0, g_vbo=0;
 GLint g_position=-1, g_color=-1;
+GLuint g_vc_program=0;
+// Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
+// stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
+// stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
+int g_stencil_ref=0;
+GLint g_stencil_fbo=-1;
 // Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
 GLuint g_mask_program=0;
 GLint g_mask_color=-1, g_mask_sampler=-1, g_mask_size=-1;
@@ -67,6 +73,12 @@ const char *vs_src(){
   return "attribute vec2 a_position; uniform vec4 u_color; varying vec4 v_color; "
          "void main(){gl_Position=vec4(a_position,0.0,1.0);v_color=u_color;}";
 }
+// Weight Paint view: per-vertex colour on the stroke geometry (Blender's weight overlay interpolates the
+// weight colour across the stroke, not one flat colour per segment).
+const char *vc_vs_src(){
+  return "attribute vec2 a_position; attribute vec4 a_color; varying vec4 v_color; "
+         "void main(){gl_Position=vec4(a_position,0.0,1.0);v_color=a_color;}";
+}
 const char *fs_src(){
   return "precision mediump float; varying vec4 v_color; void main(){gl_FragColor=v_color;}";
 }
@@ -93,6 +105,33 @@ bool ensure_program(){
   glGenBuffers(1,&g_vbo);
   return g_position>=0&&g_color>=0&&g_vbo!=0;
 }
+bool ensure_vc_program(){
+  if(g_vc_program) return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,vc_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_src());
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  g_vc_program=glCreateProgram(); glAttachShader(g_vc_program,vs); glAttachShader(g_vc_program,fs);
+  glBindAttribLocation(g_vc_program,0,"a_position"); glBindAttribLocation(g_vc_program,1,"a_color");
+  glLinkProgram(g_vc_program);
+  glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_vc_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_vc_program);g_vc_program=0;return false;}
+  return true;
+}
+bool coverage_begin(){
+  GLint bits=0;glGetIntegerv(GL_STENCIL_BITS,&bits);
+  if(bits<=0)return false;
+  GLint fbo=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&fbo);
+  glStencilMask(0xFF);
+  if(fbo!=g_stencil_fbo||g_stencil_ref>=255){
+    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_stencil_ref=0;g_stencil_fbo=fbo;
+  }
+  ++g_stencil_ref;
+  glEnable(GL_STENCIL_TEST);
+  glStencilFunc(GL_NOTEQUAL,g_stencil_ref,0xFF);
+  glStencilOp(GL_KEEP,GL_KEEP,GL_REPLACE);
+  return true;
+}
+void coverage_end(bool on){if(on)glDisable(GL_STENCIL_TEST);}
 bool ensure_mask_program(){
   if(g_mask_program) return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,mask_fs_src());
@@ -125,13 +164,6 @@ bool ensure_mask_target(int w,int h){
   return complete;
 }
 inline Vertex ndc(float x,float y,int w,int h){(void)w;(void)h;const float sx=g_map_origin_x+x*g_map_scale;const float sy=g_map_origin_y+y*g_map_scale;return {2.0f*sx/float(std::max(1,w))-1.0f,1.0f-2.0f*sy/float(std::max(1,h))};}
-void append_segment(std::vector<Vertex>&v,const bGPDspoint&a,const bGPDspoint&b,float thickness,int w,int h,float alpha){
-  (void)alpha;
-  float dx=b.x-a.x,dy=b.y-a.y,len=std::sqrt(dx*dx+dy*dy); if(len<0.001f)return;
-  float half=std::max(0.5f,thickness*0.5f)*g_map_scale,nx=-dy/len*half,ny=dx/len*half;
-  Vertex p0=ndc(a.x+nx,a.y+ny,w,h),p1=ndc(a.x-nx,a.y-ny,w,h),p2=ndc(b.x+nx,b.y+ny,w,h),p3=ndc(b.x-nx,b.y-ny,w,h);
-  v.insert(v.end(),{p0,p1,p2,p2,p1,p3});
-}
 // A whole stroke as one band with miter / bevel+round joins and round caps
 // (project_grease_stroke_outline.h, after Blender's gpencil_vertex()); thickness is per point.
 void append_outline(std::vector<Vertex>&v,const std::vector<PGOutlinePoint>&pts,int flags,int w,int h){
@@ -158,11 +190,6 @@ void append_stroke_outline(std::vector<Vertex>&v,const bGPDstroke*s,float thickn
   if(s->caps[0]==GP_STROKE_CAP_FLAT)flags|=PG_OUTLINE_FLAT_START;
   if(s->caps[1]==GP_STROKE_CAP_FLAT)flags|=PG_OUTLINE_FLAT_END;
   append_outline(v,pts,flags,w,h);
-}
-void append_dot(std::vector<Vertex>&v,const bGPDspoint&p,float thickness,int w,int h){
-  float half=std::max(0.5f,thickness*0.5f)*g_map_scale;
-  Vertex p0=ndc(p.x-half,p.y-half,w,h),p1=ndc(p.x+half,p.y-half,w,h),p2=ndc(p.x-half,p.y+half,w,h),p3=ndc(p.x+half,p.y+half,w,h);
-  v.insert(v.end(),{p0,p1,p2,p2,p1,p3});
 }
 void append_fill(std::vector<Vertex>&v,const bGPDstroke*s,int w,int h){
   if(!s->triangles||s->tot_triangles<=0)return;
@@ -195,6 +222,13 @@ void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=t
   if(masked){glBindTexture(GL_TEXTURE_2D,0);}
   glDisableVertexAttribArray((GLuint)g_position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
+// One stroke's triangles, blended once per pixel.
+void draw_stroke_once(const std::vector<Vertex>&v,const float color[4]){
+  if(v.empty())return;
+  const bool on=coverage_begin();
+  draw_vertices(v,color);
+  coverage_end(on);
+}
 void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
 {
   if (!gpd || !gpd->runtime.sbuffer || gpd->runtime.sbuffer_used <= 0) return;
@@ -207,7 +241,13 @@ void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
                                 thickness * std::max(points[i].pressure, 0.01f)));
   }
   append_outline(stroke, pts, 0, w, h);
-  draw_vertices(stroke,g_stroke_color);
+  // g_stroke_color carries the material colour and opacity only; the point strength of the open
+  // buffer is applied here once, as draw_frame() applies it to committed strokes.
+  float strength = 0.0f;
+  for (int i = 0; i < gpd->runtime.sbuffer_used; ++i) strength += std::clamp(points[i].strength, 0.0f, 1.0f);
+  strength /= float(gpd->runtime.sbuffer_used);
+  const float color[4] = {g_stroke_color[0], g_stroke_color[1], g_stroke_color[2], g_stroke_color[3] * strength};
+  draw_stroke_once(stroke, color);
 }
 
 void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,int w,int h,float alpha){
@@ -247,7 +287,7 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     float fill_color[4]={fill_rgb[0],fill_rgb[1],fill_rgb[2],fill_base_alpha*alpha_scale};
     if(style==nullptr||((style->flag&GP_MATERIAL_STROKE_SHOW)!=0)){
       append_stroke_outline(stroke,s,float(s->thickness),w,h);
-      draw_vertices(stroke,color); stroke.clear();
+      draw_stroke_once(stroke,color); stroke.clear();
     }
     if(style && (style->flag&GP_MATERIAL_FILL_SHOW)) append_fill(fill,s,w,h);
     if(!style) append_fill(fill,s,w,h);
@@ -284,34 +324,84 @@ float point_group_weight(const bGPDstroke* s,int i,int group){
   for(int k=0;k<dv.totweight;k++)if(int(dv.dw[k].def_nr)==group)return dv.dw[k].weight;
   return 0.0f;
 }
-// Weight Paint display: every segment gets the mean weight of its end points through Blender's
-// weight colour ramp (BKE_defvert_weight_to_rgb), every point a dot of its own weight.
+// Weight Paint display: the stroke's normal outline geometry (same joins and caps as the colour
+// view), every outline vertex coloured by the weight interpolated at its nearest centre-line
+// position through Blender's weight ramp (BKE_defvert_weight_to_rgb), blue 0 .. red 1.
+float weight_at(const bGPDstroke* s,float x,float y){
+  if(s->totpoints==1)return point_group_weight(s,0,g_weight_group);
+  const bool cyclic=(s->flag&GP_STROKE_CYCLIC)!=0;
+  const int segs=cyclic?s->totpoints:s->totpoints-1;
+  float best_d=1e30f,best_w=0.0f;
+  for(int i=0;i<segs;i++){
+    const int j=(i+1)%s->totpoints;
+    const float ax=s->points[i].x,ay=s->points[i].y,bx=s->points[j].x,by=s->points[j].y;
+    const float dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+    float t=l2>1e-12f?((x-ax)*dx+(y-ay)*dy)/l2:0.0f;
+    t=std::clamp(t,0.0f,1.0f);
+    const float px=ax+dx*t-x,py=ay+dy*t-y,d=px*px+py*py;
+    if(d<best_d){
+      best_d=d;
+      const float w0=point_group_weight(s,i,g_weight_group),w1=point_group_weight(s,j,g_weight_group);
+      best_w=w0+(w1-w0)*t;
+    }
+  }
+  return best_w;
+}
 void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
-  if(!frame||!gpd)return;
+  if(!frame||!gpd||!ensure_vc_program())return;
+  struct VC{float x,y,r,g,b,a;};
+  std::vector<VC> verts;
+  std::vector<PGOutlinePoint> pts;
+  static std::vector<float> buf;
   for(const bGPDstroke* s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
     if(!s->points||s->totpoints<=0)continue;
     const float base=float(std::max<short>(s->thickness,1));
-    for(int i=0;i+1<s->totpoints;i++){
-      // Split the segment so the weight ramp is visible along it (about one piece per 6 px).
-      const float w0=point_group_weight(s,i,g_weight_group),w1=point_group_weight(s,i+1,g_weight_group);
-      const float len=std::hypot(s->points[i+1].x-s->points[i].x,s->points[i+1].y-s->points[i].y)*g_map_scale;
-      const int pieces=std::clamp(int(std::ceil(len/6.0f)),1,48);
-      for(int k=0;k<pieces;k++){
-        const float t0=float(k)/float(pieces),t1=float(k+1)/float(pieces);
-        bGPDspoint a{},b{};
-        a.x=s->points[i].x+(s->points[i+1].x-s->points[i].x)*t0;a.y=s->points[i].y+(s->points[i+1].y-s->points[i].y)*t0;
-        b.x=s->points[i].x+(s->points[i+1].x-s->points[i].x)*t1;b.y=s->points[i].y+(s->points[i+1].y-s->points[i].y)*t1;
-        float rgb[3];BKE_defvert_weight_to_rgb(rgb,w0+(w1-w0)*(0.5f*(t0+t1)));
-        const float pressure=0.5f*(std::max(s->points[i].pressure,0.01f)+std::max(s->points[i+1].pressure,0.01f));
-        std::vector<Vertex> seg;append_segment(seg,a,b,base*pressure,w,h,1.0f);
-        const float color[4]={rgb[0],rgb[1],rgb[2],1.0f};draw_vertices(seg,color);
+    // At least 4 px wide on screen so the weights stay readable on thin strokes.
+    const float min_r=2.0f/std::max(g_map_scale,1e-6f);
+    // Centre line resampled about every 6 px so the colour ramp (not a linear blue..red blend)
+    // shows between the original points; extra points are collinear and do not change the shape.
+    const bool cyclic=(s->flag&GP_STROKE_CYCLIC)!=0;
+    pts.clear();
+    for(int i=0;i<s->totpoints;i++){
+      const bGPDspoint&a=s->points[i];
+      PGOutlinePoint p=outline_point(a.x,a.y,base*std::max(a.pressure,0.01f));
+      p.radius=std::max(p.radius,min_r);
+      pts.push_back(p);
+      if(i+1>=s->totpoints&&!cyclic)break;
+      const bGPDspoint&b=s->points[(i+1)%s->totpoints];
+      const float len=std::hypot(b.x-a.x,b.y-a.y)*g_map_scale;
+      const int pieces=std::clamp(int(std::ceil(len/6.0f)),1,64);
+      const float rb=std::max(base*std::max(b.pressure,0.01f)*0.5f,min_r);
+      for(int k=1;k<pieces;k++){
+        const float t=float(k)/float(pieces);
+        pts.push_back(PGOutlinePoint{a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,p.radius+(rb-p.radius)*t});
       }
     }
-    for(int i=0;i<s->totpoints;i++){
-      float rgb[3];BKE_defvert_weight_to_rgb(rgb,point_group_weight(s,i,g_weight_group));
-      std::vector<Vertex> dot;append_dot(dot,s->points[i],std::max(base*std::max(s->points[i].pressure,0.01f),4.0f/std::max(g_map_scale,0.01f)),w,h);
-      const float color[4]={rgb[0],rgb[1],rgb[2],1.0f};draw_vertices(dot,color);
+    int flags=0;
+    if(cyclic)flags|=PG_OUTLINE_CYCLIC;
+    float max_r=0.0f;for(const PGOutlinePoint&p:pts)max_r=std::max(max_r,p.radius);
+    const int steps=std::clamp(int(max_r*g_map_scale*0.5f),4,32);
+    const int max_tris=pg_stroke_outline_max_triangles(int(pts.size()),steps);
+    buf.resize(size_t(max_tris)*6u);
+    const int n=pg_stroke_outline(pts.data(),int(pts.size()),flags,steps,buf.data(),max_tris);
+    verts.clear();verts.reserve(size_t(n)*3u);
+    for(int i=0;i<n*3;i++){
+      const float x=buf[size_t(i)*2],y=buf[size_t(i)*2+1];
+      float rgb[3];BKE_defvert_weight_to_rgb(rgb,weight_at(s,x,y));
+      const Vertex v=ndc(x,y,w,h);
+      verts.push_back({v.x,v.y,rgb[0],rgb[1],rgb[2],1.0f});
     }
+    if(verts.empty())continue;
+    const bool on=coverage_begin();
+    glUseProgram(g_vc_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+    glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(verts.size()*sizeof(VC)),verts.data(),GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(VC),nullptr);
+    glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(VC),reinterpret_cast<const void*>(2*sizeof(float)));
+    glDrawArrays(GL_TRIANGLES,0,(GLsizei)verts.size());
+    glDisableVertexAttribArray(1);glDisableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
+    coverage_end(on);
   }
 }
 // A layer is masked when it has GP_LAYER_USE_MASK and at least one valid mask entry: a layer other
@@ -391,6 +481,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   if(g_export_mode==2)glClearColor(0.0f,0.0f,0.0f,0.0f);
   else glClearColor(0.08f,0.08f,0.08f,1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
+  g_stencil_fbo=-1;
   update_canvas_map(w,h);
   std::vector<Vertex> canvas;
   const float x0=g_map_origin_x, y0=g_map_origin_y;
@@ -556,4 +647,5 @@ extern "C" void project_grease_android_present_set_color(float r,float g,float b
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
   if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
+  if(g_vc_program)glDeleteProgram(g_vc_program);g_vc_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
   project_grease_fx_reset();}

@@ -143,6 +143,49 @@ int main(void)
     CHECK(covered(&c, 20, 3.5f) && covered(&c, 3.5f, 20) && covered(&c, -3.5f, -3.5f), "cyclic square not closed");
     free(c.xy);
   }
+  /* Device report: a thick Box primitive drew as offset blocks with misaligned corners. The Box
+   * primitive's points (4 per edge, project_grease_blender_primitive.c) closed cyclic: every corner is
+   * a pure miter shared by both edges (no fans, no caps), the band has the exact width, and the
+   * inside stays empty. */
+  {
+    PGOutlinePoint q[16];
+    const float corners[5][2] = {{50, 30}, {150, 30}, {150, 90}, {50, 90}, {50, 30}};
+    int k = 0;
+    for (int e = 0; e < 4; e++) {
+      for (int j = 0; j < 4; j++, k++) {
+        q[k].x = corners[e][0] + (corners[e + 1][0] - corners[e][0]) * (float)j / 4.0f;
+        q[k].y = corners[e][1] + (corners[e + 1][1] - corners[e][1]) * (float)j / 4.0f;
+        q[k].radius = 8;
+      }
+    }
+    Tris c = build(q, 16, PG_OUTLINE_CYCLIC);
+    CHECK(c.count == 32, "box: %d triangles, expected 32 (16 segments, pure miters)", c.count);
+    const float outer[4][2] = {{42, 22}, {158, 22}, {158, 98}, {42, 98}};
+    const float inner[4][2] = {{58, 38}, {142, 38}, {142, 82}, {58, 82}};
+    for (int i = 0; i < 4; i++) {
+      int shared_o = 0, shared_i = 0;
+      for (int v = 0; v < c.count * 3; v++) {
+        if (fabsf(c.xy[v * 2] - outer[i][0]) < 1e-3f && fabsf(c.xy[v * 2 + 1] - outer[i][1]) < 1e-3f) shared_o++;
+        if (fabsf(c.xy[v * 2] - inner[i][0]) < 1e-3f && fabsf(c.xy[v * 2 + 1] - inner[i][1]) < 1e-3f) shared_i++;
+      }
+      CHECK(shared_o >= 2 && shared_i >= 2, "box corner %d not a shared miter (outer %d, inner %d)", i, shared_o, shared_i);
+      CHECK(covered(&c, outer[i][0] + (i == 0 || i == 3 ? 0.5f : -0.5f), outer[i][1] + (i < 2 ? 0.5f : -0.5f)),
+            "box outer corner %d not filled", i);
+    }
+    CHECK(!covered(&c, 100, 60) && !covered(&c, 60, 50), "box inside filled");
+    CHECK(!covered(&c, 41, 60) && !covered(&c, 100, 99), "box wider than its thickness");
+    CHECK(uncovered_samples(q, 16, &c, 8) == 0, "box band has gaps");
+    free(c.xy);
+  }
+  /* 90 deg corner at a primitive's sample spacing: the outer corner is one sharp miter vertex. */
+  {
+    PGOutlinePoint p[5] = {{0, 0, 10}, {25, 0, 10}, {50, 0, 10}, {50, 25, 10}, {50, 50, 10}};
+    Tris t = build(p, 5, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END);
+    CHECK(t.count == 8, "90 deg primitive corner: %d triangles, expected 8", t.count);
+    CHECK(covered(&t, 59.5f, -9.5f), "90 deg outer corner not filled");
+    CHECK(!covered(&t, 60.5f, -10.5f), "90 deg corner overshoots the miter");
+    free(t.xy);
+  }
   if (failures) { fprintf(stderr, "%d stroke outline check(s) failed\n", failures); return 1; }
   printf("stroke outline tests passed\n");
   return 0;

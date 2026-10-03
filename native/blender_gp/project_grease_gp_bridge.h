@@ -48,6 +48,11 @@ int project_grease_gp_add_point(
 
 int project_grease_gp_end_stroke(ProjectGreaseGPHandle *handle);
 int project_grease_gp_cancel_stroke(ProjectGreaseGPHandle *handle);
+/* Native tool session (project_grease_tool_session.h): one input batch of `count` samples
+ * (x, y, pressure, time); on PG_TOOL_PHASE_BEGIN `params` are the tool parameters. Returns the
+ * PG_TOOL_RESULT_* bits (0 = refused). */
+int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle, int tool, const float *samples,
+                                   int count, int phase, const float *params, int param_count);
 int project_grease_gp_initialize_external_gpu(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render_external_context(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render_fill_mask(ProjectGreaseGPHandle *handle);

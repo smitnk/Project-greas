@@ -35,6 +35,15 @@ object GPNative {
     external fun nativePickColorEglRenderer(handle: Long, x: Int, y: Int): Int
     external fun nativeSetCanvasSize(handle: Long, width: Int, height: Int): Boolean
     external fun nativeSetViewTransform(handle: Long, zoom: Float, panX: Float, panY: Float): Boolean
+    /**
+     * Native tool session (editor/ToolSession.kt): one input batch of [count] samples
+     * (x, y, pressure, time) for [tool]; on PHASE_BEGIN the floats after the samples are the tool
+     * parameters. Native applies the tool to the Legacy GP data and renders once.
+     * Returns ToolSession.RESULT_* bits (0 = refused).
+     */
+    external fun nativeToolSamples(handle: Long, tool: Int, samples: FloatArray, count: Int, phase: Int): Int
+    /** Edit-mode overlay: points of the editable strokes, selected points highlighted. */
+    external fun nativeSetSelectionOverlay(handle: Long, enabled: Boolean): Boolean
     /** Fill tool options: leak (px, Blender fill_leak), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
     external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
     /** Current frame rendered offscreen at width x height (canvas units = pixels): ARGB, top row first. */

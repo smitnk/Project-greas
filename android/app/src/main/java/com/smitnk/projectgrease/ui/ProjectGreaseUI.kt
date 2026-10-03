@@ -391,6 +391,18 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
         verticalAlignment=Alignment.CenterVertically
     ){
+        Text("Brush",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+        listOf(
+            com.smitnk.projectgrease.editor.ToolSession.GPWEIGHT_DRAW to "Draw",
+            com.smitnk.projectgrease.editor.ToolSession.GPWEIGHT_BLUR to "Blur",
+            com.smitnk.projectgrease.editor.ToolSession.GPWEIGHT_AVERAGE to "Average",
+            com.smitnk.projectgrease.editor.ToolSession.GPWEIGHT_SMEAR to "Smear"
+        ).forEach{(brush,label)->
+            FilterChip(selected=controller.weightPaintBrush==brush,onClick={controller.setWeightPaintBrush(brush);redraw()},
+                label={Text(label,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
+        }
+        FilterChip(selected=controller.weightPaintSubtract,onClick={controller.setWeightPaintSubtract(!controller.weightPaintSubtract);redraw()},
+            label={Text("Subtract",fontSize=10.sp)},modifier=Modifier.padding(end=6.dp))
         Text("Group",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         groups.forEachIndexed{index,name->
             FilterChip(
@@ -1117,6 +1129,10 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 onClick={controller.sculpt.select(brush);redraw()},
                 modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)
             ){Text(label)}
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Invert sculpt brush (thinner, weaker, inflate, twist back)",Modifier.weight(1f))
+            Switch(checked=controller.sculpt.invert,onCheckedChange={controller.sculpt.setInvert(it);redraw()})
         }
         Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
         listOf(

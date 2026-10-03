@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "project_grease_gp_bridge.h"
 
 #include <string>
@@ -10,11 +11,15 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit3.h"
 #include "project_grease_blender_edit5.h"
+#include "project_grease_tool_session.h"
 #include "project_grease_annotations.h"
 
 struct ProjectGreaseGPHandle {
   project_grease::gp::Backend backend;
   bool ready = false;
+  // Native tool session (project_grease_tool_session.h) and the document its gesture runs on.
+  PGToolSession *tool_session = nullptr;
+  bGPdata *tool_gpd = nullptr;
 };
 
 static int ensure_ready(ProjectGreaseGPHandle *handle)
@@ -42,6 +47,9 @@ ProjectGreaseGPHandle *project_grease_gp_create(void)
 
 void project_grease_gp_destroy(ProjectGreaseGPHandle *handle)
 {
+  if (handle) {
+    pg_tool_session_free(handle->tool_session);
+  }
   delete handle;
 }
 
@@ -990,4 +998,57 @@ int project_grease_gp_interpolate_frame_eased(ProjectGreaseGPHandle *handle, int
 int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int source_frame, int target_frame, int result_frame, float factor)
 {
   return ensure_ready(handle) && handle->backend.interpolate_frame(source_frame, target_frame, result_frame, factor) ? 1 : 0;
+}
+
+
+// ---- Native tool session --------------------------------------------------------------------
+// Draw sink: the backend's stroke buffer, as the former per-point JNI calls used it.
+static int tool_sink_begin(void *user, int material, float thickness)
+{
+  auto *handle = static_cast<ProjectGreaseGPHandle *>(user);
+  return handle->backend.begin_stroke({material, thickness}) ? 1 : 0;
+}
+static int tool_sink_add(void *user, float x, float y, float pressure, float strength, float time)
+{
+  auto *handle = static_cast<ProjectGreaseGPHandle *>(user);
+  // Floors as the former Kotlin sender: pressure at GPENCIL_ALPHA_OPACITY_THRESH, strength >= 0.
+  return handle->backend.add_point(project_grease::gp::StrokePoint{
+             x, y, 0.0f, std::max(pressure, 0.001f), std::max(strength, 0.0f), time})
+             ? 1
+             : 0;
+}
+static int tool_sink_end(void *user)
+{
+  return static_cast<ProjectGreaseGPHandle *>(user)->backend.end_stroke() ? 1 : 0;
+}
+static void tool_sink_cancel(void *user)
+{
+  static_cast<ProjectGreaseGPHandle *>(user)->backend.cancel_stroke();
+}
+
+int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle,
+                                   int tool,
+                                   const float *samples,
+                                   int count,
+                                   int phase,
+                                   const float *params,
+                                   int param_count)
+{
+  if (!ensure_ready(handle)) return 0;
+  if (!handle->tool_session) {
+    handle->tool_session = pg_tool_session_new();
+    if (!handle->tool_session) return 0;
+  }
+  bGPdata *gpd = handle->backend.document_data();
+  // A gesture never survives a document replacement (reset / load / undo): cancel it.
+  if (phase != PG_TOOL_PHASE_BEGIN && handle->tool_gpd != gpd) {
+    pg_tool_session_samples(handle->tool_session, nullptr, tool, nullptr, 0, PG_TOOL_PHASE_CANCEL,
+                            nullptr, 0, nullptr);
+    handle->tool_gpd = nullptr;
+    return 0;
+  }
+  if (phase == PG_TOOL_PHASE_BEGIN) handle->tool_gpd = gpd;
+  const PGToolDrawSink sink = {handle, tool_sink_begin, tool_sink_add, tool_sink_end, tool_sink_cancel};
+  return pg_tool_session_samples(handle->tool_session, gpd, tool, samples, count, phase, params,
+                                 param_count, &sink);
 }

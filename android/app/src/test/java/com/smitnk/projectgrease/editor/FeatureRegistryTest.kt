@@ -105,6 +105,19 @@ class FeatureRegistryTest {
     }
 
     @Test
+    fun edit3OperatorsAndTheNativeToolSessionAreRegistered() {
+        // Select random and fill color are implemented by edit3 (SELECT_RANDOM / FILL_COLOR commands).
+        for (id in listOf(FeatureId.SELECT_RANDOM, FeatureId.FILL_COLOR)) {
+            assertEquals("$id", FeatureState.IN_PROGRESS, FeatureRegistry.capability(id).state)
+            assertFalse("$id", FeatureRegistry.capability(id).deviceVerified)
+        }
+        for (id in listOf(FeatureId.FREEHAND, FeatureId.SCULPT, FeatureId.VERTEX_PAINT, FeatureId.WEIGHT_PAINT)) {
+            assertTrue("$id", FeatureRegistry.capability(id).limitation.contains("Native tool session"))
+        }
+        assertTrue(FeatureRegistry.capability(FeatureId.SCULPT_SMOOTH).limitation.contains("endpoints fixed"))
+    }
+
+    @Test
     fun vertexPaintModeChipIsEnabledButNotClaimedVerified() {
         // The mode chip and EditorController.setMode gate on "not NOT_IMPLEMENTED".
         val capability = FeatureRegistry.capability(FeatureId.VERTEX_PAINT)

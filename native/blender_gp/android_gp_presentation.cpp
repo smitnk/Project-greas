@@ -40,6 +40,9 @@ int g_fill_draw_mode=0;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
 // open sbuffer are not part of an export.
 int g_export_mode=0;
+// Edit-mode overlay: the points of the editable strokes (Blender's edit-mode vertices), selected
+// points in the theme's vertex-select orange.
+int g_selection_overlay=0;
 float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
 int g_canvas_width=1280;
 int g_canvas_height=720;
@@ -362,6 +365,26 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
 }
 } // namespace
 
+namespace {
+// Selected points 5 px, unselected 3 px (screen pixels, independent of zoom).
+void draw_selection_overlay(const bGPDframe*frame,int w,int h){
+  if(!frame)return;
+  const float px=1.0f/std::max(g_map_scale,1e-6f);
+  std::vector<Vertex> sel,unsel;
+  for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
+    if(!s->points)continue;
+    for(int i=0;i<s->totpoints;i++){
+      const PGOutlinePoint p=outline_point(s->points[i].x,s->points[i].y,(s->points[i].flag&GP_SPOINT_SELECT)?5.0f*px:3.0f*px);
+      append_outline((s->points[i].flag&GP_SPOINT_SELECT)?sel:unsel,std::vector<PGOutlinePoint>{p},0,w,h);
+    }
+  }
+  const float dark[4]={0.0f,0.0f,0.0f,0.85f};
+  const float orange[4]={1.0f,0.522f,0.0f,1.0f};
+  draw_vertices(unsel,dark);
+  draw_vertices(sel,orange);
+}
+} // namespace
+
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
@@ -412,6 +435,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     else draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
     if(use_fx){g_draw_mode=DRAW_NORMAL;project_grease_fx_end_layer(fx_entries,fx_count,&fx_view,nullptr,nullptr);}
     g_active_mask_tex=0;
+    if(g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
   if(!g_export_mode)draw_sbuffer(gpd, 1.0f, w, h);
@@ -520,6 +544,7 @@ extern "C" void project_grease_android_present_set_canvas_size(int width,int hei
 extern "C" void project_grease_android_present_set_weight_view(int group){g_weight_group=group;}
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_fill_draw_mode=std::clamp(mode,0,2);}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
+extern "C" void project_grease_android_present_set_selection_overlay(int enabled){g_selection_overlay=enabled!=0;}
 extern "C" void project_grease_android_present_get_view_transform(float*zoom,float*pan_x,float*pan_y){
   if(zoom)*zoom=g_view_zoom;if(pan_x)*pan_x=g_view_pan_x;if(pan_y)*pan_y=g_view_pan_y;}
 extern "C" void project_grease_android_present_set_view_transform(float zoom,float pan_x,float pan_y){

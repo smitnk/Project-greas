@@ -415,3 +415,33 @@ otherwise does not have. Batch 1 adds only the data Line Art's loaders read; the
   tools/apply_shim_decls.py. Kotlin: snippets, Advanced actions, Layers "Move selection here",
   BlenderEdit4RulesTest; registry DASH / GENERATE wired (baked), new entries for merge, caps,
   start point, separate, move to layer, copy/paste.
+
+## Native tool session — 2026-10-03, branch feature/native-tool-session
+
+- Architecture: `project_grease_tool_session.{c,h}` + one JNI entry `nativeToolSamples(handle,
+  tool, samples, count, phase)`. Kotlin (ToolSession.kt / ToolSampleBatch / CanvasMapping) only
+  captures touch, packs every sample of a MotionEvent (historical first) in canvas units, and calls
+  native once per batch; native applies the tool to the Legacy GP data sample by sample, tags the
+  cache (BKE_gpencil_batch_cache_dirty_tag) and renders once. Per-point nativeGetPoint /
+  nativeSetPoint loops are gone from the interactive tools (LegacyGpSculptEngine/Math deleted).
+- Sculpt (`project_grease_tool_sculpt.c`): gpencil_sculpt_paint.c brush callbacks, influence /
+  invert checks and do_stroke verbatim; BKE_brush_curve_strength (smooth preset); Blender preset
+  flags (position only, Grab without pressure). Fixed: Smooth moved endpoints (now
+  BKE_gpencil_stroke_smooth_point with smooth_caps false), Smooth changed thickness/opacity,
+  brushes only touched points under the first touch (now hit-tested per sample), ad-hoc
+  thickness / strength / randomize math (now Blender's).
+- Vertex Paint (`project_grease_tool_vertex_paint.c`) and Weight Paint
+  (`project_grease_tool_weight_paint.c`): Blender's per-sample point selection and brushes verbatim
+  (Draw/Blur/Average/Smear/Replace; Draw/Blur/Average/Smear with the kd-tree).
+- View adapter (`project_grease_tool_util.c`): canvas plane scaled by pixels per canvas unit stands
+  in for ED_view3d_*; gpencil_utils.c helpers, edge_inside_circle, BKE_brush_curve_strength and
+  BKE_boundbox_init_from_minmax verbatim. Points are linked to themselves (runtime.pt_orig) during a
+  gesture because the ported loops expect evaluated copies.
+- Draw: the Kotlin LegacyGpBrushStrokeEngine moved to C (`project_grease_draw_input.c`) with the
+  same float operations; tools/draw_input_golden keeps the Kotlin reference and generates golden
+  data (22 scenarios, 489 points, all bit-identical natively); its unit tests are ported to
+  tests/test_draw_input.c.
+- Lasso: canvas mapping shared with the presenter (CanvasMapping, JVM test); Edit mode now draws
+  the points of the editable strokes with selected points orange (presenter overlay, pixel test).
+- Registry: SELECT_RANDOM and FILL_COLOR wired (edit3); sculpt / paint / draw entries describe the
+  session. BLI rct.c and kdtree_2d.c added to the closures. Verbatim regions: 84.

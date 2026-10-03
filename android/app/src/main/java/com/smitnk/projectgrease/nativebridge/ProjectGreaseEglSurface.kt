@@ -93,10 +93,9 @@ private class ProjectGreaseDrawingSurfaceView(
     private var mirrorStartX = 0f
     private var mirrorStartY = 0f
     private var panOpen = false
-    // Vertex/Weight Paint mode: true while a drag paints; the last canvas sample gives the smear direction.
-    private var vertexPaintOpen = false
-    private var vertexPaintLastX = 0f
-    private var vertexPaintLastY = 0f
+    // Native tool session gesture (Draw, Sculpt, Vertex Paint, Weight Paint): its tool, or -1.
+    private var sessionTool = -1
+    private var sessionStartMs = 0L
     private var lastPanX = 0f
     private var eraseLastX = Float.NaN
     private var eraseLastY = Float.NaN
@@ -118,29 +117,19 @@ private class ProjectGreaseDrawingSurfaceView(
             MotionEvent.ACTION_DOWN -> {
                 val start = canvasPoint(event.x, event.y)
                 activePointerId = event.getPointerId(0)
-                // Vertex Paint and Weight Paint modes paint with every tool except the view/pick tools.
-                val paintsVertexColor = (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.VERTEX_PAINT ||
-                    controller.mode == com.smitnk.projectgrease.editor.GreaseMode.WEIGHT_PAINT) &&
-                    controller.tools.activeTool != com.smitnk.projectgrease.editor.GreaseTool.PAN &&
-                    controller.tools.activeTool != com.smitnk.projectgrease.editor.GreaseTool.EYEDROPPER
-                if (paintsVertexColor) {
-                    vertexPaintOpen = true
-                    vertexPaintLastX = start.first
-                    vertexPaintLastY = start.second
-                    controller.paintModeDab(
-                        start.first, start.second, 0f, 0f,
-                        com.smitnk.projectgrease.editor.TouchInputRules.pressureFor(
-                            isPenTool(event.getToolType(0)), event.getPressure(0)
-                        )
-                    )
-                    controller.render()
+                // Draw, Sculpt, Vertex Paint and Weight Paint run in the native tool session: one call
+                // per input batch with every sample; native applies the tool and renders.
+                val tool = controller.sessionToolForTouch()
+                if (tool >= 0) {
+                    sessionStartMs = event.downTime
+                    val samples = batch(event, 0, includeHistory = false, tool = tool)
+                    val result = controller.toolSamples(tool, samples, samples.size / 4,
+                        com.smitnk.projectgrease.editor.ToolSession.PHASE_BEGIN, pixelsPerUnit())
+                    sessionTool = if (result != 0) tool else -1
+                    if (sessionTool < 0) activePointerId = MotionEvent.INVALID_POINTER_ID
                     return true
                 }
                 when (controller.tools.activeTool) {
-                    com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
-                        controller.beginSculpt(start.first, start.second, event.getPressure(0).coerceAtLeast(0.01f))
-                        controller.render()
-                    }
                     com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
                         controller.hitTestAndSelectStroke(start.first, start.second)
                     }
@@ -235,10 +224,7 @@ private class ProjectGreaseDrawingSurfaceView(
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (event.pointerCount >= 2) {
-                    if (vertexPaintOpen) {
-                        controller.endPaintMode()
-                        vertexPaintOpen = false
-                    }
+                    endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
                     if (strokeOpen) {
                         controller.cancelStroke()
                         strokeOpen = false
@@ -271,12 +257,10 @@ private class ProjectGreaseDrawingSurfaceView(
                     val x = canvas.first
                     val y = canvas.second
                     when {
-                        vertexPaintOpen -> {
-                            paintVertexColorWithHistory(event, pointerIndex)
-                            controller.render()
-                        }
-                        controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT -> {
-                            if (controller.sculptAt(x, y, event.getPressure(pointerIndex).coerceAtLeast(0.01f))) controller.render()
+                        sessionTool >= 0 -> {
+                            val samples = batch(event, pointerIndex, includeHistory = true, tool = sessionTool)
+                            controller.toolSamples(sessionTool, samples, samples.size / 4,
+                                com.smitnk.projectgrease.editor.ToolSession.PHASE_MOVE)
                         }
                         panOpen -> {
                             val dx = rawX - lastPanX
@@ -362,8 +346,9 @@ private class ProjectGreaseDrawingSurfaceView(
                 val pointerId = event.getPointerId(event.actionIndex)
                 if (pointerId == activePointerId) {
                     val up = canvasPoint(event.getX(event.actionIndex), event.getY(event.actionIndex))
-                    if (vertexPaintOpen) {
-                        controller.endPaintMode()
+                    if (sessionTool >= 0) {
+                        if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) endSession(cancel = true)
+                        else endSession(event, event.actionIndex)
                     } else if (mirrorOpen) {
                         commitMirror(up.first, up.second)
                     } else if (strokeOpen) {
@@ -380,11 +365,8 @@ private class ProjectGreaseDrawingSurfaceView(
             }
             MotionEvent.ACTION_UP -> {
                 val pointerIndex = event.findPointerIndex(activePointerId)
-                if (vertexPaintOpen) {
-                    if (pointerIndex >= 0) paintVertexColorWithHistory(event, pointerIndex)
-                    controller.endPaintMode()
-                } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) {
-                    controller.endSculpt()
+                if (sessionTool >= 0) {
+                    if (pointerIndex >= 0) endSession(event, pointerIndex) else endSession(cancel = true)
                 } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) {
                     controller.endErase()
                 } else if (mirrorOpen && pointerIndex >= 0) {
@@ -402,8 +384,7 @@ private class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                if (vertexPaintOpen) controller.endPaintMode()
-                if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.SCULPT) controller.endSculpt()
+                endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
                 if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) controller.endErase()
                 if (strokeOpen) controller.cancelStroke()
                 resetGestureState()
@@ -460,13 +441,40 @@ private class ProjectGreaseDrawingSurfaceView(
         return hypot(dx, dy)
     }
 
-    private fun canvasPoint(rawX:Float,rawY:Float):Pair<Float,Float>{
-        val cw=controller.document.canvasWidth.coerceAtLeast(1)
-        val ch=controller.document.canvasHeight.coerceAtLeast(1)
-        val fit=min(width.toFloat()/cw.toFloat(),height.toFloat()/ch.toFloat())*0.92f*controller.view.zoom
-        val ox=(width.toFloat()-cw*fit)*0.5f+controller.view.panX
-        val oy=(height.toFloat()-ch*fit)*0.5f+controller.view.panY
-        return ((rawX-ox)/fit).coerceIn(0f,cw.toFloat()) to ((rawY-oy)/fit).coerceIn(0f,ch.toFloat())
+    private fun canvasPoint(rawX:Float,rawY:Float):Pair<Float,Float> =
+        com.smitnk.projectgrease.editor.CanvasMapping.toCanvas(
+            rawX, rawY, width.toFloat(), height.toFloat(),
+            controller.document.canvasWidth, controller.document.canvasHeight,
+            controller.view.zoom, controller.view.panX, controller.view.panY)
+
+    /** On-screen pixels per canvas unit: the brushes' pixel radius and hit tests use it. */
+    private fun pixelsPerUnit():Float =
+        com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(
+            width.toFloat(), height.toFloat(), controller.document.canvasWidth,
+            controller.document.canvasHeight, controller.view.zoom)
+
+    /** Every sample of this event for one pointer (historical first), in canvas units. */
+    private fun batch(event: MotionEvent, pointerIndex: Int, includeHistory: Boolean, tool: Int): FloatArray =
+        com.smitnk.projectgrease.editor.ToolSampleBatch.from(
+            MotionTouch(event, pointerIndex), sessionStartMs, isPenTool(event.getToolType(pointerIndex)), includeHistory
+        ) { rx, ry -> controller.snapForTool(tool, canvasPoint(rx, ry)) }
+
+    /** Ends the session gesture with this event's samples (brushes) or none (Draw, like before). */
+    private fun endSession(event: MotionEvent, pointerIndex: Int) {
+        val tool = sessionTool
+        if (tool < 0) return
+        val samples = if (tool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW) FloatArray(0)
+            else batch(event, pointerIndex, includeHistory = true, tool = tool)
+        controller.toolSamples(tool, samples, samples.size / 4, com.smitnk.projectgrease.editor.ToolSession.PHASE_END)
+        sessionTool = -1
+    }
+
+    private fun endSession(cancel: Boolean) {
+        val tool = sessionTool
+        if (tool < 0) return
+        controller.toolSamples(tool, FloatArray(0), 0,
+            if (cancel) com.smitnk.projectgrease.editor.ToolSession.PHASE_CANCEL else com.smitnk.projectgrease.editor.ToolSession.PHASE_END)
+        sessionTool = -1
     }
 
     private fun resetGestureState() {
@@ -475,7 +483,7 @@ private class ProjectGreaseDrawingSurfaceView(
         scaleOpen = false
         mirrorOpen = false
         panOpen = false
-        vertexPaintOpen = false
+        sessionTool = -1
         eraseLastX = Float.NaN
         eraseLastY = Float.NaN
         pinchOpen = false
@@ -489,24 +497,6 @@ private class ProjectGreaseDrawingSurfaceView(
 
     private fun isPenTool(toolType: Int) =
         toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
-
-    /** One dab per input sample, historical samples included, in canvas coordinates. */
-    private fun paintVertexColorWithHistory(event: MotionEvent, pointerIndex: Int) {
-        val isPen = isPenTool(event.getToolType(pointerIndex))
-        for (h in 0..event.historySize) {
-            val rawX = if (h < event.historySize) event.getHistoricalX(pointerIndex, h) else event.getX(pointerIndex)
-            val rawY = if (h < event.historySize) event.getHistoricalY(pointerIndex, h) else event.getY(pointerIndex)
-            val rawPressure = if (h < event.historySize) event.getHistoricalPressure(pointerIndex, h) else event.getPressure(pointerIndex)
-            val p = canvasPoint(rawX, rawY)
-            controller.paintModeDab(
-                p.first, p.second, p.first - vertexPaintLastX, p.second - vertexPaintLastY,
-                com.smitnk.projectgrease.editor.TouchInputRules.pressureFor(isPen, rawPressure),
-                render = false
-            )
-            vertexPaintLastX = p.first
-            vertexPaintLastY = p.second
-        }
-    }
 
     private fun addPoint(event: MotionEvent, pointerIndex: Int) {
         addSample(
@@ -552,4 +542,15 @@ private class ProjectGreaseDrawingSurfaceView(
             com.smitnk.projectgrease.editor.TouchInputRules.elapsedSeconds(eventTimeMs, gestureStartMs)
         )
     }
+}
+
+/** MotionEvent pointer as a TouchHistory: index historySize is the current sample. */
+private class MotionTouch(private val event: MotionEvent, private val pointerIndex: Int) :
+    com.smitnk.projectgrease.editor.TouchHistory {
+    override val historySize: Int get() = event.historySize
+    override fun x(h: Int) = if (h < event.historySize) event.getHistoricalX(pointerIndex, h) else event.getX(pointerIndex)
+    override fun y(h: Int) = if (h < event.historySize) event.getHistoricalY(pointerIndex, h) else event.getY(pointerIndex)
+    override fun pressure(h: Int) =
+        if (h < event.historySize) event.getHistoricalPressure(pointerIndex, h) else event.getPressure(pointerIndex)
+    override fun timeMs(h: Int) = if (h < event.historySize) event.getHistoricalEventTime(h) else event.eventTime
 }

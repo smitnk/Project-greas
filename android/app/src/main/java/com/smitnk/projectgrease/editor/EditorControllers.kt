@@ -509,9 +509,15 @@ class EditorController {
         if (rendererReady) {
             val pending = pendingDocumentSetup
             pendingDocumentSetup = null
-            pending?.invoke()
+            val snapshot = detachedSnapshot
+            detachedSnapshot = null
+            // A destroyed surface takes its native renderer and document with it, and a new surface
+            // starts from an empty "Layer 1" document: restore the document as it was at detach.
+            if (pending != null) pending() else if (snapshot != null) loadDocumentJson(snapshot)
         }
     }
+    /** The document saved when the surface went away (app in background, surface recreated). */
+    private var detachedSnapshot: String? = null
     private var pendingDocumentSetup: (() -> Unit)? = null
     /**
      * Runs a document setup (template, project load) on the native document. Before the editor's
@@ -521,7 +527,11 @@ class EditorController {
     fun runWhenAttached(setup: () -> Unit) {
         if (rendererReady) setup() else pendingDocumentSetup = setup
     }
-    fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
+    fun detachRenderer(){
+        animation.stop()
+        if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it }
+        rendererHandle=0L;native.detach()
+    }
     fun resetDocument():Boolean {
         if (rendererHandle == 0L) return false
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)

@@ -1080,6 +1080,29 @@ class EditorController {
         render()
         return true
     }
+    // ---- Vertex-group operators on the selection (active group) and layer operators (edit7) ----
+    fun assignSelectionToGroup(weight:Float = 1f) = runSelectCommand(ProjectGreaseSelect.vgAssign(weightPaintGroup, weight))
+    fun removeSelectionFromGroup() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_REMOVE, weightPaintGroup))
+    fun selectGroupPoints() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_SELECT, weightPaintGroup))
+    fun deselectGroupPoints() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_DESELECT, weightPaintGroup))
+    fun invertGroupWeights() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_INVERT, weightPaintGroup))
+    fun normalizeGroupWeights() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_NORMALIZE, weightPaintGroup))
+    /** Merges the active layer into the one below; native makes the lower layer active, so does the editor. */
+    fun mergeLayerDown():Boolean {
+        if (selectedLayer <= 0) return false
+        val ok = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LAYER_MERGE))
+        if (ok) {
+            selectedLayer = (selectedLayer - 1).coerceIn(0, (native.layerCount() - 1).coerceAtLeast(0))
+            native.selectLayer(selectedLayer)
+            animation.refreshFromNative()
+            render()
+        }
+        return ok
+    }
+    fun isolateLayer() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LAYER_ISOLATE))
+    fun lockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LOCK_ALL))
+    fun unlockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_UNLOCK_ALL))
+
     /** Outline modifier, baked: each selected open stroke becomes the closed perimeter of its shape. */
     fun outlineSelection(thickness:Int = 2) = runSelectCommand(ProjectGreaseSelect.outline(thickness))
 

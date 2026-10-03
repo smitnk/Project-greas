@@ -15,6 +15,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_edit7.h"
 
 static bool pe6_editable(const bGPdata *gpd, const bGPDlayer *gpl, const bGPDstroke *gps)
 {
@@ -262,7 +263,7 @@ int pg_gp_edit6_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
                                            scale, offset, args[8], args[9]);
       break;
     }
-    default: return 0;
+    default: return pg_gp_edit7_dispatch(gpd, active_layer, command, args, arg_count);
   }
   if (changed) {
     gpd->flag |= GP_DATA_CACHE_IS_DIRTY;

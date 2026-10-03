@@ -17,6 +17,7 @@
 #include "BLI_rand.h"
 #include "project_grease_blender_edit4.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_edit7.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -1327,6 +1328,67 @@ static void test_edit6(void)
   gpd->mat = NULL; gpd->totcol = 0;
 }
 
+/* edit7 stand-in (BKE_gpencil_layer_delete is linked from Blender in the app). */
+void BKE_gpencil_layer_delete(bGPdata *gpd, bGPDlayer *gpl)
+{
+  BLI_remlink(&gpd->layers, gpl);
+  for (bGPDframe *f = gpl->frames.first, *n; f; f = n) { n = f->next; free(f); }
+  free(gpl);
+}
+
+static float wt(bGPDstroke *s, int i, int g)
+{
+  if (!s->dvert) return -1;
+  for (int k = 0; k < s->dvert[i].totweight; k++) if ((int)s->dvert[i].dw[k].def_nr == g) return s->dvert[i].dw[k].weight;
+  return -1;
+}
+
+static void test_edit7(void)
+{
+  bGPdata *gpd = make_gpd(); bGPDlayer *l = add_layer(gpd, 0); bGPDframe *f = add_frame(l);
+  bGPDstroke *s = add_stroke(f, 4, 0, 0, 0, 10, 0);
+  select_points(gpd, s, (1u << 1) | (1u << 2));
+  CHECK(pg_gp_vgroup_assign(gpd, NULL, 2, 0.8f) == 1 && NEAR(wt(s, 1, 2), 0.8f) && wt(s, 0, 2) < 0, "assign selected points only");
+  pg_gp_vgroup_assign(gpd, NULL, 2, 0.4f);
+  CHECK(NEAR(wt(s, 2, 2), 0.4f) && s->dvert[2].totweight == 1, "re-assign updates, no duplicate entry");
+  select_points(gpd, s, 0);
+  CHECK(pg_gp_vgroup_select(gpd, NULL, 2, 1) == 1 && sel_mask(s) == 6 && (s->flag & GP_STROKE_SELECT), "select group points");
+  pg_gp_vgroup_normalize(gpd, NULL, 2);
+  CHECK(NEAR(wt(s, 1, 2), 1.0f), "normalize: max becomes 1");
+  pg_gp_vgroup_invert(gpd, NULL, 2);
+  CHECK(NEAR(wt(s, 1, 2), 0.0f) && NEAR(wt(s, 0, 2), 1.0f), "invert: 1 -> 0, missing (0) -> 1");
+  select_points(gpd, s, 1u << 1);
+  CHECK(pg_gp_vgroup_remove(gpd, NULL, 2) == 1 && wt(s, 1, 2) < 0 && wt(s, 0, 2) >= 0, "remove from group");
+  select_points(gpd, s, 0xF);
+  CHECK(pg_gp_vgroup_select(gpd, NULL, 2, 0) == 1 && sel_mask(s) == (1u << 1), "deselect group points (0, 2, 3); point 1 is no longer in the group");
+  for (int i = 0; i < 4; i++) free(s->dvert[i].dw);
+  free(s->dvert); s->dvert = NULL;
+
+  /* merge down */
+  bGPdata *g2 = make_gpd();
+  bGPDlayer *low = add_layer(g2, 0); bGPDframe *lf = add_frame(low);
+  bGPDstroke *ls = add_stroke(lf, 2, 0, 0, 0, 10, 0);
+  bGPDlayer *top = add_layer(g2, 0); bGPDframe *tf1 = add_frame(top);
+  bGPDstroke *ts = add_stroke(tf1, 2, 0, 0, 50, 10, 0);
+  bGPDframe *tf5 = BKE_gpencil_frame_addnew(top, 5); add_stroke(tf5, 3, 0, 0, 90, 10, 0);
+  bGPDlayer *act = NULL;
+  CHECK(pg_gp_layer_merge_down(g2, top, &act) == 1 && act == low && g2->layers.first == low && g2->layers.last == low, "top layer merged and removed");
+  CHECK(stroke_count(lf) == 2 && lf->strokes.first == ls && lf->strokes.last == ts, "strokes appended on top in the same frame");
+  bGPDframe *f5 = NULL; for (bGPDframe *x = low->frames.first; x; x = x->next) if (x->framenum == 5) f5 = x;
+  CHECK(f5 != NULL && stroke_count(f5) == 3, "missing frame created with the held lower drawing (2) + merged stroke (1)");
+  CHECK(pg_gp_layer_merge_down(g2, low, &act) == 0, "bottom layer has nothing below");
+
+  /* isolate and lock */
+  bGPdata *g3 = make_gpd(); bGPDlayer *a1 = add_layer(g3, 0); bGPDlayer *a2 = add_layer(g3, 0); bGPDlayer *a3 = add_layer(g3, 0);
+  CHECK(pg_gp_layer_isolate(g3, a2) == 1 && (a1->flag & GP_LAYER_HIDE) && (a3->flag & GP_LAYER_HIDE) && !(a2->flag & GP_LAYER_HIDE), "isolate hides others");
+  CHECK(pg_gp_layer_isolate(g3, a2) == 1 && !(a1->flag & GP_LAYER_HIDE) && !(a3->flag & GP_LAYER_HIDE), "again shows them");
+  CHECK(pg_gp_layers_lock_all(g3, 1) == 1 && (a1->flag & GP_LAYER_LOCKED) && (a3->flag & GP_LAYER_LOCKED), "lock all");
+  CHECK(pg_gp_layers_lock_all(g3, 0) == 1 && !(a2->flag & GP_LAYER_LOCKED), "unlock all");
+  const float args[2] = {2, 1};
+  CHECK(pg_gp_edit_dispatch(g3, a2, PG_EDIT7_CMD_VG_ASSIGN, args, 1) == 0, "assign needs 2 args");
+  CHECK(pg_gp_edit_dispatch(g3, a2, PG_EDIT7_CMD_LOCK_ALL, NULL, 0) == 1, "routed to edit6");
+}
+
 int main(void)
 {
   test_pick();
@@ -1355,6 +1417,7 @@ int main(void)
   test_edit3();
   test_edit4();
   test_edit6();
+  test_edit7();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

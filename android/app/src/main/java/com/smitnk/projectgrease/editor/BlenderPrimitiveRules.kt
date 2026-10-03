@@ -209,3 +209,62 @@ class CurveSession {
     private fun interp(a: Pair<Float, Float>, b: Pair<Float, Float>, t: Float) =
         a.first + (b.first - a.first) * t to a.second + (b.second - a.second) * t
 }
+
+
+/**
+ * Edit phase of Line / Box / Circle / Arc (gpencil_primitive.c: after the drag the primitive stays
+ * IN_PROGRESS with its handles until it is confirmed). Handles: start and end (Arc: also the
+ * control point, which gpencil_primitive_update_cps puts at the bend); a press on a handle drags
+ * it, a press elsewhere confirms. [edges] are the subdivisions (+ / -, 0 = Blender's default).
+ * Extrude (Line only, E key) turns the line into a polyline and adds a new end point.
+ */
+class ShapeEditSession {
+    var type = -1
+        private set
+    var edges = 0
+    private val points = ArrayList<Pair<Float, Float>>()
+    var dragging = -1
+        private set
+    private var dragOrigin: Pair<Float, Float>? = null
+    private var extruded = false
+
+    val isActive: Boolean get() = type >= 0
+
+    fun start(type: Int, start: Pair<Float, Float>, end: Pair<Float, Float>): Boolean {
+        if (type !in setOf(ProjectGreasePrimitive.LINE, ProjectGreasePrimitive.BOX, ProjectGreasePrimitive.CIRCLE, ProjectGreasePrimitive.ARC)) return false
+        if (start == end) return false
+        this.type = type
+        edges = 0
+        extruded = false
+        points.clear(); points += start; points += end
+        return true
+    }
+
+    /** The type the geometry is generated with: an extruded line is a polyline. */
+    fun effectiveType(): Int = if (extruded) ProjectGreasePrimitive.POLYLINE else type
+
+    fun anchors(): List<Pair<Float, Float>> = points.toList()
+    fun handles(): List<Pair<Float, Float>> = if (isActive) points.toList() else emptyList()
+
+    /** True when a handle was hit (it is dragged), false when the press confirms. */
+    fun press(x: Float, y: Float, hitRadius: Float): Boolean {
+        var best = -1; var bd = hitRadius
+        points.forEachIndexed { i, p -> val d = hypot(p.first - x, p.second - y); if (d <= bd) { bd = d; best = i } }
+        dragging = best
+        dragOrigin = points.getOrNull(best)
+        return best >= 0
+    }
+    fun move(x: Float, y: Float) { if (dragging in points.indices) points[dragging] = x to y }
+    fun release() { dragging = -1; dragOrigin = null }
+    fun cancelGesture() { dragOrigin?.let { if (dragging in points.indices) points[dragging] = it }; release() }
+
+    fun extrude(): Boolean {
+        if (!isActive || (type != ProjectGreasePrimitive.LINE)) return false
+        val a = points[points.size - 2]; val b = points.last()
+        extruded = true
+        points += (b.first + (b.first - a.first) * 0.5f) to (b.second + (b.second - a.second) * 0.5f)
+        return true
+    }
+
+    fun reset() { type = -1; points.clear(); dragging = -1; dragOrigin = null; edges = 0; extruded = false }
+}

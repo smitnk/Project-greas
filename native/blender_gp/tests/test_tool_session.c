@@ -326,6 +326,48 @@ static void test_draw(PGToolSession *ts)
   CHECK(pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, smp, 1, PG_TOOL_PHASE_MOVE, NULL, 0, &sink) == 0, "move without begin");
 }
 
+/* Batch 21: guide snapping before the draw pipeline, and the brush pressure CurveMapping. */
+typedef struct SinkXY { int n; float x[512], y[512], p[512]; } SinkXY;
+static int kxy_begin(void *u, int m, float t) { (void)u; (void)m; (void)t; return 1; }
+static int kxy_add(void *u, float x, float y, float p, float s, float t) { (void)s; (void)t; SinkXY *k = u; if (k->n < 512) { k->x[k->n] = x; k->y[k->n] = y; k->p[k->n] = p; k->n++; } return 1; }
+static int kxy_end(void *u) { (void)u; return 1; }
+static void test_draw_guide_and_curve(PGToolSession *ts)
+{
+  SinkXY k;
+  memset(&k, 0, sizeof k);
+  const PGToolDrawSink sink = {&k, kxy_begin, kxy_add, kxy_end, NULL};
+  float p[PG_DRAW_P_COUNT];
+  memset(p, 0, sizeof p);
+  p[PG_DRAW_P_THICKNESS] = 3; p[PG_DRAW_P_STRENGTH] = 1; p[PG_DRAW_P_USE_PRESSURE] = 1;
+  p[PG_DRAW_P_PRESSURE_CURVE] = 1; p[PG_DRAW_P_STRENGTH_CURVE] = 1;
+  p[PG_DRAW_P_MANHATTAN] = 1; p[PG_DRAW_P_EUCLIDEAN] = 1;
+  /* parallel guide at 0 rad: every point keeps the first sample's y */
+  p[PG_DRAW_P_GUIDE_TYPE] = 2 + 1; p[PG_DRAW_P_GUIDE_ANGLE] = 0;
+  /* pressure curve (0,0) (0.5,0.1) (1,1): 0.5 pressure maps to 0.1 */
+  p[PG_DRAW_P_PRESSURE_CURVE_N] = 3;
+  const float c[6] = {0, 0, 0.5f, 0.1f, 1, 1};
+  memcpy(&p[PG_DRAW_P_PRESSURE_CURVE_XY], c, sizeof c);
+  float smp[20 * 4];
+  for (int i = 0; i < 20; i++) { smp[i * 4] = 10.0f * i; smp[i * 4 + 1] = 100 + 15 * sinf(0.7f * i); smp[i * 4 + 2] = 0.5f; smp[i * 4 + 3] = 0.01f * i; }
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, smp, 20, PG_TOOL_PHASE_BEGIN, p, PG_DRAW_P_COUNT, &sink);
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, NULL, 0, PG_TOOL_PHASE_END, NULL, 0, &sink);
+  int on_line = k.n > 3, curve_ok = k.n > 3;
+  for (int i = 0; i < k.n; i++) {
+    on_line &= fabsf(k.y[i] - 100.0f) < 1e-3f;
+    if (i > 0 && i < k.n - 1) curve_ok &= fabsf(k.p[i] - 0.1f) < 0.02f; /* ends may be tapered */
+  }
+  CHECK(on_line, "parallel guide keeps every drawn point on y = 100");
+  CHECK(curve_ok, "pressure CurveMapping applied (0.5 -> 0.1)");
+  /* guide off (0) leaves the input alone */
+  memset(&k, 0, sizeof k);
+  p[PG_DRAW_P_GUIDE_TYPE] = 0;
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, smp, 20, PG_TOOL_PHASE_BEGIN, p, PG_DRAW_P_COUNT, &sink);
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, NULL, 0, PG_TOOL_PHASE_END, NULL, 0, &sink);
+  int off_line = 0;
+  for (int i = 0; i < k.n; i++) off_line |= fabsf(k.y[i] - 100.0f) > 1.0f;
+  CHECK(off_line, "no guide: the wavy input is kept");
+}
+
 int main(void)
 {
   BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
@@ -338,6 +380,7 @@ int main(void)
   test_vertex_paint(ts);
   test_weight_paint(ts);
   test_draw(ts);
+  test_draw_guide_and_curve(ts);
   pg_tool_session_free(ts);
   if (failures) { fprintf(stderr, "%d tool session check(s) failed\n", failures); return 1; }
   printf("tool session tests passed\n");

@@ -15,11 +15,15 @@
  *
  * This is the former Kotlin LegacyGpBrushStrokeEngine moved to native unchanged (same float
  * operations); tools/draw_input_golden holds that Kotlin reference and the generator of the
- * golden data the native test compares against. Known approximations (as before): power curves
- * instead of CurveMapping, a local random generator for jitter, interpolated arc point times.
+ * golden data the native test compares against. Pressure / strength curves: the brush's
+ * CurveMapping (project_grease_curvemap.c, BKE_curvemapping_evaluateF) when the caller set one,
+ * else the former power curve. Known approximations: a local random generator for jitter,
+ * interpolated arc point times.
  */
 #ifndef PROJECT_GREASE_DRAW_INPUT_H
 #define PROJECT_GREASE_DRAW_INPUT_H
+
+#include "project_grease_curvemap.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,6 +52,9 @@ typedef struct PGDrawSettings {
   float draw_angle_factor;
   float draw_angle;
   int synthesize_fast_points; /* 1 */
+  /* Brush curve_sensitivity / curve_strength (BKE_curvemapping_evaluateF); unused while !built. */
+  PGCurve pressure_map;
+  PGCurve strength_map;
 } PGDrawSettings;
 
 typedef struct PGDrawPoint {

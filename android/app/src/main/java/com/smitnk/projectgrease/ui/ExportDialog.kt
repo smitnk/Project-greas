@@ -81,6 +81,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     // Animation formats over the project settings' frame range: GIF or a PNG sequence.
     var gif by remember { mutableStateOf(false) }
     var sequence by remember { mutableStateOf(false) }
+    var mp4 by remember { mutableStateOf(false) }
     var transparent by remember { mutableStateOf(false) }
     var wholeTimeline by remember { mutableStateOf(false) }
     // Annotations are overlay notes, not part of the drawing: left out unless asked for.
@@ -122,6 +123,14 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         toast(if (n > 0) "Exported GIF, $n frames" else "GIF export failed")
         if (n > 0) onDismiss()
     }
+    val mp4File = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val n = runCatching {
+            context.contentResolver.openFileDescriptor(uri, "rw")?.use { VideoExport.exportToDescriptor(controller, it.fileDescriptor) } ?: 0
+        }.getOrDefault(0)
+        toast(if (n > 0) "Exported MP4, $n frames" else "MP4 export failed")
+        if (n > 0) onDismiss()
+    }
     val sequenceFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
         val n = writePngSequence(context, tree, controller, transparent)
@@ -151,15 +160,23 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
             Column {
                 Text("Format")
                 Row {
-                    FilterChip(selected = !pdf && !png && !gif && !sequence, onClick = { pdf = false; png = false; gif = false; sequence = false }, label = { Text("SVG") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = pdf, onClick = { pdf = true; png = false; gif = false; sequence = false }, label = { Text("PDF") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = png, onClick = { png = true; pdf = false; gif = false; sequence = false }, label = { Text("PNG") })
+                    FilterChip(selected = !pdf && !png && !gif && !sequence && !mp4, onClick = { pdf = false; png = false; gif = false; sequence = false; mp4 = false }, label = { Text("SVG") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = pdf, onClick = { pdf = true; png = false; gif = false; sequence = false; mp4 = false }, label = { Text("PDF") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = png, onClick = { png = true; pdf = false; gif = false; sequence = false; mp4 = false }, label = { Text("PNG") })
                 }
                 Row {
-                    FilterChip(selected = gif, onClick = { gif = true; sequence = false; png = false; pdf = false }, label = { Text("GIF") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = sequence, onClick = { sequence = true; gif = false; png = false; pdf = false }, label = { Text("PNG sequence") })
+                    FilterChip(selected = gif, onClick = { gif = true; sequence = false; png = false; pdf = false; mp4 = false }, label = { Text("GIF") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = sequence, onClick = { sequence = true; gif = false; png = false; pdf = false; mp4 = false }, label = { Text("PNG sequence") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = mp4, onClick = { mp4 = true; sequence = false; gif = false; png = false; pdf = false }, label = { Text("MP4 video") })
                 }
-                if (gif || sequence) {
+                if (mp4) {
+                    val s = controller.projectSettings
+                    val (vw, vh) = com.smitnk.projectgrease.editor.VideoFrames.evenSize(controller.document.canvasWidth, controller.document.canvasHeight)
+                    Text(
+                        "H.264 MP4, frames ${s.frameStart}–${s.frameEnd} at ${s.fps} FPS, ${vw}×$vh px (odd sizes lose one row / column); held frames repeat the previous keyframe; the project background colour is used.",
+                        Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                } else if (gif || sequence) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Transparent background", Modifier.weight(1f))
                         Switch(transparent, { transparent = it })
@@ -199,7 +216,8 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         confirmButton = {
             TextButton(onClick = {
                 val extension = if (pdf) "pdf" else "svg"
-                if (gif) gifFile.launch("$baseName.gif")
+                if (mp4) mp4File.launch("$baseName.mp4")
+                else if (gif) gifFile.launch("$baseName.gif")
                 else if (sequence) sequenceFolder.launch(null)
                 else if (png) pngFile.launch("$baseName.png")
                 else if (!pdf && wholeTimeline) folder.launch(null) else singleFile.launch("$baseName.$extension")

@@ -128,6 +128,13 @@ internal class ProjectGreaseDrawingSurfaceView(
                     if (sessionTool < 0) activePointerId = MotionEvent.INVALID_POINTER_ID
                     return true
                 }
+                // Modifier handles being edited on the canvas take the touch whatever the tool is.
+                if (controller.gizmoActive) {
+                    strokeOpen = controller.beginStroke()
+                    if (strokeOpen) { addPoint(event, 0); controller.render() }
+                    else activePointerId = MotionEvent.INVALID_POINTER_ID
+                    return true
+                }
                 when (controller.tools.activeTool) {
                     com.smitnk.projectgrease.editor.GreaseTool.SELECT -> {
                         controller.hitTestAndSelectStroke(start.first, start.second)
@@ -271,7 +278,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                                 controller.render()
                             }
                         }
-                        controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
+                        controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && !strokeOpen -> {
                             val changed = eraseAlongPath(x, y)
                             if (changed) controller.render()
                         }
@@ -366,7 +373,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 val pointerIndex = event.findPointerIndex(activePointerId)
                 if (sessionTool >= 0) {
                     if (pointerIndex >= 0) endSession(event, pointerIndex) else endSession(cancel = true)
-                } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) {
+                } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && !strokeOpen) {
                     controller.endErase()
                 } else if (mirrorOpen && pointerIndex >= 0) {
                     val up = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))

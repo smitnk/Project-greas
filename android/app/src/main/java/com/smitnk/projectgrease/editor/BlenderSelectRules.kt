@@ -291,6 +291,8 @@ object ProjectGreaseSelect {
     const val EASE_CIRC = 7
     const val EASE_BACK = 8
     const val EASE_BOUNCE = 9
+    /** BEZT_IPO_ELASTIC (BLI_easing_elastic_*, amplitude / period set with [easingParams]). */
+    const val EASE_ELASTIC = 10
     const val EASE_IN = 0
     const val EASE_OUT = 1
     const val EASE_IN_OUT = 2
@@ -411,6 +413,57 @@ object ProjectGreaseSelect {
     fun vgOp(cmd: Int, group: Int): Command? =
         if (group >= 0 && cmd in CMD_VG_REMOVE..CMD_VG_NORMALIZE) Command(cmd, floatArrayOf(group.toFloat())) else null
     fun layerOp(cmd: Int): Command? = if (cmd in CMD_LAYER_MERGE..CMD_UNLOCK_ALL) Command(cmd, FloatArray(0)) else null
+
+    // ---- Batch 21 document state (project_grease_blender_edit8.h) ----
+    const val CMD_FRAME_KEYTYPE = 103
+    const val CMD_FRAME_SELECT = 104
+    const val CMD_FRAME_DESELECT = 105
+    const val CMD_LAYER_BLEND = 106
+    const val CMD_LAYER_TINT = 107
+    const val CMD_LAYER_LINE = 108
+    const val CMD_MATERIAL_MOVE = 109
+    const val CMD_MATERIAL_FLAGS = 110
+    const val CMD_MATERIAL_SOLO = 111
+    const val CMD_MATERIAL_MODE = 112
+    const val CMD_ONION_FILTER = 113
+    const val CMD_LAYER_PASS = 114
+    const val CMD_MATERIAL_PASS = 115
+    const val CMD_EASING_PARAMS = 116
+    /** BEZT_KEYTYPE_*: keyframe, extreme, breakdown, jitter, moving hold. */
+    const val KEY_KEYFRAME = 0
+    const val KEY_EXTREME = 1
+    const val KEY_BREAKDOWN = 2
+    const val KEY_JITTER = 3
+    const val KEY_MOVEHOLD = 4
+    val KEY_TYPE_LABELS = listOf("Keyframe", "Extreme", "Breakdown", "Jitter", "Moving Hold")
+    /** Frame selection modes of CMD_FRAME_SELECT. */
+    const val FRAME_SELECT_SET = 0
+    const val FRAME_SELECT_TOGGLE = 1
+    const val FRAME_SELECT_ADD = 2
+    /** eGPLayerBlendModes */
+    val BLEND_LABELS = listOf("Regular", "Hard Light", "Add", "Subtract", "Multiply", "Divide")
+    /** GP_MATERIAL_MODE_* and GP_MATERIAL_FOLLOW_* */
+    val LINE_TYPE_LABELS = listOf("Line", "Dots", "Squares")
+    val ALIGNMENT_LABELS = listOf("Path", "Object", "Fixed")
+
+    fun frameKeyType(frame: Int, type: Int, allLayers: Boolean = false): Command? =
+        if (type in KEY_KEYFRAME..KEY_MOVEHOLD) Command(CMD_FRAME_KEYTYPE, floatArrayOf(frame.toFloat(), type.toFloat(), if (allLayers) 1f else 0f)) else null
+    fun frameSelect(frame: Int, mode: Int, allLayers: Boolean = false): Command =
+        Command(CMD_FRAME_SELECT, floatArrayOf(frame.toFloat(), mode.coerceIn(0, 2).toFloat(), if (allLayers) 1f else 0f))
+    fun frameDeselect(allLayers: Boolean = false) = Command(CMD_FRAME_DESELECT, floatArrayOf(if (allLayers) 1f else 0f))
+    fun layerBlend(layer: Int, mode: Int): Command? = if (mode in 0..5) Command(CMD_LAYER_BLEND, floatArrayOf(layer.toFloat(), mode.toFloat())) else null
+    fun layerTint(layer: Int, r: Float, g: Float, b: Float, factor: Float) = Command(CMD_LAYER_TINT, floatArrayOf(layer.toFloat(), r, g, b, factor))
+    fun layerLineChange(layer: Int, px: Int) = Command(CMD_LAYER_LINE, floatArrayOf(layer.toFloat(), px.toFloat()))
+    fun layerPass(layer: Int, pass: Int) = Command(CMD_LAYER_PASS, floatArrayOf(layer.toFloat(), pass.toFloat()))
+    fun materialMove(from: Int, to: Int) = Command(CMD_MATERIAL_MOVE, floatArrayOf(from.toFloat(), to.toFloat()))
+    fun materialFlags(slot: Int, locked: Boolean, hidden: Boolean) = Command(CMD_MATERIAL_FLAGS, floatArrayOf(slot.toFloat(), if (locked) 1f else 0f, if (hidden) 1f else 0f))
+    fun materialSolo(slot: Int) = Command(CMD_MATERIAL_SOLO, floatArrayOf(slot.toFloat()))
+    fun materialMode(slot: Int, mode: Int, alignment: Int, rotation: Float): Command? =
+        if (mode in 0..2 && alignment in 0..2) Command(CMD_MATERIAL_MODE, floatArrayOf(slot.toFloat(), mode.toFloat(), alignment.toFloat(), rotation)) else null
+    fun materialPass(slot: Int, pass: Int) = Command(CMD_MATERIAL_PASS, floatArrayOf(slot.toFloat(), pass.toFloat()))
+    fun onionFilter(keyType: Int, loop: Boolean): Command? =
+        if (keyType in -1..KEY_MOVEHOLD) Command(CMD_ONION_FILTER, floatArrayOf(keyType.toFloat(), if (loop) 1f else 0f)) else null
+    fun easingParams(amplitude: Float, period: Float) = Command(CMD_EASING_PARAMS, floatArrayOf(amplitude, period))
 
     /** Blender bGPdata.onion_mode values (GP_ONION_MODE_*). */
     const val ONION_MODE_ABSOLUTE = 0

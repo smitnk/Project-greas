@@ -40,6 +40,7 @@ C|native/blender_gp/project_grease_blender_edit4.c
 C|native/blender_gp/project_grease_blender_edit5.c
 C|native/blender_gp/project_grease_blender_edit6.c
 C|native/blender_gp/project_grease_blender_edit7.c
+C|native/blender_gp/project_grease_blender_edit8.c
 C|native/blender_gp/project_grease_tool_session.c
 C|native/blender_gp/project_grease_draw_input.c
 C|native/blender_gp/project_grease_tool_util.c
@@ -54,6 +55,9 @@ CXX|native/blender_gp/lineart/lineart_lite_runtime.cc
 C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/lineart/lineart_util.c
 C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/lineart/lineart_chain.c
 C|native/blender_gp/project_grease_modifier_stack.c
+C|native/blender_gp/project_grease_modifier_stack2.c
+C|native/blender_gp/project_grease_blender_mod2.c
+C|native/blender_gp/project_grease_curvemap.c
 C|native/blender_gp/project_grease_shader_fx.c
 C|native/blender_gp/project_grease_document_state.c
 C|build/blender-dna/dna.c

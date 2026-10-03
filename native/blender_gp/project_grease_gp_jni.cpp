@@ -1171,3 +1171,47 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationLoad(
   if (n > 0) env->GetFloatArrayRegion(data, 0, n, values.data());
   return project_grease_gp_annotation_load(from_handle(handle), values.data(), static_cast<int>(n)) ? JNI_TRUE : JNI_FALSE;
 }
+
+/* ---- Batch 21: document query and material names ---- */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDocQuery(
+    JNIEnv *env, jobject, jlong handle, jint what, jfloatArray args)
+{
+  float in[8] = {};
+  jsize n = 0;
+  if (args) {
+    n = env->GetArrayLength(args);
+    if (n > 8) n = 8;
+    env->GetFloatArrayRegion(args, 0, n, in);
+  }
+  const int need = project_grease_gp_doc_query(from_handle(handle), what, in, n, nullptr, 0);
+  if (need < 0) return nullptr;
+  std::vector<float> out(static_cast<size_t>(need) + 1);
+  const int got = project_grease_gp_doc_query(from_handle(handle), what, in, n, out.data(), need);
+  if (got < 0) return nullptr;
+  jfloatArray result = env->NewFloatArray(got);
+  if (!result) return nullptr;
+  env->SetFloatArrayRegion(result, 0, got, out.data());
+  return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaterialName(
+    JNIEnv *env, jobject, jlong handle, jint slot)
+{
+  char name[80] = {};
+  if (!project_grease_gp_material_name(from_handle(handle), slot, name, sizeof(name))) return nullptr;
+  return env->NewStringUTF(name);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialName(
+    JNIEnv *env, jobject, jlong handle, jint slot, jstring name)
+{
+  if (!name) return JNI_FALSE;
+  const char *chars = env->GetStringUTFChars(name, nullptr);
+  if (!chars) return JNI_FALSE;
+  const int result = project_grease_gp_set_material_name(from_handle(handle), slot, chars);
+  env->ReleaseStringUTFChars(name, chars);
+  return result != 0;
+}

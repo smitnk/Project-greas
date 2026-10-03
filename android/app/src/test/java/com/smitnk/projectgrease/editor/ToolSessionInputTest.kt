@@ -94,7 +94,7 @@ class ToolSessionInputTest {
     @Test
     fun drawParametersFollowTheNativeLayout() {
         val p = ToolSession.DrawSettings(material = 2, thickness = 12f, inputSamples = 4, lazy = true, lazyRadius = 9f).toParams()
-        assertEquals(19, p.size) // PG_DRAW_P_COUNT
+        assertEquals(ToolSession.DRAW_P_COUNT, p.size) // PG_DRAW_P_COUNT
         assertEquals(2f, p[0], 0f)
         assertEquals(12f, p[1], 0f)
         assertEquals(4f, p[8], 0f)  // PG_DRAW_P_INPUT_SAMPLES

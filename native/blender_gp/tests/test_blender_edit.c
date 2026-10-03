@@ -1343,6 +1343,14 @@ static float wt(bGPDstroke *s, int i, int g)
   return -1;
 }
 
+/* edit8 (document-state commands) uses DNA fields the shim headers do not have; it is tested
+ * against the real DNA in tests/test_edit8.cc. edit7's default hands unknown ids to it. */
+int pg_gp_edit8_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, const float *args, int arg_count)
+{
+  (void)gpd; (void)active_layer; (void)command; (void)args; (void)arg_count;
+  return 0;
+}
+
 static void test_edit7(void)
 {
   bGPdata *gpd = make_gpd(); bGPDlayer *l = add_layer(gpd, 0); bGPDframe *f = add_frame(l);

@@ -19,7 +19,7 @@ build() { # $1 = suffix, rest = extra flags for the session / test objects
   for s in "${SESSION[@]}"; do gcc "${CF[@]}" "$@" "${INC[@]}" -c "$G/$s" -o "$OUT/$s$sfx.o"; objs+=("$OUT/$s$sfx.o"); done
   gcc "${CF[@]}" "$@" "${INC[@]}" -c "$G/tests/test_tool_session.c" -o "$OUT/tts$sfx.o"
   g++ "$@" "$OUT/tts$sfx.o" "${objs[@]}" "${REST[@]}" -Wl,--gc-sections -lpthread -lm -o "$OUT/test_tool_session$sfx"
-  gcc -std=gnu11 -Wall "$@" -I"$G" "$G/tests/test_draw_input.c" "$G/project_grease_draw_input.c" -lm -o "$OUT/test_draw_input$sfx"
+  gcc -std=gnu11 -Wall "$@" -I"$G" "$G/tests/test_draw_input.c" "$G/project_grease_draw_input.c" "$G/project_grease_curvemap.c" -lm -o "$OUT/test_draw_input$sfx"
 }
 build ""
 "$OUT/test_draw_input" "$G/tests/draw_input_golden.txt"

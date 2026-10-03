@@ -8,7 +8,24 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         val info = native.layerInfo(index) ?: return null
         if (info.size < 3) return null
         val name = native.layerName(index) ?: ""
-        return LayerRecord(name, info[0] != 0f, info[1] != 0f, info[2])
+        val extra = native.docQuery(1, index.toFloat())
+        if (extra == null || extra.size < 7) return LayerRecord(name, info[0] != 0f, info[1] != 0f, info[2])
+        return LayerRecord(name, info[0] != 0f, info[1] != 0f, info[2], extra[0].toInt(),
+            extra.copyOfRange(1, 5), extra[5].toInt(), extra[6].toInt())
+    }
+
+    override fun frameKeyTypes(): Map<Int, Int> {
+        val q = native.docQuery(0, -1f) ?: return emptyMap()
+        val out = LinkedHashMap<Int, Int>()
+        var i = 0
+        while (i + 2 < q.size) { out[q[i].toInt()] = q[i + 1].toInt(); i += 3 }
+        return out
+    }
+
+    override fun setFrameKeyType(frame: Int, type: Int): Boolean {
+        val c = ProjectGreaseSelect.frameKeyType(frame, type) ?: return false
+        native.applyEditCommand(c.id, c.args) // false when already that type
+        return true
     }
 
     override fun selectLayer(index: Int) = native.selectLayer(index)
@@ -47,11 +64,18 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
     override fun materialRecord(index: Int): MaterialRecord? {
         val info = native.materialInfo(index) ?: return null
         if (info.size < 10) return null
+        val extra = native.docQuery(2, index.toFloat())
         return MaterialRecord(
             stroke = info.copyOfRange(0, 4),
             fill = info.copyOfRange(4, 8),
             visible = info[8] != 0f,
-            fillEnabled = info[9] != 0f
+            fillEnabled = info[9] != 0f,
+            name = native.materialName(index) ?: "",
+            locked = extra != null && extra.size >= 6 && extra[3] != 0f,
+            mode = extra?.getOrNull(0)?.toInt() ?: 0,
+            alignment = extra?.getOrNull(1)?.toInt() ?: 0,
+            rotation = extra?.getOrNull(2) ?: 0f,
+            passIndex = extra?.getOrNull(5)?.toInt() ?: 0
         )
     }
 
@@ -59,9 +83,17 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
 
     override fun applyLayerRecord(index: Int, record: LayerRecord): Boolean {
         if (record.name.isNotBlank() && !native.renameLayer(index, record.name)) return false
-        return native.setLayerVisibility(index, record.visible) &&
+        val ok = native.setLayerVisibility(index, record.visible) &&
             native.setLayerLocked(index, record.locked) &&
             native.setLayerOpacity(index, record.opacity)
+        if (!ok) return false
+        // edit commands report "changed"; applying the default is no change and not an error
+        ProjectGreaseSelect.layerBlend(index, record.blendMode)?.let { native.applyEditCommand(it.id, it.args) }
+        val t = record.tint
+        if (t.size >= 4) ProjectGreaseSelect.layerTint(index, t[0], t[1], t[2], t[3]).let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.layerLineChange(index, record.lineChange).let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.layerPass(index, record.passIndex).let { native.applyEditCommand(it.id, it.args) }
+        return true
     }
 
     override fun createFrame(frame: Int) = native.createFrame(frame)
@@ -150,8 +182,15 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
 
     override fun createMaterial() = native.createMaterial()
 
-    override fun applyMaterialRecord(index: Int, record: MaterialRecord) =
-        native.setMaterialColors(index, record.stroke, record.fill) &&
+    override fun applyMaterialRecord(index: Int, record: MaterialRecord): Boolean {
+        val ok = native.setMaterialColors(index, record.stroke, record.fill) &&
             native.setMaterialVisibility(index, record.visible) &&
             native.setMaterialFillEnabled(index, record.fillEnabled)
+        if (!ok) return false
+        if (record.name.isNotEmpty()) native.setMaterialName(index, record.name)
+        ProjectGreaseSelect.materialFlags(index, record.locked, !record.visible).let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialMode(index, record.mode, record.alignment, record.rotation)?.let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialPass(index, record.passIndex).let { native.applyEditCommand(it.id, it.args) }
+        return true
+    }
 }

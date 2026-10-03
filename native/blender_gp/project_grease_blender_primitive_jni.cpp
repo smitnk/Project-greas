@@ -41,3 +41,10 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGenerateBlenderPrimiti
   env->SetFloatArrayRegion(result, 0, count * 2, xy.data());
   return result;
 }
+
+/* Blender's default "edges" (subdivisions) of a primitive type; the edit phase steps from it. */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBlenderPrimitiveDefaultEdges(JNIEnv *, jobject, jint type)
+{
+  return project_grease_blender_primitive_default_edges(type);
+}

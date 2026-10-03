@@ -52,3 +52,8 @@ for s in "${BSRC_C[@]}"; do o="$OUT/b_$(basename "$s").o"; gcc "${CF[@]}" -D__AN
 g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/test_backend_modifier_stack.cc" \
   "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_backend_modifier_stack"
 "$OUT/test_backend_modifier_stack" 2>/dev/null
+
+# Batch 21 document-state commands (edit8) against the real DNA.
+g++ "${XF[@]}" -Wall "${INC[@]}" "$ROOT/native/blender_gp/tests/test_edit8.cc" "${OBJS[@]}" \
+  -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_edit8"
+"$OUT/test_edit8"

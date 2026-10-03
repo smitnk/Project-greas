@@ -46,7 +46,24 @@ int pg_mod_valid_type(int type)
 
 int pg_mod_param_count(int type)
 {
+  return pg_mod_valid_type(type) ? PG_MOD_MAX_PARAMS : 0;
+}
+
+int pg_mod_own_param_count(int type)
+{
   switch (type) {
+    case PG_MOD_BUILD: return PG_P_BUILD_COUNT;
+    case PG_MOD_TIME: return PG_P_TIME_COUNT;
+    case PG_MOD_HOOK: return PG_P_HOOK_COUNT;
+    case PG_MOD_LATTICE: return PG_P_LATTICE_COUNT;
+    case PG_MOD_ENVELOPE: return PG_P_ENVELOPE_COUNT;
+    case PG_MOD_WEIGHT_PROX: return PG_P_WPROX_COUNT;
+    case PG_MOD_WEIGHT_ANGLE: return PG_P_WANGLE_COUNT;
+    case PG_MOD_DASH: return PG_P_DASH_COUNT;
+    case PG_MOD_OUTLINE: return PG_P_OUTLINE_COUNT;
+    case PG_MOD_MIRROR: return PG_P_MIRROR_COUNT;
+    case PG_MOD_ARRAY: return PG_P_ARRAY_COUNT;
+    case PG_MOD_MULTIPLY: return PG_P_MULTIPLY_COUNT;
     case PG_MOD_THICKNESS: return PG_P_THICK_COUNT;
     case PG_MOD_OPACITY: return PG_P_OPACITY_COUNT;
     case PG_MOD_TINT: return PG_P_TINT_COUNT;
@@ -75,6 +92,18 @@ const char *pg_mod_name(int type)
     case PG_MOD_SUBDIV: return "Subdivide";
     case PG_MOD_OFFSET: return "Offset";
     case PG_MOD_NOISE: return "Noise";
+    case PG_MOD_BUILD: return "Build";
+    case PG_MOD_TIME: return "Time Offset";
+    case PG_MOD_HOOK: return "Hook";
+    case PG_MOD_LATTICE: return "Lattice";
+    case PG_MOD_ENVELOPE: return "Envelope";
+    case PG_MOD_WEIGHT_PROX: return "Vertex Weight Proximity";
+    case PG_MOD_WEIGHT_ANGLE: return "Vertex Weight Angle";
+    case PG_MOD_DASH: return "Dot Dash";
+    case PG_MOD_OUTLINE: return "Outline";
+    case PG_MOD_MIRROR: return "Mirror";
+    case PG_MOD_ARRAY: return "Array";
+    case PG_MOD_MULTIPLY: return "MultipleStrokes";
     default: return "";
   }
 }
@@ -140,6 +169,7 @@ void pg_mod_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_NOISE_MODE] = GP_NOISE_RANDOM_STEP;
       break;
     default:
+      pg_mod2_defaults(type, p);
       break;
   }
 }
@@ -163,10 +193,10 @@ static float pgm_flag(float v)
 void pg_mod_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
 {
   float def[PG_MOD_MAX_PARAMS];
-  const int n = pg_mod_param_count(type);
+  const int n = pg_mod_own_param_count(type);
   pg_mod_defaults(type, def);
   for (int i = 0; i < PG_MOD_MAX_PARAMS; i++) {
-    if (i >= n) {
+    if (i >= n && i < PG_P_CURVE_BASE) {
       p[i] = 0.0f; /* unused slots are always zero */
     }
     else if (!isfinite(p[i])) {
@@ -258,6 +288,7 @@ void pg_mod_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
     default:
       break;
   }
+  pg_mod2_sanitize(type, p); /* batch 21 types, curve and filter blocks */
 }
 
 void pg_mod_entry_init(PGModEntry *entry, int type)
@@ -806,18 +837,56 @@ int pg_mod_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstrok
       pg_deform_noise(ctx, p, gps);
       return 1;
     default:
-      return 0;
+      return pg_mod2_deform_stroke(ctx, e, gps);
   }
 }
 
 /* Runs one entry on every stroke of `gpf`. A deform function may remove the stroke it is given
  * (Simplify/Merge), so the next pointer is read first. */
+/* Batch 21: strokes outside the entry's filter are skipped; with a vertex-group filter or a custom
+ * curve the point attributes are blended between before and after by the point influence. */
 static int pg_mod_run_on_frame(const PGModContext *ctx, const PGModEntry *entry)
 {
+  if (pg_mod2_is_frame_level(entry->type)) {
+    return pg_mod2_run_frame(ctx, entry);
+  }
   int any = 0;
+  const int blend = pg_mod_has_point_influence(entry);
   for (bGPDstroke *gps = ctx->gpf->strokes.first, *next; gps != NULL; gps = next) {
     next = gps->next;
-    any |= pg_mod_deform_stroke(ctx, entry, gps);
+    if (!pg_mod_stroke_affected(ctx, entry, gps)) {
+      continue;
+    }
+    bGPDspoint *before = NULL;
+    const int n = gps->totpoints;
+    if (blend && n > 0 && gps->points != NULL) {
+      before = MEM_dupallocN(gps->points);
+    }
+    const int changed = pg_mod_deform_stroke(ctx, entry, gps);
+    if (before != NULL) {
+      /* the deform may have removed the stroke (Simplify/Merge): only blend when it is still here */
+      int alive = 0;
+      for (bGPDstroke *s = ctx->gpf->strokes.first; s != NULL; s = s->next) {
+        if (s == gps) { alive = 1; break; }
+      }
+      if (alive && changed && gps->totpoints == n) {
+        for (int i = 0; i < n; i++) {
+          const float w = pg_mod_point_influence(entry, gps, i);
+          bGPDspoint *pt = &gps->points[i];
+          const bGPDspoint *o = &before[i];
+          pt->x = o->x + (pt->x - o->x) * w;
+          pt->y = o->y + (pt->y - o->y) * w;
+          pt->z = o->z + (pt->z - o->z) * w;
+          pt->pressure = o->pressure + (pt->pressure - o->pressure) * w;
+          pt->strength = o->strength + (pt->strength - o->strength) * w;
+          for (int c = 0; c < 4; c++) {
+            pt->vert_color[c] = o->vert_color[c] + (pt->vert_color[c] - o->vert_color[c]) * w;
+          }
+        }
+      }
+      MEM_freeN(before);
+    }
+    any |= changed;
   }
   return any;
 }

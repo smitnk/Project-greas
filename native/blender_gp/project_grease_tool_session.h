@@ -66,7 +66,19 @@ enum {
   PG_DRAW_P_ANGLE_FACTOR,
   PG_DRAW_P_ANGLE,
   PG_DRAW_P_FAKE_POINTS,
-  PG_DRAW_P_COUNT
+  /* Batch 21: drawing guide: type is GP_GUIDE_* + 1 (0 = off, so zeroed parameters draw freely);
+   * pg_guide_snap */
+  PG_DRAW_P_GUIDE_TYPE,
+  PG_DRAW_P_GUIDE_CX,
+  PG_DRAW_P_GUIDE_CY,
+  PG_DRAW_P_GUIDE_ANGLE,
+  PG_DRAW_P_GUIDE_SPACING,
+  /* Brush curves: point count (0 = power curve) then up to 8 (x, y) pairs each */
+  PG_DRAW_P_PRESSURE_CURVE_N,
+  PG_DRAW_P_PRESSURE_CURVE_XY,
+  PG_DRAW_P_STRENGTH_CURVE_N = PG_DRAW_P_PRESSURE_CURVE_XY + 16,
+  PG_DRAW_P_STRENGTH_CURVE_XY,
+  PG_DRAW_P_COUNT = PG_DRAW_P_STRENGTH_CURVE_XY + 16
 };
 
 /* Where Draw puts its points: the backend's stroke buffer (sbuffer). Return 0 on failure. */

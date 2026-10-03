@@ -1,7 +1,7 @@
 # Graph Report - Project-greas  (2026-10-03)
 
 ## Corpus Check
-- 286 files · ~304,693 words
+- 286 files · ~304,750 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 14 file(s) not represented in the graph (top: .obj 6, .xml 3, .properties 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7e6bb28f`
+- Built from commit: `fa2b3c46`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

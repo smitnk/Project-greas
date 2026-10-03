@@ -30150,7 +30150,7 @@
       "file_type": "code",
       "norm_label": "keytypecolor()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L186"
+      "source_location": "L187"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_keytypemark",
@@ -30162,7 +30162,7 @@
       "file_type": "code",
       "norm_label": "keytypemark()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L182"
+      "source_location": "L183"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_blendercolorpicker_blendercolorpicker",
@@ -30210,7 +30210,7 @@
       "file_type": "code",
       "norm_label": "boxselectoverlay()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L148"
+      "source_location": "L149"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_brushcurvessection",
@@ -30222,7 +30222,7 @@
       "file_type": "code",
       "norm_label": "brushcurvessection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L356"
+      "source_location": "L357"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_curveeditor",
@@ -30246,7 +30246,7 @@
       "file_type": "code",
       "norm_label": "drawingguidesection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L332"
+      "source_location": "L333"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_keyframemenu",
@@ -30258,7 +30258,7 @@
       "file_type": "code",
       "norm_label": "keyframemenu()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L193"
+      "source_location": "L194"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_layerlooksection",
@@ -30270,7 +30270,7 @@
       "file_type": "code",
       "norm_label": "layerlooksection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L213"
+      "source_location": "L214"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_materialslotrow",
@@ -30282,7 +30282,7 @@
       "file_type": "code",
       "norm_label": "materialslotrow()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L265"
+      "source_location": "L266"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_materialslotssection",
@@ -30294,7 +30294,7 @@
       "file_type": "code",
       "norm_label": "materialslotssection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L245"
+      "source_location": "L246"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_modifierhandlesoverlay",
@@ -30306,7 +30306,7 @@
       "file_type": "code",
       "norm_label": "modifierhandlesoverlay()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L127"
+      "source_location": "L128"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_onionfiltersection",
@@ -30318,7 +30318,7 @@
       "file_type": "code",
       "norm_label": "onionfiltersection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L314"
+      "source_location": "L315"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_overlaymap_scale",
@@ -30354,7 +30354,7 @@
       "file_type": "code",
       "norm_label": "selectoperatorsbar()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L161"
+      "source_location": "L162"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_batch21ui_shapeeditoverlay",
@@ -54147,6 +54147,30 @@
       "type": "external"
     },
     {
+      "id": "project_grease_blender_mod2",
+      "label": "project_grease_blender_mod2",
+      "_origin": "semantic",
+      "community": 142,
+      "community_name": "math",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "project_grease_blender_mod2",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "project_grease_curvemap",
+      "label": "project_grease_curvemap",
+      "_origin": "semantic",
+      "community": 142,
+      "community_name": "math",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "project_grease_curvemap",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "stdio",
       "label": "stdio",
       "_origin": "semantic",
@@ -54603,6 +54627,18 @@
       "type": "external"
     },
     {
+      "id": "dna_curve_types",
+      "label": "dna_curve_types",
+      "_origin": "semantic",
+      "community": 168,
+      "community_name": "bli_listbase",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "dna_curve_types",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "dna_material_types",
       "label": "dna_material_types",
       "_origin": "semantic",
@@ -54611,6 +54647,18 @@
       "external": true,
       "file_type": "concept",
       "norm_label": "dna_material_types",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "project_grease_blender_edit8",
+      "label": "project_grease_blender_edit8",
+      "_origin": "semantic",
+      "community": 168,
+      "community_name": "bli_listbase",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "project_grease_blender_edit8",
       "source_file": "",
       "type": "external"
     },
@@ -56055,6 +56103,42 @@
       "type": "external"
     },
     {
+      "id": "mediacodec",
+      "label": "mediacodec",
+      "_origin": "semantic",
+      "community": 70,
+      "community_name": "VideoFrames",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "mediacodec",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "mediacodecinfo",
+      "label": "mediacodecinfo",
+      "_origin": "semantic",
+      "community": 70,
+      "community_name": "VideoFrames",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "mediacodecinfo",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "mediaformat",
+      "label": "mediaformat",
+      "_origin": "semantic",
+      "community": 70,
+      "community_name": "VideoFrames",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "mediaformat",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "bytearrayoutputstream",
       "label": "bytearrayoutputstream",
       "_origin": "semantic",
@@ -56223,6 +56307,18 @@
       "type": "external"
     },
     {
+      "id": "curvepoints",
+      "label": "curvepoints",
+      "_origin": "semantic",
+      "community": 8,
+      "community_name": "ProjectGreaseUI.kt",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "curvepoints",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "detectdraggestures",
       "label": "detectdraggestures",
       "_origin": "semantic",
@@ -56327,6 +56423,18 @@
       "external": true,
       "file_type": "concept",
       "norm_label": "offset",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "path",
+      "label": "path",
+      "_origin": "semantic",
+      "community": 8,
+      "community_name": "ProjectGreaseUI.kt",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "path",
       "source_file": "",
       "type": "external"
     },
@@ -56809,105 +56917,6 @@
       "norm_label": "third_party_blender_source_blender_blenlib_intern_math_matrix",
       "source_file": "",
       "type": "external"
-    },
-    {
-      "id": "project_grease_blender_mod2",
-      "label": "project_grease_blender_mod2",
-      "community": 142,
-      "community_name": "math",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "project_grease_blender_mod2",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "project_grease_curvemap",
-      "label": "project_grease_curvemap",
-      "community": 142,
-      "community_name": "math",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "project_grease_curvemap",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "dna_curve_types",
-      "label": "dna_curve_types",
-      "community": 168,
-      "community_name": "bli_listbase",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "dna_curve_types",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "project_grease_blender_edit8",
-      "label": "project_grease_blender_edit8",
-      "community": 168,
-      "community_name": "bli_listbase",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "project_grease_blender_edit8",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "mediacodec",
-      "label": "mediacodec",
-      "community": 70,
-      "community_name": "VideoFrames",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "mediacodec",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "mediacodecinfo",
-      "label": "mediacodecinfo",
-      "community": 70,
-      "community_name": "VideoFrames",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "mediacodecinfo",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "mediaformat",
-      "label": "mediaformat",
-      "community": 70,
-      "community_name": "VideoFrames",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "mediaformat",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "curvepoints",
-      "label": "curvepoints",
-      "community": 8,
-      "community_name": "ProjectGreaseUI.kt",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "curvepoints",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "path",
-      "label": "path",
-      "community": 8,
-      "community_name": "ProjectGreaseUI.kt",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "path",
-      "source_file": "",
-      "type": "external"
     }
   ],
   "links": [
@@ -56944,7 +56953,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L148",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -56956,7 +56965,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L356",
+      "source_location": "L357",
       "weight": 1.0
     },
     {
@@ -56980,7 +56989,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L332",
+      "source_location": "L333",
       "weight": 1.0
     },
     {
@@ -56992,7 +57001,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L193",
+      "source_location": "L194",
       "weight": 1.0
     },
     {
@@ -57004,7 +57013,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L213",
+      "source_location": "L214",
       "weight": 1.0
     },
     {
@@ -57016,7 +57025,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L265",
+      "source_location": "L266",
       "weight": 1.0
     },
     {
@@ -57028,7 +57037,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L245",
+      "source_location": "L246",
       "weight": 1.0
     },
     {
@@ -57040,7 +57049,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L127",
+      "source_location": "L128",
       "weight": 1.0
     },
     {
@@ -57052,7 +57061,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L314",
+      "source_location": "L315",
       "weight": 1.0
     },
     {
@@ -57064,7 +57073,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L161",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
@@ -66772,7 +66781,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L153",
+      "source_location": "L154",
       "weight": 1.0
     },
     {
@@ -66784,7 +66793,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L154",
+      "source_location": "L155",
       "weight": 1.0
     },
     {
@@ -66796,7 +66805,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L365",
+      "source_location": "L366",
       "weight": 1.0
     },
     {
@@ -66808,7 +66817,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L255",
+      "source_location": "L256",
       "weight": 1.0
     },
     {
@@ -66820,7 +66829,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L134",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -66832,7 +66841,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L135",
+      "source_location": "L136",
       "weight": 1.0
     },
     {
@@ -126415,7 +126424,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L148",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -126427,7 +126436,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L356",
+      "source_location": "L357",
       "weight": 1.0
     },
     {
@@ -126439,7 +126448,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L332",
+      "source_location": "L333",
       "weight": 1.0
     },
     {
@@ -126451,7 +126460,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L193",
+      "source_location": "L194",
       "weight": 1.0
     },
     {
@@ -126463,7 +126472,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L213",
+      "source_location": "L214",
       "weight": 1.0
     },
     {
@@ -126475,7 +126484,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L265",
+      "source_location": "L266",
       "weight": 1.0
     },
     {
@@ -126487,7 +126496,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L265",
+      "source_location": "L266",
       "weight": 1.0
     },
     {
@@ -126499,7 +126508,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L245",
+      "source_location": "L246",
       "weight": 1.0
     },
     {
@@ -126511,7 +126520,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L127",
+      "source_location": "L128",
       "weight": 1.0
     },
     {
@@ -126523,7 +126532,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L314",
+      "source_location": "L315",
       "weight": 1.0
     },
     {
@@ -126535,7 +126544,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L161",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
@@ -159144,7 +159153,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L127",
+      "source_location": "L128",
       "weight": 1.0
     },
     {
@@ -159155,7 +159164,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L148",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -159166,7 +159175,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L161",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
@@ -159177,7 +159186,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L182",
+      "source_location": "L183",
       "weight": 1.0
     },
     {
@@ -159188,7 +159197,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L186",
+      "source_location": "L187",
       "weight": 1.0
     },
     {
@@ -159199,7 +159208,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L193",
+      "source_location": "L194",
       "weight": 1.0
     },
     {
@@ -159210,7 +159219,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L213",
+      "source_location": "L214",
       "weight": 1.0
     },
     {
@@ -159221,7 +159230,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L245",
+      "source_location": "L246",
       "weight": 1.0
     },
     {
@@ -159232,7 +159241,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L265",
+      "source_location": "L266",
       "weight": 1.0
     },
     {
@@ -159243,7 +159252,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L314",
+      "source_location": "L315",
       "weight": 1.0
     },
     {
@@ -159254,7 +159263,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L332",
+      "source_location": "L333",
       "weight": 1.0
     },
     {
@@ -159265,7 +159274,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L356",
+      "source_location": "L357",
       "weight": 1.0
     },
     {
@@ -193800,7 +193809,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/Batch21UI.kt",
-      "source_location": "L155",
+      "source_location": "L156",
       "weight": 1.0
     },
     {
@@ -207704,5 +207713,5 @@
       "source_file": "tools/android_gp_source_manifest.txt"
     }
   ],
-  "built_at_commit": "7e6bb28fdeb2ce40cf3f87fbff2b09f4823876ab"
+  "built_at_commit": "fa2b3c46e9aece1abbd3e00cbccd6e412d561acd"
 }

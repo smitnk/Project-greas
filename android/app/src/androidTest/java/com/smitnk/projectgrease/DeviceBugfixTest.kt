@@ -287,6 +287,7 @@ class DeviceBugfixTest {
     @Test fun fillInsideClosedRectangle() {
         onUi { controller.selectTool(GreaseTool.RECTANGLE) }
         drag(300f to 200f, 900f to 500f)
+        assertTrue(onUi { controller.confirmShape() })
         val before = strokes().size
         onUi { controller.selectTool(GreaseTool.FILL) }
         tap(600f, 350f)

@@ -511,6 +511,21 @@ static void test_weight_view_smooth()
   CHECK(near_rgb(pixel_at_canvas(14, 54), 245, 245, 245));
 }
 
+/* Weight view honours layer masks like the colour view: A (masked by M) shows no weight colour
+ * outside M's footprint. */
+static void test_weight_view_masked()
+{
+  bGPDlayer *a, *m;
+  Doc d = mask_doc(&a, &m);
+  use_mask(a, m);
+  project_grease_android_present_set_weight_view(0);
+  present(d);
+  project_grease_android_present_set_weight_view(-1);
+  CHECK(near_rgb(pixel_at_canvas(140, 60), 245, 245, 245)); /* clipped outside M */
+  const Rgba in = pixel_at_canvas(60, 60);
+  CHECK(in.b > in.r && in.b > 60);                          /* weight 0 (blue) inside M */
+}
+
 static PGFxEntry fxe(int type, std::initializer_list<std::pair<int, float>> set = {}) {
   PGFxEntry e;
   pg_fx_entry_init(&e, type);
@@ -716,6 +731,7 @@ int main()
   test_self_overlap();
   test_cyclic_square();
   test_weight_view_smooth();
+  test_weight_view_masked();
   test_shader_fx_gl();
   test_fx_through_presenter();
   project_grease_android_present_reset();

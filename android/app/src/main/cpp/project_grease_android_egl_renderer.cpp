@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <jni.h>
 
@@ -25,6 +26,8 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
+extern "C" void project_grease_android_present_set_fill_extend(float factor);
+extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
 extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
@@ -47,6 +50,8 @@ struct Renderer {
   int fill_leak = 3;
   int fill_dilate = 1;
   int fill_draw_mode = 0;
+  float fill_extend = 0.0f; // brush fill_extend_fac
+
 };
 
 Renderer *from_handle(jlong value)
@@ -580,6 +585,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
   }
 
   project_grease_android_present_set_fill_draw_mode(renderer->fill_draw_mode);
+  project_grease_android_present_set_fill_extend(renderer->fill_extend);
   if (!project_grease_gp_render_fill_mask(renderer->gp_handle)) {
     return JNI_FALSE;
   }
@@ -675,6 +681,46 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillOptionsEglRende
   renderer->fill_leak = std::max(1, std::min(100, static_cast<int>(leak)));
   renderer->fill_dilate = std::max(-40, std::min(40, static_cast<int>(dilate)));
   renderer->fill_draw_mode = std::max(0, std::min(2, static_cast<int>(draw_mode)));
+  return JNI_TRUE;
+}
+
+/* Material texture image (stroke: fill = false, fill: true) of slot `slot` as ARGB pixels, top row
+ * first; null pixels remove it. Needs the GL context: textures live with the presenter. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialTextureEglRenderer(
+    JNIEnv *env, jobject, jlong handle, jint slot, jboolean fill, jintArray argb, jint width, jint height)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || renderer->display == EGL_NO_DISPLAY || renderer->surface == EGL_NO_SURFACE ||
+      renderer->context == EGL_NO_CONTEXT) return JNI_FALSE;
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE)
+    return JNI_FALSE;
+  if (!argb || width <= 0 || height <= 0) {
+    return project_grease_android_present_set_material_texture(slot, fill ? 1 : 0, nullptr, 0, 0) ? JNI_TRUE : JNI_FALSE;
+  }
+  const jsize n = env->GetArrayLength(argb);
+  if (n < width * height) return JNI_FALSE;
+  std::vector<jint> px(static_cast<size_t>(n));
+  env->GetIntArrayRegion(argb, 0, n, px.data());
+  std::vector<unsigned char> rgba(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const uint32_t c = static_cast<uint32_t>(px[static_cast<size_t>(y) * width + x]);
+      unsigned char *o = &rgba[(static_cast<size_t>(y) * width + x) * 4u];
+      o[0] = (c >> 16) & 255; o[1] = (c >> 8) & 255; o[2] = c & 255; o[3] = (c >> 24) & 255;
+    }
+  }
+  return project_grease_android_present_set_material_texture(slot, fill ? 1 : 0, rgba.data(), width, height) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Fill "Extend Lines" factor (brush fill_extend_fac): open strokes are prolonged in the fill boundary. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillExtendEglRenderer(
+    JNIEnv *, jobject, jlong handle, jfloat factor)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  renderer->fill_extend = std::isfinite(factor) ? std::max(0.0f, std::min(10.0f, static_cast<float>(factor))) : 0.0f;
   return JNI_TRUE;
 }
 

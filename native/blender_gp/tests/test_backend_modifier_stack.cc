@@ -224,6 +224,29 @@ int main()
     }
   }
 
+  /* --- interpolation of strokes with different point counts (edit6 pg_gp_interpolate_strokes) --- */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f); /* frame 1: 5 points */
+    CHECK(b.create_frame(10));
+    StrokePoint pts[3];
+    for (int i = 0; i < 3; i++) pts[i] = StrokePoint{100.0f + 40.0f * i, 0.0f, 0.0f, 0.5f, 1.0f, 0.0f};
+    PGStrokeInfo info{};
+    info.thickness = 8.0f;
+    CHECK(b.add_stroke(pts, 3, info)); /* frame 10: 3 points */
+    add_line(b, 0.0f, 50.0f);          /* frame 10: an extra stroke without a partner */
+    CHECK(b.interpolate_frame(1, 10, 5, 0.5f));
+    bGPDlayer *lay = b.active_layer_data();
+    for (bGPDframe *f = static_cast<bGPDframe *>(lay->frames.first); f; f = f->next) {
+      if (f->framenum != 5) continue;
+      const bGPDstroke *s = static_cast<const bGPDstroke *>(f->strokes.first);
+      CHECK(s != nullptr && s->totpoints == 5);      /* resampled to the larger count */
+      CHECK(s && std::fabs(s->points[0].x - 50.0f) < 1e-3f);   /* halfway between 0 and 100 */
+      CHECK(s && std::fabs(s->points[4].x - 130.0f) < 1e-3f);  /* ends kept by uniform_subdivide: (80 + 180) / 2 */
+      CHECK(s && s->next == nullptr);                /* pairs by index: one in-between stroke */
+    }
+  }
+
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */
   {
     CHECK(b.reset_document());

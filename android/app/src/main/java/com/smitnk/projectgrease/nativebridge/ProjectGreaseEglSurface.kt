@@ -45,12 +45,11 @@ fun ProjectGreaseEglViewport(
                     width: Int,
                     height: Int
                 ) {
-                    val handle = view.getRendererHandle()
-                    if (handle != 0L) {
-                        GPNative.nativeAttachSurface(handle, holder.surface)
-                        controller.attachRenderer(handle)
-                        controller.render()
-                    }
+                    // Same surface, new size: the renderer re-reads the surface size on every
+                    // render. Re-attaching here went through detach_window(), which destroys the
+                    // Blender GP document and starts an empty "Layer 1" one (New Project lost its
+                    // template, a resize or rotation lost the drawing).
+                    if (view.getRendererHandle() != 0L) controller.render()
                 }
 
                 override fun surfaceDestroyed(holder: SurfaceHolder) {

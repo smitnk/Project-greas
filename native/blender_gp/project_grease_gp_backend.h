@@ -193,6 +193,9 @@ class Backend {
   bool fx_remove(int layer_index, int fx_index);
   bool fx_move(int layer_index, int from_index, int to_index);
   bool fx_set_enabled(int layer_index, int fx_index, bool enabled);
+  // PG_FX_TARGET_*: whole layer, strokes only or fills only.
+  bool fx_set_target(int layer_index, int fx_index, int target);
+  int fx_target(int layer_index, int fx_index) const;
   bool fx_set_params(int layer_index, int fx_index, const float* params, int count);
   int fx_get(int layer_index, int fx_index, int* type, int* enabled, float* params, int capacity) const;
   // The effect list of `layer` for the presenter (valid until the next fx_* edit); returns its length.

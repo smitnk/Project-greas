@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.smitnk.projectgrease.editor.EditorController
+import com.smitnk.projectgrease.editor.GifEncoder
 import com.smitnk.projectgrease.editor.VectorExport
 
 /**
@@ -39,6 +40,36 @@ internal fun writePng(context: Context, uri: Uri, argb: IntArray, width: Int, he
 }.getOrDefault(false)
 
 /**
+ * Animated GIF of the project's frame range (project settings start..end, fps; holds show the
+ * previous keyframe), each frame rendered offscreen like PNG export. Returns the number of frames.
+ */
+internal fun writeGif(context: Context, uri: Uri, controller: EditorController, transparent: Boolean): Int = runCatching {
+    var frames = 0
+    context.contentResolver.openOutputStream(uri)?.use { out ->
+        val gif = GifEncoder(java.io.BufferedOutputStream(out), controller.document.canvasWidth, controller.document.canvasHeight,
+            controller.projectSettings.fps)
+        gif.begin()
+        val ok = controller.renderExportFrames(transparent) { _, px -> gif.addFrame(px); frames++ }
+        gif.finish()
+        if (!ok) frames = 0
+    }
+    frames
+}.getOrDefault(0)
+
+/** PNG sequence (name_0001.png ...) of the project's frame range into a SAF folder; files written. */
+internal fun writePngSequence(context: Context, tree: Uri, controller: EditorController, transparent: Boolean): Int {
+    val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+    var written = 0
+    controller.renderExportFrames(transparent) { item, px ->
+        val target = runCatching {
+            DocumentsContract.createDocument(context.contentResolver, parent, "image/png", item.fileName)
+        }.getOrNull()
+        if (target != null && writePng(context, target, px, controller.document.canvasWidth, controller.document.canvasHeight)) written++
+    }
+    return written
+}
+
+/**
  * SVG / PDF / PNG export through the Storage Access Framework: a single file for the current frame (SVG)
  * or any selection (PDF, one page per frame), or a folder with one SVG per frame for the whole
  * timeline. The files are built by [VectorExport]; see its notes for what is exported.
@@ -47,6 +78,9 @@ internal fun writePng(context: Context, uri: Uri, argb: IntArray, width: Int, he
 fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -> Unit) {
     var pdf by remember { mutableStateOf(false) }
     var png by remember { mutableStateOf(false) }
+    // Animation formats over the project settings' frame range: GIF or a PNG sequence.
+    var gif by remember { mutableStateOf(false) }
+    var sequence by remember { mutableStateOf(false) }
     var transparent by remember { mutableStateOf(false) }
     var wholeTimeline by remember { mutableStateOf(false) }
     // Annotations are overlay notes, not part of the drawing: left out unless asked for.
@@ -82,6 +116,18 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         toast(if (ok) "Exported PNG ${w}×$h" else "PNG export failed")
         if (ok) onDismiss()
     }
+    val gifFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/gif")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val n = writeGif(context, uri, controller, transparent)
+        toast(if (n > 0) "Exported GIF, $n frames" else "GIF export failed")
+        if (n > 0) onDismiss()
+    }
+    val sequenceFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree == null) return@rememberLauncherForActivityResult
+        val n = writePngSequence(context, tree, controller, transparent)
+        toast(if (n > 0) "Exported $n PNG files" else "PNG sequence export failed")
+        if (n > 0) onDismiss()
+    }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
         val pages = controller.exportPages(frames, includeAnnotations)
@@ -105,11 +151,26 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
             Column {
                 Text("Format")
                 Row {
-                    FilterChip(selected = !pdf && !png, onClick = { pdf = false; png = false }, label = { Text("SVG") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = pdf, onClick = { pdf = true; png = false }, label = { Text("PDF") }, modifier = Modifier.padding(end = 6.dp))
-                    FilterChip(selected = png, onClick = { png = true; pdf = false }, label = { Text("PNG") })
+                    FilterChip(selected = !pdf && !png && !gif && !sequence, onClick = { pdf = false; png = false; gif = false; sequence = false }, label = { Text("SVG") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = pdf, onClick = { pdf = true; png = false; gif = false; sequence = false }, label = { Text("PDF") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = png, onClick = { png = true; pdf = false; gif = false; sequence = false }, label = { Text("PNG") })
                 }
-                if (png) {
+                Row {
+                    FilterChip(selected = gif, onClick = { gif = true; sequence = false; png = false; pdf = false }, label = { Text("GIF") }, modifier = Modifier.padding(end = 6.dp))
+                    FilterChip(selected = sequence, onClick = { sequence = true; gif = false; png = false; pdf = false }, label = { Text("PNG sequence") })
+                }
+                if (gif || sequence) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Transparent background", Modifier.weight(1f))
+                        Switch(transparent, { transparent = it })
+                    }
+                    val s = controller.projectSettings
+                    Text(
+                        "Frames ${s.frameStart}–${s.frameEnd} at ${s.fps} FPS (Project > Settings), ${controller.document.canvasWidth}×${controller.document.canvasHeight} px; held frames repeat the previous keyframe." +
+                            if (gif) " GIF uses a 252-colour palette." else " One PNG per frame in the chosen folder.",
+                        Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                } else if (png) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Transparent background", Modifier.weight(1f))
                         Switch(transparent, { transparent = it })
@@ -138,7 +199,9 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         confirmButton = {
             TextButton(onClick = {
                 val extension = if (pdf) "pdf" else "svg"
-                if (png) pngFile.launch("$baseName.png")
+                if (gif) gifFile.launch("$baseName.gif")
+                else if (sequence) sequenceFolder.launch(null)
+                else if (png) pngFile.launch("$baseName.png")
                 else if (!pdf && wholeTimeline) folder.launch(null) else singleFile.launch("$baseName.$extension")
             }) { Text("Export") }
         },

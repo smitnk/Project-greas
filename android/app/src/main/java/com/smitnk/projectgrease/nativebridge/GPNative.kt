@@ -46,6 +46,11 @@ object GPNative {
     external fun nativeSetSelectionOverlay(handle: Long, enabled: Boolean): Boolean
     /** Fill tool options: leak (px, Blender fill_leak), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
     external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
+    external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float): Boolean
+    /** Stroke (fill = false) or fill texture image of a material slot, ARGB top row first; null removes. */
+    external fun nativeSetMaterialTextureEglRenderer(handle: Long, slot: Int, fill: Boolean, argb: IntArray?, width: Int, height: Int): Boolean
+    external fun nativeFxSetTarget(handle: Long, layer: Int, index: Int, target: Int): Boolean
+    external fun nativeFxGetTarget(handle: Long, layer: Int, index: Int): Int
     /** Current frame rendered offscreen at width x height (canvas units = pixels): ARGB, top row first. */
     external fun nativeRenderCanvasPixelsEglRenderer(handle: Long, width: Int, height: Int, transparent: Boolean): IntArray?
 

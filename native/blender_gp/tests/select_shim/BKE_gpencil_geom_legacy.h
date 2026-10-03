@@ -25,3 +25,5 @@ bGPDframe *BKE_gpencil_frame_addnew(bGPDlayer *gpl, int cframe);
 bool BKE_gpencil_layer_frame_delete(bGPDlayer *gpl, bGPDframe *gpf);
 void BKE_gpencil_stroke_merge_distance(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps, float threshold, bool use_unselected);
 bGPDlayer *BKE_gpencil_layer_addnew(bGPdata *gpd, const char *name, bool setactive, bool add_to_header);
+#include <stdint.h>
+void BKE_gpencil_stroke_uniform_subdivide(bGPdata *gpd, bGPDstroke *gps, uint32_t target_number, bool select);

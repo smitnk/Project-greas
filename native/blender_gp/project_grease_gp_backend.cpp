@@ -1,4 +1,5 @@
 #include "project_grease_gp_backend.h"
+#include "project_grease_blender_edit6.h"
 #include "project_grease_annotations.h"
 #include "project_grease_legacy_fill.h"
 #include "project_grease_legacy_primitive.h"
@@ -1165,14 +1166,26 @@ bool Backend::interpolate_frame(int source_frame, int target_frame, int result_f
   }
   result->framenum = result_frame;
 
+  /* Strokes are paired by index (gpencil_interpolate.c pairs gps_from/gps_to the same way); a pair
+   * with different point counts is resampled to the larger count (pg_gp_interpolate_strokes, which
+   * uses BKE_gpencil_stroke_uniform_subdivide) instead of failing the whole frame. Strokes without a
+   * partner are not interpolated (dropped from the in-between, as Blender skips them). */
   bGPDstroke *rs = static_cast<bGPDstroke *>(result->strokes.first);
   bGPDstroke *ts = static_cast<bGPDstroke *>(target->strokes.first);
-  for (; rs && ts; rs = rs->next, ts = ts->next) {
+  for (; rs && ts; ts = ts->next) {
     if (rs->totpoints != ts->totpoints) {
-      BKE_gpencil_free_strokes(result);
-      MEM_freeN(result);
-      impl_->last_error = "interpolation requires matching stroke point counts";
-      return false;
+      bGPDstroke *mixed = pg_gp_interpolate_strokes(impl_->gpd, rs, ts, factor);
+      if (!mixed) {
+        BKE_gpencil_free_strokes(result);
+        MEM_freeN(result);
+        impl_->last_error = "interpolation of strokes with different point counts failed";
+        return false;
+      }
+      BLI_insertlinkafter(&result->strokes, rs, mixed);
+      BLI_remlink(&result->strokes, rs);
+      BKE_gpencil_free_stroke(rs);
+      rs = mixed->next;
+      continue;
     }
     for (int i = 0; i < rs->totpoints; ++i) {
       const bGPDspoint &a = rs->points[i];
@@ -1187,12 +1200,13 @@ bool Backend::interpolate_frame(int source_frame, int target_frame, int result_f
       p.uv_fac = a.uv_fac + (b.uv_fac - a.uv_fac) * factor;
       p.uv_rot = a.uv_rot + (b.uv_rot - a.uv_rot) * factor;
     }
+    rs = rs->next;
   }
-  if (rs || ts) {
-    BKE_gpencil_free_strokes(result);
-    MEM_freeN(result);
-    impl_->last_error = "interpolation requires matching stroke counts";
-    return false;
+  while (rs) { /* source strokes without a partner in the target frame */
+    bGPDstroke *next = rs->next;
+    BLI_remlink(&result->strokes, rs);
+    BKE_gpencil_free_stroke(rs);
+    rs = next;
   }
   BLI_addtail(&impl_->layer->frames, result);
   BKE_gpencil_layer_frames_sort(impl_->layer, nullptr);
@@ -3757,6 +3771,26 @@ bool Backend::fx_set_enabled(int layer_index, int fx_index, bool enabled)
   (*list)[static_cast<size_t>(fx_index)].enabled = enabled ? 1 : 0;
   impl_->last_error.clear();
   return true;
+}
+
+bool Backend::fx_set_target(int layer_index, int fx_index, int target)
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  if (!list || fx_index < 0 || static_cast<size_t>(fx_index) >= list->size() ||
+      target < PG_FX_TARGET_LAYER || target > PG_FX_TARGET_FILLS) {
+    impl_->last_error = "invalid effect target";
+    return false;
+  }
+  (*list)[static_cast<size_t>(fx_index)].target = target;
+  impl_->last_error.clear();
+  return true;
+}
+
+int Backend::fx_target(int layer_index, int fx_index) const
+{
+  std::vector<PGFxEntry> *list = layer_fx(impl_, layer_index);
+  if (!list || fx_index < 0 || static_cast<size_t>(fx_index) >= list->size()) return -1;
+  return (*list)[static_cast<size_t>(fx_index)].target;
 }
 
 bool Backend::fx_set_params(int layer_index, int fx_index, const float *params, int count)

@@ -390,4 +390,30 @@ object ProjectGreaseSelect {
     fun moveToLayer(index: Int): Command? = if (index >= 0) Command(CMD_MOVE_TO_LAYER, floatArrayOf(index.toFloat())) else null
     fun copy() = Command(CMD_COPY, FloatArray(0))
     fun paste() = Command(CMD_PASTE, FloatArray(0))
+
+    // project_grease_blender_edit6.h (86..89 are edit5's segment / material / onion commands)
+    const val CMD_OUTLINE = 90
+    const val CMD_ONION_STYLE = 91
+    const val CMD_MATERIAL_TEXTURE = 92
+    /** Blender bGPdata.onion_mode values (GP_ONION_MODE_*). */
+    const val ONION_MODE_ABSOLUTE = 0
+    const val ONION_MODE_RELATIVE = 1
+    const val ONION_MODE_SELECTED = 2
+
+    fun outline(thickness: Int = 2, capSegments: Int = 8): Command? =
+        if (thickness >= 1 && capSegments in 1..64) Command(CMD_OUTLINE, floatArrayOf(thickness.toFloat(), capSegments.toFloat())) else null
+    /** Onion mode and ghost colours (ARGB) with their switches. */
+    fun onionStyle(mode: Int, usePrevColor: Boolean, useNextColor: Boolean, prevArgb: Int, nextArgb: Int): Command? {
+        if (mode !in ONION_MODE_ABSOLUTE..ONION_MODE_SELECTED) return null
+        fun c(argb: Int, shift: Int) = ((argb ushr shift) and 0xFF) / 255f
+        return Command(CMD_ONION_STYLE, floatArrayOf(mode.toFloat(), flag(usePrevColor), flag(useNextColor),
+            c(prevArgb, 16), c(prevArgb, 8), c(prevArgb, 0), c(nextArgb, 16), c(nextArgb, 8), c(nextArgb, 0)))
+    }
+    /** Material texture settings: fill = false for the stroke texture. */
+    fun materialTexture(material: Int, fill: Boolean, enabled: Boolean, mix: Float, scaleX: Float = 1f, scaleY: Float = 1f,
+                        offsetX: Float = 0f, offsetY: Float = 0f, angle: Float = 0f, pixelSize: Float = 100f): Command? =
+        if (material >= 0 && finite(mix, scaleX, scaleY, offsetX, offsetY) && finite(angle, pixelSize) && scaleX != 0f && scaleY != 0f)
+            Command(CMD_MATERIAL_TEXTURE, floatArrayOf(material.toFloat(), flag(fill), flag(enabled), mix.coerceIn(0f, 1f),
+                scaleX, scaleY, offsetX, offsetY, angle, pixelSize))
+        else null
 }

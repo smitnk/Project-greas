@@ -121,6 +121,8 @@ class NativeEditorBridge : ModifierNative, FxNative {
     override fun fxSetParams(layer: Int, index: Int, params: FloatArray) =
         handle != 0L && GPNative.nativeFxSetParams(handle, layer, index, params)
     override fun fxGet(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeFxGet(handle, layer, index) else null
+    override fun fxSetTarget(layer: Int, index: Int, target: Int) = handle != 0L && GPNative.nativeFxSetTarget(handle, layer, index, target)
+    override fun fxTarget(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeFxGetTarget(handle, layer, index) else FxTarget.LAYER
     fun materialInfo(index: Int) = if (handle != 0L) GPNative.nativeGetMaterialInfo(handle, index) else null
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
@@ -449,7 +451,25 @@ class OnionSkinController {
     fun setAfter(value:Int){afterFrames=value.coerceIn(0,12)}
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
     fun setFade(value:Boolean){fade=value}
+    // bGPdata.onion_mode and the ghost colours (Blender defaults: Relative, custom colours on,
+    // gcolor_prev green, gcolor_next blue; BKE_gpencil_data_addnew).
+    var mode=ProjectGreaseSelect.ONION_MODE_RELATIVE; private set
+    var usePrevColor=true; private set
+    var useNextColor=true; private set
+    var prevColor=0xFF256B23.toInt(); private set
+    var nextColor=0xFF201587.toInt(); private set
+    fun setStyle(mode:Int, usePrev:Boolean, useNext:Boolean, prev:Int, next:Int){
+        if(mode in ProjectGreaseSelect.ONION_MODE_ABSOLUTE..ProjectGreaseSelect.ONION_MODE_SELECTED) this.mode=mode
+        usePrevColor=usePrev; useNextColor=useNext; prevColor=prev; nextColor=next
+    }
 }
+
+/** Stroke or fill texture of a material slot (MaterialGPencilStyle texture settings + the picked image). */
+data class MaterialTexture(
+    val uri: String? = null, val enabled: Boolean = false, val mix: Float = 0f,
+    val scaleX: Float = 1f, val scaleY: Float = 1f, val offsetX: Float = 0f, val offsetY: Float = 0f,
+    val angle: Float = 0f, val pixelSize: Float = 100f
+)
 
 /** Tools that select or act on the selection: the edit overlay is shown while one is active. */
 val SELECTION_TOOLS = setOf(GreaseTool.SELECT, GreaseTool.LASSO, GreaseTool.MOVE, GreaseTool.ROTATE,
@@ -504,14 +524,22 @@ class EditorController {
         setMaterialColor(materials.colorArgb)
         animation.initialize()
         selectedLayer = 0
+        reuploadTextures()
         // Document setup requested before the surface existed (New Project / open from Home): the
         // native document only exists once the EGL renderer is attached, so it runs now.
         if (rendererReady) {
             val pending = pendingDocumentSetup
             pendingDocumentSetup = null
-            pending?.invoke()
+            val snapshot = detachedSnapshot
+            detachedSnapshot = null
+            // A destroyed surface takes its native renderer and document with it, and a new surface
+            // starts from an empty "Layer 1" document: restore the document as it was at detach.
+            setupTrace("attach pending=${pending != null} snapshot=${snapshot != null} layers=${native.layerCount()}")
+            if (pending != null) pending() else if (snapshot != null) loadDocumentJson(snapshot)
         }
     }
+    /** The document saved when the surface went away (app in background, surface recreated). */
+    private var detachedSnapshot: String? = null
     private var pendingDocumentSetup: (() -> Unit)? = null
     /**
      * Runs a document setup (template, project load) on the native document. Before the editor's
@@ -519,13 +547,28 @@ class EditorController {
      * (New Project kept "Layer 1"); it is now kept and run on attach. The latest request wins.
      */
     fun runWhenAttached(setup: () -> Unit) {
+        setupTrace("runWhenAttached ready=$rendererReady")
         if (rendererReady) setup() else pendingDocumentSetup = setup
     }
-    fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
+    /** Document setup trace (attach / template / restore steps), logged and read by device tests. */
+    val setupLog = ArrayList<String>()
+    fun setupTrace(msg: String) {
+        setupLog += msg
+        runCatching { android.util.Log.i("ProjectGrease", "setup: $msg") }
+    }
+    fun detachRenderer(){
+        animation.stop()
+        setupTrace("detach ready=$rendererReady")
+        if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it }
+        rendererHandle=0L;native.detach()
+    }
     fun resetDocument():Boolean {
         if (rendererHandle == 0L) return false
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
+        setupTrace("resetDocument ok=$ok")
         if(ok){
+            clearTextures()
+            projectSettings = ProjectSettings()
             reapplyOnion()
             selectedLayer=0
             animation.setSceneEnd(0)
@@ -1025,6 +1068,132 @@ class EditorController {
     private fun reapplyOnion() {
         native.setOnionSkin(onion.enabled, onion.beforeFrames, onion.afterFrames, onion.opacity)
         native.applyEditCommand(ProjectGreaseSelect.CMD_ONION_FADE, ProjectGreaseSelect.onionFade(onion.fade).args)
+        ProjectGreaseSelect.onionStyle(onion.mode, onion.usePrevColor, onion.useNextColor, onion.prevColor, onion.nextColor)
+            ?.let { native.applyEditCommand(it.id, it.args) }
+    }
+    /** Onion mode (Relative / Absolute / Selected) and the custom ghost colours before / after. */
+    fun setOnionStyle(mode:Int = onion.mode, usePrevColor:Boolean = onion.usePrevColor, useNextColor:Boolean = onion.useNextColor,
+                      prevColor:Int = onion.prevColor, nextColor:Int = onion.nextColor):Boolean {
+        val command = ProjectGreaseSelect.onionStyle(mode, usePrevColor, useNextColor, prevColor, nextColor) ?: return false
+        if (native.handle == 0L || !native.applyEditCommand(command.id, command.args)) return false
+        onion.setStyle(mode, usePrevColor, useNextColor, prevColor, nextColor)
+        render()
+        return true
+    }
+    /** Outline modifier, baked: each selected open stroke becomes the closed perimeter of its shape. */
+    fun outlineSelection(thickness:Int = 2) = runSelectCommand(ProjectGreaseSelect.outline(thickness))
+
+    // ---- Project settings (ProjectSettings.java), saved in the project file under "settings" ----
+    var projectSettings = ProjectSettings(); private set
+    /** Applies validated settings: canvas size, fps and the timeline end; null or an error message. */
+    fun applyProjectSettings(settings:ProjectSettings):String? {
+        settings.validate()?.let { return it }
+        projectSettings = settings
+        document.canvasWidth = settings.width
+        document.canvasHeight = settings.height
+        animation.setFps(settings.fps)
+        animation.setSceneEnd(settings.frameEnd)
+        document.markDirty()
+        render()
+        return null
+    }
+
+    // ---- Material textures ----
+    private val materialTextures = HashMap<Int, MaterialTexture>()
+    private val textureImages = HashMap<Int, Triple<IntArray, Int, Int>>()
+    private fun textureKey(slot:Int, fill:Boolean) = slot * 2 + if (fill) 1 else 0
+    fun materialTexture(slot:Int = materials.activeMaterial, fill:Boolean):MaterialTexture =
+        materialTextures[textureKey(slot, fill)] ?: MaterialTexture()
+    /** Texture images whose URI is known but whose pixels are not loaded (after opening a project). */
+    fun texturesNeedingImages():List<Triple<Int, Boolean, String>> =
+        materialTextures.mapNotNull { (k, t) -> t.uri?.takeIf { textureImages[k] == null }?.let { Triple(k / 2, k % 2 == 1, it) } }
+    /** Sets the texture settings (and, when given, the image as ARGB pixels) of a material slot. */
+    fun setMaterialTexture(slot:Int, fill:Boolean, texture:MaterialTexture, argb:IntArray? = null, width:Int = 0, height:Int = 0):Boolean {
+        val command = ProjectGreaseSelect.materialTexture(slot, fill, texture.enabled, texture.mix, texture.scaleX, texture.scaleY,
+            texture.offsetX, texture.offsetY, texture.angle, texture.pixelSize) ?: return false
+        if (native.handle == 0L || !native.applyEditCommand(command.id, command.args)) return false
+        val key = textureKey(slot, fill)
+        materialTextures[key] = texture
+        if (argb != null && width > 0 && height > 0 && argb.size >= width * height) {
+            textureImages[key] = Triple(argb, width, height)
+            if (rendererHandle != 0L) GPNative.nativeSetMaterialTextureEglRenderer(rendererHandle, slot, fill, argb, width, height)
+        }
+        document.markDirty()
+        render()
+        return true
+    }
+    private fun clearTextures() {
+        if (rendererHandle != 0L) for (key in materialTextures.keys + textureImages.keys)
+            GPNative.nativeSetMaterialTextureEglRenderer(rendererHandle, key / 2, key % 2 == 1, null, 0, 0)
+        materialTextures.clear(); textureImages.clear()
+    }
+    /** The presenter drops its textures with the surface; send the cached images again. */
+    private fun reuploadTextures() {
+        if (rendererHandle == 0L) return
+        for ((key, img) in textureImages) GPNative.nativeSetMaterialTextureEglRenderer(rendererHandle, key / 2, key % 2 == 1, img.first, img.second, img.third)
+    }
+    private fun reapplyTextureSettings() {
+        for ((key, t) in materialTextures) {
+            ProjectGreaseSelect.materialTexture(key / 2, key % 2 == 1, t.enabled, t.mix, t.scaleX, t.scaleY, t.offsetX, t.offsetY, t.angle, t.pixelSize)
+                ?.let { native.applyEditCommand(it.id, it.args) }
+        }
+    }
+    private fun texturesJson():org.json.JSONArray = org.json.JSONArray().apply {
+        for ((key, t) in materialTextures.toSortedMap()) put(org.json.JSONObject().put("slot", key / 2).put("fill", key % 2 == 1)
+            .put("uri", t.uri ?: "").put("enabled", t.enabled).put("mix", t.mix.toDouble()).put("scaleX", t.scaleX.toDouble())
+            .put("scaleY", t.scaleY.toDouble()).put("offsetX", t.offsetX.toDouble()).put("offsetY", t.offsetY.toDouble())
+            .put("angle", t.angle.toDouble()).put("pixelSize", t.pixelSize.toDouble()))
+    }
+    private fun loadTexturesJson(array:org.json.JSONArray?) {
+        // images already decoded for the same slot and URI are kept (document restored after the
+        // surface was recreated); others are dropped and listed by texturesNeedingImages()
+        val keep = materialTextures.mapNotNull { (k, t) -> textureImages[k]?.let { img -> Triple(k, t.uri, img) } }
+        clearTextures()
+        if (array == null) return
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            val slot = o.optInt("slot", -1); if (slot < 0) continue
+            fun f(k:String, d:Float) = o.optDouble(k, d.toDouble()).toFloat().takeIf { it.isFinite() } ?: d
+            materialTextures[textureKey(slot, o.optBoolean("fill", false))] = MaterialTexture(
+                o.optString("uri", "").ifBlank { null }, o.optBoolean("enabled", false), f("mix", 0f), f("scaleX", 1f), f("scaleY", 1f),
+                f("offsetX", 0f), f("offsetY", 0f), f("angle", 0f), f("pixelSize", 100f))
+        }
+        for ((k, uri, img) in keep) if (uri != null && materialTextures[k]?.uri == uri) textureImages[k] = img
+        reapplyTextureSettings()
+        reuploadTextures()
+    }
+
+    // ---- Animation export (GIF / PNG sequence): frames start..end of the project settings ----
+    /** Renders every frame of the export range offscreen (holds show the previous keyframe) and hands
+     *  each to [sink]; the current frame is restored. False when a frame cannot be rendered. */
+    fun renderExportFrames(transparent:Boolean, sink:(FrameSequenceExport.Item, IntArray) -> Unit):Boolean {
+        if (rendererHandle == 0L || native.handle == 0L) return false
+        val s = projectSettings
+        val keys = native.frameNumbers().sorted().toIntArray()
+        val plan = FrameSequenceExport.plan(keys, s.frameStart.coerceAtLeast(1), s.frameEnd.coerceAtLeast(s.frameStart.coerceAtLeast(1)), document.projectName.ifBlank { "frame" }.replace(Regex("[^A-Za-z0-9_-]"), "_"), "png")
+        val original = animation.currentFrame
+        var ok = true
+        for (item in plan) {
+            native.selectFrameOrHold(item.frame)
+            val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent || s.transparentBackground)
+            if (px == null || px.size != document.canvasWidth * document.canvasHeight) { ok = false; break }
+            if (!(transparent || s.transparentBackground)) {
+                // composite over the project background colour
+                val bg = s.background
+                for (i in px.indices) px[i] = over(px[i], bg)
+            }
+            sink(item, px)
+        }
+        native.selectFrameOrHold(original)
+        animation.setFrame(original)
+        render()
+        return ok
+    }
+    private fun over(fg:Int, bg:Int):Int {
+        val a = (fg ushr 24) and 255
+        if (a == 255) return fg
+        fun ch(s:Int) = (((fg ushr s) and 255) * a + ((bg ushr s) and 255) * (255 - a)) / 255
+        return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
     }
     fun setOnionSkin(enabled:Boolean,before:Int=2,after:Int=2,opacity:Float=0.35f):Boolean {
         val ok = native.setOnionSkin(enabled,before,after,opacity)
@@ -1066,9 +1235,14 @@ class EditorController {
             native.selectFrameOrHold(originalFrame)
         }
         render()
-        // Annotations are separate data with their own key (older files have none).
-        val notes = AnnotationData.toJson(annotationDump(), annotationStyle()) ?: return json
-        return runCatching { org.json.JSONObject(json).put("annotations", notes).toString() }.getOrDefault(json)
+        // Project settings, material textures and annotations have their own keys (older files have none).
+        return runCatching {
+            val obj = org.json.JSONObject(json)
+            obj.put("settings", org.json.JSONObject(projectSettings.toJson()))
+            if (materialTextures.isNotEmpty()) obj.put("textures", texturesJson())
+            AnnotationData.toJson(annotationDump(), annotationStyle())?.let { obj.put("annotations", it) }
+            obj.toString()
+        }.getOrDefault(json)
     }
 
     fun loadDocumentJson(raw:String):Boolean {
@@ -1081,6 +1255,18 @@ class EditorController {
         animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
         animation.setSceneEnd(parsed.frameEnd)
         if (!ProjectDocumentCodec.restore(parsed, NativeDocumentAdapter(native), brushes.size)) return false
+        val rawJson = runCatching { org.json.JSONObject(raw) }.getOrNull()
+        // "settings": older files use defaults with the file's canvas size, fps and end frame
+        projectSettings = rawJson?.optJSONObject("settings")?.let { ProjectSettings.fromJson(it.toString()) }
+            ?: ProjectSettings().apply {
+                width = document.canvasWidth; height = document.canvasHeight; fps = animation.fps
+                if (parsed.frameEnd > 0) frameEnd = parsed.frameEnd
+            }
+        if (projectSettings.validate() == null) {
+            document.canvasWidth = projectSettings.width; document.canvasHeight = projectSettings.height
+            animation.setFps(projectSettings.fps); animation.setSceneEnd(projectSettings.frameEnd)
+        }
+        loadTexturesJson(rawJson?.optJSONArray("textures"))
         val notes = AnnotationData.fromJson(runCatching { org.json.JSONObject(raw).optJSONObject("annotations") }.getOrNull())
         if (notes != null) {
             notes.style?.let { GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_STYLE, it) }
@@ -1142,6 +1328,9 @@ class EditorController {
     var fillLeak = 3; private set
     var fillDilate = 1; private set
     var fillBoundary = FILL_BOUNDARY_ALL; private set
+    /** Fill "Extend Lines" (brush fill_extend_fac, Blender default 0). */
+    var fillExtend = 0f; private set
+    fun setFillExtend(value:Float) { fillExtend = if (value.isFinite()) value.coerceIn(0f, 10f) else 0f }
     fun setFillOptions(leak:Int = fillLeak, dilate:Int = fillDilate, boundary:Int = fillBoundary) {
         fillLeak = leak.coerceIn(1, 100)
         fillDilate = dilate.coerceIn(-40, 40)
@@ -1155,6 +1344,7 @@ class EditorController {
             setMaterialFillEnabled(true)
         }
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
+        GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
         return ok
@@ -1299,6 +1489,8 @@ class EditorController {
     fun removeEffect(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.remove(native,layer,index))
     fun moveEffect(index:Int,delta:Int,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.moveBy(native,layer,index,delta))
     fun setEffectEnabled(index:Int,enabled:Boolean,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.setEnabled(native,layer,index,enabled))
+    /** Whole layer, strokes only or fills only ([FxTarget]). */
+    fun setEffectTarget(index:Int,target:Int,layer:Int=selectedLayer):Boolean = modifierChanged(FxCommands.setTarget(native,layer,index,target))
     fun setEffectParam(index:Int,paramIndex:Int,value:Float,commit:Boolean=true,layer:Int=selectedLayer):Boolean {
         val ok=FxCommands.setParam(native,layer,index,paramIndex,value)
         if(ok){ if(commit){history.markEdit()}; document.markDirty(); render() }
@@ -1345,20 +1537,21 @@ class EditorController {
      * fps and the scene end frame. The top layer and material 0 end up active.
      */
     fun applyTemplate(template:GreaseTemplates.Template):Boolean {
+        setupTrace("applyTemplate ${template.id} handle=${native.handle != 0L} layers=${native.layerCount()}")
         if (native.handle == 0L || template.layers.isEmpty()) return false
         if (native.layerCount() == 0) {
-            if (!native.createLayer(template.layers[0])) return false
+            if (!native.createLayer(template.layers[0])) { setupTrace("createLayer0 failed"); return false }
         } else {
             native.renameLayer(0, template.layers[0])
         }
         native.selectLayer(0)
         if (native.frameCount() == 0) native.createFrame(1)
         for (name in template.layers.drop(1)) {
-            if (!native.createLayer(name)) return false
+            if (!native.createLayer(name)) { setupTrace("createLayer $name failed"); return false }
             native.createFrame(1)
         }
         template.materials.forEachIndexed { i, m ->
-            while (native.materialCount() <= i) if (!native.createMaterial()) return false
+            while (native.materialCount() <= i) if (!native.createMaterial()) { setupTrace("createMaterial failed"); return false }
             val stroke = colorToFloats(m.stroke)
             val fill = m.fill?.let { colorToFloats(it) } ?: stroke
             native.setMaterialColors(i, stroke, fill)

@@ -33,6 +33,7 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_blender_edit3.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit4.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit5.c"
+  "$ROOT/native/blender_gp/project_grease_blender_edit6.c"
   "$ROOT/native/blender_gp/project_grease_tool_session.c"
   "$ROOT/native/blender_gp/project_grease_draw_input.c"
   "$ROOT/native/blender_gp/project_grease_tool_util.c"

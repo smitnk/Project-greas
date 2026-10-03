@@ -126,19 +126,23 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 controller.document.canvasWidth=record.width
                 controller.document.canvasHeight=record.height
                 controller.animation.setFps(record.fps)
-                projectStore.loadDocument(record.name)?.let { controller.loadDocumentJson(it) }
+                projectStore.loadDocument(record.name)?.let { raw -> controller.runWhenAttached { controller.loadDocumentJson(raw) } }
                 screen=Screen.EDITOR
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},templateId,{templateId=it},controller,{screen=Screen.HOME}){
-                controller.resetDocument()
                 controller.document.projectName=name.ifBlank{"Project Grease"}
                 controller.document.canvasWidth=preset.width
                 controller.document.canvasHeight=preset.height
                 controller.animation.setFps(preset.fps)
-                controller.createFrame(1)
-                // Layers, material slots, fps and end frame come from the chosen template.
-                GreaseTemplates.byId(templateId)?.let { controller.applyTemplate(it) }
-                controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName,it) }
+                val projectName=controller.document.projectName
+                val template=GreaseTemplates.byId(templateId)
+                controller.runWhenAttached {
+                    controller.resetDocument()
+                    controller.createFrame(1)
+                    // Layers, material slots, fps and end frame come from the chosen template.
+                    template?.let { controller.applyTemplate(it) }
+                    controller.saveDocumentJson()?.let { projectStore.saveDocument(projectName,it) }
+                }
                 val record=ProjectRecord(controller.document.projectName,preset.width,preset.height,controller.animation.fps,System.currentTimeMillis())
                 projectStore.upsert(record)
                 projects=projectStore.load()

@@ -504,6 +504,22 @@ class EditorController {
         setMaterialColor(materials.colorArgb)
         animation.initialize()
         selectedLayer = 0
+        // Document setup requested before the surface existed (New Project / open from Home): the
+        // native document only exists once the EGL renderer is attached, so it runs now.
+        if (rendererReady) {
+            val pending = pendingDocumentSetup
+            pendingDocumentSetup = null
+            pending?.invoke()
+        }
+    }
+    private var pendingDocumentSetup: (() -> Unit)? = null
+    /**
+     * Runs a document setup (template, project load) on the native document. Before the editor's
+     * surface is attached there is no native document, and the setup used to be dropped silently
+     * (New Project kept "Layer 1"); it is now kept and run on attach. The latest request wins.
+     */
+    fun runWhenAttached(setup: () -> Unit) {
+        if (rendererReady) setup() else pendingDocumentSetup = setup
     }
     fun detachRenderer(){animation.stop();rendererHandle=0L;native.detach()}
     fun resetDocument():Boolean {

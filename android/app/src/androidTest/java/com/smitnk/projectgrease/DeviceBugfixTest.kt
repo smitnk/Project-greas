@@ -33,8 +33,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
-import java.io.FileOutputStream
 import kotlin.math.abs
 
 /**
@@ -44,6 +42,8 @@ import kotlin.math.abs
  */
 @RunWith(AndroidJUnit4::class)
 class DeviceBugfixTest {
+    companion object { const val SHOT_DIR = "/data/local/tmp/pg_screenshots" }
+
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
@@ -139,9 +139,17 @@ class DeviceBugfixTest {
         SystemClock.sleep(400)
         rule.waitForIdle()
         val bmp = instrumentation.uiAutomation.takeScreenshot() ?: error("screenshot failed")
-        val dir = File(rule.activity.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
-        FileOutputStream(File(dir, "$name.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        // Scoped storage (API 30) hides app external dirs from adb; the shell user writes
+        // /data/local/tmp, which CI pulls as the screenshot artifact.
+        shell("mkdir -p $SHOT_DIR")
+        shell("screencap -p $SHOT_DIR/$name.png")
         return bmp
+    }
+
+    private fun shell(cmd: String) {
+        instrumentation.uiAutomation.executeShellCommand(cmd).use { pfd ->
+            java.io.FileInputStream(pfd.fileDescriptor).use { it.readBytes() } // wait for completion
+        }
     }
 
     private fun isDark(c: Int) = Color.red(c) < 90 && Color.green(c) < 90 && Color.blue(c) < 90
@@ -217,7 +225,7 @@ class DeviceBugfixTest {
     }
 
     @Test fun sculptSmoothKeepsEndpoints() {
-        drag(200f to 300f, 400f to 200f, 600f to 400f, 800f to 200f, 1000f to 300f)
+        drag(200f to 300f, 400f to 260f, 600f to 340f, 800f to 260f, 1000f to 300f)
         val before = strokes().single().getJSONArray("points")
         onUi {
             controller.selectTool(GreaseTool.SCULPT)
@@ -287,9 +295,17 @@ class DeviceBugfixTest {
     }
 
     @Test fun pickSetsTheActiveColor() {
-        onUi { controller.setMaterialColor(0xFFFF0000.toInt()); controller.brushes.setSize(40f) }
+        // A material colour applies to every stroke of that slot (as in Blender): the red stroke gets
+        // its own slot, then slot 0 (black) is made active before picking.
+        onUi {
+            controller.selectMaterial(1); controller.setMaterialColor(0xFFFF0000.toInt())
+            controller.brushes.setSize(40f)
+        }
         drag(200f to 300f, 1000f to 300f)
-        onUi { controller.setMaterialColor(0xFF000000.toInt()); controller.selectTool(GreaseTool.EYEDROPPER) }
+        onUi {
+            controller.selectMaterial(0); controller.setMaterialColor(0xFF000000.toInt())
+            controller.selectTool(GreaseTool.EYEDROPPER)
+        }
         tap(600f, 300f)
         val picked = onUi { controller.materials.colorArgb }
         screenshot("10_pick")

@@ -336,7 +336,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
-            set -x; adb install -r -g apks/app-debug.apk && adb install -r -g apks/app-debug-androidTest.apk && adb shell am instrument -w -r -e class com.smitnk.projectgrease.DeviceBugfixTest com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.txt; mkdir -p screenshots; adb pull /sdcard/Android/data/com.smitnk.projectgrease/files/screenshots/. screenshots/ || true; adb logcat -d -s ProjectGrease:* TestRunner:* AndroidRuntime:* > logcat.txt || true; grep -q "^OK (" instrument.txt
+            set -x; adb install -r -g apks/app-debug.apk && adb install -r -g apks/app-debug-androidTest.apk && adb shell am instrument -w -r -e class com.smitnk.projectgrease.DeviceBugfixTest com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.txt; mkdir -p screenshots; adb pull /data/local/tmp/pg_screenshots/. screenshots/ || true; adb logcat -d -s ProjectGrease:* TestRunner:* AndroidRuntime:* > logcat.txt || true; grep -q "^OK (" instrument.txt
 
       - name: Upload emulator screenshots and test output
         if: always()

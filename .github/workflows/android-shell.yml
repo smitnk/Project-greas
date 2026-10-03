@@ -216,7 +216,7 @@ jobs:
           import glob, zipfile
           apk = zipfile.ZipFile("android/app/build/outputs/apk/debug/app-debug.apk")
           dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
-          assert b"Draw/Blur/Average/Smear/Replace brushes" in dex, "APK lacks the wired VERTEX_PAINT registry entry"
+          assert b"Draw (tint), Blur, Average, Smear (grid) and Replace" in dex, "APK lacks the wired VERTEX_PAINT registry entry"
           assert b"Mode chip disabled; no vertex-color paint path." not in dex, "APK still carries the disabled VERTEX_PAINT entry"
           print("APK carries the enabled Vertex Paint registry entry (mode chip gate: state != NOT_IMPLEMENTED)")
           PY

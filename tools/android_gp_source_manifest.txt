@@ -38,6 +38,12 @@ C|native/blender_gp/project_grease_blender_edit2.c
 C|native/blender_gp/project_grease_blender_edit3.c
 C|native/blender_gp/project_grease_blender_edit4.c
 C|native/blender_gp/project_grease_blender_edit5.c
+C|native/blender_gp/project_grease_tool_session.c
+C|native/blender_gp/project_grease_draw_input.c
+C|native/blender_gp/project_grease_tool_util.c
+C|native/blender_gp/project_grease_tool_sculpt.c
+C|native/blender_gp/project_grease_tool_vertex_paint.c
+C|native/blender_gp/project_grease_tool_weight_paint.c
 C|native/blender_gp/project_grease_annotations.c
 C|native/blender_gp/project_grease_scene_lite.c
 CXX|native/blender_gp/project_grease_scene_lite_jni.cpp
@@ -66,6 +72,8 @@ C|third_party/blender/source/blender/blenlib/intern/BLI_ghash.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_ghash_utils.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_mempool.c
 C|third_party/blender/source/blender/blenlib/intern/hash_mm2a.c
+C|third_party/blender/source/blender/blenlib/intern/rct.c
+C|third_party/blender/source/blender/blenlib/intern/kdtree_2d.c
 C|native/blender_gp/android_blender_string_compat.c
 C|native/blender_gp/android_blender_string_utf8_compat.c
 C|third_party/blender/source/blender/blenlib/intern/string_utils.c

@@ -27,6 +27,7 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
@@ -252,6 +253,28 @@ static void test_onion()
   l->onion_flag &= ~GP_LAYER_ONIONSKIN;          /* per-layer switch off */
   present(d);
   CHECK(near_rgb(pixel_at_canvas(100, 60), 245, 245, 245));
+}
+
+/* Edit-mode overlay: a selected point shows in Blender's vertex-select orange, an unselected point
+ * of an editable stroke as a dark dot, nothing without the overlay. */
+static void test_selection_overlay()
+{
+  Doc d = make_doc();
+  set_color(d, 0.9f, 0.9f, 0.9f);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 40, 160, 60, 2);
+  bGPDstroke *s = static_cast<bGPDstroke *>(static_cast<bGPDframe *>(l->frames.first)->strokes.first);
+  s->points[1].flag |= GP_SPOINT_SELECT;
+  s->flag |= GP_STROKE_SELECT;
+  present(d);
+  CHECK(!near_rgb(pixel_at_canvas(160, 60), 255, 133, 0, 30)); /* no overlay */
+  project_grease_android_present_set_selection_overlay(1);
+  present(d);
+  const Rgba sel = pixel_at_canvas(160, 60);
+  CHECK(near_rgb(sel, 255, 133, 0, 30));                 /* selected point: orange */
+  const Rgba unsel = pixel_at_canvas(40, 60);
+  CHECK(unsel.r < 80 && unsel.g < 80 && unsel.b < 80);   /* unselected point: dark */
+  project_grease_android_present_set_selection_overlay(0);
 }
 
 static void use_mask(bGPDlayer *l, const bGPDlayer *mask_layer, int flags = 0)
@@ -592,6 +615,7 @@ int main()
   test_export_transparent();
   test_fill_mask_modes();
   test_onion();
+  test_selection_overlay();
   test_masks();
   test_weight_view();
   test_shader_fx_gl();

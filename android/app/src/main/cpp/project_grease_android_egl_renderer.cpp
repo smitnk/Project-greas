@@ -21,6 +21,7 @@ extern "C" void project_grease_android_present_reset(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
+extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
@@ -330,20 +331,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDetachSurface(
   }
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
-    JNIEnv *, jobject, jlong handle)
+/* Renders the document (and the shape preview) and presents it. */
+static bool render_now(Renderer *renderer)
 {
-  Renderer *renderer = from_handle(handle);
   if (!renderer || renderer->display == EGL_NO_DISPLAY ||
       renderer->surface == EGL_NO_SURFACE ||
       renderer->context == EGL_NO_CONTEXT) {
-    return JNI_FALSE;
+    return false;
   }
 
   if (eglMakeCurrent(
           renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
-    return JNI_FALSE;
+    return false;
   }
 
   eglQuerySurface(renderer->display, renderer->surface, EGL_WIDTH, &renderer->width);
@@ -352,7 +351,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
 
   if (renderer->gp_connected) {
     if (!project_grease_gp_render_external_context(renderer->gp_handle)) {
-      return JNI_FALSE;
+      return false;
     }
     if (!renderer->preview_points.empty()) {
       std::vector<project_grease::gp::StrokePoint> preview_points;
@@ -366,7 +365,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
               preview_points.data(),
               static_cast<int>(preview_points.size()),
               renderer->preview_thickness)) {
-        return JNI_FALSE;
+        return false;
       }
     }
   }
@@ -377,9 +376,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
     glClear(GL_COLOR_BUFFER_BIT);
   }
 
-  return eglSwapBuffers(renderer->display, renderer->surface) == EGL_TRUE
-             ? JNI_TRUE
-             : JNI_FALSE;
+  return eglSwapBuffers(renderer->display, renderer->surface) == EGL_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
+    JNIEnv *, jobject, jlong handle)
+{
+  return render_now(from_handle(handle)) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -738,4 +742,39 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderCanvasPixelsEglR
   glDeleteTextures(1, &tex);
   glViewport(vp[0], vp[1], vp[2], vp[3]);
   return result;
+}
+
+/* Native tool session (project_grease_tool_session.h): one input batch. `samples` holds `count`
+ * samples of (x, y, pressure, time) in canvas units; on phase BEGIN the floats after them are the
+ * tool parameters. The tool runs on the Legacy GP data, the cache is tagged, and the view is
+ * rendered once for the whole batch. Returns the PG_TOOL_RESULT_* bits (0 = refused). */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeToolSamples(
+    JNIEnv *env, jobject, jlong handle, jint tool, jfloatArray samples, jint count, jint phase)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected || count < 0) return 0;
+  const jsize length = samples ? env->GetArrayLength(samples) : 0;
+  const jsize sample_floats = static_cast<jsize>(count) * 4;
+  if (length < sample_floats) return 0;
+  std::vector<float> data(static_cast<size_t>(length));
+  if (length > 0) env->GetFloatArrayRegion(samples, 0, length, data.data());
+  const float *params = length > sample_floats ? data.data() + sample_floats : nullptr;
+  const int param_count = static_cast<int>(length - sample_floats);
+  const int result = project_grease_gp_tool_samples(
+      renderer->gp_handle, tool, data.data(), count, phase, params, param_count);
+  if (result != 0 && (result & 2 /* PG_TOOL_RESULT_CHANGED */) != 0) {
+    render_now(renderer);
+  }
+  return result;
+}
+
+/* Edit-mode selection overlay: points of the editable strokes, selected ones highlighted. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetSelectionOverlay(
+    JNIEnv *, jobject, jlong handle, jboolean enabled)
+{
+  if (!from_handle(handle)) return JNI_FALSE;
+  project_grease_android_present_set_selection_overlay(enabled ? 1 : 0);
+  return JNI_TRUE;
 }

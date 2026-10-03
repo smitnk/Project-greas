@@ -75,12 +75,21 @@ class ModifierStackTest {
             ModifierType.THICKNESS to "THICK", ModifierType.OPACITY to "OPACITY", ModifierType.TINT to "TINT",
             ModifierType.COLOR to "COLOR", ModifierType.LENGTH to "LENGTH", ModifierType.SMOOTH to "SMOOTH",
             ModifierType.SIMPLIFY to "SIMPLIFY", ModifierType.SUBDIV to "SUBDIV", ModifierType.OFFSET to "OFFSET",
-            ModifierType.NOISE to "NOISE"
+            ModifierType.NOISE to "NOISE", ModifierType.BUILD to "BUILD", ModifierType.TIME to "TIME",
+            ModifierType.HOOK to "HOOK", ModifierType.ENVELOPE to "ENVELOPE", ModifierType.WEIGHT_PROXIMITY to "WPROX",
+            ModifierType.WEIGHT_ANGLE to "WANGLE", ModifierType.DASH to "DASH", ModifierType.OUTLINE to "OUTLINE",
+            ModifierType.MIRROR to "MIRROR", ModifierType.ARRAY to "ARRAY", ModifierType.MULTIPLY to "MULTIPLY"
         )
-        assertEquals(ModifierType.all.size, byType.size)
+        assertEquals(ModifierType.all.size, byType.size + 1) // + Lattice, whose count is an expression
         for ((type, key) in byType) {
-            assertEquals("param count of $key", counts[key], ModifierSpecs.paramCount(type))
+            assertEquals("param count of $key", counts[key], ModifierSpecs.ownParamCount(type))
+            assertEquals(ModifierType.MAX_PARAMS, ModifierSpecs.paramCount(type))
         }
+        assertTrue(header.contains("PG_P_LATTICE_COUNT = 7 + PG_LATTICE_MAX * PG_LATTICE_MAX * 2"))
+        assertTrue(header.contains("#define PG_LATTICE_MAX ${ModifierType.LATTICE_MAX}"))
+        assertTrue(header.contains("#define PG_P_CURVE_BASE ${ModifierType.CURVE_BASE}"))
+        assertTrue(header.contains("#define PG_P_FILTER_BASE ${ModifierType.FILTER_BASE}"))
+        for (type in ModifierType.all) assertTrue(ModifierSpecs.ownParamCount(type) <= ModifierType.CURVE_BASE)
         val types = Regex("""PG_MOD_[A-Z]+\s*=\s*(\d+)""").findAll(header).map { it.groupValues[1].toInt() }.toList()
         assertEquals(ModifierType.LAST, types.maxOrNull())
         assertTrue(ModifierSpecs.paramCount(ModifierType.OFFSET) <= ModifierType.MAX_PARAMS)
@@ -105,9 +114,9 @@ class ModifierStackTest {
 
     @Test
     fun packingRoundTripsAndPadsOrTruncatesToTheTypesParameterCount() {
-        val noise = ModifierRecord(ModifierType.NOISE, false, FloatArray(10) { it * 0.5f })
+        val noise = ModifierRecord(ModifierType.NOISE, false, FloatArray(ModifierType.MAX_PARAMS) { if (it < 10) it * 0.5f else 0f })
         val packed = ModifierStackPacking.pack(noise)
-        assertEquals(2 + 10, packed.size)
+        assertEquals(2 + ModifierType.MAX_PARAMS, packed.size)
         assertEquals(ModifierType.NOISE.toFloat(), packed[0], 0f)
         assertEquals(0f, packed[1], 0f)
         val back = ModifierStackPacking.unpack(packed)!!
@@ -116,8 +125,9 @@ class ModifierStackTest {
         assertArrayEquals(noise.params, back.params, 0f)
         // too few values are zero-padded, too many are cut
         val short = ModifierStackPacking.pack(ModifierRecord(ModifierType.SUBDIV, true, floatArrayOf(3f)))
-        assertArrayEquals(floatArrayOf(ModifierType.SUBDIV.toFloat(), 1f, 3f, 0f), short, 0f)
-        assertEquals(6, ModifierStackPacking.paramsFor(ModifierType.THICKNESS, FloatArray(24) { 1f }).size)
+        assertEquals(2 + ModifierType.MAX_PARAMS, short.size)
+        assertArrayEquals(floatArrayOf(ModifierType.SUBDIV.toFloat(), 1f, 3f, 0f), short.copyOf(4), 0f)
+        assertEquals(ModifierType.MAX_PARAMS, ModifierStackPacking.paramsFor(ModifierType.THICKNESS, FloatArray(200) { 1f }).size)
         // malformed arrays
         assertNull(ModifierStackPacking.unpack(null))
         assertNull(ModifierStackPacking.unpack(floatArrayOf(1f)))
@@ -129,7 +139,7 @@ class ModifierStackTest {
     fun commandsAddRemoveMoveAndToggle() {
         val native = FakeModifierNative()
         assertEquals(-1, ModifierStackCommands.add(native, 0, 0))
-        assertEquals(-1, ModifierStackCommands.add(native, 0, 11))
+        assertEquals(-1, ModifierStackCommands.add(native, 0, ModifierType.LAST + 1))
         assertEquals(-1, ModifierStackCommands.add(native, 7, ModifierType.OFFSET))
         assertEquals(0, ModifierStackCommands.add(native, 0, ModifierType.OFFSET))
         assertEquals(1, ModifierStackCommands.add(native, 0, ModifierType.SMOOTH))
@@ -165,7 +175,7 @@ class ModifierStackTest {
         assertEquals(0.8f, params[0], 0f)
         assertEquals(30f, params[1], 0f)
         assertEquals(ModifierSpecs.paramCount(ModifierType.SMOOTH), native.lastSetParams!!.size) // packed to exactly the count
-        assertFalse(ModifierStackCommands.setParam(native, 0, 0, 7, 1f)) // out of range index
+        assertFalse(ModifierStackCommands.setParam(native, 0, 0, ModifierType.MAX_PARAMS, 1f)) // out of range index
         assertFalse(ModifierStackCommands.setParam(native, 0, 0, 0, Float.NaN))
         assertFalse(ModifierStackCommands.setParam(native, 0, 3, 0, 1f)) // no such modifier
         assertEquals(2, native.setParamsCalls)
@@ -182,18 +192,18 @@ class ModifierStackTest {
         for (i in records.indices) {
             assertEquals(records[i].type, back[i].type)
             assertEquals(records[i].enabled, back[i].enabled)
-            assertArrayEquals(records[i].params, back[i].params, 0f)
+            assertArrayEquals(records[i].params.copyOf(ModifierType.MAX_PARAMS), back[i].params, 0f)
         }
     }
 
     @Test
     fun jsonDropsUnknownTypesAcceptsMissingKeyAndSurvivesBadNumbers() {
         assertTrue(ModifierStackJson.fromJson(null).isEmpty())
-        val array = JSONArray("""[{"type":0},{"type":11},"x",{"type":${ModifierType.TINT},"enabled":true}]""")
+        val array = JSONArray("""[{"type":0},{"type":99},"x",{"type":${ModifierType.TINT},"enabled":true}]""")
         val out = ModifierStackJson.fromJson(array)
         assertEquals(1, out.size)
         assertEquals(ModifierSpecs.paramCount(ModifierType.TINT), out[0].params.size) // missing params read as zeros
-        val saved = ModifierStackJson.toJson(listOf(ModifierRecord(ModifierType.SUBDIV, true, floatArrayOf(Float.NaN, Float.POSITIVE_INFINITY))))
+        val saved = ModifierStackJson.toJson(listOf(ModifierRecord(ModifierType.SUBDIV, true, floatArrayOf(Float.NaN, Float.POSITIVE_INFINITY, 2f))))
         assertEquals(0.0, saved.getJSONObject(0).getJSONArray("params").getDouble(0), 0.0)
         assertEquals(0.0, saved.getJSONObject(0).getJSONArray("params").getDouble(1), 0.0)
         val tooMany = JSONArray().apply { repeat(ModifierType.MAX_STACK + 5) { put(org.json.JSONObject().put("type", ModifierType.SMOOTH)) } }

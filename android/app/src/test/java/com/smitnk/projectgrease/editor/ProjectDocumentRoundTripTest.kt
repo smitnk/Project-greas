@@ -9,7 +9,7 @@ import org.junit.Test
 
 /** In-memory stand-in for the native document, with the same starting state (layer 0, material 0). */
 private class FakeDocument : DocumentNative {
-    class Frame(val number: Int, val strokes: MutableList<StrokeRecord> = mutableListOf())
+    class Frame(val number: Int, val strokes: MutableList<StrokeRecord> = mutableListOf(), var keyType: Int = 0)
     class Layer(
         var record: LayerRecord,
         val frames: MutableList<Frame> = mutableListOf(),
@@ -92,7 +92,14 @@ private class FakeDocument : DocumentNative {
     override fun applyLayerRecord(index: Int, record: LayerRecord): Boolean {
         val target = layers.getOrNull(index) ?: return false
         val name = if (record.name.isNotBlank()) record.name else target.record.name
-        target.record = LayerRecord(name, record.visible, record.locked, record.opacity.coerceIn(0f, 1f))
+        target.record = LayerRecord(name, record.visible, record.locked, record.opacity.coerceIn(0f, 1f),
+            record.blendMode, record.tint.copyOf(), record.lineChange, record.passIndex)
+        return true
+    }
+    override fun frameKeyTypes(): Map<Int, Int> = layers[layer].frames.associate { it.number to it.keyType }
+    override fun setFrameKeyType(frame: Int, type: Int): Boolean {
+        val f = layers[layer].frames.firstOrNull { it.number == frame } ?: return false
+        f.keyType = type
         return true
     }
     override fun createFrame(frame: Int): Boolean {
@@ -205,7 +212,8 @@ class ProjectDocumentRoundTripTest {
                 val am = al.modifiers[mi]
                 assertEquals("layer $li modifier $mi type", em.type, am.type)
                 assertEquals("layer $li modifier $mi enabled", em.enabled, am.enabled)
-                assertArrayEquals("layer $li modifier $mi params", em.params, am.params, 0f)
+                // stored entries are MAX_PARAMS long (own + curve + filter blocks, zero padded)
+                assertArrayEquals("layer $li modifier $mi params", em.params.copyOf(ModifierType.MAX_PARAMS), am.params.copyOf(ModifierType.MAX_PARAMS), 0f)
             }
             assertEquals("layer $li effect count", el.effects.size, al.effects.size)
             el.effects.forEachIndexed { xi, ex ->
@@ -274,7 +282,7 @@ class ProjectDocumentRoundTripTest {
         assertEquals(listOf(true, false), restored.layers[0].modifiers.map { it.enabled })
         assertTrue(restored.layers[1].modifiers.isEmpty())
         assertEquals(listOf(ModifierType.SMOOTH), restored.layers[2].modifiers.map { it.type })
-        assertArrayEquals(floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f), restored.layers[2].modifiers[0].params, 0f)
+        assertArrayEquals(floatArrayOf(0.75f, 3f, 1f, 0f, 1f, 0f, 1f), restored.layers[2].modifiers[0].params.copyOf(7), 0f)
     }
 
     @Test
@@ -383,7 +391,7 @@ class ProjectDocumentRoundTripTest {
         val doc = load(raw)
         assertEquals(listOf(ModifierType.SUBDIV), doc.layers[0].modifiers.map { it.type })
         assertFalse(doc.layers[0].modifiers[0].enabled)
-        assertArrayEquals(floatArrayOf(2f, 1f), doc.layers[0].modifiers[0].params, 0f)
+        assertArrayEquals(floatArrayOf(2f, 1f), doc.layers[0].modifiers[0].params.copyOf(2), 0f)
     }
 
     @Test
@@ -485,5 +493,32 @@ class ProjectDocumentRoundTripTest {
         val original = sampleDocument()
         val broken = FakeDocument().apply { failCreateLayer = true }
         assertFalse(ProjectDocumentCodec.restore(ProjectDocumentCodec.parse(save(original))!!, broken, 1f))
+    }
+
+    @Test
+    fun version6KeepsKeyTypesLayerLookAndMaterialSettings() {
+        val doc = FakeDocument()
+        doc.createFrame(1)
+        doc.addStroke(StrokeRecord(listOf(floatArrayOf(0f, 0f, 0f, 1f, 1f, 0f), floatArrayOf(5f, 5f, 0f, 1f, 1f, 0f))))
+        doc.createFrame(4)
+        doc.setFrameKeyType(4, ProjectGreaseSelect.KEY_BREAKDOWN)
+        doc.applyLayerRecord(0, LayerRecord("Ink", true, false, 0.8f, blendMode = 4, tint = floatArrayOf(1f, 0f, 0f, 0.5f), lineChange = 7, passIndex = 3))
+        doc.applyMaterialRecord(0, MaterialRecord(floatArrayOf(0f, 0f, 1f, 1f), floatArrayOf(1f, 1f, 1f, 1f), true, false,
+            name = "Blue dots", locked = true, mode = 1, alignment = 2, rotation = 0.5f, passIndex = 2))
+        val raw = save(doc)
+        assertTrue(raw.contains("\"version\":6"))
+        val back = load(raw)
+        assertEquals(ProjectGreaseSelect.KEY_BREAKDOWN, back.layers[0].frames.first { it.number == 4 }.keyType)
+        assertEquals(0, back.layers[0].frames.first { it.number == 1 }.keyType)
+        val l = back.layers[0].record
+        assertEquals(4, l.blendMode); assertEquals(7, l.lineChange); assertEquals(3, l.passIndex)
+        assertArrayEquals(floatArrayOf(1f, 0f, 0f, 0.5f), l.tint, 1e-6f)
+        val m = back.materials[0]
+        assertEquals("Blue dots", m.name); assertTrue(m.locked); assertEquals(1, m.mode); assertEquals(2, m.alignment)
+        assertEquals(0.5f, m.rotation, 1e-6f); assertEquals(2, m.passIndex)
+        // a version-5 file (no new keys) loads with the defaults
+        val old = load(raw.replace("\"keyType\":2", "\"x\":0").replace("\"blend\":4", "\"y\":0"))
+        assertEquals(0, old.layers[0].frames.first { it.number == 4 }.keyType)
+        assertEquals(0, old.layers[0].record.blendMode)
     }
 }

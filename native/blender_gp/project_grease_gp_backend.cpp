@@ -306,11 +306,25 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   }
   const std::vector<PGModEntry> &stack = impl->stacks[static_cast<size_t>(index)];
   bool any_enabled = false;
+  bool time_offset = false;
   for (const PGModEntry &e : stack) {
     any_enabled |= e.enabled != 0 && pg_mod_valid_type(e.type) != 0;
+    time_offset |= e.enabled != 0 && e.type == PG_MOD_TIME;
   }
   if (!any_enabled) {
     return current;
+  }
+  // Time Offset (MOD_gpencil_legacy_time.c): the layer shows the keyframe at the remapped frame
+  // number; before the first keyframe nothing is shown (an empty evaluated frame).
+  bool empty_source = false;
+  if (time_offset) {
+    const int f = pg_mod_time_frame(stack.data(), static_cast<int>(stack.size()), frame_number);
+    const bGPDframe *found = nullptr;
+    for (const bGPDframe *gpf = static_cast<const bGPDframe *>(layer->frames.first); gpf; gpf = gpf->next) {
+      if (gpf->framenum <= f) found = gpf;
+    }
+    if (found) current = found;
+    else empty_source = true;
   }
   EvalCacheEntry *target = nullptr;
   for (auto &entry : impl->eval_cache) {
@@ -336,8 +350,14 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   target->cfra = frame_number;
   target->revision = g_gp_data_revision;
   target->stack_revision = impl->stack_revision;
-  pg_mod_eval_frame(impl->gpd, const_cast<bGPDlayer *>(layer), const_cast<bGPDframe *>(current),
-                    stack.data(), static_cast<int>(stack.size()), frame_number, &target->frame);
+  if (empty_source) {
+    std::memset(&target->frame, 0, sizeof(target->frame));
+    target->source = nullptr;
+  }
+  else {
+    pg_mod_eval_frame(impl->gpd, const_cast<bGPDlayer *>(layer), const_cast<bGPDframe *>(current),
+                      stack.data(), static_cast<int>(stack.size()), frame_number, &target->frame);
+  }
   impl->eval_count++;
   return &target->frame;
 }

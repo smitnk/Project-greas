@@ -455,4 +455,111 @@ class DeviceBugfixTest {
         assertEquals("other layer hidden", 0, darkRun(bmp, hidden.first.toInt(), hidden.second.toInt()))
         assertTrue("active layer visible", darkRun(bmp, shown.first.toInt(), shown.second.toInt()) > 0)
     }
+
+    // ---- batch 21 ----
+    @Test fun guideSnapsDrawnStroke() {
+        onUi { controller.view.setDrawingGuide(2, 640f, 360f, 0f, 40f); controller.render() } // parallel, horizontal
+        drag(200f to 300f, 400f to 260f, 600f to 360f, 800f to 240f, 1000f to 330f)
+        val pts = strokes().single().getJSONArray("points")
+        val y0 = pts.getJSONArray(0).getDouble(1)
+        var worst = 0.0
+        for (i in 0 until pts.length()) worst = maxOf(worst, abs(pts.getJSONArray(i).getDouble(1) - y0))
+        val bmp = screenshot("19_guide_parallel")
+        onUi { controller.view.setDrawingGuide(-1); controller.render() }
+        assertTrue("points left the guide line by $worst", worst < 0.5)
+        val p = screen(600f, y0.toFloat())
+        assertTrue("snapped stroke drawn", darkRun(bmp, p.first.toInt(), p.second.toInt()) > 0)
+    }
+
+    @Test fun layerBlendAndTintPixels() {
+        assertTrue(onUi { controller.layerCount() } >= 2)
+        onUi { controller.selectLayer(0); controller.selectMaterial(0); controller.setMaterialColor(0xFFFFFF00.toInt()); controller.brushes.setSize(40f) }
+        drag(200f to 300f, 800f to 300f)
+        onUi { controller.selectLayer(1); controller.selectMaterial(1); controller.setMaterialColor(0xFF00FFFF.toInt()) }
+        drag(500f to 300f, 1100f to 300f)
+        assertTrue(onUi { controller.setLayerBlend(4, 1) }) // Multiply
+        val bmp = screenshot("20_layer_multiply")
+        val overlap = screen(650f, 300f)
+        val c = bmp.getPixel(overlap.first.toInt(), overlap.second.toInt())
+        assertTrue("yellow x cyan = green, got ${Integer.toHexString(c)}", Color.red(c) < 70 && Color.green(c) > 150 && Color.blue(c) < 70)
+        assertTrue(onUi { controller.setLayerTint(0xFFFF0000.toInt(), 1f, 0) }) // bottom layer fully red
+        val bmp2 = screenshot("21_layer_tint")
+        val only = screen(300f, 300f)
+        val t = bmp2.getPixel(only.first.toInt(), only.second.toInt())
+        assertTrue("tinted red, got ${Integer.toHexString(t)}", Color.red(t) > 180 && Color.green(t) < 70 && Color.blue(t) < 70)
+        val json = document()
+        val layers = json.getJSONArray("layers")
+        assertEquals(4, layers.getJSONObject(1).optInt("blend"))
+        assertEquals(1.0, layers.getJSONObject(0).getJSONArray("tint").getDouble(3), 1e-6)
+    }
+
+    @Test fun keyframeTypeSavedAndMarked() {
+        assertTrue(onUi { controller.createFrame(5) })
+        assertTrue(onUi { controller.setFrameKeyType(5, com.smitnk.projectgrease.editor.ProjectGreaseSelect.KEY_BREAKDOWN) })
+        rule.waitForIdle()
+        rule.onNodeWithTag("keyMark_5_2").assertExists()
+        screenshot("22_keyframe_breakdown")
+        val raw = onUi { controller.saveDocumentJson() }!!
+        val layer = JSONObject(raw).getJSONArray("layers").getJSONObject(onUi { controller.selectedLayer })
+        var found = -1
+        val frames = layer.getJSONArray("frames")
+        for (i in 0 until frames.length()) if (frames.getJSONObject(i).getInt("number") == 5) found = frames.getJSONObject(i).optInt("keyType", 0)
+        assertEquals(2, found)
+        assertTrue(onUi { controller.loadDocumentJson(raw) })
+        onUi { controller.selectLayer(controller.layerCount() - 1) }
+        assertEquals(2, onUi { controller.animation.frameNumbers(); controller.frameKeyType(5) })
+    }
+
+    @Test fun brushPresetValues() {
+        rule.onNodeWithTag("brush_AIRBRUSH").performScrollTo().performClick()
+        rule.waitForIdle()
+        assertEquals(300f, onUi { controller.brushes.size }, 0f)
+        assertEquals(0.4f, onUi { controller.brushes.strength }, 0f)
+        rule.onNodeWithTag("brush_INK_PEN").performScrollTo().performClick()
+        rule.waitForIdle()
+        assertEquals(60f, onUi { controller.brushes.size }, 0f)
+        assertEquals(3, onUi { controller.brushes.pressureCurvePoints.size })
+        drag(200f to 300f, 1000f to 300f)
+        assertEquals(60.0, strokes().single().getDouble("thickness"), 1e-6)
+        screenshot("23_brush_ink_pen")
+    }
+
+    @Test fun primitiveHandleEdit() {
+        onUi { controller.selectTool(GreaseTool.LINE) }
+        drag(200f to 300f, 800f to 300f)
+        assertTrue("line is still editable", onUi { controller.shapeEditing })
+        assertEquals(0, strokes().size)
+        drag(800f to 300f, 800f to 500f) // move the end handle
+        screenshot("24_line_handles")
+        rule.onNodeWithTag("shapeConfirm").performClick()
+        rule.waitForIdle()
+        assertTrue(!onUi { controller.shapeEditing })
+        val pts = strokes().single().getJSONArray("points")
+        val last = pts.getJSONArray(pts.length() - 1)
+        assertEquals(800.0, last.getDouble(0), 2.0)
+        assertEquals(500.0, last.getDouble(1), 2.0)
+    }
+
+    @Test fun mp4ExportPlayable() {
+        drag(200f to 300f, 1000f to 300f)
+        assertEquals(null, onUi {
+            controller.applyProjectSettings(com.smitnk.projectgrease.editor.ProjectSettings().apply {
+                width = controller.document.canvasWidth; height = controller.document.canvasHeight; fps = 12; frameStart = 1; frameEnd = 6
+            })
+        })
+        val file = java.io.File(rule.activity.cacheDir, "export.mp4")
+        val frames = onUi { com.smitnk.projectgrease.ui.VideoExport.exportToFile(controller, file) }
+        shell("cp ${file.absolutePath} $SHOT_DIR/25_export.mp4")
+        assertEquals(6, frames)
+        val r = android.media.MediaMetadataRetriever()
+        try {
+            r.setDataSource(file.absolutePath)
+            assertEquals("yes", r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO))
+            assertEquals((onUi { controller.document.canvasWidth } and 1.inv()).toString(),
+                r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH))
+            assertEquals("6", r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT))
+            val first = r.getFrameAtIndex(0)
+            assertTrue("first frame decodes", first != null && first.width > 0)
+        } finally { r.release() }
+    }
 }

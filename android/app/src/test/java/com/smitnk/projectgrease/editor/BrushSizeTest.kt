@@ -13,8 +13,8 @@ class BrushSizeTest {
         assertEquals(30f, materials.thickness, 0f)
         materials.setThickness(64f)              // Properties / Materials "Thickness" slider
         assertEquals(64f, brushes.size, 0f)
-        brushes.select(BrushPreset.MARKER)
-        assertEquals(14f, brushes.size, 0f)
-        assertEquals(14f, materials.thickness, 0f)
+        brushes.select(BrushPreset.MARKER_BOLD)   // brush.cc: size 150
+        assertEquals(150f, brushes.size, 0f)
+        assertEquals(150f, materials.thickness, 0f)
     }
 }

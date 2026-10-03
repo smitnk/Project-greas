@@ -33,6 +33,7 @@ extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
+extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
 extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
 extern "C" int project_grease_fx_begin_layer(int, int);
 extern "C" int project_grease_fx_end_layer(const PGFxEntry *, int, const PGFxView *, unsigned char *, unsigned char *);
@@ -842,6 +843,130 @@ static void test_shader_fx_gl() {
                               fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})});
 }
 
+/* ---- Batch 21: layer tint / line change / blend modes, dots & squares, onion filter + loop, guide ---- */
+static void test_batch21_layer_state()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 10);
+  l->tintcolor[2] = 1.0f; l->tintcolor[3] = 1.0f; /* tint fully blue */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
+  l->tintcolor[3] = 0.5f;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 128, 0, 128, 8));
+  l->tintcolor[3] = 0.0f;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60 + 10), 245, 245, 245)); /* 10 px bar: 10 below is canvas */
+  l->line_change = 30;                                             /* 40 px wide now */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60 + 10), 255, 0, 0));
+  l->line_change = 0;
+}
+
+static void test_batch21_blend_modes()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 1, 0); /* bottom: yellow */
+  bGPDlayer *bottom = add_layer(d, "Bottom");
+  add_bar(bottom, 20, 120, 60, 30);
+  bGPDlayer *top = add_layer(d, "Top");
+  add_bar(top, 80, 180, 60, 30, 1.0f, 1); /* material 1: blue */
+  d.gpd->mat[1]->gp_style->stroke_rgba[1] = 1.0f; /* cyan */
+  top->blend_mode = eGplBlendMode_Multiply;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 255, 0));      /* yellow * cyan = green */
+  CHECK(near_rgb(pixel_at_canvas(150, 60), 0, 245, 245));    /* canvas (0.96) * cyan */
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 255, 255, 0));     /* bottom alone */
+  top->blend_mode = eGplBlendMode_Subtract;
+  d.gpd->mat[1]->gp_style->stroke_rgba[1] = 0.0f;
+  d.gpd->mat[1]->gp_style->stroke_rgba[2] = 0.0f;
+  d.gpd->mat[1]->gp_style->stroke_rgba[0] = 1.0f;            /* red */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 255, 0));      /* yellow - red = green */
+  top->blend_mode = eGplBlendMode_Add;
+  d.gpd->mat[0]->gp_style->stroke_rgba[0] = 0.0f;            /* bottom green */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 255, 0));    /* green + red = yellow */
+  top->blend_mode = eGplBlendMode_Multiply;
+  top->opacity = 0.5f;                                       /* half: mix(1, red, 0.5) on green */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 128, 0, 8));
+}
+
+static void test_batch21_dots_squares()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 40, 120, 60, 30); /* two points 80 apart */
+  MaterialGPencilStyle *st = d.gpd->mat[0]->gp_style;
+  st->mode = GP_MATERIAL_MODE_DOT;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40, 60), 255, 0, 0));       /* on a dot */
+  CHECK(near_rgb(pixel_at_canvas(80, 60), 245, 245, 245));   /* between the dots: no line */
+  CHECK(near_rgb(pixel_at_canvas(40 + 12, 60 + 12), 245, 245, 245)); /* dot corner is round */
+  st->mode = GP_MATERIAL_MODE_SQUARE;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40 + 12, 60 + 12), 255, 0, 0)); /* square corner filled */
+  st->alignment_rotation = 0.7853982f;                       /* 45 deg: the corner is now outside */
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40 + 13, 60 + 13), 245, 245, 245));
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 18), 255, 0, 0));  /* the rotated corner points down */
+  st->mode = GP_MATERIAL_MODE_LINE;
+}
+
+static void test_batch21_onion_filter_loop()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 1);
+  bGPDlayer *l = BKE_gpencil_layer_addnew(d.gpd, "A", true, false);
+  bGPDframe *f[3];
+  for (int k = 0; k < 3; k++) {
+    f[k] = BKE_gpencil_frame_addnew(l, k + 1);
+    bGPDstroke *s = BKE_gpencil_stroke_add(f[k], 0, 2, 12, false);
+    s->points[0].x = 20; s->points[1].x = 180;
+    for (int i = 0; i < 2; i++) { s->points[i].y = 20.0f + 40.0f * k; s->points[i].pressure = 1; s->points[i].strength = 1; }
+  }
+  d.gpd->gstep = 1; d.gpd->gstep_next = 1; d.gpd->onion_factor = 0.5f; d.gpd->onion_keytype = -1;
+  d.gpd->onion_mode = GP_ONION_MODE_RELATIVE;
+  d.gpd->flag |= GP_DATA_SHOW_ONIONSKINS;
+  l->onion_flag |= GP_LAYER_ONIONSKIN;
+  glViewport(0, 0, W, H);
+  project_grease_android_present_gp_document(d.gpd, 2); read_back();
+  CHECK(!near_rgb(pixel_at_canvas(100, 20), 245, 245, 245)); /* frame 1 ghost */
+  f[0]->key_type = 2;                                        /* breakdown */
+  d.gpd->onion_keytype = 0;                                  /* keyframes only */
+  project_grease_android_present_gp_document(d.gpd, 2); read_back();
+  CHECK(near_rgb(pixel_at_canvas(100, 20), 245, 245, 245));  /* filtered out */
+  CHECK(!near_rgb(pixel_at_canvas(100, 100), 245, 245, 245)); /* frame 3 ghost stays */
+  d.gpd->onion_keytype = -1;
+  project_grease_android_present_gp_document(d.gpd, 1); read_back();
+  CHECK(near_rgb(pixel_at_canvas(100, 100), 245, 245, 245)); /* frame 3 is two keys away */
+  d.gpd->onion_flag |= GP_ONION_LOOP;
+  project_grease_android_present_gp_document(d.gpd, 1); read_back();
+  CHECK(!near_rgb(pixel_at_canvas(100, 100), 245, 245, 245)); /* loop: the last key wraps before the first */
+}
+
+static void test_batch21_guide()
+{
+  Doc d = make_doc();
+  add_layer(d, "A");
+  project_grease_android_present_set_guide(3, 100, 60, 0, 20); /* grid every 20 through (100, 60) */
+  present(d);
+  const Rgba on = pixel_at_canvas(100, 70);  /* on a vertical grid line */
+  const Rgba off = pixel_at_canvas(110, 70); /* between lines */
+  CHECK(on.b > on.r + 20 && near_rgb(off, 245, 245, 245));
+  project_grease_android_present_set_export_mode(1);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 70), 245, 245, 245)); /* never exported */
+  project_grease_android_present_set_export_mode(0);
+  project_grease_android_present_set_guide(-1, 0, 0, 0, 0);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 70), 245, 245, 245));
+}
+
 int main()
 {
   if (!init_gl()) {
@@ -873,6 +998,11 @@ int main()
   test_shader_fx_gl();
   test_fx_through_presenter();
   test_fx_targets();
+  test_batch21_layer_state();
+  test_batch21_blend_modes();
+  test_batch21_dots_squares();
+  test_batch21_onion_filter_loop();
+  test_batch21_guide();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

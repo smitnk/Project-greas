@@ -11,9 +11,13 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit3.h"
 #include "project_grease_blender_edit5.h"
+#include "project_grease_blender_edit8.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_tool_session.h"
 #include "project_grease_annotations.h"
+#include <cstdio>
+#include "DNA_gpencil_legacy_types.h"
+#include "DNA_material_types.h"
 
 struct ProjectGreaseGPHandle {
   project_grease::gp::Backend backend;
@@ -204,6 +208,39 @@ int project_grease_gp_delete_layer(ProjectGreaseGPHandle *handle, int index)
 { return ensure_ready(handle) && handle->backend.delete_layer(index) ? 1 : 0; }
 int project_grease_gp_rename_layer(ProjectGreaseGPHandle *handle, int index, const char *name)
 { return ensure_ready(handle) && handle->backend.rename_layer(index, name) ? 1 : 0; }
+
+int project_grease_gp_doc_query(const ProjectGreaseGPHandle *handle, int what, const float *args, int arg_count,
+                                float *out, int capacity)
+{
+  if (!handle || !handle->backend.document_data()) return -1;
+  return pg_gp_doc_query(handle->backend.document_data(), handle->backend.active_layer_data(), what, args,
+                         arg_count, out, capacity);
+}
+
+static Material *bridge_material(const ProjectGreaseGPHandle *handle, int slot)
+{
+  bGPdata *gpd = handle ? handle->backend.document_data() : nullptr;
+  if (!gpd || !gpd->mat || slot < 0 || slot >= gpd->totcol) return nullptr;
+  return gpd->mat[slot];
+}
+
+int project_grease_gp_material_name(const ProjectGreaseGPHandle *handle, int slot, char *out, int capacity)
+{
+  Material *ma = bridge_material(handle, slot);
+  if (!ma || !out || capacity <= 0) return 0;
+  std::snprintf(out, static_cast<size_t>(capacity), "%s", ma->id.name + 2);
+  return 1;
+}
+
+int project_grease_gp_set_material_name(ProjectGreaseGPHandle *handle, int slot, const char *name)
+{
+  Material *ma = bridge_material(handle, slot);
+  if (!ma || !name) return 0;
+  std::snprintf(ma->id.name + 2, sizeof(ma->id.name) - 2, "%s", name);
+  ma->id.name[0] = 'M';
+  ma->id.name[1] = 'A';
+  return 1;
+}
 int project_grease_gp_reset_document(ProjectGreaseGPHandle *handle)
 {
   return ensure_ready(handle) && handle->backend.reset_document() ? 1 : 0;

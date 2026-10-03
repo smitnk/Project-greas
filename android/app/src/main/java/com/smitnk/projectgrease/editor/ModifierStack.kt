@@ -20,11 +20,29 @@ object ModifierType {
     const val SUBDIV = 8
     const val OFFSET = 9
     const val NOISE = 10
-    const val LAST = 10
-    const val MAX_PARAMS = 24
+    const val BUILD = 11
+    const val TIME = 12
+    const val HOOK = 13
+    const val LATTICE = 14
+    const val ENVELOPE = 15
+    const val WEIGHT_PROXIMITY = 16
+    const val WEIGHT_ANGLE = 17
+    const val DASH = 18
+    const val OUTLINE = 19
+    const val MIRROR = 20
+    const val ARRAY = 21
+    const val MULTIPLY = 22
+    const val LAST = 22
+    const val MAX_PARAMS = 120
     const val MAX_STACK = 32
+    /** PG_P_CURVE_BASE / PG_P_FILTER_BASE: the custom curve and influence filter blocks of every entry. */
+    const val CURVE_BASE = 96
+    const val FILTER_BASE = 112
+    const val LATTICE_MAX = 6
 
     fun isValid(type: Int) = type in THICKNESS..LAST
+    /** Entries whose handles can be dragged on the canvas (centre / target / grid / point / pivot). */
+    fun hasCanvasHandles(type: Int) = type == HOOK || type == LATTICE || type == WEIGHT_PROXIMITY || type == MIRROR
 
     fun name(type: Int) = when (type) {
         THICKNESS -> "Thickness"
@@ -37,6 +55,18 @@ object ModifierType {
         SUBDIV -> "Subdivide"
         OFFSET -> "Offset"
         NOISE -> "Noise"
+        BUILD -> "Build"
+        TIME -> "Time Offset"
+        HOOK -> "Hook"
+        LATTICE -> "Lattice"
+        ENVELOPE -> "Envelope"
+        WEIGHT_PROXIMITY -> "Vertex Weight Proximity"
+        WEIGHT_ANGLE -> "Vertex Weight Angle"
+        DASH -> "Dot Dash"
+        OUTLINE -> "Outline"
+        MIRROR -> "Mirror"
+        ARRAY -> "Array"
+        MULTIPLY -> "Multiple Strokes"
         else -> "Modifier"
     }
 
@@ -69,8 +99,23 @@ object ModifierSpecs {
     private fun e(i: Int, label: String, vararg options: String) =
         ParamSpec(i, label, ParamKind.ENUM, 0f, (options.size - 1).toFloat(), options.toList())
 
-    /** Number of parameters per type: PG_P_*_COUNT in project_grease_modifier_stack.h. */
-    fun paramCount(type: Int) = when (type) {
+    /** Stored parameters per entry: MAX_PARAMS for every valid type (own + curve + filter blocks). */
+    fun paramCount(type: Int) = if (ModifierType.isValid(type)) ModifierType.MAX_PARAMS else 0
+
+    /** The type's own parameters: PG_P_*_COUNT in project_grease_modifier_stack.h. */
+    fun ownParamCount(type: Int) = when (type) {
+        ModifierType.BUILD -> 4
+        ModifierType.TIME -> 7
+        ModifierType.HOOK -> 9
+        ModifierType.LATTICE -> 7 + ModifierType.LATTICE_MAX * ModifierType.LATTICE_MAX * 2
+        ModifierType.ENVELOPE -> 6
+        ModifierType.WEIGHT_PROXIMITY -> 8
+        ModifierType.WEIGHT_ANGLE -> 5
+        ModifierType.DASH -> 3
+        ModifierType.OUTLINE -> 2
+        ModifierType.MIRROR -> 4
+        ModifierType.ARRAY -> 3
+        ModifierType.MULTIPLY -> 2
         ModifierType.THICKNESS -> 6
         ModifierType.OPACITY -> 4
         ModifierType.TINT -> 5
@@ -134,7 +179,129 @@ object ModifierSpecs {
             f(4, "Noise scale", 0f, 1f), f(5, "Noise offset", 0f, 20f), n(6, "Seed", 0f, 1000f),
             n(7, "Step", 1f, 30f), b(8, "Randomize"), e(9, "Mode", "Steps", "Keyframes")
         )
+        ModifierType.BUILD -> listOf(
+            e(0, "Mode", "Sequential", "Concurrent"), e(1, "Transition", "Grow", "Shrink"),
+            f(2, "Delay (frames)", 0f, 250f), f(3, "Length (frames)", 1f, 500f)
+        )
+        ModifierType.TIME -> listOf(
+            e(0, "Mode", "Normal", "Reverse", "Fixed frame", "Ping pong"), n(1, "Frame offset", -250f, 250f),
+            f(2, "Frame scale", 0.1f, 10f), b(3, "Custom range"), n(4, "Start frame", 0f, 1000f),
+            n(5, "End frame", 0f, 1000f), b(6, "Loop")
+        )
+        ModifierType.HOOK -> listOf(
+            f(0, "Center X", -4000f, 4000f), f(1, "Center Y", -4000f, 4000f),
+            f(2, "Offset X", -2000f, 2000f), f(3, "Offset Y", -2000f, 2000f),
+            f(4, "Rotation", -3.1415927f, 3.1415927f, DEG), f(5, "Scale", 0f, 4f),
+            f(6, "Radius", 0f, 4000f), e(7, "Falloff", "Constant", "Smooth", "Linear"), f(8, "Strength", 0f, 1f)
+        )
+        ModifierType.LATTICE -> listOf(
+            f(0, "Left", -4000f, 4000f), f(1, "Top", -4000f, 4000f), f(2, "Right", -4000f, 4000f),
+            f(3, "Bottom", -4000f, 4000f), n(4, "Columns", 2f, 6f), n(5, "Rows", 2f, 6f), f(6, "Strength", 0f, 1f)
+        )
+        ModifierType.ENVELOPE -> listOf(
+            e(0, "Mode", "Deform", "Segments", "Fills"), n(1, "Spread", 1f, 100f), n(2, "Skip", 0f, 20f),
+            f(3, "Thickness", 0f, 10f), f(4, "Strength", 0f, 1f), n(5, "Material (-1 same)", -1f, 64f)
+        )
+        ModifierType.WEIGHT_PROXIMITY -> listOf(
+            n(0, "Target vertex group", 0f, 255f), f(1, "Point X", -4000f, 4000f), f(2, "Point Y", -4000f, 4000f),
+            f(3, "Lowest distance", 0f, 4000f), f(4, "Highest distance", 0f, 4000f), f(5, "Minimum weight", 0f, 1f),
+            b(6, "Invert output"), b(7, "Multiply weights")
+        )
+        ModifierType.WEIGHT_ANGLE -> listOf(
+            n(0, "Target vertex group", 0f, 255f), f(1, "Angle", -3.1415927f, 3.1415927f, DEG),
+            f(2, "Minimum weight", 0f, 1f), b(3, "Invert output"), b(4, "Multiply weights")
+        )
+        ModifierType.DASH -> listOf(n(0, "Dash", 1f, 50f), n(1, "Gap", 1f, 50f), n(2, "Offset", -50f, 50f))
+        ModifierType.OUTLINE -> listOf(n(0, "Thickness", 1f, 100f), n(1, "Cap segments", 1f, 32f))
+        ModifierType.MIRROR -> listOf(b(0, "Axis X"), b(1, "Axis Y"), f(2, "Pivot X", -4000f, 4000f), f(3, "Pivot Y", -4000f, 4000f))
+        ModifierType.ARRAY -> listOf(n(0, "Count", 2f, 50f), f(1, "Offset X", -2000f, 2000f), f(2, "Offset Y", -2000f, 2000f))
+        ModifierType.MULTIPLY -> listOf(n(0, "Duplicates", 1f, 20f), f(1, "Distance", -200f, 200f))
         else -> emptyList()
+    }
+
+    /** Influence filters every entry has (Blender's Influence panel): +1 encoded, 0 = off. */
+    fun filterSpecs(): List<ParamSpec> {
+        val k = ModifierType.FILTER_BASE
+        return listOf(
+            n(k + 0, "Material slot filter (0 off, slot+1)", 0f, 64f), b(k + 1, "Invert material"),
+            n(k + 2, "Material pass (0 off)", 0f, 100f), b(k + 3, "Invert material pass"),
+            n(k + 4, "Layer pass (0 off)", 0f, 100f), b(k + 5, "Invert layer pass"),
+            n(k + 6, "Vertex group (0 off, group+1)", 0f, 64f), b(k + 7, "Invert vertex group")
+        )
+    }
+    /** Custom curve switch (curve_intensity): the points are edited with the curve editor. */
+    fun curveUseSpec() = b(ModifierType.CURVE_BASE, "Use custom curve")
+
+    /** The custom curve points stored in [params] (empty when the curve is off or unset). */
+    fun curvePoints(params: FloatArray): List<Pair<Float, Float>> {
+        val c = ModifierType.CURVE_BASE
+        val n = params.getOrElse(c + 1) { 0f }.toInt().coerceIn(0, 7)
+        return (0 until n).map { params.getOrElse(c + 2 + 2 * it) { 0f } to params.getOrElse(c + 3 + 2 * it) { 0f } }
+    }
+    /** Writes the curve points (2..7) into a copy of [params]. */
+    fun withCurve(params: FloatArray, use: Boolean, points: List<Pair<Float, Float>>): FloatArray {
+        val out = params.copyOf(ModifierType.MAX_PARAMS)
+        val c = ModifierType.CURVE_BASE
+        for (i in c until c + 16) out[i] = 0f
+        out[c] = if (use) 1f else 0f
+        val pts = points.take(7)
+        out[c + 1] = pts.size.toFloat()
+        pts.forEachIndexed { i, (x, y) -> out[c + 2 + 2 * i] = x.coerceIn(0f, 1f); out[c + 3 + 2 * i] = y.coerceIn(0f, 1f) }
+        return out
+    }
+
+    /** Lattice grid offsets: node (u, v) of an nu x nv grid is at index OFFSETS + (v * nu + u) * 2. */
+    fun latticeOffsetIndex(nu: Int, u: Int, v: Int) = 7 + (v * nu + u) * 2
+
+    /**
+     * Canvas handles of an entry: Hook centre and target (centre + offset), Lattice grid nodes (rect +
+     * offsets), Weight Proximity point, Mirror pivot.
+     */
+    fun canvasHandles(type: Int, p: FloatArray): List<Pair<Float, Float>> {
+        fun v(i: Int) = p.getOrElse(i) { 0f }
+        return when (type) {
+            ModifierType.HOOK -> listOf(v(0) to v(1), (v(0) + v(2)) to (v(1) + v(3)))
+            ModifierType.LATTICE -> {
+                val nu = v(4).toInt().coerceIn(2, ModifierType.LATTICE_MAX)
+                val nv = v(5).toInt().coerceIn(2, ModifierType.LATTICE_MAX)
+                val out = ArrayList<Pair<Float, Float>>()
+                for (j in 0 until nv) for (i in 0 until nu) {
+                    val x = v(0) + (v(2) - v(0)) * i / (nu - 1)
+                    val y = v(1) + (v(3) - v(1)) * j / (nv - 1)
+                    val k = latticeOffsetIndex(nu, i, j)
+                    out += (x + v(k)) to (y + v(k + 1))
+                }
+                out
+            }
+            ModifierType.WEIGHT_PROXIMITY -> listOf(v(1) to v(2))
+            ModifierType.MIRROR -> listOf(v(2) to v(3))
+            else -> emptyList()
+        }
+    }
+
+    /** New parameters after handle [handle] of an entry was dragged to (x, y). */
+    fun moveHandle(type: Int, p: FloatArray, handle: Int, x: Float, y: Float): FloatArray {
+        val out = p.copyOf(ModifierType.MAX_PARAMS)
+        when (type) {
+            ModifierType.HOOK -> if (handle == 0) {
+                out[0] = x; out[1] = y          // the centre moves, the target keeps its place
+                out[2] = p[0] + p[2] - x; out[3] = p[1] + p[3] - y
+            } else { out[2] = x - p[0]; out[3] = y - p[1] }
+            ModifierType.LATTICE -> {
+                val nu = p[4].toInt().coerceIn(2, ModifierType.LATTICE_MAX)
+                val nv = p[5].toInt().coerceIn(2, ModifierType.LATTICE_MAX)
+                if (handle in 0 until nu * nv) {
+                    val i = handle % nu; val j = handle / nu
+                    val gx = p[0] + (p[2] - p[0]) * i / (nu - 1)
+                    val gy = p[1] + (p[3] - p[1]) * j / (nv - 1)
+                    val k = latticeOffsetIndex(nu, i, j)
+                    out[k] = x - gx; out[k + 1] = y - gy
+                }
+            }
+            ModifierType.WEIGHT_PROXIMITY -> { out[1] = x; out[2] = y }
+            ModifierType.MIRROR -> { out[2] = x; out[3] = y }
+        }
+        return out
     }
 }
 
@@ -203,9 +370,16 @@ object ModifierStackCommands {
     fun setParam(native: ModifierNative, layer: Int, index: Int, paramIndex: Int, value: Float): Boolean {
         val current = ModifierStackPacking.unpack(native.modifierGet(layer, index)) ?: return false
         if (paramIndex !in current.params.indices || !value.isFinite()) return false
-        val spec = ModifierSpecs.specs(current.type).firstOrNull { it.index == paramIndex }
+        val spec = (ModifierSpecs.specs(current.type) + ModifierSpecs.filterSpecs()).firstOrNull { it.index == paramIndex }
         val params = current.params.copyOf()
         params[paramIndex] = if (spec != null) value.coerceIn(spec.min, spec.max) else value
+        return native.modifierSetParams(layer, index, ModifierStackPacking.paramsFor(current.type, params))
+    }
+
+    /** Replaces every parameter (custom curve, canvas handles); native sanitizes. */
+    fun setAll(native: ModifierNative, layer: Int, index: Int, params: FloatArray): Boolean {
+        val current = ModifierStackPacking.unpack(native.modifierGet(layer, index)) ?: return false
+        if (params.any { !it.isFinite() }) return false
         return native.modifierSetParams(layer, index, ModifierStackPacking.paramsFor(current.type, params))
     }
 
@@ -222,7 +396,11 @@ object ModifierStackJson {
         for (record in records) {
             array.put(
                 JSONObject().put("type", record.type).put("enabled", record.enabled)
-                    .put("params", JSONArray().apply { for (v in record.params) put(if (v.isFinite()) v.toDouble() else 0.0) })
+                    .put("params", JSONArray().apply {
+                        // trailing zeros (unused curve / filter blocks) are left out; loading pads them back
+                        val last = record.params.indexOfLast { it != 0f && it.isFinite() }
+                        for (i in 0..last) { val v = record.params[i]; put(if (v.isFinite()) v.toDouble() else 0.0) }
+                    })
             )
         }
         return array

@@ -16,6 +16,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit7.h"
+#include "project_grease_blender_edit8.h"
 
 #define PE7_STROKES_BEGIN(gpd_, only_, gpl, gpf, gps) \
   { \
@@ -253,7 +254,7 @@ int pg_gp_edit7_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
     case PG_EDIT7_CMD_LAYER_ISOLATE: changed = pg_gp_layer_isolate(gpd, active_layer); break;
     case PG_EDIT7_CMD_LOCK_ALL: changed = pg_gp_layers_lock_all(gpd, 1); break;
     case PG_EDIT7_CMD_UNLOCK_ALL: changed = pg_gp_layers_lock_all(gpd, 0); break;
-    default: return 0;
+    default: return pg_gp_edit8_dispatch(gpd, active_layer, command, args, arg_count);
   }
 #undef G
 #undef NEED

@@ -80,7 +80,7 @@ class FeatureRegistryTest {
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.MODIFIER_ORDERING).state)
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.DASH).state)
         assertTrue(FeatureRegistry.capability(FeatureId.DASH).limitation.contains("baked"))
-        assertTrue(FeatureRegistry.capability(FeatureId.GENERATE).limitation.contains("Build is still not ported"))
+        assertTrue(FeatureRegistry.capability(FeatureId.GENERATE).limitation.contains("LIVE_GENERATORS"))
         assertTrue(FeatureRegistry.capability(FeatureId.COPY_PASTE).limitation.contains("not saved"))
         assertEquals(FeatureState.IN_PROGRESS, FeatureRegistry.capability(FeatureId.OUTLINE).state)
         assertTrue(FeatureRegistry.capability(FeatureId.OUTLINE).limitation.contains("baked"))
@@ -90,6 +90,25 @@ class FeatureRegistryTest {
         assertEquals(AuditStatus.IN_PROGRESS, lineArt.audit)
         assertFalse(lineArt.deviceVerified)
         assertTrue(lineArt.limitation.contains("Not supported: shadows"))
+    }
+
+    @Test
+    fun batch21FeaturesAreWiredAndSayHowTheyWereChecked() {
+        listOf(
+            FeatureId.MOD_BUILD, FeatureId.MOD_TIME_OFFSET, FeatureId.MOD_HOOK, FeatureId.MOD_LATTICE, FeatureId.MOD_ENVELOPE,
+            FeatureId.MOD_WEIGHT_PROXIMITY, FeatureId.MOD_WEIGHT_ANGLE, FeatureId.LIVE_GENERATORS, FeatureId.MODIFIER_INFLUENCE,
+            FeatureId.DRAWING_GUIDES, FeatureId.ONION_KEYTYPE_LOOP, FeatureId.KEYFRAME_TYPES, FeatureId.LAYER_BLEND,
+            FeatureId.LAYER_TINT, FeatureId.MATERIAL_SLOTS, FeatureId.LINE_TYPES, FeatureId.BRUSH_PRESETS,
+            FeatureId.PRIMITIVE_EDIT, FeatureId.CURVE_MAPPING, FeatureId.ELASTIC_EASING, FeatureId.INTERPOLATE_SEQUENCE,
+            FeatureId.EXPORT_MP4, FeatureId.SELECT_MENU, FeatureId.DEFORM
+        ).forEach {
+            val c = FeatureRegistry.capability(it)
+            assertEquals("$it", FeatureState.IN_PROGRESS, c.state)
+            assertFalse("$it", c.deviceVerified)
+            assertTrue("$it", c.limitation.contains("Device validation NOT VERIFIED") || c.limitation.contains("Emulator test"))
+        }
+        // nothing in the registry is still NOT_IMPLEMENTED
+        assertTrue(FeatureId.entries.none { FeatureRegistry.capability(it).state == FeatureState.NOT_IMPLEMENTED })
     }
 
     @Test

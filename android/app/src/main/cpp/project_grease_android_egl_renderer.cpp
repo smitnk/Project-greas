@@ -25,6 +25,7 @@ extern "C" void project_grease_android_present_set_canvas_size(int width, int he
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
+extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
@@ -493,6 +494,16 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetWeightView(
 {
   if (!from_handle(handle)) return JNI_FALSE;
   project_grease_android_present_set_weight_view(group);
+  return JNI_TRUE;
+}
+
+/* Drawing guide overlay: type GP_GUIDE_* (0 circular .. 4 isometric), -1 hides it. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetGuide(
+    JNIEnv *, jobject, jlong handle, jint type, jfloat cx, jfloat cy, jfloat angle, jfloat spacing)
+{
+  if (!from_handle(handle)) return JNI_FALSE;
+  project_grease_android_present_set_guide(type, cx, cy, angle, spacing);
   return JNI_TRUE;
 }
 

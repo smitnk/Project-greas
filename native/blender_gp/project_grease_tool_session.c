@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * See project_grease_tool_session.h. */
 #include "project_grease_tool_session.h"
+#include "project_grease_blender_mod2.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -16,6 +17,11 @@ struct PGToolSession {
   PGDrawInput draw;
   PGToolDrawSink sink;
   int draw_open;
+  /* drawing guide of the open Draw gesture: type -1 = off; start = first sample */
+  int guide_type;
+  float guide_cx, guide_cy, guide_angle, guide_spacing;
+  int guide_started;
+  float guide_sx, guide_sy;
   PGSculptSession *sculpt;
   PGVertexPaintSession *vpaint;
   PGWeightPaintSession *wpaint;
@@ -118,6 +124,20 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
     ds.draw_angle_factor = param(p, n, PG_DRAW_P_ANGLE_FACTOR, 0);
     ds.draw_angle = param(p, n, PG_DRAW_P_ANGLE, 0);
     ds.synthesize_fast_points = param(p, n, PG_DRAW_P_FAKE_POINTS, 1) != 0.0f;
+    const int pn = (int)param(p, n, PG_DRAW_P_PRESSURE_CURVE_N, 0);
+    if (pn >= 2 && pn <= 8 && n >= PG_DRAW_P_PRESSURE_CURVE_XY + 2 * pn) {
+      pg_curve_set(&ds.pressure_map, &p[PG_DRAW_P_PRESSURE_CURVE_XY], pn);
+    }
+    const int sn = (int)param(p, n, PG_DRAW_P_STRENGTH_CURVE_N, 0);
+    if (sn >= 2 && sn <= 8 && n >= PG_DRAW_P_STRENGTH_CURVE_XY + 2 * sn) {
+      pg_curve_set(&ds.strength_map, &p[PG_DRAW_P_STRENGTH_CURVE_XY], sn);
+    }
+    s->guide_type = (int)param(p, n, PG_DRAW_P_GUIDE_TYPE, 0) - 1;
+    s->guide_cx = param(p, n, PG_DRAW_P_GUIDE_CX, 0);
+    s->guide_cy = param(p, n, PG_DRAW_P_GUIDE_CY, 0);
+    s->guide_angle = param(p, n, PG_DRAW_P_GUIDE_ANGLE, 0);
+    s->guide_spacing = param(p, n, PG_DRAW_P_GUIDE_SPACING, 0);
+    s->guide_started = 0;
     if (!s->sink.begin(s->sink.user, (int)param(p, n, PG_DRAW_P_MATERIAL, 0),
                        param(p, n, PG_DRAW_P_THICKNESS, 3)))
     {
@@ -169,7 +189,17 @@ static int apply_sample(PGToolSession *s, const float *smp)
   switch (s->tool) {
     case PG_TOOL_DRAW: {
       const PGDrawPoint *out;
-      const int n = pg_draw_input_add(&s->draw, x, y, isfinite(pressure) ? pressure : 1.0f,
+      float gx = x, gy = y;
+      if (s->guide_type >= 0 && s->guide_type <= 4) {
+        /* gpencil_snap_to_guide(): every input sample is constrained before the draw pipeline;
+         * the first sample of the stroke is the guide origin for circular / radial / parallel. */
+        if (!s->guide_started) { s->guide_sx = x; s->guide_sy = y; s->guide_started = 1; }
+        float r[2];
+        pg_guide_snap(s->guide_type, s->guide_cx, s->guide_cy, s->guide_angle, s->guide_spacing,
+                      s->guide_sx, s->guide_sy, x, y, r);
+        if (isfinite(r[0]) && isfinite(r[1])) { gx = r[0]; gy = r[1]; }
+      }
+      const int n = pg_draw_input_add(&s->draw, gx, gy, isfinite(pressure) ? pressure : 1.0f,
                                       isfinite(time) ? time : 0.0f, &out);
       return n > 0 ? draw_send(s, out, n) : 0;
     }

@@ -72,6 +72,12 @@ int project_grease_gp_move_layer(ProjectGreaseGPHandle *handle, int from_index, 
 int project_grease_gp_duplicate_layer(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_delete_layer(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_rename_layer(ProjectGreaseGPHandle *handle, int index, const char *name);
+/* Batch 21: document query (project_grease_blender_edit8.h PG_DOC_Q_*) and material slot names
+ * (Material.id.name without the "MA" prefix; empty when never named). */
+int project_grease_gp_doc_query(const ProjectGreaseGPHandle *handle, int what, const float *args, int arg_count,
+                                float *out, int capacity);
+int project_grease_gp_material_name(const ProjectGreaseGPHandle *handle, int slot, char *out, int capacity);
+int project_grease_gp_set_material_name(ProjectGreaseGPHandle *handle, int slot, const char *name);
 int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_frame_or_hold(ProjectGreaseGPHandle *handle, int frame_number);

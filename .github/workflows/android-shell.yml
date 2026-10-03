@@ -187,6 +187,9 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_shader_fx_tests.sh
 
+      - name: Run native batch-21 modifier / guide / CurveMapping tests (mod2)
+        run: bash tools/run_native_mod2_tests.sh
+
       - name: Run Android unit tests
         working-directory: android
         run: gradle :app:testDebugUnitTest --no-daemon

@@ -27,6 +27,9 @@ CF=(-std=gnu11 -DNDEBUG -DMATH_STANDALONE -w -DMALLOC_USABLE_SIZE_DISABLED -ffun
 XF=(-std=gnu++17 -DNDEBUG -w -ffunction-sections -fdata-sections)
 C_SRC=(
   "$ROOT/native/blender_gp/project_grease_modifier_stack.c"
+  "$ROOT/native/blender_gp/project_grease_modifier_stack2.c"
+  "$ROOT/native/blender_gp/project_grease_blender_mod2.c"
+  "$ROOT/native/blender_gp/project_grease_curvemap.c"
   "$ROOT/native/blender_gp/project_grease_shader_fx.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit2.c"
@@ -35,6 +38,7 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_blender_edit5.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit6.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit7.c"
+  "$ROOT/native/blender_gp/project_grease_blender_edit8.c"
   "$ROOT/native/blender_gp/project_grease_tool_session.c"
   "$ROOT/native/blender_gp/project_grease_draw_input.c"
   "$ROOT/native/blender_gp/project_grease_tool_util.c"

@@ -40,6 +40,7 @@
 #include "BKE_gpencil_legacy.h"
 
 #include "project_grease_blender_edit.h"
+#include "project_grease_curvemap.h"
 #include "project_grease_blender_edit2.h"
 
 #define PGE_V2D_IS_CLIPPED 12000
@@ -1514,10 +1515,19 @@ static float pge_ease_in(int type, float t, float back)
   }
 }
 
+static float pge_elastic_amplitude = 0.15f, pge_elastic_period = 0.15f;
+void pg_gp_set_elastic(float amplitude, float period)
+{
+  if (isfinite(amplitude) && amplitude >= 0.0f) pge_elastic_amplitude = amplitude;
+  if (isfinite(period) && period >= 0.0f) pge_elastic_period = period;
+}
+
 float pg_gp_interpolate_easing(int type, int mode, float t, float back)
 {
   if (!isfinite(t)) return 0.0f;
   t = pge_clampf(t, 0.0f, 1.0f);
+  /* BEZT_IPO_ELASTIC: BLI_easing_elastic_* (verbatim in project_grease_curvemap.c) */
+  if (type == PG_EASE_ELASTIC) return pg_easing_elastic(mode, t, pge_elastic_amplitude, pge_elastic_period);
   if (type <= PG_EASE_LINEAR || type > PG_EASE_BOUNCE) return t;
   switch (mode) {
     case PG_EASE_IN: return pge_ease_in(type, t, back);

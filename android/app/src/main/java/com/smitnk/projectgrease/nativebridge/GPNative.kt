@@ -80,6 +80,10 @@ object GPNative {
     external fun nativeDuplicateLayer(handle: Long, index: Int): Boolean
     external fun nativeDeleteLayer(handle: Long, index: Int): Boolean
     external fun nativeRenameLayer(handle: Long, index: Int, name: String): Boolean
+    // Batch 21: document query (project_grease_blender_edit8.h PG_DOC_Q_*) and material slot names.
+    external fun nativeDocQuery(handle: Long, what: Int, args: FloatArray?): FloatArray?
+    external fun nativeMaterialName(handle: Long, slot: Int): String?
+    external fun nativeSetMaterialName(handle: Long, slot: Int, name: String): Boolean
     external fun nativeResetDocument(handle: Long): Boolean
     external fun nativeCreateFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeSelectFrame(handle: Long, frameNumber: Int): Boolean
@@ -119,6 +123,7 @@ object GPNative {
      * polyline vertices. edges <= 0 uses Blender's defaults. Returns x,y pairs.
      */
     external fun nativeGenerateBlenderPrimitive(type: Int, anchorsXY: FloatArray, edges: Int, flip: Boolean): FloatArray?
+    external fun nativeBlenderPrimitiveDefaultEdges(type: Int): Int
     // Scene-lite (project_grease_scene_lite.h): 3D reference scene for Line Art; its own handle.
     external fun nativeSceneLiteCreate(): Long
     external fun nativeSceneLiteFree(handle: Long)
@@ -175,6 +180,8 @@ object GPNative {
     external fun nativeSetPointWeight(handle: Long, stroke: Int, point: Int, group: Int, weight: Float): Boolean
     // Weight Paint view of the renderer: group >= 0 tints strokes by that group's weights, -1 = normal.
     external fun nativeSetWeightView(handle: Long, group: Int): Boolean
+    /** Drawing guide overlay (GP_GUIDE_* 0..4, -1 off), canvas units / radians. */
+    external fun nativeSetGuide(handle: Long, type: Int, cx: Float, cy: Float, angle: Float, spacing: Float): Boolean
     // Layer masks: names refer to layers; flags bit 0 = hidden, bit 1 = inverted (-1 = no such entry).
     external fun nativeLayerUseMask(handle: Long, layer: Int): Boolean
     external fun nativeSetLayerUseMask(handle: Long, layer: Int, enabled: Boolean): Boolean

@@ -14,6 +14,7 @@
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
 #include "MEM_guardedalloc.h"
 #include "project_grease_modifier_stack.h"
 
@@ -149,8 +150,17 @@ static PGModEntry tuned(int type)
     case PG_MOD_OFFSET: p[PG_P_OFFSET_MODE] = 0; p[PG_P_OFFSET_RND_OFFSET] = 30; p[PG_P_OFFSET_RND_OFFSET + 1] = 30;
                         p[PG_P_OFFSET_RND_ROT + 2] = 0.3f; p[PG_P_OFFSET_SEED] = 7; break;
     case PG_MOD_NOISE: p[PG_P_NOISE_FACTOR] = 1.0f; p[PG_P_NOISE_SEED] = 3; break;
+    case PG_MOD_HOOK: p[PG_P_HOOK_CX] = 50; p[PG_P_HOOK_CY] = 80; p[PG_P_HOOK_DX] = 20; p[PG_P_HOOK_DY] = -10;
+                      p[PG_P_HOOK_STRENGTH] = 1.0f; break;
+    case PG_MOD_LATTICE: p[PG_P_LATTICE_X0] = 0; p[PG_P_LATTICE_Y0] = 0; p[PG_P_LATTICE_X1] = 200;
+                         p[PG_P_LATTICE_Y1] = 200; p[PG_P_LATTICE_OFFSETS + 8] = 15; break; /* centre node of 3x3 */
   }
   return e;
+}
+/* Types whose effect is not a change of the evaluated points at cfra 1 (checked on their own). */
+static bool point_changing(int t)
+{
+  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_PROX && t != PG_MOD_WEIGHT_ANGLE;
 }
 
 static void test_type_info()
@@ -173,6 +183,7 @@ static void test_type_info()
 static void test_originals_untouched_and_changed()
 {
   for (int t = PG_MOD_THICKNESS; t <= PG_MOD_TYPE_LAST; t++) {
+    if (!point_changing(t)) continue;
     Doc d = make_doc();
     const auto before = snapshot(d.f1);
     const PGModEntry e = tuned(t);
@@ -220,6 +231,7 @@ static void test_order()
 static void test_apply_equals_live()
 {
   for (int t = PG_MOD_THICKNESS; t <= PG_MOD_TYPE_LAST; t++) {
+    if (!point_changing(t)) continue;
     Doc d = make_doc();
     const PGModEntry e = tuned(t);
     const auto live = eval(d, &e, 1, 1);
@@ -391,9 +403,123 @@ static void test_golden_offset_noise()
   free_doc(n);
 }
 
+/* ---- batch 21 ---- */
+static float group_weight(const bGPDstroke *s, int i, int g)
+{
+  if (!s->dvert) return -1.0f;
+  for (int k = 0; k < s->dvert[i].totweight; k++)
+    if ((int)s->dvert[i].dw[k].def_nr == g) return s->dvert[i].dw[k].weight;
+  return -1.0f;
+}
+
+static void test_batch21()
+{
+  /* Time Offset: normal mode offset 1, range 1..5 loop; ping-pong; fixed */
+  PGModEntry t = entry(PG_MOD_TIME);
+  CHECK(pg_mod_time_frame(&t, 1, 3) == 4);
+  t.params[PG_P_TIME_USE_RANGE] = 1; t.params[PG_P_TIME_SFRA] = 1; t.params[PG_P_TIME_EFRA] = 5;
+  CHECK(pg_mod_time_frame(&t, 1, 5) == 1); /* 6 loops to 1 */
+  t.params[PG_P_TIME_MODE] = 2; t.params[PG_P_TIME_OFFSET] = 7;
+  CHECK(pg_mod_time_frame(&t, 1, 3) == 7);
+  t.enabled = 0;
+  CHECK(pg_mod_time_frame(&t, 1, 3) == 3);
+
+  /* Build: at the keyframe nothing is visible, half way about half, after the length all */
+  {
+    Doc d = make_doc();
+    PGModEntry b = entry(PG_MOD_BUILD);
+    b.params[PG_P_BUILD_LENGTH] = 10;
+    auto none = eval(d, &b, 1, 1);
+    CHECK(none.empty());
+    auto half = eval(d, &b, 1, 6);
+    size_t pts = 0; for (auto &s : half) pts += s.size();
+    CHECK(pts == 8); /* ceil(0.5 * 16) sequential */
+    CHECK(same(eval(d, &b, 1, 11), snapshot(d.f1)));
+    b.params[PG_P_BUILD_MODE] = 1; /* concurrent: both strokes grow */
+    auto conc = eval(d, &b, 1, 6);
+    CHECK(conc.size() == 2 && conc[0].size() == 5 && conc[1].size() == 4);
+    free_doc(d);
+  }
+  /* Vertex weight proximity / angle write the target group on the copies only */
+  {
+    Doc d = make_pair_doc(1);
+    bDeformGroup *g = static_cast<bDeformGroup *>(MEM_callocN(sizeof(bDeformGroup), "g"));
+    BLI_addtail(&d.gpd->vertex_group_names, g);
+    PGModEntry w = entry(PG_MOD_WEIGHT_PROX);
+    w.params[PG_P_WPROX_X] = 100; w.params[PG_P_WPROX_Y] = 200;
+    w.params[PG_P_WPROX_DIST_START] = 0; w.params[PG_P_WPROX_DIST_END] = 100;
+    bGPDframe ev;
+    pg_mod_eval_frame(d.gpd, d.gpl, d.f1, &w, 1, 1, &ev);
+    const bGPDstroke *s = (const bGPDstroke *)ev.strokes.first;
+    CHECK(near(group_weight(s, 0, 0), 0.0f) && near(group_weight(s, 1, 0), 84.8528f / 100.0f, 1e-3f));
+    pg_mod_eval_free(&ev);
+    CHECK(((bGPDstroke *)d.f1->strokes.first)->dvert == nullptr); /* original untouched */
+    PGModEntry a = entry(PG_MOD_WEIGHT_ANGLE);
+    a.params[PG_P_WANGLE_ANGLE] = -0.78539816f; /* the 45 deg segment (canvas y down) */
+    pg_mod_eval_frame(d.gpd, d.gpl, d.f1, &a, 1, 1, &ev);
+    s = (const bGPDstroke *)ev.strokes.first;
+    CHECK(near(group_weight(s, 1, 0), 1.0f, 1e-3f));
+    pg_mod_eval_free(&ev);
+    /* a later Thickness entry with the group sees the written weights */
+    PGModEntry stack[2] = {w, entry(PG_MOD_THICKNESS)};
+    stack[1].params[PG_P_THICK_FACTOR] = 3; stack[1].params[PG_P_THICK_USE_VGROUP] = 1; stack[1].params[PG_P_THICK_VGROUP] = 0;
+    auto r = eval(d, stack, 2, 1);
+    CHECK(near(r[0][0].v[3], 1.0f) && r[0][1].v[3] > 2.0f);
+    BLI_freelistN(&d.gpd->vertex_group_names);
+    free_doc(d);
+  }
+  /* Filters: a material filter that matches nothing leaves the strokes; invert selects all */
+  {
+    Doc d = make_doc();
+    PGModEntry h = tuned(PG_MOD_HOOK);
+    h.params[PG_P_FILTER_BASE + PG_P_FILTER_MATERIAL] = 3; /* slot 2 */
+    CHECK(same(eval(d, &h, 1, 1), snapshot(d.f1)));
+    h.params[PG_P_FILTER_BASE + PG_P_FILTER_INVERT_MATERIAL] = 1;
+    const PGModEntry plain = tuned(PG_MOD_HOOK);
+    CHECK(same(eval(d, &h, 1, 1), eval(d, &plain, 1, 1)));
+    /* custom curve 0 -> 0: the first point keeps its place, the last moves fully */
+    PGModEntry o = entry(PG_MOD_OFFSET);
+    o.params[PG_P_OFFSET_MODE] = 3; o.params[PG_P_OFFSET_LOC] = 10.0f;
+    float *c = &o.params[PG_P_CURVE_BASE];
+    c[PG_P_CURVE_USE] = 1; c[PG_P_CURVE_COUNT_PTS] = 2;
+    c[PG_P_CURVE_XY] = 0; c[PG_P_CURVE_XY + 1] = 0; c[PG_P_CURVE_XY + 2] = 1; c[PG_P_CURVE_XY + 3] = 1;
+    auto before = snapshot(d.f1);
+    auto cur = eval(d, &o, 1, 1);
+    CHECK(near(cur[0][0].v[0], before[0][0].v[0], 1e-3f));
+    CHECK(near(cur[0].back().v[0], before[0].back().v[0] + 10.0f, 1e-3f));
+    free_doc(d);
+  }
+  /* Generators add strokes on the copy */
+  {
+    Doc d = make_doc();
+    const short flag0 = ((bGPDstroke *)d.f1->strokes.first)->flag;
+    PGModEntry arr = entry(PG_MOD_ARRAY); arr.params[PG_P_ARRAY_COUNT_N] = 3;
+    CHECK(eval(d, &arr, 1, 1).size() == 6);
+    PGModEntry mir = entry(PG_MOD_MIRROR); mir.params[PG_P_MIRROR_Y] = 1;
+    CHECK(eval(d, &mir, 1, 1).size() == 2 + 2 * 3);
+    PGModEntry mul = entry(PG_MOD_MULTIPLY);
+    CHECK(eval(d, &mul, 1, 1).size() == 2 * 4);
+    PGModEntry env = entry(PG_MOD_ENVELOPE); env.params[PG_P_ENVELOPE_SPREAD] = 2;
+    CHECK(eval(d, &env, 1, 1).size() > 2);
+    PGModEntry dash = entry(PG_MOD_DASH);
+    CHECK(eval(d, &dash, 1, 1).size() > 2);
+    PGModEntry out = entry(PG_MOD_OUTLINE);
+    auto o = eval(d, &out, 1, 1);
+    CHECK(o.size() == 2 && o[0].size() > 9);
+    CHECK(snapshot(d.f1).size() == 2 && ((bGPDstroke *)d.f1->strokes.first)->flag == flag0); /* originals as they were */
+    free_doc(d);
+  }
+  /* old 24-float stacks: zero curve/filter blocks are no-ops and survive sanitize */
+  float p[PG_MOD_MAX_PARAMS];
+  pg_mod_defaults(PG_MOD_HOOK, p);
+  pg_mod_sanitize(PG_MOD_HOOK, p);
+  CHECK(p[PG_P_CURVE_BASE] == 0 && p[PG_P_FILTER_BASE] == 0 && pg_mod_own_param_count(PG_MOD_HOOK) == PG_P_HOOK_COUNT);
+}
+
 int main()
 {
   test_type_info();
+  test_batch21();
   test_originals_untouched_and_changed();
   test_disabled_and_empty();
   test_order();

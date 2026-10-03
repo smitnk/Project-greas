@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.smitnk.projectgrease.editor.EditorController
 import com.smitnk.projectgrease.editor.FeatureId
 import com.smitnk.projectgrease.editor.FeatureRegistry
@@ -70,7 +72,9 @@ private val tools=listOf(
     ToolEntry(GreaseTool.SCALE,Icons.Default.ZoomIn,"Scale",FeatureId.SCALE),
     ToolEntry(GreaseTool.MIRROR,Icons.Default.Flip,"Mirror",FeatureId.MIRROR),
     ToolEntry(GreaseTool.PAN,Icons.Default.PanTool,"Pan",FeatureId.PAN),
-    ToolEntry(GreaseTool.SCULPT,Icons.Default.AutoFixHigh,"Sculpt",FeatureId.SCULPT)
+    ToolEntry(GreaseTool.SCULPT,Icons.Default.AutoFixHigh,"Sculpt",FeatureId.SCULPT),
+    ToolEntry(GreaseTool.BOX_SELECT,Icons.Default.SelectAll,"Box",FeatureId.SELECT_BOX),
+    ToolEntry(GreaseTool.CIRCLE_SELECT,Icons.Default.TripOrigin,"Circle sel",FeatureId.SELECT_CIRCLE)
 )
 data class GreaseUiState(
     val projectName:String="Project Grease",val canvasFocus:Boolean=false,
@@ -358,6 +362,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             LassoPathOverlay(controller)
             ReferenceOverlay(controller,refresh)
             CurveHandlesOverlay(controller,overlayTick,::redraw)
+            ShapeEditOverlay(controller,overlayTick,::redraw)
+            ModifierHandlesOverlay(controller,overlayTick,::redraw)
+            BoxSelectOverlay(controller,overlayTick)
             IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
                 Icon(Icons.Default.CloseFullscreen,"Exit canvas")
             }
@@ -397,6 +404,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 LassoPathOverlay(controller)
                 ReferenceOverlay(controller,refresh)
                 CurveHandlesOverlay(controller,overlayTick,::redraw)
+                ShapeEditOverlay(controller,overlayTick,::redraw)
+                ModifierHandlesOverlay(controller,overlayTick,::redraw)
+                BoxSelectOverlay(controller,overlayTick)
             }
             if(state.showProperties)Properties(controller,::redraw)
         }
@@ -570,8 +580,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     FilterChip(
                         selected=controller.brushes.preset==preset,
                         onClick={controller.selectBrush(preset);redraw()},
-                        label={Text(preset.name,fontSize=10.sp)},
-                        modifier=Modifier.padding(end=3.dp)
+                        label={Text(preset.label,fontSize=10.sp)},
+                        modifier=Modifier.padding(end=3.dp).testTag("brush_"+preset.name)
                     )
                 }
             }
@@ -635,6 +645,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     }
                 }
             }
+            if (controller.mode == GreaseMode.EDIT || controller.tools.activeTool in com.smitnk.projectgrease.editor.SELECTION_TOOLS) SelectOperatorsBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.FILL) FillBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ERASE) {
                 Row(
@@ -660,7 +671,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Slider(
                     value=controller.brushes.size,
                     onValueChange={controller.brushes.setSize(it);redraw()},
-                    valueRange=.5f..100f,
+                    valueRange=.5f..500f,
                     modifier=Modifier.weight(1f).padding(horizontal=4.dp)
                 )
                 Text("Strength "+(controller.brushes.strength*100).toInt()+"%",fontSize=10.sp,modifier=Modifier.width(76.dp))
@@ -682,7 +693,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun ToolRail(controller:EditorController,onState:()->Unit,onTools:()->Unit){
     val groups=listOf(
         "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.CURVE,GreaseTool.PAN),
-        "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
+        "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.BOX_SELECT,GreaseTool.CIRCLE_SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
         "SCULPT" to listOf(GreaseTool.SCULPT),
         "NOTES" to listOf(GreaseTool.ANNOTATE)
     )
@@ -709,7 +720,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun Properties(controller:EditorController,redraw:()->Unit){
     var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
     Column(Modifier.width(210.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(10.dp)){
-        Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+controller.brushes.size.toInt());Slider(controller.brushes.size, {controller.brushes.setSize(it);redraw()}, valueRange = .5f..100f)
+        Text("Brush",fontWeight=FontWeight.Bold);Text("Thickness "+controller.brushes.size.toInt());Slider(controller.brushes.size, {controller.brushes.setSize(it);redraw()}, valueRange = .5f..500f)
         Text("Opacity "+(opacity*100).toInt().toString()+"%");Slider(opacity, {opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()}, valueRange = 0f..1f)
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
             Text("Stabilizer",Modifier.weight(1f))
@@ -757,19 +768,34 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 // the native frame numbers, and the controller refreshes frame count/end.
                 TextButton(onClick={if(controller.insertBlankFrame())redraw()}){Text("Insert blank keyframe")}
                 TextButton(onClick={if(controller.cleanDuplicateFrames())redraw()}){Text("Clean duplicate frames")}
+                TextButton(onClick={if(controller.animation.interpolateSequence()>0){controller.history.markEdit();controller.document.markDirty();redraw()}},
+                    modifier=Modifier.testTag("interpolateSequence")){Text("Interpolate sequence")}
+                FilterChip(selected=controller.multiframeEditing,onClick={controller.setMultiframeEditing(!controller.multiframeEditing);redraw()},
+                    label={Text("Multiframe")},modifier=Modifier.testTag("multiframe"))
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
                 val keyframes=controller.animation.keyframes.toSet()
+                var menuFrame by remember{mutableIntStateOf(-1)}
                 (1..controller.animation.timelineEnd.coerceAtLeast(1)).forEach{frame->
                     val key=frame in keyframes
-                    Surface(
-                        Modifier.width(52.dp).height(54.dp).padding(2.dp).clickable{controller.selectFrame(frame);redraw()},
-                        shape=RoundedCornerShape(8.dp),
-                        tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp
-                    ){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
-                        Text(frame.toString())
-                        Text(if(key) "KEY" else "HOLD",fontSize=8.sp)
-                    }}
+                    val type=controller.animation.keyTypes[frame]?:0
+                    val selectedKey=frame in controller.animation.selectedFrames
+                    Box{
+                        // tap: go to the frame; long press: key type / frame selection menu
+                        Surface(
+                            Modifier.width(52.dp).height(54.dp).padding(2.dp).testTag("frame_$frame")
+                                .border(if(selectedKey)2.dp else 0.dp,if(selectedKey)Color(0xFFFF8500) else Color.Transparent,RoundedCornerShape(8.dp))
+                                .pointerInput(frame){detectTapGestures(onTap={controller.selectFrame(frame);redraw()},onLongPress={menuFrame=frame})},
+                            shape=RoundedCornerShape(8.dp),
+                            tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp
+                        ){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+                            Text(frame.toString())
+                            if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
+                                Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
+                            } else Text("HOLD",fontSize=8.sp)
+                        }}
+                        if(menuFrame==frame)KeyframeMenu(controller,frame,{menuFrame=-1},redraw)
+                    }
                 }
                 Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
                     controller.createFrame((controller.animation.timelineEnd+1).coerceAtLeast(1));redraw()
@@ -1031,6 +1057,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Use onion skinning",Modifier.weight(1f))
             Switch(checked=onionOn,onCheckedChange={onionOn=it;controller.setLayerOnion(controller.selectedLayer,it);redraw()})
         }
+        LayerLookSection(controller,layerKey,redraw)
         Text("Move selection to layer",Modifier.padding(horizontal=12.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
             (0 until controller.layerCount()).filter{it!=controller.selectedLayer}.forEach{index->
@@ -1091,7 +1118,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             BlenderColorPicker(controller.materials.colorArgb,{controller.setMaterialColor(it);redraw()})
             Spacer(Modifier.height(12.dp))
             Text("Thickness "+controller.brushes.size.toInt(),Modifier.padding(horizontal=20.dp))
-            Slider(controller.brushes.size,{controller.brushes.setSize(it);redraw()},valueRange=.5f..100f)
+            Slider(controller.brushes.size,{controller.brushes.setSize(it);redraw()},valueRange=.5f..500f)
             Text("Opacity "+(opacity*100).toInt().toString()+"%",Modifier.padding(horizontal=20.dp))
             Slider(opacity,{opacity=it;controller.materials.setOpacity(it);controller.setMaterialColor(controller.materials.colorArgb);redraw()},valueRange=0f..1f)
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
@@ -1106,6 +1133,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick={controller.selectMaterial(controller.materials.activeMaterial+1);redraw()}){Text("Next brush/material")}
                 TextButton(onClick={deleteConfirm=true},enabled=controller.materialCount()>1){Text("Delete material")}
             }
+            MaterialSlotsSection(controller,redraw)
             MaterialTextureSection(controller,LocalContext.current,redraw)
         }
     }
@@ -1143,6 +1171,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Use colour after",Modifier.weight(1f))
             Switch(checked=controller.onion.useNextColor,onCheckedChange={controller.setOnionStyle(useNextColor=it);redraw()})
         }
+        OnionFilterSection(controller,redraw)
         Text("Layers can opt out in Layers > Use onion skinning.",Modifier.padding(horizontal=20.dp),fontSize=11.sp);Spacer(Modifier.height(20.dp))}
 }
 
@@ -1174,6 +1203,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick={expanded=emptySet();changed(controller.applyLayerModifier(index))}){Text("Apply")}
                 TextButton(onClick={expanded=emptySet();changed(controller.removeModifier(index))}){Text("Remove")}
             }
+            if(open)ModifierInfluenceSection(controller,index,modifier,::changed)
             if(open)com.smitnk.projectgrease.editor.ModifierSpecs.specs(modifier.type).forEach{spec->
                 val value=modifier.params.getOrElse(spec.index){0f}
                 when(spec.kind){
@@ -1220,8 +1250,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         }
         Text("Stabilizer factor " + (controller.stabilizerFactor*100).toInt() + "%",Modifier.padding(horizontal=20.dp))
         Slider(controller.stabilizerFactor,{controller.setStabilizer(controller.stabilizerEnabled,it);redraw()},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
-        Text("Pressure curve " + "%.2f".format(controller.brushes.pressureCurve),Modifier.padding(horizontal=20.dp))
-        Slider(controller.brushes.pressureCurve,{controller.brushes.setPressureCurve(it);redraw()},valueRange=.25f..3f,modifier=Modifier.padding(horizontal=20.dp))
+        BrushCurvesSection(controller,redraw)
+        DrawingGuideSection(controller,redraw)
         Text("Legacy GP sculpt brush",Modifier.padding(horizontal=20.dp,vertical=8.dp),fontWeight=FontWeight.Bold)
         listOf(
             com.smitnk.projectgrease.editor.SculptBrush.SMOOTH to "Smooth",
@@ -1376,16 +1406,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     onCheckedChange={stabilization=it;controller.setStabilizer(it)}
                 )
             }
-            Text("Pressure curve " + "%.2f".format(pressureCurve),Modifier.padding(horizontal=16.dp))
-            Slider(
-                pressureCurve,
-                {
-                    pressureCurve=it
-                    controller.brushes.setPressureCurve(it)
-                },
-                valueRange=.25f..3f,
-                modifier=Modifier.padding(horizontal=16.dp)
-            )
+            Text("Pressure and strength curves: Advanced > Brush curves (Blender CurveMapping).",Modifier.padding(horizontal=16.dp),fontSize=12.sp)
+            @Suppress("UNUSED_VARIABLE") val keepState=pressureCurve
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
                 Text("Grid",Modifier.weight(1f))
                 Switch(
@@ -1429,7 +1451,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("In-between easing",Modifier.padding(horizontal=16.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
             var easingTick by remember{mutableStateOf(0)}
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
-                listOf("Linear","Quad","Cubic","Quart","Quint","Sine","Expo","Circ","Back","Bounce").forEachIndexed{type,label->
+                listOf("Linear","Quad","Cubic","Quart","Quint","Sine","Expo","Circ","Back","Bounce","Elastic").forEachIndexed{type,label->
                     FilterChip(
                         selected=controller.animation.easingType==type,
                         onClick={controller.animation.setEasing(type,controller.animation.easingMode);easingTick++},
@@ -1449,7 +1471,16 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     )
                 }
             }
+            if(controller.animation.easingType==com.smitnk.projectgrease.editor.ProjectGreaseSelect.EASE_ELASTIC){
+                var amp by remember{mutableFloatStateOf(controller.animation.elasticAmplitude)}
+                var per by remember{mutableFloatStateOf(controller.animation.elasticPeriod)}
+                Text("Amplitude " + "%.2f".format(amp),Modifier.padding(horizontal=16.dp))
+                Slider(amp,{amp=it;controller.animation.setElastic(amp,per)},valueRange=0f..2f,modifier=Modifier.padding(horizontal=16.dp))
+                Text("Period " + "%.2f".format(per),Modifier.padding(horizontal=16.dp))
+                Slider(per,{per=it;controller.animation.setElastic(amp,per)},valueRange=0f..2f,modifier=Modifier.padding(horizontal=16.dp))
+            }
             Button(onClick={controller.animation.interpolateAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
+            Button(onClick={if(controller.animation.interpolateSequence()>0){controller.history.markEdit();controller.document.markDirty()}},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Interpolate sequence (all in-betweens)")}
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Button(onClick={controller.view.reset();controller.render()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Reset canvas view")}
             Button(onClick={controller.smoothSelectedStroke()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Smooth selected stroke")}

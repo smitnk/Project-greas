@@ -62,7 +62,7 @@ enum {
   PG_EDIT_CMD_WEIGHT_PAINT = 57, /* args: def_nr, x, y, radius, strength, target_weight */
 };
 #define PG_EDIT_CMD_FIRST 31
-#define PG_EDIT_CMD_LAST 102 /* 58..65: edit2.c, 66..75: edit3.c, 76..85: edit4.c, 86..89: edit5.c (routed by the bridge), 90..92: edit6.c (via edit4's default), 93..102: edit7.c (via edit6's default) */
+#define PG_EDIT_CMD_LAST 116 /* 103..116: edit8.c (via edit7's default), 58..65: edit2.c, 66..75: edit3.c, 76..85: edit4.c, 86..89: edit5.c (routed by the bridge), 90..92: edit6.c (via edit4's default), 93..102: edit7.c (via edit6's default) */
 
 /* GPENCIL_OT_dissolve types */
 enum { PG_DISSOLVE_POINTS = 0, PG_DISSOLVE_BETWEEN = 1, PG_DISSOLVE_UNSELECT = 2 };
@@ -134,13 +134,15 @@ int pg_gp_mod_opacity(struct bGPdata *gpd, const struct bGPDlayer *only_layer,
 /* eBezTriple_Easing / interpolation easing types used by gpencil_interpolate.c */
 enum {
   PG_EASE_LINEAR = 0, PG_EASE_QUAD, PG_EASE_CUBIC, PG_EASE_QUART, PG_EASE_QUINT,
-  PG_EASE_SINE, PG_EASE_EXPO, PG_EASE_CIRC, PG_EASE_BACK, PG_EASE_BOUNCE,
+  PG_EASE_SINE, PG_EASE_EXPO, PG_EASE_CIRC, PG_EASE_BACK, PG_EASE_BOUNCE, PG_EASE_ELASTIC,
 };
 enum { PG_EASE_IN = 0, PG_EASE_OUT = 1, PG_EASE_IN_OUT = 2 };
 
 /* Interpolation factor for t in 0..1 (BLI_easing_*_ease_in/out/in_out(t, 0, 1, 1)).
  * `back` is the overshoot of the Back type (Blender default 1.70158). Returns t when unknown. */
 float pg_gp_interpolate_easing(int type, int mode, float t, float back);
+/* Elastic easing amplitude / period (GPENCIL_OT_interpolate amplitude / period, defaults 0.15). */
+void pg_gp_set_elastic(float amplitude, float period);
 
 /* Mirror modifier baked as copies: selected strokes are duplicated and mirrored about the pivot. */
 int pg_gp_mirror_copy(struct bGPdata *gpd, const struct bGPDlayer *only_layer,

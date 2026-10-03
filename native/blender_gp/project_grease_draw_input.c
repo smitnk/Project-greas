@@ -179,14 +179,25 @@ static void append_point(PGDrawInput *d, float x, float y, float input_pressure,
   const PGDrawSettings *s = &d->settings;
   const float pressure01 = fclamp(input_pressure, 0.0f, 1.0f);
   float pressure = 1.0f;
+  /* gpencil_stroke_addpoint(): pressure *= BKE_curvemapping_evaluateF(brush curve_sensitivity) */
   if (s->use_pressure) {
-    const double c = s->pressure_curve < 0.01f ? 0.01f : s->pressure_curve;
-    pressure *= (float)pow((double)pressure01, c);
+    if (s->pressure_map.built) {
+      pressure *= pg_curve_evaluate(&s->pressure_map, pressure01);
+    }
+    else {
+      const double c = s->pressure_curve < 0.01f ? 0.01f : s->pressure_curve;
+      pressure *= (float)pow((double)pressure01, c);
+    }
   }
   float strength = s->draw_strength;
   if (s->use_strength_pressure) {
-    const double c = s->strength_curve < 0.01f ? 0.01f : s->strength_curve;
-    strength *= (float)pow((double)pressure01, c);
+    if (s->strength_map.built) {
+      strength *= pg_curve_evaluate(&s->strength_map, pressure01);
+    }
+    else {
+      const double c = s->strength_curve < 0.01f ? 0.01f : s->strength_curve;
+      strength *= (float)pow((double)pressure01, c);
+    }
   }
   strength = fclamp(strength, fminf(PG_DRAW_STRENGTH_MIN, s->draw_strength), 1.0f);
 

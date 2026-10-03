@@ -124,6 +124,10 @@ class NativeEditorBridge : ModifierNative, FxNative {
     override fun fxSetTarget(layer: Int, index: Int, target: Int) = handle != 0L && GPNative.nativeFxSetTarget(handle, layer, index, target)
     override fun fxTarget(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeFxGetTarget(handle, layer, index) else FxTarget.LAYER
     fun materialInfo(index: Int) = if (handle != 0L) GPNative.nativeGetMaterialInfo(handle, index) else null
+    /** Batch 21 document query (PG_DOC_Q_*: 0 frames, 1 layer, 2 material, 3 onion). */
+    fun docQuery(what: Int, vararg args: Float) = if (handle != 0L) GPNative.nativeDocQuery(handle, what, args) else null
+    fun materialName(slot: Int) = if (handle != 0L) GPNative.nativeMaterialName(handle, slot) else null
+    fun setMaterialName(slot: Int, name: String) = handle != 0L && GPNative.nativeSetMaterialName(handle, slot, name)
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
     fun createMaterial() = handle != 0L && GPNative.nativeCreateMaterial(handle)
@@ -179,6 +183,16 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     var timelineEnd by androidx.compose.runtime.mutableIntStateOf(1); private set
     /** Native keyframe numbers, re-read after every frame operation. */
     var keyframes by androidx.compose.runtime.mutableStateOf(IntArray(0)); private set
+    /** bGPDframe.key_type and GP_FRAME_SELECT of the active layer's keyframes, by frame number. */
+    var keyTypes by androidx.compose.runtime.mutableStateOf(emptyMap<Int, Int>()); private set
+    var selectedFrames by androidx.compose.runtime.mutableStateOf(emptySet<Int>()); private set
+    fun refreshKeyInfo() {
+        val q = native.docQuery(0, -1f) ?: FloatArray(0)
+        val types = LinkedHashMap<Int, Int>(); val sel = HashSet<Int>()
+        var i = 0
+        while (i + 2 < q.size) { val f = q[i].toInt(); types[f] = q[i + 1].toInt(); if (q[i + 2] != 0f) sel += f; i += 3 }
+        keyTypes = types; selectedFrames = sel
+    }
     /** Scene end frame (a template's frame_end); the timeline shows at least this many frames. 0 = none. */
     private val sceneEndState = androidx.compose.runtime.mutableIntStateOf(0)
     val sceneEnd: Int get() = sceneEndState.intValue
@@ -211,7 +225,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             native.selectFrameOrHold(1)
             currentFrame = 1
             frameCount = native.frameCount().coerceAtLeast(1)
-            timelineEnd = endFrame(); keyframes = native.frameNumbers()
+            timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         }
     }
     fun setFrame(value: Int): Boolean {
@@ -220,7 +234,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (!native.selectFrameOrHold(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame(); keyframes = native.frameNumbers()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
@@ -229,21 +243,21 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (native.selectFrame(target)) {
             currentFrame = target
             frameCount = native.frameCount().coerceAtLeast(1)
-            timelineEnd = endFrame(); keyframes = native.frameNumbers()
+            timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
             return true
         }
         if (!native.createFrame(target)) return false
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame(); keyframes = native.frameNumbers()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         return true
     }
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int):Boolean {
         if (native.handle == 0L || targetFrame < 1) return false
         if (!native.duplicateFrame(sourceFrame,targetFrame)) return false
-        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd = endFrame(); keyframes = native.frameNumbers(); return true
+        currentFrame=targetFrame; frameCount=native.frameCount().coerceAtLeast(1); timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo(); return true
     }
-    fun frameNumbers(): IntArray = native.frameNumbers().also { keyframes = it }
+    fun frameNumbers(): IntArray = native.frameNumbers().also { keyframes = it; refreshKeyInfo() }
     /** Re-reads frame count/end and re-selects the current frame (or its hold) after native frame edits. */
     fun refreshFromNative(): Boolean = setFrame(currentFrame)
 
@@ -253,10 +267,42 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     var easingMode = ProjectGreaseSelect.EASE_IN
         private set
     fun setEasing(type:Int, mode:Int) {
-        if (type in ProjectGreaseSelect.EASE_LINEAR..ProjectGreaseSelect.EASE_BOUNCE) easingType = type
+        if (type in ProjectGreaseSelect.EASE_LINEAR..ProjectGreaseSelect.EASE_ELASTIC) easingType = type
         if (mode in ProjectGreaseSelect.EASE_IN..ProjectGreaseSelect.EASE_IN_OUT) easingMode = mode
     }
+    /** Elastic easing amplitude / period (GPENCIL_OT_interpolate defaults 0.15 / 0.15). */
+    var elasticAmplitude = 0.15f; private set
+    var elasticPeriod = 0.15f; private set
+    fun setElastic(amplitude:Float, period:Float) {
+        elasticAmplitude = amplitude.coerceIn(0f, 10f); elasticPeriod = period.coerceIn(0f, 10f)
+        ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
+    }
+    /**
+     * GPENCIL_OT_interpolate_sequence: every frame strictly between the keyframe before [frame] and the
+     * one after gets an in-between (step 1), each eased with the current easing; existing frames in the
+     * gap are replaced as Blender does. Returns the number of frames created (one undo step).
+     */
+    fun interpolateSequence(frame:Int = currentFrame):Int {
+        if (native.handle == 0L) return 0
+        ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
+        val keys = native.frameNumbers().sorted()
+        val previous = keys.lastOrNull { it <= frame } ?: return 0
+        val next = keys.firstOrNull { it > previous } ?: return 0
+        // gpencil_interpolate_seq_exec(): in-betweens of (prev, next) with the keys of that gap removed
+        for (k in keys) if (k in (previous + 1) until next) native.deleteFrame(k)
+        var made = 0
+        val span = (next - previous).toFloat()
+        for (f in previous + 1 until next) {
+            if (native.interpolateFrame(previous, next, f, (f - previous) / span, easingType, easingMode)) made++
+        }
+        currentFrame = frame.coerceIn(1, maxOf(1, next))
+        native.selectFrameOrHold(currentFrame)
+        frameCount = native.frameCount().coerceAtLeast(1)
+        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
+        return made
+    }
     fun interpolateAt(frame:Int):Boolean {
+        ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
         if (native.handle == 0L) return false
         val keys = native.frameNumbers().sorted()
         val previous = keys.lastOrNull { it < frame } ?: return false
@@ -266,7 +312,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (!native.interpolateFrame(previous,next,frame,factor,easingType,easingMode)) return false
         currentFrame=frame
         frameCount=native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame(); keyframes = native.frameNumbers()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {
@@ -280,7 +326,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         native.selectFrameOrHold(target)
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame(); keyframes = native.frameNumbers()
+        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         return true
     }
 
@@ -307,14 +353,45 @@ class MaterialController {
     fun select(index:Int){activeMaterial=index.coerceAtLeast(0)}
     fun setColor(value:Int){colorArgb=value}
     fun setFillEnabled(value:Boolean){fillEnabled=value}
-    fun setThickness(value:Float){thickness=value.coerceIn(0.5f,100f)}
+    fun setThickness(value:Float){thickness=value.coerceIn(0.5f,500f)}
     fun setOpacity(value:Float){opacity=value.coerceIn(0f,1f)}
 }
 
 enum class GreaseMode { DRAW, EDIT, SCULPT, VERTEX_PAINT, WEIGHT_PAINT }
 
-enum class BrushPreset {
-    PENCIL, PEN, INK, MARKER, AIRBRUSH
+/**
+ * Legacy GP default brushes (BKE_gpencil_brush_preset_set, brush.cc of the pinned tree): size,
+ * draw_strength, pressure / strength-pressure switches, input samples, active smoothing, angle,
+ * hardness and the curve_sensitivity / curve_strength CurveMapping presets (brush_gpencil_curvemap_reset).
+ */
+enum class BrushPreset(
+    val label: String, val size: Float, val strength: Float, val usePressure: Boolean, val useStrengthPressure: Boolean,
+    val inputSamples: Int = 10, val activeSmooth: Float = 0.35f, val angle: Float = 0f, val angleFactor: Float = 0f,
+    val hardness: Float = 1f, val randomPressure: Float = 0f,
+    val pressureCurve: List<Pair<Float, Float>> = LINEAR_CURVE, val strengthCurve: List<Pair<Float, Float>> = LINEAR_CURVE,
+    val kind: Kind = Kind.DRAW, val eraser: EraserMode? = null
+) {
+    PENCIL("Pencil", 20f, 0.6f, true, true),
+    PENCIL_SOFT("Pencil Soft", 80f, 0.4f, true, true, hardness = 0.8f),
+    INK_PEN("Ink Pen", 60f, 1.0f, true, false, pressureCurve = listOf(0f to 0f, 0.63448f to 0.375f, 1f to 1f)),
+    INK_PEN_ROUGH("Ink Pen Rough", 60f, 1.0f, true, false, randomPressure = 0.6f,
+        pressureCurve = listOf(0f to 0f, 0.55f to 0.45f, 0.85f to 1f)),
+    MARKER_BOLD("Marker Bold", 150f, 0.3f, false, false,
+        pressureCurve = listOf(0f to 0f, 0.38f to 0.22f, 0.65f to 0.68f, 1f to 1f)),
+    MARKER_CHISEL("Marker Chisel", 150f, 1.0f, true, false, activeSmooth = 0.3f,
+        angle = (35.0 * Math.PI / 180.0).toFloat(), angleFactor = 0.5f,
+        pressureCurve = listOf(0f to 0f, 0.25f to 0.40f, 1f to 1f),
+        strengthCurve = listOf(0f to 0f, 0.31f to 0.22f, 0.61f to 0.88f, 1f to 1f)),
+    PEN("Pen", 25f, 1.0f, false, false),
+    AIRBRUSH("Airbrush", 300f, 0.4f, true, true, hardness = 0.9f),
+    FILL_AREA("Fill Area", 5f, 1.0f, false, false, kind = Kind.FILL),
+    ERASER_SOFT("Eraser Soft", 30f, 0.5f, true, true, kind = Kind.ERASE, eraser = EraserMode.SOFT),
+    ERASER_HARD("Eraser Hard", 30f, 1.0f, false, false, kind = Kind.ERASE, eraser = EraserMode.SOFT),
+    ERASER_POINT("Eraser Point", 30f, 1.0f, false, false, kind = Kind.ERASE, eraser = EraserMode.HARD),
+    ERASER_STROKE("Eraser Stroke", 30f, 1.0f, false, false, kind = Kind.ERASE, eraser = EraserMode.STROKE);
+
+    enum class Kind { DRAW, FILL, ERASE }
+    companion object { val LINEAR_CURVE = listOf(0f to 0f, 1f to 1f) }
 }
 
 class BrushController(private val materials: MaterialController) {
@@ -325,22 +402,38 @@ class BrushController(private val materials: MaterialController) {
     val size: Float get() = materials.thickness
     var strength = 1f
         private set
+    /** Former power-curve exponent; kept for old callers, the curves below are what Draw uses. */
     var pressureCurve = 1f
         private set
+    var usePressure = true; private set
+    var useStrengthPressure = false; private set
+    var inputSamples = 10; private set
+    var activeSmooth = 0f; private set // until a preset is picked (the Pencil preset sets 0.35)
+    var angle = 0f; private set
+    var angleFactor = 0f; private set
+    var hardness = 1f; private set
+    /** curve_sensitivity and curve_strength (CurveMapping points, evaluated natively). */
+    var pressureCurvePoints: List<Pair<Float, Float>> = BrushPreset.LINEAR_CURVE; private set
+    var strengthCurvePoints: List<Pair<Float, Float>> = BrushPreset.LINEAR_CURVE; private set
 
     fun select(value: BrushPreset) {
         preset = value
-        when (value) {
-            BrushPreset.PENCIL -> apply(4f, 0.80f, 1.15f)
-            BrushPreset.PEN -> apply(7f, 0.95f, 1.0f)
-            BrushPreset.INK -> apply(5f, 1.0f, 0.85f)
-            BrushPreset.MARKER -> apply(14f, 0.75f, 0.9f)
-            BrushPreset.AIRBRUSH -> apply(24f, 0.35f, 0.7f)
-        }
+        strength = value.strength
+        usePressure = value.usePressure
+        useStrengthPressure = value.useStrengthPressure
+        inputSamples = value.inputSamples
+        activeSmooth = value.activeSmooth
+        angle = value.angle
+        angleFactor = value.angleFactor
+        hardness = value.hardness
+        pressureCurvePoints = value.pressureCurve
+        strengthCurvePoints = value.strengthCurve
+        pressureCurve = 1f
+        materials.setThickness(value.size)
     }
 
     fun setSize(value: Float) {
-        materials.setThickness(value.coerceIn(0.5f, 100f))
+        materials.setThickness(value.coerceIn(0.5f, 500f))
     }
 
     fun setStrength(value: Float) {
@@ -350,15 +443,35 @@ class BrushController(private val materials: MaterialController) {
     fun setPressureCurve(value: Float) {
         pressureCurve = value.coerceIn(0.25f, 3f)
     }
+    fun setUsePressure(value: Boolean) { usePressure = value }
+    fun setUseStrengthPressure(value: Boolean) { useStrengthPressure = value }
+    /** Points sorted by x, 2..8 of them, inside 0..1 (CurveMapping clip rect). */
+    fun setPressureCurvePoints(points: List<Pair<Float, Float>>) { pressureCurvePoints = CurvePoints.clean(points) }
+    fun setStrengthCurvePoints(points: List<Pair<Float, Float>>) { strengthCurvePoints = CurvePoints.clean(points) }
 
     fun pressure(input: Float): Float =
         input.coerceIn(0f, 1f).let { it.toDouble().pow(pressureCurve.toDouble()).toFloat() }
+}
 
-    private fun apply(newSize: Float, newStrength: Float, curve: Float) {
-        strength = newStrength
-        pressureCurve = curve
-        materials.setThickness(newSize)
+/** CurveMapping point lists as edited in the UI (2..8 points, sorted, clamped to 0..1). */
+object CurvePoints {
+    const val MAX = 8
+    fun clean(points: List<Pair<Float, Float>>): List<Pair<Float, Float>> {
+        val p = points.filter { it.first.isFinite() && it.second.isFinite() }
+            .map { it.first.coerceIn(0f, 1f) to it.second.coerceIn(0f, 1f) }.sortedBy { it.first }.take(MAX)
+        return if (p.size >= 2) p else BrushPreset.LINEAR_CURVE
     }
+    /** Index of the point nearest (x, y) within [radius], or -1. */
+    fun hit(points: List<Pair<Float, Float>>, x: Float, y: Float, radius: Float): Int {
+        var best = -1; var bd = radius
+        points.forEachIndexed { i, (px, py) -> val d = kotlin.math.hypot(px - x, py - y); if (d <= bd) { bd = d; best = i } }
+        return best
+    }
+    /** Adds a point at x on the line between its neighbours (Blender adds where you click). */
+    fun insert(points: List<Pair<Float, Float>>, x: Float, y: Float): List<Pair<Float, Float>> =
+        if (points.size >= MAX) points else clean(points + (x to y))
+    fun remove(points: List<Pair<Float, Float>>, index: Int): List<Pair<Float, Float>> =
+        if (points.size <= 2 || index !in points.indices) points else points.filterIndexed { i, _ -> i != index }
 }
 
 
@@ -391,6 +504,19 @@ class ViewController {
             val w = canvasW*scale; val h = canvasH*scale
             return floatArrayOf((viewW-w)*0.5f+panX, (viewH-h)*0.5f+panY, w, h)
         }
+    }
+    /** Drawing guide (GP_GUIDE_*: 0 circular, 1 radial, 2 parallel, 3 grid, 4 isometric; -1 off), canvas units. */
+    var guideType=-1; private set
+    var guideCenterX=640f; private set
+    var guideCenterY=360f; private set
+    var guideAngle=0f; private set
+    var guideSpacing=40f; private set
+    fun setDrawingGuide(type:Int, centerX:Float=guideCenterX, centerY:Float=guideCenterY, angle:Float=guideAngle, spacing:Float=guideSpacing){
+        guideType=if(type in 0..4) type else -1
+        if(centerX.isFinite()) guideCenterX=centerX
+        if(centerY.isFinite()) guideCenterY=centerY
+        if(angle.isFinite()) guideAngle=angle
+        if(spacing.isFinite()) guideSpacing=spacing.coerceIn(4f,1000f)
     }
     fun toggleGrid(){showGrid=!showGrid}
     fun toggleGuides(){showGuides=!showGuides}
@@ -446,6 +572,10 @@ class OnionSkinController {
     var opacity=0.35f; private set
     var fade=true; private set
     var selectedLayerOnly=true; private set
+    /** bGPdata.onion_keytype (-1 = all, else BEZT_KEYTYPE_*) and GP_ONION_LOOP. */
+    var keyTypeFilter=-1; private set
+    var loop=false; private set
+    fun setFilter(keyType:Int, loop:Boolean){ keyTypeFilter=keyType.coerceIn(-1,4); this.loop=loop }
     fun toggle(){enabled=!enabled}
     fun setBefore(value:Int){beforeFrames=value.coerceIn(0,12)}
     fun setAfter(value:Int){afterFrames=value.coerceIn(0,12)}
@@ -473,9 +603,9 @@ data class MaterialTexture(
 
 /** Tools that select or act on the selection: the edit overlay is shown while one is active. */
 val SELECTION_TOOLS = setOf(GreaseTool.SELECT, GreaseTool.LASSO, GreaseTool.MOVE, GreaseTool.ROTATE,
-    GreaseTool.SCALE, GreaseTool.MIRROR)
+    GreaseTool.SCALE, GreaseTool.MIRROR, GreaseTool.BOX_SELECT, GreaseTool.CIRCLE_SELECT)
 
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT }
+enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT, BOX_SELECT, CIRCLE_SELECT }
 
 class ToolController {
     var activeTool=GreaseTool.DRAW; private set
@@ -488,6 +618,7 @@ class ToolController {
             GreaseTool.CIRCLE->FeatureId.CIRCLE; GreaseTool.ARC->FeatureId.ARC
             GreaseTool.POLYLINE->FeatureId.POLYLINE; GreaseTool.CURVE->FeatureId.CURVE; GreaseTool.ANNOTATE->FeatureId.ANNOTATIONS; GreaseTool.MOVE->FeatureId.MOVE; GreaseTool.ROTATE->FeatureId.ROTATE; GreaseTool.SCALE->FeatureId.SCALE; GreaseTool.MIRROR->FeatureId.MIRROR; GreaseTool.PAN->FeatureId.PAN
             GreaseTool.SCULPT->FeatureId.SCULPT
+            GreaseTool.BOX_SELECT->FeatureId.SELECT_BOX; GreaseTool.CIRCLE_SELECT->FeatureId.SELECT_CIRCLE
         }
         if(FeatureRegistry.capability(feature).state==FeatureState.NOT_IMPLEMENTED)return false
         activeTool=tool; return true
@@ -586,6 +717,7 @@ class EditorController {
         if (tool != tools.activeTool && curve.isActive) {
             if (curve.phase == CurveSession.Phase.EDIT) confirmCurve() else cancelCurve()
         }
+        if (tool != tools.activeTool && shapeEdit.isActive) confirmShape()
         // Re-render so the edit overlay follows the tool at once.
         return tools.select(tool).also { if (it) render() }
     }
@@ -597,6 +729,7 @@ class EditorController {
 
     /** Which native session tool a touch on the canvas runs, or -1 (other tools keep their path). */
     fun sessionToolForTouch():Int = when {
+        gizmoActive -> -1 // modifier handles take the touch (beginStroke path)
         mode == GreaseMode.VERTEX_PAINT && paintsInMode() -> ToolSession.TOOL_VERTEX_PAINT
         mode == GreaseMode.WEIGHT_PAINT && paintsInMode() -> ToolSession.TOOL_WEIGHT_PAINT
         tools.activeTool == GreaseTool.SCULPT -> ToolSession.TOOL_SCULPT
@@ -625,12 +758,18 @@ class EditorController {
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
                 material = materials.activeMaterial, thickness = materials.thickness,
-                strength = brushes.strength, usePressure = true, useStrengthPressure = false,
+                strength = brushes.strength, usePressure = brushes.usePressure,
+                useStrengthPressure = brushes.useStrengthPressure,
                 pressureCurve = brushes.pressureCurve, inputSamples = legacyInputSamples,
                 lazy = legacyLazyEnabled, lazyRadius = legacyLazyRadius, lazyFactor = legacyLazyFactor,
                 disableStabilizer = legacyDisableStabilizer, manhattan = legacyManhattanThreshold,
-                euclidean = legacyEuclideanThreshold, activeSmooth = legacyActiveSmooth, jitter = legacyJitter,
-                angleFactor = legacyDrawAngleFactor, angle = legacyDrawAngle
+                euclidean = legacyEuclideanThreshold, activeSmooth = maxOf(legacyActiveSmooth, brushes.activeSmooth),
+                jitter = legacyJitter,
+                angleFactor = if (legacyDrawAngleFactor != 0f) legacyDrawAngleFactor else brushes.angleFactor,
+                angle = if (legacyDrawAngleFactor != 0f) legacyDrawAngle else brushes.angle,
+                guideType = view.guideType, guideX = view.guideCenterX, guideY = view.guideCenterY,
+                guideAngle = view.guideAngle, guideSpacing = view.guideSpacing,
+                pressureCurvePoints = brushes.pressureCurvePoints, strengthCurvePoints = brushes.strengthCurvePoints
             ).toParams()
             else -> null
         }
@@ -666,8 +805,14 @@ class EditorController {
         return result
     }
 
+    /** Blender's preset brushes also pick their tool: Fill Area the fill tool, the erasers Erase. */
     fun selectBrush(preset:BrushPreset) {
         brushes.select(preset)
+        when (preset.kind) {
+            BrushPreset.Kind.FILL -> { selectTool(GreaseTool.FILL); setFillOptions(dilate = 1) }
+            BrushPreset.Kind.ERASE -> { selectTool(GreaseTool.ERASE); preset.eraser?.let { setEraserMode(it) } }
+            BrushPreset.Kind.DRAW -> if (tools.activeTool == GreaseTool.ERASE || tools.activeTool == GreaseTool.FILL) selectTool(GreaseTool.DRAW)
+        }
         setMaterialColor(materials.colorArgb)
     }
     fun setBrushStrength(value:Float) {
@@ -696,6 +841,7 @@ class EditorController {
     /** The lasso path being drawn, canvas units (empty when no lasso is open). */
     val lassoPath: List<Pair<Float,Float>> get() = pendingLassoPoints
     private var pendingShapeTool: GreaseTool? = null
+    private var lastShapeAnchors: Pair<Pair<Float,Float>,Pair<Float,Float>>? = null
     private val polyline = PolylineSession()
     private val curve = CurveSession()
     private var curveAwaitingPress = false
@@ -775,9 +921,18 @@ class EditorController {
     /** Active smoothing of the Legacy GP brush (0 = off, 1 = strongest). */
     fun setActiveSmooth(value:Float) { legacyActiveSmooth = value.coerceIn(0f, 1f) }
 
+    private var gizmoGestureFirst = false
+    private var shapeAwaitingPress = false
+    private var shapeConfirmOnRelease = false
     fun beginStroke():Boolean {
         if (rendererHandle == 0L) return false
+        if (gizmoActive) { gizmoGestureFirst = true; return true }
+        if (shapeEdit.isActive && tools.activeTool in setOf(GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC)) {
+            shapeAwaitingPress = true; shapeConfirmOnRelease = false; return true
+        }
         return when (tools.activeTool) {
+            GreaseTool.BOX_SELECT -> { areaStart = null; boxSelectRect = null; true }
+            GreaseTool.CIRCLE_SELECT -> { areaFirstDab = true; true }
             // Draw runs in the native tool session (toolSamples), not through beginStroke.
             GreaseTool.LASSO -> { pendingLassoPoints.clear(); true }
             GreaseTool.POLYLINE -> {
@@ -806,6 +961,31 @@ class EditorController {
 
     fun addStrokePoint(x:Float,y:Float,pressure:Float,timeSeconds:Float){
         if (rendererHandle == 0L) return
+        if (gizmoActive) {
+            if (gizmoGestureFirst) { gizmoGestureFirst = false; gizmoPress(x, y) } else gizmoMove(x, y)
+            return
+        }
+        if (shapeEdit.isActive && (shapeAwaitingPress || shapeEdit.dragging >= 0 || shapeConfirmOnRelease)) {
+            if (shapeAwaitingPress) {
+                shapeAwaitingPress = false
+                if (!shapeEdit.press(x, y, curveHitRadius())) shapeConfirmOnRelease = true
+            } else if (!shapeConfirmOnRelease) {
+                val snapped = view.snapPoint(x, y)
+                shapeEdit.move(snapped.first, snapped.second); showShapePreview()
+            }
+            return
+        }
+        if (tools.activeTool == GreaseTool.BOX_SELECT) {
+            val start = areaStart ?: (x to y).also { areaStart = it }
+            boxSelectRect = floatArrayOf(start.first, start.second, x, y)
+            onOverlayChanged?.invoke()
+            return
+        }
+        if (tools.activeTool == GreaseTool.CIRCLE_SELECT) {
+            selectCircleAt(x, y, circleSelectRadius(), areaFirstDab)
+            areaFirstDab = false
+            return
+        }
         if (tools.activeTool == GreaseTool.LASSO) {
             val snapped=view.snapPoint(x,y)
             pendingLassoPoints += snapped.first to snapped.second
@@ -875,6 +1055,7 @@ class EditorController {
         val last = pendingShapePoints.last()
         // A tap without a drag is not a shape.
         if (first.x == last.x && first.y == last.y) return null
+        lastShapeAnchors = (first.x to first.y) to (last.x to last.y)
         return blenderPrimitivePoints(type, listOf(first.x to first.y, last.x to last.y))
     }
 
@@ -925,6 +1106,20 @@ class EditorController {
 
     fun endStroke(){
         if (rendererHandle == 0L) return
+        if (gizmoActive) { gizmoRelease(); return }
+        if (shapeEdit.isActive && (shapeConfirmOnRelease || shapeEdit.dragging >= 0 || shapeAwaitingPress)) {
+            shapeAwaitingPress = false
+            if (shapeConfirmOnRelease) { shapeConfirmOnRelease = false; confirmShape() } else { shapeEdit.release(); showShapePreview() }
+            return
+        }
+        if (tools.activeTool == GreaseTool.BOX_SELECT) {
+            val r = boxSelectRect
+            boxSelectRect = null; areaStart = null
+            onOverlayChanged?.invoke()
+            if (r != null) selectBox(minOf(r[0], r[2]), minOf(r[1], r[3]), maxOf(r[0], r[2]), maxOf(r[1], r[3])) else render()
+            return
+        }
+        if (tools.activeTool == GreaseTool.CIRCLE_SELECT) { render(); return }
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
@@ -963,7 +1158,11 @@ class EditorController {
         pendingShapeTool = null
         val type = shapeTool?.let { ProjectGreasePrimitive.forTool(it) } ?: return
         if (finalPoints != null) {
-            commitPrimitivePoints(finalPoints, ProjectGreasePrimitive.isCyclic(type))
+            // gpencil_primitive.c keeps the shape editable (handles, subdivisions, extrude) until it
+            // is confirmed; the shape shows as the preview meanwhile.
+            val anchors = lastShapeAnchors
+            if (anchors != null && shapeEdit.start(type, anchors.first, anchors.second)) showShapePreview()
+            else commitPrimitivePoints(finalPoints, ProjectGreasePrimitive.isCyclic(type))
         }
     }
 
@@ -1070,6 +1269,7 @@ class EditorController {
         native.applyEditCommand(ProjectGreaseSelect.CMD_ONION_FADE, ProjectGreaseSelect.onionFade(onion.fade).args)
         ProjectGreaseSelect.onionStyle(onion.mode, onion.usePrevColor, onion.useNextColor, onion.prevColor, onion.nextColor)
             ?.let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.onionFilter(onion.keyTypeFilter, onion.loop)?.let { native.applyEditCommand(it.id, it.args) }
     }
     /** Onion mode (Relative / Absolute / Selected) and the custom ghost colours before / after. */
     fun setOnionStyle(mode:Int = onion.mode, usePrevColor:Boolean = onion.usePrevColor, useNextColor:Boolean = onion.useNextColor,
@@ -1481,6 +1681,8 @@ class EditorController {
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
             // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
             GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())
+            GPNative.nativeSetGuide(rendererHandle, if (tools.activeTool == GreaseTool.DRAW) view.guideType else -1,
+                view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             GPNative.nativeRenderEgl(rendererHandle)
         }
     }
@@ -2095,4 +2297,182 @@ class EditorController {
         }
         return ok
     }
+
+    // =========================================================================================
+    // Batch 21: keyframe types, frame selection, layer blend / tint / line change, materials,
+    // onion filter, canvas handles of modifiers, primitive edit phase, box / circle select.
+    // =========================================================================================
+    private fun docChanged(ok:Boolean):Boolean { if (ok) { history.markEdit(); document.markDirty(); render() }; return ok }
+
+    /** Key type of keyframe [frame] (BEZT_KEYTYPE_*) on the active layer, 0 when not a keyframe. */
+    fun frameKeyType(frame:Int):Int = animation.keyTypes[frame] ?: 0
+    /** Sets the key type of keyframe [frame]; the selected keyframes too when [frame] is one of them. */
+    fun setFrameKeyType(frame:Int, type:Int):Boolean {
+        val targets = if (frame in animation.selectedFrames) animation.selectedFrames + frame else setOf(frame)
+        var any = false
+        for (f in targets) ProjectGreaseSelect.frameKeyType(f, type)?.let { any = native.applyEditCommand(it.id, it.args) || any }
+        animation.refreshKeyInfo()
+        return docChanged(any)
+    }
+    /** Timeline frame selection (GP_FRAME_SELECT): replace, toggle or extend; drives multiframe editing. */
+    fun selectTimelineFrame(frame:Int, mode:Int = ProjectGreaseSelect.FRAME_SELECT_TOGGLE):Boolean {
+        val c = ProjectGreaseSelect.frameSelect(frame, mode)
+        val ok = native.applyEditCommand(c.id, c.args)
+        animation.refreshKeyInfo()
+        if (ok) { document.markDirty(); render() }
+        return ok
+    }
+    fun deselectTimelineFrames():Boolean {
+        val c = ProjectGreaseSelect.frameDeselect()
+        val ok = native.applyEditCommand(c.id, c.args)
+        animation.refreshKeyInfo()
+        if (ok) render()
+        return ok
+    }
+
+    // ---- layer blend / tint / line change / pass (saved in the project file) ----
+    fun setLayerBlend(mode:Int, layer:Int = selectedLayer):Boolean =
+        ProjectGreaseSelect.layerBlend(layer, mode)?.let { docChanged(native.applyEditCommand(it.id, it.args)) } ?: false
+    fun setLayerTint(argb:Int, factor:Float, layer:Int = selectedLayer):Boolean {
+        val c = colorToFloats(argb)
+        val cmd = ProjectGreaseSelect.layerTint(layer, c[0], c[1], c[2], factor.coerceIn(0f, 1f))
+        return docChanged(native.applyEditCommand(cmd.id, cmd.args))
+    }
+    fun setLayerLineChange(px:Int, layer:Int = selectedLayer):Boolean =
+        docChanged(ProjectGreaseSelect.layerLineChange(layer, px).let { native.applyEditCommand(it.id, it.args) })
+    fun setLayerPass(pass:Int, layer:Int = selectedLayer):Boolean =
+        docChanged(ProjectGreaseSelect.layerPass(layer, pass).let { native.applyEditCommand(it.id, it.args) })
+
+    // ---- materials: name, order, lock / hide / solo, line type, pass ----
+    fun materialRecord(slot:Int = materials.activeMaterial):MaterialRecord? = NativeDocumentAdapter(native).materialRecord(slot)
+    fun materialName(slot:Int):String = native.materialName(slot)?.takeIf { it.isNotBlank() } ?: "Material ${slot + 1}"
+    fun renameMaterial(slot:Int, name:String):Boolean {
+        val ok = native.setMaterialName(slot, name.trim())
+        if (ok) { document.markDirty(); render() }
+        return ok
+    }
+    /** Moves a slot (GPENCIL_OT_material_slot_move): strokes keep their material, textures follow. */
+    fun moveMaterial(slot:Int, delta:Int):Boolean {
+        val to = slot + delta
+        if (slot !in 0 until native.materialCount() || to !in 0 until native.materialCount()) return false
+        val c = ProjectGreaseSelect.materialMove(slot, to)
+        if (!native.applyEditCommand(c.id, c.args)) return false
+        remapMaterialTextures(slot, to)
+        if (materials.activeMaterial == slot) materials.select(to)
+        else if (materials.activeMaterial == to) materials.select(slot)
+        return docChanged(true)
+    }
+    private fun remapMaterialTextures(from:Int, to:Int) {
+        fun map(slot:Int) = when {
+            slot == from -> to
+            from < to && slot in (from + 1)..to -> slot - 1
+            from > to && slot in to until from -> slot + 1
+            else -> slot
+        }
+        val t = HashMap(materialTextures); val img = HashMap(textureImages)
+        clearTextures()
+        for ((k, v) in t) materialTextures[map(k / 2) * 2 + k % 2] = v
+        for ((k, v) in img) textureImages[map(k / 2) * 2 + k % 2] = v
+        reapplyTextureSettings(); reuploadTextures()
+    }
+    fun setMaterialLocked(slot:Int, locked:Boolean):Boolean {
+        val r = materialRecord(slot) ?: return false
+        return docChanged(ProjectGreaseSelect.materialFlags(slot, locked, !r.visible).let { native.applyEditCommand(it.id, it.args) })
+    }
+    fun setMaterialHidden(slot:Int, hidden:Boolean):Boolean {
+        val r = materialRecord(slot) ?: return false
+        return docChanged(ProjectGreaseSelect.materialFlags(slot, r.locked, hidden).let { native.applyEditCommand(it.id, it.args) })
+    }
+    fun soloMaterial(slot:Int = materials.activeMaterial):Boolean =
+        docChanged(ProjectGreaseSelect.materialSolo(slot).let { native.applyEditCommand(it.id, it.args) })
+    fun setMaterialLineType(mode:Int, alignment:Int = 0, rotation:Float = 0f, slot:Int = materials.activeMaterial):Boolean =
+        ProjectGreaseSelect.materialMode(slot, mode, alignment, rotation)?.let { docChanged(native.applyEditCommand(it.id, it.args)) } ?: false
+    fun setMaterialPass(pass:Int, slot:Int = materials.activeMaterial):Boolean =
+        docChanged(ProjectGreaseSelect.materialPass(slot, pass).let { native.applyEditCommand(it.id, it.args) })
+
+    // ---- onion keyframe-type filter and loop (bGPdata.onion_keytype / GP_ONION_LOOP) ----
+    fun setOnionFilter(keyType:Int = onion.keyTypeFilter, loop:Boolean = onion.loop):Boolean {
+        val c = ProjectGreaseSelect.onionFilter(keyType, loop) ?: return false
+        native.applyEditCommand(c.id, c.args)
+        onion.setFilter(keyType, loop)
+        render()
+        return true
+    }
+
+    // ---- modifier custom curve and canvas handles ----
+    fun setModifierCurve(index:Int, use:Boolean, points:List<Pair<Float,Float>>, layer:Int = selectedLayer):Boolean {
+        val m = modifiers(layer).getOrNull(index) ?: return false
+        return modifierChanged(ModifierStackCommands.setAll(native, layer, index, ModifierSpecs.withCurve(m.params, use, CurvePoints.clean(points).take(7))))
+    }
+    /** The modifier whose handles are shown and dragged on the canvas (Hook, Lattice, Weight Proximity, Mirror). */
+    var gizmo:Pair<Int,Int>? = null; private set
+    val gizmoActive:Boolean get() = gizmo != null
+    fun editModifierHandles(index:Int?, layer:Int = selectedLayer) {
+        gizmo = index?.let { layer to it }
+        onOverlayChanged?.invoke()
+        render()
+    }
+    fun gizmoHandles():List<Pair<Float,Float>> {
+        val (layer, index) = gizmo ?: return emptyList()
+        val m = modifiers(layer).getOrNull(index) ?: return emptyList()
+        return ModifierSpecs.canvasHandles(m.type, m.params)
+    }
+    private var gizmoDrag = -1
+    private fun gizmoPress(x:Float, y:Float):Boolean {
+        val handles = gizmoHandles()
+        gizmoDrag = CurvePoints.hit(handles, x, y, curveHitRadius())
+        return gizmoDrag >= 0
+    }
+    private fun gizmoMove(x:Float, y:Float) {
+        val (layer, index) = gizmo ?: return
+        if (gizmoDrag < 0) return
+        val m = modifiers(layer).getOrNull(index) ?: return
+        if (ModifierStackCommands.setAll(native, layer, index, ModifierSpecs.moveHandle(m.type, m.params, gizmoDrag, x, y))) {
+            document.markDirty(); render(); onOverlayChanged?.invoke()
+        }
+    }
+    private fun gizmoRelease() { if (gizmoDrag >= 0) history.markEdit(); gizmoDrag = -1 }
+
+    // ---- primitive edit phase (gpencil_primitive.c IN_PROGRESS / edit handles) ----
+    private val shapeEdit = ShapeEditSession()
+    val shapeEditing:Boolean get() = shapeEdit.isActive
+    fun shapeHandles():List<Pair<Float,Float>> = shapeEdit.handles()
+    /** Subdivisions (Blender's "edges", + / - keys); 0 = Blender's default for the type. */
+    fun shapeSubdivisions():Int = shapeEdit.edges
+    fun changeShapeSubdivisions(delta:Int):Boolean {
+        if (!shapeEdit.isActive) return false
+        val base = if (shapeEdit.edges > 0) shapeEdit.edges else GPNative.nativeBlenderPrimitiveDefaultEdges(shapeEdit.type).coerceAtLeast(1)
+        shapeEdit.edges = (base + delta).coerceIn(1, 128)
+        showShapePreview(); return true
+    }
+    /** Extrude (E key): a line becomes a polyline with a new end point to drag. */
+    fun extrudeShape():Boolean = shapeEdit.extrude().also { if (it) showShapePreview() }
+    fun confirmShape():Boolean {
+        if (!shapeEdit.isActive) return false
+        val type = shapeEdit.effectiveType()
+        val points = blenderPrimitivePointsEdges(type, shapeEdit.anchors(), shapeEdit.edges)
+        shapeEdit.reset(); showPrimitivePreview(null); onOverlayChanged?.invoke()
+        val ok = points != null && commitPrimitivePoints(points, ProjectGreasePrimitive.isCyclic(type))
+        if (!ok) render()
+        return ok
+    }
+    fun cancelShape() { shapeEdit.reset(); showPrimitivePreview(null); onOverlayChanged?.invoke(); render() }
+    private fun showShapePreview() {
+        showPrimitivePreview(blenderPrimitivePointsEdges(shapeEdit.effectiveType(), shapeEdit.anchors(), shapeEdit.edges))
+        onOverlayChanged?.invoke()
+    }
+    private fun blenderPrimitivePointsEdges(type:Int, anchors:List<Pair<Float,Float>>, edges:Int):FloatArray? {
+        if (anchors.size < 2) return null
+        val packed = FloatArray(anchors.size * 2)
+        anchors.forEachIndexed { i, p -> packed[i * 2] = p.first; packed[i * 2 + 1] = p.second }
+        val points = GPNative.nativeGenerateBlenderPrimitive(type, packed, edges, false) ?: return null
+        return if (points.size >= 4 && points.size % 2 == 0) points else null
+    }
+
+    // ---- box / circle select tools ----
+    private var areaStart:Pair<Float,Float>? = null
+    private var areaFirstDab = true
+    /** Box being dragged (canvas units, x0 y0 x1 y1) for the overlay, or null. */
+    var boxSelectRect:FloatArray? = null; private set
+    fun circleSelectRadius():Float = brushes.size.coerceAtLeast(4f)
 }

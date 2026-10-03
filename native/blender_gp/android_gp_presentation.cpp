@@ -18,6 +18,7 @@
 #include "project_grease_stroke_outline.h"
 #include "project_grease_blender_edit5.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_mod2.h"
 
 namespace {
 struct Vertex { float x; float y; };
@@ -64,6 +65,15 @@ int g_draw_parts=3;
 // Onion ghost tint (gpencil_layer_final_tint_and_alpha_get: a custom ghost colour replaces the rgb).
 bool g_ghost_tint=false;
 float g_ghost_rgb[3]={0,0,0};
+// Layer state applied while a layer is drawn (gpencil_vert.glsl): layer tint mixed over the colour
+// (gpLayerTint), thickness offset (gpThicknessOffset = line_change); the opacity override is used by
+// the blend-mode pass, which applies the layer opacity once at composite time (blendOpacity).
+float g_layer_tint[4]={0,0,0,0};
+float g_line_change=0.0f;
+float g_force_layer_opacity=-1.0f;
+// Drawing guide overlay (GP_GUIDE_*; -1 off), drawn over the canvas, never exported.
+int g_guide_type=-1;
+float g_guide_cx=0,g_guide_cy=0,g_guide_angle=0,g_guide_spacing=0;
 float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
 int g_canvas_width=1280;
 int g_canvas_height=720;
@@ -259,13 +269,51 @@ inline PGOutlinePoint outline_point(float x,float y,float thickness){
 }
 void append_stroke_outline(std::vector<Vertex>&v,const bGPDstroke*s,float thickness,int w,int h){
   std::vector<PGOutlinePoint> pts; pts.reserve(size_t(s->totpoints));
+  // gpencil_stroke_thickness_modulate(): max(1, thickness * scale + gpThicknessOffset)
   for(int i=0;i<s->totpoints;i++)
-    pts.push_back(outline_point(s->points[i].x,s->points[i].y,thickness*std::max(s->points[i].pressure,0.01f)));
+    pts.push_back(outline_point(s->points[i].x,s->points[i].y,
+                                std::max(g_line_change!=0.0f?1.0f:0.0f,thickness*std::max(s->points[i].pressure,0.01f)+g_line_change)));
   int flags=0;
   if(s->flag&GP_STROKE_CYCLIC)flags|=PG_OUTLINE_CYCLIC;
   if(s->caps[0]==GP_STROKE_CAP_FLAT)flags|=PG_OUTLINE_FLAT_START;
   if(s->caps[1]==GP_STROKE_CAP_FLAT)flags|=PG_OUTLINE_FLAT_END;
   append_outline(v,pts,flags,w,h);
+}
+// Line types Dots / Squares (MaterialGPencilStyle mode GP_MATERIAL_MODE_DOT / SQUARE): every point is
+// a quad of the point's thickness (gpencil_vertex() is_dot path); the x axis follows the stroke
+// (GP_MATERIAL_FOLLOW_PATH: the segment to the next point, the previous one at the end), the canvas
+// x axis (FOLLOW_OBJ) or the screen x axis (FOLLOW_FIXED), turned by alignment_rotation. Dots are
+// round (gpencil_frag.glsl discards outside the circle), squares fill the quad.
+void append_dots(std::vector<Vertex>&v,const bGPDstroke*s,const MaterialGPencilStyle*st,float thickness,int w,int h){
+  const bool squares=st->mode==GP_MATERIAL_MODE_SQUARE;
+  const float ca=std::cos(st->alignment_rotation),sa=std::sin(st->alignment_rotation);
+  for(int i=0;i<s->totpoints;i++){
+    const bGPDspoint&p=s->points[i];
+    const float r=0.5f*std::max(g_line_change!=0.0f?1.0f:0.0f,thickness*std::max(p.pressure,0.01f)+g_line_change);
+    if(!squares){
+      const int seg=std::clamp(int(r*g_map_scale*0.5f),8,32);
+      for(int k=0;k<seg;k++){
+        const float a0=6.2831853f*k/seg,a1=6.2831853f*(k+1)/seg;
+        v.push_back(ndc(p.x,p.y,w,h));
+        v.push_back(ndc(p.x+r*std::cos(a0),p.y+r*std::sin(a0),w,h));
+        v.push_back(ndc(p.x+r*std::cos(a1),p.y+r*std::sin(a1),w,h));
+      }
+      continue;
+    }
+    float ax=1.0f,ay=0.0f;
+    if(st->alignment_mode==GP_MATERIAL_FOLLOW_PATH&&s->totpoints>1){
+      const bGPDspoint&a=i+1<s->totpoints?s->points[i]:s->points[i-1];
+      const bGPDspoint&b=i+1<s->totpoints?s->points[i+1]:s->points[i];
+      const float l=std::hypot(b.x-a.x,b.y-a.y);
+      if(l>1e-6f){ax=(b.x-a.x)/l;ay=(b.y-a.y)/l;}
+    }
+    const float xx=ax*ca-ay*sa,xy=ax*sa+ay*ca; // rotated x axis
+    const float yx=-xy,yy=xx;                  // 90 deg
+    const float c[4][2]={{-1,-1},{1,-1},{1,1},{-1,1}};
+    Vertex q[4];
+    for(int k=0;k<4;k++)q[k]=ndc(p.x+r*(c[k][0]*xx+c[k][1]*yx),p.y+r*(c[k][0]*xy+c[k][1]*yy),w,h);
+    v.insert(v.end(),{q[0],q[1],q[2],q[0],q[2],q[3]});
+  }
 }
 void append_fill(std::vector<Vertex>&v,const bGPDstroke*s,int w,int h){
   if(!s->triangles||s->tot_triangles<=0)return;
@@ -406,7 +454,15 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     pg_gp_mix_vertex_color(fill_base_rgb, s->vert_color_fill, PG_GP_VERTEX_COLOR_OPACITY, fill_rgb);
     const float stroke_base_alpha = style ? style->stroke_rgba[3] : g_stroke_color[3];
     const float fill_base_alpha = style ? style->fill_rgba[3] : g_stroke_color[3];
-    const float alpha_scale = alpha * layer->opacity * avg_strength;
+    const float layer_opacity = g_force_layer_opacity>=0.0f?g_force_layer_opacity:layer->opacity;
+    const float alpha_scale = alpha * layer_opacity * avg_strength;
+    // gpencil_vert.glsl: mixed_col.rgb = mix(mixed_col.rgb, gpLayerTint.rgb, gpLayerTint.a)
+    if(g_layer_tint[3]>0.0f){
+      for(int c=0;c<3;c++){
+        stroke_rgb[c]+= (g_layer_tint[c]-stroke_rgb[c])*g_layer_tint[3];
+        fill_rgb[c]+= (g_layer_tint[c]-fill_rgb[c])*g_layer_tint[3];
+      }
+    }
     float color[4]={stroke_rgb[0],stroke_rgb[1],stroke_rgb[2],stroke_base_alpha*alpha_scale};
     float fill_color[4]={fill_rgb[0],fill_rgb[1],fill_rgb[2],fill_base_alpha*alpha_scale};
     if(g_ghost_tint){for(int c=0;c<3;c++){color[c]=g_ghost_rgb[c];fill_color[c]=g_ghost_rgb[c];}}
@@ -416,6 +472,10 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
       if(stroke_tex&&!g_ghost_tint&&g_draw_mode!=DRAW_REVEALAGE){
         std::vector<UVVertex> tv;append_textured_stroke(tv,s,style->texture_pixsize,w,h);
         const bool on=coverage_begin();draw_textured(tv,*stroke_tex,color,style->mix_stroke_factor);coverage_end(on);
+      }
+      else if(style&&style->mode!=GP_MATERIAL_MODE_LINE){
+        append_dots(stroke,s,style,float(s->thickness),w,h);
+        draw_stroke_once(stroke,color); stroke.clear();
       }
       else{
         append_stroke_outline(stroke,s,float(s->thickness),w,h);
@@ -445,6 +505,7 @@ extern "C" int project_grease_fx_pass_count(const PGFxEntry*,int,const PGFxView*
 extern "C" int project_grease_fx_begin_layer(int,int);
 extern "C" int project_grease_fx_end_layer(const PGFxEntry*,int,const PGFxView*,unsigned char*,unsigned char*);
 extern "C" void project_grease_fx_reset();
+extern "C" int project_grease_fx_end_layer_blend(const PGFxEntry*,int,const PGFxView*,int,float);
 namespace {
 FxProvider g_fx_provider=nullptr;
 void* g_fx_provider_user=nullptr;
@@ -661,8 +722,15 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     // pass, each through the effects that target it or the whole layer.
     bool split_fx=false;
     for(int i=0;i<fx_count;i++)if(fx_entries[i].enabled&&fx_entries[i].target!=PG_FX_TARGET_LAYER)split_fx=true;
-    const bool use_fx=!split_fx&&fx_count>0&&project_grease_fx_pass_count(fx_entries,fx_count,&fx_view)>0&&project_grease_fx_begin_layer(w,h)!=0;
-    if(use_fx)g_draw_mode=DRAW_PREMULT;
+    // Layer blend mode (eGplBlendMode_*): the layer is drawn offscreen at full opacity and blended
+    // onto the frame with gpencil_layer_blend_frag.glsl's blend_mode_output (fx pipeline buffer).
+    const int blend_mode=(!split_fx&&layer->blend_mode!=eGplBlendMode_Regular)?layer->blend_mode:eGplBlendMode_Regular;
+    const bool want_fx=!split_fx&&fx_count>0&&project_grease_fx_pass_count(fx_entries,fx_count,&fx_view)>0;
+    const bool use_blend=blend_mode!=eGplBlendMode_Regular&&g_weight_group<0&&project_grease_fx_begin_layer(w,h)!=0;
+    const bool use_fx=!use_blend&&want_fx&&project_grease_fx_begin_layer(w,h)!=0;
+    if(use_fx||use_blend)g_draw_mode=DRAW_PREMULT;
+    g_layer_tint[0]=layer->tintcolor[0];g_layer_tint[1]=layer->tintcolor[1];g_layer_tint[2]=layer->tintcolor[2];g_layer_tint[3]=layer->tintcolor[3];
+    g_line_change=float(layer->line_change);
     // Onion skin: the ghost keyframes of the layer by bGPdata.onion_mode (pg_onion_ghosts: Relative =
     // gstep keyframes before / gstep_next after, Absolute = keyframes within that many frames,
     // Selected = selected keyframes), shown when the overlay switch (GP_DATA_SHOW_ONIONSKINS) and the
@@ -683,20 +751,43 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
           ghost.data(),ghost_alpha.data(),int(keys.size()));
       int cur_index=0;
       for(size_t i=0;i<frames.size();i++)if(frames[i]==current)cur_index=int(i);
-      for(int g=0;g<n;g++){
-        size_t i=0; while(i<keys.size()&&keys[i]!=ghost[g])i++;
-        if(i>=keys.size()||frames[i]==current)continue;
-        const int delta=mode==PG_ONION_ABSOLUTE?keys[i]-current->framenum:int(i)-cur_index;
-        if(delta==0)continue;
+      // Keyframe-type filter (gpd->onion_keytype, -1 = all; pg_onion_keytype_filter) and Loop
+      // (GP_ONION_LOOP): a frame out of range is tested again with its delta wrapped by the last
+      // frame (BKE_gpencil_visible_stroke_advanced_iter), so the first keys follow the last.
+      std::vector<int> types(frames.size());
+      for(size_t i=0;i<frames.size();i++)types[i]=frames[i]->key_type;
+      std::vector<unsigned char> keep(frames.size(),1);
+      if(!frames.empty())pg_onion_keytype_filter(types.data(),int(types.size()),gpd->onion_keytype,keep.data());
+      std::vector<unsigned char> drawn(frames.size(),0);
+      auto ghost_draw=[&](size_t i,int delta){
         const bool before=delta<0;
         g_ghost_tint=(gpd->onion_flag&(before?GP_ONION_GHOST_PREVCOL:GP_ONION_GHOST_NEXTCOL))!=0;
         const float*col=before?gpd->gcolor_prev:gpd->gcolor_next;
         for(int c=0;c<3;c++)g_ghost_rgb[c]=col[c];
         draw_frame(gpd,layer,frames[i],w,h,pg_gp_onion_alpha(delta,fade,gpd->onion_factor));
         g_ghost_tint=false;
+        drawn[i]=1;
+      };
+      for(int g=0;g<n;g++){
+        size_t i=0; while(i<keys.size()&&keys[i]!=ghost[g])i++;
+        if(i>=keys.size()||frames[i]==current||!keep[i])continue;
+        const int delta=mode==PG_ONION_ABSOLUTE?keys[i]-current->framenum:int(i)-cur_index;
+        if(delta==0)continue;
+        ghost_draw(i,delta);
+      }
+      if((gpd->onion_flag&GP_ONION_LOOP)&&mode!=PG_ONION_SELECTED&&!frames.empty()){
+        const int shift=mode==PG_ONION_ABSOLUTE?keys.back():int(frames.size())-1;
+        for(size_t i=0;i<frames.size();i++){
+          if(drawn[i]||frames[i]==current||!keep[i])continue;
+          int delta=mode==PG_ONION_ABSOLUTE?keys[i]-current->framenum:int(i)-cur_index;
+          if(-delta<=gpd->gstep&&delta<=gpd->gstep_next)continue; /* in range: already handled */
+          delta+=(delta<0)?(shift+1):-(shift+1);
+          if(delta!=0&&-delta<=gpd->gstep&&delta<=gpd->gstep_next)ghost_draw(i,delta);
+        }
       }
     }
     const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
+    if(use_blend)g_force_layer_opacity=1.0f; // applied once by the blend composite (blendOpacity)
     if(g_weight_group>=0)draw_frame_weights(gpd,shown?shown:current,w,h);
     else if(split_fx){
       for(int part:{2,1}){ // fills under strokes
@@ -715,8 +806,52 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     }
     else draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
     if(use_fx){g_draw_mode=DRAW_NORMAL;project_grease_fx_end_layer(fx_entries,fx_count,&fx_view,nullptr,nullptr);}
+    if(use_blend){
+      g_draw_mode=DRAW_NORMAL;
+      project_grease_fx_end_layer_blend(want_fx?fx_entries:nullptr,want_fx?fx_count:0,&fx_view,blend_mode,layer->opacity);
+    }
+    g_force_layer_opacity=-1.0f;
+    g_layer_tint[3]=0.0f;
+    g_line_change=0.0f;
     g_active_mask_tex=0;
     if(g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
+  }
+  // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
+  // active guide in the theme's guide colour, over the canvas, not exported.
+  if(!g_export_mode&&g_guide_type>=0){
+    std::vector<Vertex> lines;
+    const float px=1.0f/std::max(g_map_scale,1e-6f);
+    const float diag=std::hypot(float(g_canvas_width),float(g_canvas_height));
+    auto seg=[&](float x0,float y0,float x1,float y1){
+      append_outline(lines,{PGOutlinePoint{x0,y0,0.75f*px},PGOutlinePoint{x1,y1,0.75f*px}},PG_OUTLINE_FLAT_START|PG_OUTLINE_FLAT_END,w,h);
+    };
+    const float sp=std::max(g_guide_spacing,4.0f);
+    const int count=std::min(200,int(diag/sp)+1);
+    if(g_guide_type==0){ // circular: rings around the centre
+      for(int k=1;k<=count;k++){
+        const float r=sp*k; const int n=std::clamp(int(r*g_map_scale*0.25f),24,180);
+        for(int j=0;j<n;j++){const float a0=6.2831853f*j/n,a1=6.2831853f*(j+1)/n;
+          seg(g_guide_cx+r*std::cos(a0),g_guide_cy+r*std::sin(a0),g_guide_cx+r*std::cos(a1),g_guide_cy+r*std::sin(a1));}
+      }
+    }
+    else if(g_guide_type==1){ // radial: rays through the centre
+      for(int k=0;k<24;k++){const float a=6.2831853f*k/24;seg(g_guide_cx,g_guide_cy,g_guide_cx+diag*std::cos(a),g_guide_cy+diag*std::sin(a));}
+    }
+    else{ // parallel / grid / isometric: families of lines through the canvas
+      std::vector<float> angles;
+      if(g_guide_type==2)angles={g_guide_angle};
+      else if(g_guide_type==3)angles={0.0f,1.5707963f};
+      else angles={0.5235988f,1.5707963f,2.6179939f};
+      for(float a:angles){
+        const float dx=std::cos(a),dy=std::sin(a),nx=-dy,ny=dx;
+        for(int k=-count;k<=count;k++){
+          const float ox=g_guide_cx+nx*sp*k,oy=g_guide_cy+ny*sp*k;
+          seg(ox-dx*diag,oy-dy*diag,ox+dx*diag,oy+dy*diag);
+        }
+      }
+    }
+    const float guide_color[4]={0.25f,0.55f,0.95f,0.45f};
+    draw_vertices(lines,guide_color);
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
   if(!g_export_mode)draw_sbuffer(gpd, 1.0f, w, h);
@@ -832,6 +967,8 @@ extern "C" void project_grease_android_present_set_canvas_size(int width,int hei
   g_canvas_height=std::max(1,height);
 }
 extern "C" void project_grease_android_present_set_weight_view(int group){g_weight_group=group;}
+extern "C" void project_grease_android_present_set_guide(int type,float cx,float cy,float angle,float spacing){
+  g_guide_type=(type>=0&&type<=4)?type:-1;g_guide_cx=cx;g_guide_cy=cy;g_guide_angle=angle;g_guide_spacing=spacing;}
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_fill_draw_mode=std::clamp(mode,0,2);}
 extern "C" int project_grease_android_present_set_material_texture(int slot,int fill,const unsigned char*rgba,int w,int h){
   const int key=slot*2+(fill?1:0);

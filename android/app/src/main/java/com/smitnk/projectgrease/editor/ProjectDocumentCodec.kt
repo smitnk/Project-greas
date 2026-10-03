@@ -26,7 +26,12 @@ class StrokeRecord(
     }
 }
 
-class LayerRecord(val name: String, val visible: Boolean, val locked: Boolean, val opacity: Float)
+class LayerRecord(
+    val name: String, val visible: Boolean, val locked: Boolean, val opacity: Float,
+    /** eGPLayerBlendModes, tint rgb + factor (tintcolor), thickness offset (line_change), pass index. */
+    val blendMode: Int = 0, val tint: FloatArray = floatArrayOf(0f, 0f, 0f, 0f), val lineChange: Int = 0,
+    val passIndex: Int = 0
+)
 
 /** One entry of a layer's mask list: [name] is the mask layer (masks refer to layers by name). */
 class MaskRecord(val name: String, val hidden: Boolean = false, val inverted: Boolean = false)
@@ -36,7 +41,15 @@ class MaterialRecord(
     val stroke: FloatArray,
     val fill: FloatArray,
     val visible: Boolean,
-    val fillEnabled: Boolean
+    val fillEnabled: Boolean,
+    /** Material name (Material.id.name), lock (GP_MATERIAL_LOCKED), line type (GP_MATERIAL_MODE_*),
+     *  dot/square alignment (GP_MATERIAL_FOLLOW_*), alignment rotation, pass index. */
+    val name: String = "",
+    val locked: Boolean = false,
+    val mode: Int = 0,
+    val alignment: Int = 0,
+    val rotation: Float = 0f,
+    val passIndex: Int = 0
 )
 
 /** What the save/load code needs from the native document; the real one is [NativeDocumentAdapter]. */
@@ -77,6 +90,11 @@ interface DocumentNative {
     fun activeVertexGroup(): Int = -1
     fun restoreVertexGroups(names: List<String>, active: Int): Boolean = true
 
+    /** Keyframe types (bGPDframe.key_type, BEZT_KEYTYPE_*) of the selected layer's frames by frame number. */
+    fun frameKeyTypes(): Map<Int, Int> = emptyMap()
+    /** Sets the key type of the selected layer's frame [frame]. */
+    fun setFrameKeyType(frame: Int, type: Int): Boolean = true
+
     /** Layer masks (version 4 files): use-mask flag and the mask list, which refers to layers by name. */
     fun layerUseMask(layer: Int): Boolean = false
     fun layerMasks(layer: Int): List<MaskRecord> = emptyList()
@@ -84,7 +102,7 @@ interface DocumentNative {
     fun restoreLayerMasks(layer: Int, useMask: Boolean, masks: List<MaskRecord>): Boolean = true
 }
 
-class ParsedFrame(val number: Int, val strokes: List<StrokeRecord>)
+class ParsedFrame(val number: Int, val strokes: List<StrokeRecord>, val keyType: Int = 0)
 /** [record] is null for version-1 files, which stored no layer state. */
 class ParsedLayer(
     val record: LayerRecord?,
@@ -116,11 +134,13 @@ class ParsedDocument(
  * per-stroke style (material, thickness, cyclic, fill), layer state (name, visibility, lock,
  * opacity) and the material palette; version 3 adds per-point vertex color (points may carry four
  * more values); version 4 adds the per-layer live modifier stack ("modifiers") and layer masks; version 5
- * adds the per-layer shader effect list ("effects"). Older files still load: missing fields read as
- * zero, which is "no vertex color", and a missing stack or effect list is empty.
+ * adds the per-layer shader effect list ("effects"); version 6 adds keyframe types ("keyType"), layer
+ * blend / tint / line change / pass and material name / lock / line type / alignment / pass. Older
+ * files still load: missing fields read as zero, which is "no vertex color", regular blending,
+ * no tint, a plain line material and a Keyframe, and a missing stack or effect list is empty.
  */
 object ProjectDocumentCodec {
-    const val VERSION = 5
+    const val VERSION = 6
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0): String {
@@ -152,7 +172,12 @@ object ProjectDocumentCodec {
                 layerJson.put("visible", it.visible)
                 layerJson.put("locked", it.locked)
                 layerJson.put("opacity", num(it.opacity))
+                if (it.blendMode != 0) layerJson.put("blend", it.blendMode)
+                if (it.tint.any { v -> v != 0f }) layerJson.put("tint", floatsJson(it.tint))
+                if (it.lineChange != 0) layerJson.put("lineChange", it.lineChange)
+                if (it.passIndex != 0) layerJson.put("pass", it.passIndex)
             }
+            val keyTypes = native.frameKeyTypes()
             val frames = JSONArray()
             for (frameNumber in native.frameNumbers()) {
                 if (!native.selectFrame(frameNumber)) continue
@@ -161,7 +186,9 @@ object ProjectDocumentCodec {
                     val stroke = native.strokeRecord(strokeIndex) ?: continue
                     if (stroke.points.isNotEmpty()) strokes.put(strokeJson(stroke))
                 }
-                frames.put(JSONObject().put("number", frameNumber).put("strokes", strokes))
+                val frameJson = JSONObject().put("number", frameNumber).put("strokes", strokes)
+                keyTypes[frameNumber]?.takeIf { it != 0 }?.let { frameJson.put("keyType", it) }
+                frames.put(frameJson)
             }
             layerJson.put("frames", frames)
             val modifiers = (0 until native.modifierCount(layerIndex)).mapNotNull { native.modifierRecord(layerIndex, it) }
@@ -233,6 +260,7 @@ object ProjectDocumentCodec {
                     return false
                 }
                 if (!native.selectFrame(number)) return false
+                if (frame.keyType != 0 && !native.setFrameKeyType(number, frame.keyType)) return false
                 for (stroke in frame.strokes) {
                     if (stroke.points.isEmpty()) continue
                     val styled = if (stroke.hasStyle) stroke else StrokeRecord(stroke.points, 0, legacyThickness, weights = stroke.weights)
@@ -265,7 +293,11 @@ object ProjectDocumentCodec {
                 name = json.optString("name", ""),
                 visible = json.optBoolean("visible", true),
                 locked = json.optBoolean("locked", false),
-                opacity = json.optDouble("opacity", 1.0).toFloat()
+                opacity = json.optDouble("opacity", 1.0).toFloat(),
+                blendMode = json.optInt("blend", 0).coerceIn(0, 5),
+                tint = floats(json.optJSONArray("tint"), 4),
+                lineChange = json.optInt("lineChange", 0),
+                passIndex = json.optInt("pass", 0)
             )
         } else null
         val masks = json.optJSONArray("masks")?.let { array ->
@@ -283,7 +315,7 @@ object ProjectDocumentCodec {
         val strokes = json.optJSONArray("strokes")?.let { array ->
             (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::parseStroke) }
         } ?: emptyList()
-        return ParsedFrame(json.optInt("number", 1), strokes)
+        return ParsedFrame(json.optInt("number", 1), strokes, json.optInt("keyType", 0).coerceIn(0, 4))
     }
 
     private fun parseStroke(json: JSONObject): StrokeRecord? {
@@ -324,7 +356,13 @@ object ProjectDocumentCodec {
         stroke = floats(json.optJSONArray("stroke"), 4, 1f),
         fill = floats(json.optJSONArray("fill"), 4, 1f),
         visible = json.optBoolean("visible", true),
-        fillEnabled = json.optBoolean("fillEnabled", false)
+        fillEnabled = json.optBoolean("fillEnabled", false),
+        name = json.optString("name", ""),
+        locked = json.optBoolean("locked", false),
+        mode = json.optInt("mode", 0).coerceIn(0, 2),
+        alignment = json.optInt("alignment", 0).coerceIn(0, 2),
+        rotation = json.optDouble("rotation", 0.0).toFloat().takeIf { it.isFinite() } ?: 0f,
+        passIndex = json.optInt("pass", 0)
     )
 
     private fun strokeJson(stroke: StrokeRecord): JSONObject {
@@ -357,6 +395,14 @@ object ProjectDocumentCodec {
         .put("fill", floatsJson(material.fill))
         .put("visible", material.visible)
         .put("fillEnabled", material.fillEnabled)
+        .apply {
+            if (material.name.isNotEmpty()) put("name", material.name)
+            if (material.locked) put("locked", true)
+            if (material.mode != 0) put("mode", material.mode)
+            if (material.alignment != 0) put("alignment", material.alignment)
+            if (material.rotation != 0f) put("rotation", num(material.rotation))
+            if (material.passIndex != 0) put("pass", material.passIndex)
+        }
 
     private fun floatsJson(values: FloatArray) = JSONArray().apply { for (v in values) put(num(v)) }
 

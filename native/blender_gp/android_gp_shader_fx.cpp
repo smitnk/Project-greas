@@ -366,8 +366,9 @@ extern "C" int project_grease_fx_begin_layer(int w, int h) {
 
 // Runs the effects on the layer buffer and composites the result onto the framebuffer that was
 // bound at begin. `out_color`/`out_reveal` (optional, w*h*4 bytes) receive the final buffers for tests.
-extern "C" int project_grease_fx_end_layer(const PGFxEntry* entries, int count, const PGFxView* view,
-                                           unsigned char* out_color, unsigned char* out_reveal) {
+namespace {
+// Converts the layer buffer to colour / revealage and runs the effect passes; returns the buffer index.
+int fx_run(const PGFxEntry* entries, int count, const PGFxView* view) {
   const int w = g_w, h = g_h;
   glDisable(GL_BLEND);
   glBindFramebuffer(GL_FRAMEBUFFER, g_bufs[0].color.fbo);
@@ -416,6 +417,15 @@ extern "C" int project_grease_fx_end_layer(const PGFxEntry* entries, int count, 
       cur = target;
     }
   }
+  return cur;
+}
+
+}  // namespace
+
+extern "C" int project_grease_fx_end_layer(const PGFxEntry* entries, int count, const PGFxView* view,
+                                           unsigned char* out_color, unsigned char* out_reveal) {
+  const int w = g_w, h = g_h;
+  const int cur = fx_run(entries, count, view);
   if (out_color || out_reveal) {
     glFinish();
     if (out_color) {
@@ -448,7 +458,83 @@ extern "C" int project_grease_fx_end_layer(const PGFxEntry* entries, int count, 
   return 1;
 }
 
+// Layer blend modes (eGplBlendMode_*): gpencil_layer_blend_frag.glsl over the layer buffer with
+// blend_mode_output(); the GL blend state of gpencil_engine.c's layer blend pass: Multiply / Divide /
+// HardLight multiply the frame (DRW_STATE_BLEND_MUL), HardLight adds a second pass, Add adds, Subtract
+// subtracts. The frame here is the final colour (the object pass of Blender already composited).
+namespace {
+Program g_blend;
+bool ensure_blend() {
+  if (g_blend.id) return true;
+  const std::string fs = std::string(fs_header()) +
+    "uniform float blendOpacity;\n"
+    "void main(){ vec2 uv = gl_FragCoord.xy / uSize; vec4 color;\n"
+    "  color.rgb = texture2D(colorBuf, uv).rgb; color.a = 1.0 - texture2D(revealBuf, uv).r;\n"
+    "  fragColor = vec4(1.0, 0.0, 1.0, 1.0); fragRevealage = vec4(1.0, 0.0, 1.0, 1.0);\n"
+    "  blend_mode_output(blendMode, color, blendOpacity, fragColor, fragRevealage);\n"
+    "  gl_FragColor = (blendMode == 0) ? fragColor : vec4(fragColor.rgb, 1.0); }\n";
+  return link(g_blend, fs);
+}
+}  // namespace
+
+extern "C" int project_grease_fx_end_layer_blend(const PGFxEntry* entries, int count, const PGFxView* view,
+                                                 int blend_mode, float opacity) {
+  if (!ensure_blend()) return 0;
+  const int cur = fx_run(entries, count, view);
+  glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_prev_fbo);
+  glViewport(g_prev_viewport[0], g_prev_viewport[1], g_prev_viewport[2], g_prev_viewport[3]);
+  glUseProgram(g_blend.id);
+  bind_tex(0, g_bufs[cur].color.tex, g_blend, "colorBuf");
+  bind_tex(1, g_bufs[cur].reveal.tex, g_blend, "revealBuf");
+  glUniform2f(g_blend.u_size, float(g_prev_viewport[2]), float(g_prev_viewport[3]));
+  glUniform1i(g_blend.u_out, 0);
+  glUniform1i(g_blend.u_blend, 0);
+  glUniform1f(glGetUniformLocation(g_blend.id, "blendOpacity"), opacity);
+  GLint bm = glGetUniformLocation(g_blend.id, "blendMode");
+  glEnable(GL_BLEND);
+  glBlendEquation(GL_FUNC_ADD);
+  switch (blend_mode) {
+    case 4: case 5: /* Multiply, Divide: dst * src */
+      glUniform1i(bm, blend_mode);
+      glBlendFuncSeparate(GL_ZERO, GL_SRC_COLOR, GL_ZERO, GL_ONE); /* alpha of the frame kept */
+      draw_triangle();
+      break;
+    case 1: /* HardLight: multiply pass, then the additive second pass */
+      glUniform1i(bm, 1);
+      glBlendFuncSeparate(GL_ZERO, GL_SRC_COLOR, GL_ZERO, GL_ONE);
+      draw_triangle();
+      glUniform1i(bm, 999);
+      glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
+      draw_triangle();
+      break;
+    case 2: /* Add */
+      glUniform1i(bm, 2);
+      glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
+      draw_triangle();
+      break;
+    case 3: /* Subtract: dst - src */
+      glUniform1i(bm, 3);
+      glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
+      glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+      draw_triangle();
+      glBlendEquation(GL_FUNC_ADD);
+      break;
+    default: /* Regular: the premultiplied composite */
+      glUniform1i(bm, 0);
+      glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+      draw_triangle();
+      break;
+  }
+  glDisable(GL_BLEND);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glUseProgram(0);
+  return 1;
+}
+
 extern "C" void project_grease_fx_reset() {
+  if (g_blend.id) glDeleteProgram(g_blend.id);
+  g_blend = Program();
   for (Program& p : g_prog) { if (p.id) glDeleteProgram(p.id); p = Program(); }
   if (g_convert.id) glDeleteProgram(g_convert.id);
   if (g_composite.id) glDeleteProgram(g_composite.id);

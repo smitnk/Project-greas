@@ -392,4 +392,67 @@ class DeviceBugfixTest {
         assertEquals(1280, onUi { controller.document.canvasWidth })
         assertEquals(48, onUi { controller.animation.timelineEnd })
     }
+
+    // ---- edit6 batch ----
+    @Test fun assignWeightsSaved() {
+        drag(200f to 300f, 1000f to 300f)
+        val ok = onUi {
+            controller.addVertexGroup("Group")
+            controller.selectAll()
+            controller.assignSelectionToGroup(0.5f)
+        }
+        assertTrue("assign applied", ok)
+        val json = onUi { controller.saveDocumentJson() }!!
+        screenshot("16_vgroup_assign")
+        val weights = JSONObject(json).let { doc ->
+            var found: JSONArray? = null
+            fun walk(any: Any?) {
+                when (any) {
+                    is JSONObject -> { if (any.has("points") && any.has("weights")) found = any.getJSONArray("weights"); any.keys().forEach { walk(any.get(it)) } }
+                    is JSONArray -> for (i in 0 until any.length()) walk(any.get(i))
+                }
+            }
+            walk(doc); found
+        }
+        assertTrue("weights saved", weights != null && weights.length() > 0)
+        var half = 0
+        for (i in 0 until weights!!.length()) {
+            val row = weights.getJSONArray(i)
+            var k = 2
+            while (k < row.length()) { if (abs(row.getDouble(k) - 0.5) < 1e-4) half++; k += 2 }
+        }
+        assertTrue("points with weight 0.5: $half", half > 0)
+    }
+
+    @Test fun mergeDownKeepsStrokes() {
+        assertTrue(onUi { controller.layerCount() } >= 2)
+        onUi { controller.selectLayer(0) }
+        drag(200f to 250f, 1000f to 250f)
+        onUi { controller.selectLayer(1) }
+        drag(200f to 450f, 1000f to 450f)
+        val before = onUi { controller.layerCount() }
+        assertTrue("merge applied", onUi { controller.mergeLayerDown() })
+        val bmp = screenshot("17_merge_down")
+        assertEquals(before - 1, onUi { controller.layerCount() })
+        assertEquals(0, onUi { controller.selectedLayer })
+        assertEquals(2, strokes().size)
+        for (y in listOf(250f, 450f)) {
+            val p = screen(600f, y)
+            assertTrue("stroke at $y visible", darkRun(bmp, p.first.toInt(), p.second.toInt()) > 0)
+        }
+    }
+
+    @Test fun isolateHidesOtherLayers() {
+        assertTrue(onUi { controller.layerCount() } >= 2)
+        onUi { controller.selectLayer(0) }
+        drag(200f to 250f, 1000f to 250f)
+        onUi { controller.selectLayer(1) }
+        drag(200f to 450f, 1000f to 450f)
+        assertTrue("isolate applied", onUi { controller.isolateLayer() })
+        val bmp = screenshot("18_isolate")
+        val hidden = screen(600f, 250f)
+        val shown = screen(600f, 450f)
+        assertEquals("other layer hidden", 0, darkRun(bmp, hidden.first.toInt(), hidden.second.toInt()))
+        assertTrue("active layer visible", darkRun(bmp, shown.first.toInt(), shown.second.toInt()) > 0)
+    }
 }

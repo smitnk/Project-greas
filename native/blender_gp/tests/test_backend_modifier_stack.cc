@@ -247,6 +247,23 @@ int main()
     }
   }
 
+  /* --- merge down (edit7 pg_gp_layer_merge_down): strokes move to the lower layer, the merged layer's
+   * modifier list is dropped, the lower layer's stays, the lower layer becomes active --- */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);                          /* layer 0: one stroke */
+    CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);     /* layer 0 keeps its modifier */
+    CHECK(b.create_layer("B") && b.select_layer(1) && b.create_frame(1));
+    add_line(b, 0.0f, 40.0f);                         /* layer 1: one stroke */
+    CHECK(b.modifier_add(1, PG_MOD_OFFSET) == 0 && b.modifier_add(1, PG_MOD_OFFSET) == 1);
+    CHECK(b.merge_layer_down());
+    CHECK(b.layer_count() == 1);
+    CHECK(b.modifier_count(0) == 1);                  /* the lower layer's list, not the merged one's */
+    CHECK(b.active_layer_data() == b.document_data()->layers.first);
+    CHECK(b.stroke_count() == 2);                     /* both strokes on the lower layer's frame */
+    CHECK(!b.merge_layer_down());                     /* nothing below the bottom layer */
+  }
+
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */
   {
     CHECK(b.reset_document());

@@ -451,6 +451,19 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         TextButton(onClick={renameText=groups.getOrNull(controller.weightPaintGroup)?:"";renameOpen=true},enabled=groups.isNotEmpty()){Text("Rename",fontSize=11.sp)}
         TextButton(onClick={controller.removeVertexGroup(controller.weightPaintGroup);redraw()},enabled=groups.size>1){Text("Remove",fontSize=11.sp)}
     }
+    // Vertex-group operators on the selected points, active group (Blender's Vertex Groups panel).
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
+        verticalAlignment=Alignment.CenterVertically
+    ){
+        Text("Selection",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
+        TextButton(onClick={controller.assignSelectionToGroup(controller.weightPaintValue);redraw()},enabled=groups.isNotEmpty()){Text("Assign",fontSize=11.sp)}
+        TextButton(onClick={controller.removeSelectionFromGroup();redraw()},enabled=groups.isNotEmpty()){Text("Remove from group",fontSize=11.sp)}
+        TextButton(onClick={controller.selectGroupPoints();redraw()},enabled=groups.isNotEmpty()){Text("Select",fontSize=11.sp)}
+        TextButton(onClick={controller.deselectGroupPoints();redraw()},enabled=groups.isNotEmpty()){Text("Deselect",fontSize=11.sp)}
+        TextButton(onClick={controller.invertGroupWeights();redraw()},enabled=groups.isNotEmpty()){Text("Invert",fontSize=11.sp)}
+        TextButton(onClick={controller.normalizeGroupWeights();redraw()},enabled=groups.isNotEmpty()){Text("Normalize",fontSize=11.sp)}
+    }
     Row(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),verticalAlignment=Alignment.CenterVertically){
         Text("Weight "+"%.2f".format(controller.weightPaintValue),fontSize=10.sp,modifier=Modifier.width(76.dp))
         Slider(
@@ -975,7 +988,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun LayersSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     // Switch and name state come from the native layer, not from fixed defaults, and are re-read
     // whenever the selected layer or the layer list changes.
-    val layerKey=controller.selectedLayer to controller.layerCount()
+    // opTick: merge / isolate / lock all change native layer flags, so the switches re-read them.
+    var opTick by remember{mutableIntStateOf(0)}
+    val layerKey=Triple(controller.selectedLayer,controller.layerCount(),opTick)
     val layerState=controller.layerState()
     var visible by remember(layerKey){mutableStateOf(layerState?.visible ?: true)}
     var locked by remember(layerKey){mutableStateOf(layerState?.locked ?: false)}
@@ -995,6 +1010,14 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Button(onClick={if(controller.selectedLayer>0){controller.moveLayer(controller.selectedLayer,controller.selectedLayer-1);redraw()}},enabled=controller.selectedLayer>0){Text("Up")}
             Button(onClick={if(controller.selectedLayer<controller.layerCount()-1){controller.moveLayer(controller.selectedLayer,controller.selectedLayer+1);redraw()}},enabled=controller.selectedLayer<controller.layerCount()-1){Text("Down")}
             Button(onClick={renameOpen=true}){Text("Rename")}
+        }
+        // Layer operators (gpencil_layer_merge / isolate / lock all): native state is re-read afterwards.
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            OutlinedButton(onClick={if(controller.mergeLayerDown()){opTick++;redraw()}},enabled=controller.selectedLayer>0,
+                modifier=Modifier.testTag("layerMergeDown")){Text("Merge down")}
+            OutlinedButton(onClick={if(controller.isolateLayer()){opTick++;redraw()}},modifier=Modifier.testTag("layerIsolate")){Text("Isolate")}
+            OutlinedButton(onClick={if(controller.lockAllLayers()){opTick++;redraw()}}){Text("Lock all")}
+            OutlinedButton(onClick={if(controller.unlockAllLayers()){opTick++;redraw()}}){Text("Unlock all")}
         }
         Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
             Text("Visible",Modifier.weight(1f))

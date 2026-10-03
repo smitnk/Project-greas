@@ -1,5 +1,6 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_edit7.h"
 #include "project_grease_annotations.h"
 #include "project_grease_legacy_fill.h"
 #include "project_grease_legacy_primitive.h"
@@ -1039,6 +1040,33 @@ bool Backend::delete_layer(int index)
   impl_->layer_created = impl_->layer != nullptr;
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::merge_layer_down()
+{
+  if (!impl_->gpd || !impl_->layer) { impl_->last_error = "no active layer"; return false; }
+  int index = 0;
+  for (bGPDlayer *l = static_cast<bGPDlayer *>(impl_->gpd->layers.first); l && l != impl_->layer; l = l->next) index++;
+  if (index == 0) { impl_->last_error = "no layer below"; return false; }
+  bGPDlayer *below = nullptr;
+  if (!pg_gp_layer_merge_down(impl_->gpd, impl_->layer, &below) || below == nullptr) {
+    impl_->last_error = "layer merge failed";
+    return false;
+  }
+  /* the merged layer is gone: drop its modifier / effect lists (Blender merges the strokes only) */
+  if (layer_stack(impl_, index) != nullptr) impl_->stacks.erase(impl_->stacks.begin() + index);
+  if (layer_fx(impl_, index) != nullptr) impl_->fx_stacks.erase(impl_->fx_stacks.begin() + index);
+  impl_->stack_revision++;
+  eval_cache_clear(impl_);
+  BKE_gpencil_layer_active_set(impl_->gpd, below);
+  impl_->layer = below;
+  impl_->frame = below->actframe;
+  impl_->stroke = nullptr;
+  impl_->layer_created = true;
+  impl_->frame_created = impl_->frame != nullptr;
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
   return true;
 }
 

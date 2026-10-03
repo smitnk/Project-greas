@@ -11,6 +11,7 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit3.h"
 #include "project_grease_blender_edit5.h"
+#include "project_grease_blender_edit7.h"
 #include "project_grease_tool_session.h"
 #include "project_grease_annotations.h"
 
@@ -445,6 +446,9 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
              : 0;
     default:
       // Selection-aware editing (ids 31..37), then the selection operators (20..30).
+      if (command == PG_EDIT7_CMD_LAYER_MERGE) {
+        return handle->backend.merge_layer_down() ? 1 : 0;
+      }
       if (command >= PG_EDIT5_CMD_FIRST && command <= PG_EDIT5_CMD_LAST) {
         return pg_gp_edit5_dispatch(handle->backend.document_data(),
                                     handle->backend.active_layer_data(),

@@ -395,6 +395,23 @@ object ProjectGreaseSelect {
     const val CMD_OUTLINE = 90
     const val CMD_ONION_STYLE = 91
     const val CMD_MATERIAL_TEXTURE = 92
+    // project_grease_blender_edit7.h: vertex-group operators on the selection and layer operators
+    const val CMD_VG_ASSIGN = 93
+    const val CMD_VG_REMOVE = 94
+    const val CMD_VG_SELECT = 95
+    const val CMD_VG_DESELECT = 96
+    const val CMD_VG_INVERT = 97
+    const val CMD_VG_NORMALIZE = 98
+    const val CMD_LAYER_MERGE = 99
+    const val CMD_LAYER_ISOLATE = 100
+    const val CMD_LOCK_ALL = 101
+    const val CMD_UNLOCK_ALL = 102
+    fun vgAssign(group: Int, weight: Float = 1f): Command? =
+        if (group >= 0 && finite(weight)) Command(CMD_VG_ASSIGN, floatArrayOf(group.toFloat(), weight.coerceIn(0f, 1f))) else null
+    fun vgOp(cmd: Int, group: Int): Command? =
+        if (group >= 0 && cmd in CMD_VG_REMOVE..CMD_VG_NORMALIZE) Command(cmd, floatArrayOf(group.toFloat())) else null
+    fun layerOp(cmd: Int): Command? = if (cmd in CMD_LAYER_MERGE..CMD_UNLOCK_ALL) Command(cmd, FloatArray(0)) else null
+
     /** Blender bGPdata.onion_mode values (GP_ONION_MODE_*). */
     const val ONION_MODE_ABSOLUTE = 0
     const val ONION_MODE_RELATIVE = 1

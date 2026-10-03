@@ -56,6 +56,9 @@ class Backend {
   bool move_layer(int from_index, int to_index);
   bool duplicate_layer(int index);
   bool delete_layer(int index);
+  // Merge the active layer into the one below (pg_gp_layer_merge_down) keeping the per-layer
+  // modifier / effect lists and the active layer/frame in step; the lower layer becomes active.
+  bool merge_layer_down();
   bool rename_layer(int index, const char* name);
 
   bool create_frame(int frame_number);

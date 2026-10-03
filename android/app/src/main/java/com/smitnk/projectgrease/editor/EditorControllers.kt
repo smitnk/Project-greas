@@ -368,7 +368,7 @@ enum class BrushPreset(
     val label: String, val size: Float, val strength: Float, val usePressure: Boolean, val useStrengthPressure: Boolean,
     val inputSamples: Int = 10, val activeSmooth: Float = 0.35f, val angle: Float = 0f, val angleFactor: Float = 0f,
     val hardness: Float = 1f, val randomPressure: Float = 0f,
-    val pressureCurve: List<Pair<Float, Float>> = LINEAR_CURVE, val strengthCurve: List<Pair<Float, Float>> = LINEAR_CURVE,
+    val pressureCurve: List<Pair<Float, Float>> = listOf(0f to 0f, 1f to 1f), val strengthCurve: List<Pair<Float, Float>> = listOf(0f to 0f, 1f to 1f),
     val kind: Kind = Kind.DRAW, val eraser: EraserMode? = null
 ) {
     PENCIL("Pencil", 20f, 0.6f, true, true),
@@ -1108,6 +1108,8 @@ class EditorController {
         if (rendererHandle == 0L) return
         if (gizmoActive) { gizmoRelease(); return }
         if (shapeEdit.isActive && (shapeConfirmOnRelease || shapeEdit.dragging >= 0 || shapeAwaitingPress)) {
+            // A tap (no move) away from every handle confirms, as a click outside does in gpencil_primitive.c.
+            if (shapeAwaitingPress && shapeEdit.dragging < 0) shapeConfirmOnRelease = true
             shapeAwaitingPress = false
             if (shapeConfirmOnRelease) { shapeConfirmOnRelease = false; confirmShape() } else { shapeEdit.release(); showShapePreview() }
             return

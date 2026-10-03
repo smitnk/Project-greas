@@ -325,6 +325,7 @@ class DeviceBugfixTest {
         drag(200f to 300f, 600f to 200f, 1000f to 300f)
         onUi { controller.selectTool(GreaseTool.RECTANGLE) }
         drag(300f to 400f, 700f to 600f)
+        assertTrue(onUi { controller.confirmShape() })
         val first = onUi { controller.saveDocumentJson() }!!
         assertTrue(onUi { controller.loadDocumentJson(first) })
         val second = onUi { controller.saveDocumentJson() }!!

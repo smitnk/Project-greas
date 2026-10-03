@@ -10,6 +10,8 @@ DECLS = [
     "bool BKE_gpencil_stroke_sample(bGPdata *gpd, bGPDstroke *gps, float dist, bool select, float sharp_threshold);",
     "bGPDframe *BKE_gpencil_frame_addnew(bGPDlayer *gpl, int cframe);",
     "bool BKE_gpencil_layer_frame_delete(bGPDlayer *gpl, bGPDframe *gpf);",
+    "void BKE_gpencil_stroke_merge_distance(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps, float threshold, bool use_unselected);",
+    "bGPDlayer *BKE_gpencil_layer_addnew(bGPdata *gpd, const char *name, bool setactive, bool add_to_header);",
     "void BKE_gpencil_stroke_join(bGPDstroke *gps_a, bGPDstroke *gps_b, bool leave_gaps, bool fit_thickness, bool smooth, bool auto_flip);",
 ]
 text = SHIM.read_text(encoding="utf-8")
@@ -57,3 +59,20 @@ mem = MEM.read_text(encoding="utf-8")
 if "MEM_callocN" not in mem:
     MEM.write_text(mem.rstrip("\n") + "\n#define MEM_callocN(size, name) calloc(1, (size))\n", encoding="utf-8")
     print("added: MEM_callocN")
+
+dna = DNA.read_text(encoding="utf-8")
+if "caps[2]" not in dna:
+    anchor = "  int totpoints;\n"
+    if dna.count(anchor) != 1:
+        sys.exit("DNA shim: totpoints anchor not unique; add 'short caps[2];' to bGPDstroke by hand")
+    DNA.write_text(dna.replace(anchor, anchor + "  short caps[2];\n"), encoding="utf-8")
+    print("added: bGPDstroke.caps")
+
+LB = SHIM_DIR / "BLI_listbase.h"
+lb = LB.read_text(encoding="utf-8")
+extra = []
+if "BLI_addtail" not in lb: extra.append("void BLI_addtail(ListBase *listbase, void *vlink);")
+if "BLI_findlink" not in lb: extra.append("void *BLI_findlink(const ListBase *listbase, int number);")
+if extra:
+    LB.write_text(lb.rstrip("\n") + "\n" + "\n".join(extra) + "\n", encoding="utf-8")
+    print("added:", *extra)

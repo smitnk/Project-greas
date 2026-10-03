@@ -15,7 +15,7 @@
 #include "project_grease_gp_color.h"
 #include "project_grease_shader_fx.h"
 #include "project_grease_stroke_outline.h"
-#include "project_grease_blender_edit4.h"
+#include "project_grease_blender_edit5.h"
 
 namespace {
 struct Vertex { float x; float y; };

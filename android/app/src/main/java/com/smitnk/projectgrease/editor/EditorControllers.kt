@@ -1216,7 +1216,7 @@ class EditorController {
         return true
     }
     /**
-     * Delete material slot `index` (edit4 pg_gp_material_slot_remove): its strokes are deleted, higher
+     * Delete material slot `index` (edit5 pg_gp_material_slot_remove): its strokes are deleted, higher
      * slots move down; the last slot stays. The active material follows its slot. Undoable.
      */
     fun deleteMaterial(index:Int = materials.activeMaterial):Boolean {
@@ -1693,6 +1693,18 @@ class EditorController {
         if (index >= 0) selection.note(index) else if (changed) selection.clear()
         return changed || index >= 0
     }
+    fun dashSelection(dash:Int=3, gap:Int=2) = runSelectCommand(ProjectGreaseSelect.dash(dash, gap))
+    fun multiplySelection(copies:Int=2, distance:Float=8f) = runSelectCommand(ProjectGreaseSelect.multiply(copies, distance))
+    fun arraySelection(count:Int=3, dx:Float=60f, dy:Float=0f) = runSelectCommand(ProjectGreaseSelect.array(count, dx, dy))
+    fun mergeSelectionByDistance(threshold:Float=2f) = runSelectCommand(ProjectGreaseSelect.mergeByDistance(threshold))
+    fun toggleSelectionCaps(type:Int=ProjectGreaseSelect.CAPS_TOGGLE_BOTH) = runSelectCommand(ProjectGreaseSelect.caps(type))
+    fun setSelectionStartPoint() = runSelectCommand(ProjectGreaseSelect.startSet())
+    fun separateSelectionToLayer() = runSelectCommand(ProjectGreaseSelect.separateToLayer())
+    fun moveSelectionToLayer(index:Int) = runSelectCommand(ProjectGreaseSelect.moveToLayer(index))
+    /** Copy does not change the document; call native directly so no undo step is recorded. */
+    fun copySelection():Boolean = native.handle != 0L &&
+        native.applyEditCommand(ProjectGreaseSelect.CMD_COPY, FloatArray(0))
+    fun pasteStrokes() = runSelectCommand(ProjectGreaseSelect.paste())
     fun deleteSelectedStrokes() = runSelectCommand(ProjectGreaseSelect.deleteStrokes()).also { if (it) selection.clear() }
     fun deleteSelectedPoints() = runSelectCommand(ProjectGreaseSelect.deletePoints()).also { if (it) selection.clear() }
     fun applyThicknessModifier(factor:Float, normalize:Boolean=false, thickness:Int=0) =

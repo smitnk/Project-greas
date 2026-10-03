@@ -17,7 +17,7 @@ if [[ ! -f "$BL/blenlib/intern/rand.cc" ]]; then
 fi
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
-SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit2.c" "$ROOT/native/blender_gp/project_grease_blender_edit3.c")
+SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit2.c" "$ROOT/native/blender_gp/project_grease_blender_edit3.c" "$ROOT/native/blender_gp/project_grease_blender_edit4.c")
 # Shims first; BLI_rand.h comes from the pinned tree.
 INC=(-I"$ROOT/native/blender_gp/tests/select_shim" -I"$ROOT/native/blender_gp" -I"$BL/blenlib")
 BINC=(-I"$ROOT/native/blender_gp/android_compat" -I"$ROOT/native/blender_gp" -I"$BL" -I"$BL/blenlib"

@@ -16,19 +16,19 @@ class NextBatchRulesTest {
         // The native box / lasso / circle operators only take point or stroke.
         assertNull(ProjectGreaseSelect.box(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_SEGMENT, 0f, 0f, 1f, 1f))
         val c = ProjectGreaseSelect.segmentPick(10f, 20f, 64, ProjectGreaseSelect.PICK_DESELECT_ALL)!!
-        assertEquals(76, c.id)
+        assertEquals(86, c.id)
         assertArrayEquals(floatArrayOf(10f, 20f, 64f, 16f), c.args, 0f)
         assertNull(ProjectGreaseSelect.segmentPick(Float.NaN, 0f, 64, 0))
     }
 
     @Test
-    fun materialAndOnionCommandsMatchEdit4() {
-        assertEquals(77, ProjectGreaseSelect.materialRemove(2)!!.id)
+    fun materialAndOnionCommandsMatchEdit5() {
+        assertEquals(87, ProjectGreaseSelect.materialRemove(2)!!.id)
         assertArrayEquals(floatArrayOf(2f), ProjectGreaseSelect.materialRemove(2)!!.args, 0f)
         assertNull(ProjectGreaseSelect.materialRemove(-1))
         assertArrayEquals(floatArrayOf(3f, 0f), ProjectGreaseSelect.onionLayer(3, false)!!.args, 0f)
-        assertEquals(78, ProjectGreaseSelect.onionLayer(0, true)!!.id)
-        assertEquals(79, ProjectGreaseSelect.onionFade(true).id)
+        assertEquals(88, ProjectGreaseSelect.onionLayer(0, true)!!.id)
+        assertEquals(89, ProjectGreaseSelect.onionFade(true).id)
         assertArrayEquals(floatArrayOf(1f), ProjectGreaseSelect.onionFade(true).args, 0f)
     }
 

@@ -144,7 +144,7 @@ jobs:
       - name: Run native segment select / material / onion tests
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
-        run: bash tools/run_native_edit4_tests.sh
+        run: bash tools/run_native_edit5_tests.sh
 
       - name: Cache Blender 3.6.23 (Line Art reference)
         uses: actions/cache@v4
@@ -268,7 +268,10 @@ jobs:
           assert b"Generate Line Art strokes" in dex, "APK lacks the Line Art stroke button"
           assert b"Bake Line Art to frames" in dex, "APK lacks the Line Art bake button"
           for text in (b"Fit canvas", b"Delete material", b"Segment", b"Use onion skinning", b"Edit Lines",
-                       b"Transparent background", b"Save as failed", b"PNG export failed"):
+                       b"Transparent background", b"Save as failed", b"PNG export failed",
+                       b"Dash (3 on / 2 off)", b"Multiply (2 copies)", b"Array (3 copies)", b"Merge by distance",
+                       b"Toggle caps (round/flat)", b"Set start point", b"Separate to new layer", b"Copy strokes",
+                       b"Paste strokes", b"Move selection here: "):
               assert text in dex, "APK lacks UI text %r" % text
           assert b"Line Art preview" in dex, "APK lacks the Line Art preview switch"
           assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"

@@ -22,6 +22,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit3.h"
+#include "project_grease_blender_edit4.h"
 
 /* ---- shared glue ----------------------------------------------------------------------- */
 static float pe3_clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -341,7 +342,7 @@ int pg_gp_edit3_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
       changed = pg_gp_vcolor_levels(gpd, scope, (int)lroundf(args[0]), args[1], args[2]);
       break;
     default:
-      return 0;
+      return pg_gp_edit4_dispatch(gpd, active_layer, command, args, arg_count);
   }
 #undef NEED
   if (changed) {

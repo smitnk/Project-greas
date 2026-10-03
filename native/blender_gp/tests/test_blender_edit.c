@@ -15,6 +15,7 @@
 #include "project_grease_blender_edit2.h"
 #include "project_grease_blender_edit3.h"
 #include "BLI_rand.h"
+#include "project_grease_blender_edit4.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -221,17 +222,56 @@ static bGPDstroke *add_stroke(bGPDframe *gpf, int n, int mat, float x0, float y0
   list_add(&gpf->strokes, gps);
   return gps;
 }
+static int merge_calls = 0;
+void BKE_gpencil_stroke_merge_distance(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps, float threshold, bool use_unselected)
+{
+  (void)gpd; (void)gpf; (void)use_unselected; merge_calls++;
+  int keep = 1;
+  for (int i = 1; i < gps->totpoints; i++) {
+    float dx = gps->points[i].x - gps->points[keep - 1].x, dy = gps->points[i].y - gps->points[keep - 1].y;
+    if (dx * dx + dy * dy >= threshold * threshold) gps->points[keep++] = gps->points[i];
+  }
+  gps->totpoints = keep;
+}
+bGPDlayer *BKE_gpencil_layer_addnew(bGPdata *gpd, const char *name, bool setactive, bool add_to_header)
+{
+  (void)name; (void)setactive; (void)add_to_header;
+  bGPDlayer *l = calloc(1, sizeof(bGPDlayer));
+  l->opacity = 1.0f;
+  l->prev = gpd->layers.last; l->next = NULL;
+  if (gpd->layers.last) ((bGPDlayer *)gpd->layers.last)->next = l; else gpd->layers.first = l;
+  gpd->layers.last = l;
+  return l;
+}
+
+void BLI_addtail(ListBase *lb, void *vlink)
+{
+  Link *link = vlink;
+  link->next = NULL; link->prev = lb->last;
+  if (lb->last) ((Link *)lb->last)->next = link; else lb->first = link;
+  lb->last = link;
+}
+void *BLI_findlink(const ListBase *lb, int number)
+{
+  if (number < 0) return NULL;
+  Link *l = lb->first;
+  for (int i = 0; l && i < number; i++) l = l->next;
+  return l;
+}
+
 static void select_points(bGPdata *gpd, bGPDstroke *gps, unsigned mask)
 {
   for (int i = 0; i < gps->totpoints; i++) {
-    if (i < 32 && (mask & (1u << i))) gps->points[i].flag |= GP_SPOINT_SELECT; else gps->points[i].flag &= ~GP_SPOINT_SELECT;
+    /* the mask covers the first 32 points; later points follow bit 31 (all set or all clear) */
+    const unsigned bit = i < 32 ? (1u << i) : (1u << 31);
+    if (mask & bit) gps->points[i].flag |= GP_SPOINT_SELECT; else gps->points[i].flag &= ~GP_SPOINT_SELECT;
   }
   BKE_gpencil_stroke_sync_selection(gpd, gps);
 }
 static unsigned sel_mask(const bGPDstroke *gps)
 {
   unsigned m = 0;
-  for (int i = 0; i < gps->totpoints; i++) if (i < 32 && (gps->points[i].flag & GP_SPOINT_SELECT)) m |= 1u << i;
+  for (int i = 0; i < gps->totpoints && i < 32; i++) if (gps->points[i].flag & GP_SPOINT_SELECT) m |= 1u << i;
   return m;
 }
 static int stroke_count(const bGPDframe *gpf)
@@ -1100,6 +1140,98 @@ static void test_edit3(void)
   CHECK(pg_gp_edit_dispatch(gpd, l, 81, NULL, 0) == 0, "beyond the routed range");
 }
 
+static int frame_stroke_count(bGPDlayer *l) { return l->actframe ? stroke_count(l->actframe) : 0; }
+
+static void test_edit4(void)
+{
+  bGPdata *gpd = make_gpd();
+  bGPDlayer *l = add_layer(gpd, 0);
+  bGPDframe *f = add_frame(l);
+  /* dash: 10 points, dash 3 gap 2 -> runs [0..2] [5..7]; run starting at offset handled */
+  bGPDstroke *a = add_stroke(f, 10, 0, 0, 0, 10, 0);
+  select_points(gpd, a, 0x3FF);
+  CHECK(pg_gp_dash(gpd, NULL, 3, 2, 0) == 1 && stroke_count(f) == 2, "dash 3/2 on 10 points -> 2 dashes");
+  bGPDstroke *d1 = f->strokes.first;
+  CHECK(d1->totpoints == 3 && NEAR(d1->points[0].x, 0) && d1->next->totpoints == 3 && NEAR(d1->next->points[0].x, 50),
+        "dash pieces cover points 0-2 and 5-7");
+  CHECK(pg_gp_dash(gpd, NULL, 0, 2, 0) == 0 && pg_gp_dash(gpd, NULL, 3, 0, 0) == 0, "invalid dash/gap");
+  {
+    bGPDframe *fd = add_frame(add_layer(gpd, 0));
+    bGPDstroke *one = add_stroke(fd, 6, 0, 0, 0, 10, 0);
+    select_points(gpd, one, 0x3F);
+    CHECK(pg_gp_dash(gpd, fd->strokes.first ? NULL : NULL, 1, 1, 0) == 0 || stroke_count(fd) == 1,
+          "1-point dashes draw nothing, so the stroke is kept");
+    CHECK(stroke_count(fd) == 1 && ((bGPDstroke *)fd->strokes.first)->totpoints == 6, "stroke unchanged");
+  }
+
+  /* multiply: 2 copies at +d and -d along the normal of a horizontal stroke */
+  bGPdata *g2 = make_gpd(); bGPDlayer *l2 = add_layer(g2, 0); bGPDframe *f2 = add_frame(l2);
+  bGPDstroke *m = add_stroke(f2, 3, 0, 0, 0, 10, 0);
+  select_points(g2, m, 7);
+  CHECK(pg_gp_multiply(g2, NULL, 2, 5.0f) == 1 && stroke_count(f2) == 3, "multiply 2");
+  CHECK(NEAR(m->next->points[1].y, 5.0f) && NEAR(m->next->next->points[1].y, -5.0f) && sel_mask(m->next) == 0,
+        "copies offset +d and -d along the normal, unselected");
+  CHECK(NEAR(m->points[1].y, 0.0f), "original unchanged");
+
+  /* array */
+  bGPdata *g3 = make_gpd(); bGPDlayer *l3 = add_layer(g3, 0); bGPDframe *f3 = add_frame(l3);
+  bGPDstroke *r = add_stroke(f3, 2, 0, 0, 0, 10, 0);
+  select_points(g3, r, 3);
+  CHECK(pg_gp_array(g3, NULL, 3, 100, 0) == 1 && stroke_count(f3) == 3 && NEAR(r->next->next->points[0].x, 200), "array count 3 offset 100");
+  CHECK(pg_gp_array(g3, NULL, 1, 100, 0) == 0, "count 1 makes nothing");
+
+  /* merge by distance */
+  bGPDstroke *mg = add_stroke(f3, 5, 0, 0, 50, 1, 0);
+  select_points(g3, mg, 0x1F); select_points(g3, r, 0);
+  merge_calls = 0;
+  CHECK(pg_gp_merge_distance(g3, NULL, 2.5f, 0) == 1 && merge_calls >= 1 && mg->totpoints < 5, "merge by distance");
+
+  /* caps */
+  CHECK(pg_gp_caps_set(g3, NULL, PG_CAPS_TOGGLE_START) == 1 && mg->caps[0] == 1 && mg->caps[1] == 0, "toggle start cap to flat");
+  pg_gp_caps_set(g3, NULL, PG_CAPS_DEFAULT);
+  CHECK(mg->caps[0] == 0 && mg->caps[1] == 0, "default = round both");
+
+  /* start set on a cyclic stroke */
+  bGPDstroke *cy = add_stroke(f3, 4, 0, 0, 90, 10, 0);
+  cy->flag |= GP_STROKE_CYCLIC;
+  select_points(g3, mg, 0);
+  select_points(g3, cy, 1u << 2);
+  cy->flag |= GP_STROKE_CYCLIC;
+  CHECK(pg_gp_start_set(g3, NULL) == 1 && NEAR(cy->points[0].x, 20) && NEAR(cy->points[1].x, 30) && NEAR(cy->points[2].x, 0),
+        "start point rotated to the selected point, order kept");
+  cy->flag &= ~GP_STROKE_CYCLIC;
+  CHECK(pg_gp_start_set(g3, NULL) == 0, "open strokes are not rotated");
+
+  /* separate to a new layer and move to layer */
+  bGPdata *g4 = make_gpd(); bGPDlayer *src = add_layer(g4, 0); bGPDframe *sf = add_frame(src);
+  bGPDstroke *s1 = add_stroke(sf, 2, 0, 0, 0, 10, 0);
+  bGPDstroke *s2 = add_stroke(sf, 2, 0, 0, 20, 10, 0);
+  select_points(g4, s1, 3);
+  CHECK(pg_gp_separate_to_layer(g4, src) == 1 && stroke_count(sf) == 1 && sf->strokes.first == s2, "selected stroke left the source");
+  bGPDlayer *sep = g4->layers.last;
+  CHECK(sep != src && frame_stroke_count(sep) == 1 && sep->actframe->framenum == sf->framenum, "...into a new layer, same frame number");
+  select_points(g4, s2, 3);
+  CHECK(pg_gp_move_to_layer(g4, src, 1) == 1 && stroke_count(sf) == 0 && frame_stroke_count(sep) == 2, "move to layer index 1");
+  CHECK(pg_gp_move_to_layer(g4, src, 7) == 0, "missing target layer");
+
+  /* copy / paste */
+  bGPdata *g5 = make_gpd(); bGPDlayer *l5 = add_layer(g5, 0); bGPDframe *f5 = add_frame(l5);
+  bGPDstroke *c1 = add_stroke(f5, 3, 0, 0, 0, 10, 0);
+  select_points(g5, c1, 7);
+  pg_gp_copy(g5, NULL);
+  CHECK(pg_gp_paste(g5, l5) == 1 && stroke_count(f5) == 2 && sel_mask(c1) == 0 && sel_mask(f5->strokes.last) == 7,
+        "paste adds a selected copy and deselects the rest");
+  select_points(g5, c1, 0); select_points(g5, f5->strokes.last, 0);
+  pg_gp_copy(g5, NULL); /* nothing selected: clipboard kept */
+  CHECK(pg_gp_paste(g5, l5) == 1 && stroke_count(f5) == 3, "empty copy keeps the previous clipboard");
+  pg_gp_clipboard_free();
+  CHECK(pg_gp_paste(g5, l5) == 0, "empty clipboard pastes nothing");
+
+  const float args[3] = {3, 2, 0};
+  CHECK(pg_gp_edit_dispatch(g5, l5, PG_EDIT4_CMD_DASH, args, 2) == 0, "dash needs 3 args");
+  CHECK(pg_gp_edit_dispatch(g5, l5, 96, NULL, 0) == 0, "beyond the routed range");
+}
+
 int main(void)
 {
   test_pick();
@@ -1126,6 +1258,7 @@ int main(void)
   test_thickness_vgroup();
   test_edit2_operators();
   test_edit3();
+  test_edit4();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

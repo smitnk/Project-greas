@@ -414,54 +414,19 @@ enum class SculptBrush {
     SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE
 }
 
-class SculptController(private val native: NativeEditorBridge) {
+/** Sculpt brush selection; the brushes themselves run natively (project_grease_tool_sculpt.c). */
+class SculptController {
     var brush = SculptBrush.SMOOTH
         private set
-
-    private val engine = LegacyGpSculptEngine { native.handle }
-    private val settings = LegacyGpSculptEngine.Settings()
+    var invert = false
+        private set
 
     fun isAvailable() =
         FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
 
     fun select(value: SculptBrush) { brush = value }
 
-    fun setRadius(value: Float) { settings.radius = value.coerceIn(2f, 300f) }
-
-    fun setStrength(value: Float) { settings.strength = value.coerceIn(0f, 1f) }
-
-    fun setPressureCurve(value: Float) {
-        settings.pressureCurve = value.coerceIn(0.25f, 4f)
-    }
-
-    fun setInvert(value: Boolean) { settings.invert = value }
-
-    private fun tool(): LegacyGpSculptEngine.Tool = when (brush) {
-        SculptBrush.SMOOTH -> LegacyGpSculptEngine.Tool.SMOOTH
-        SculptBrush.THICKNESS -> LegacyGpSculptEngine.Tool.THICKNESS
-        SculptBrush.STRENGTH -> LegacyGpSculptEngine.Tool.STRENGTH
-        SculptBrush.GRAB -> LegacyGpSculptEngine.Tool.GRAB
-        SculptBrush.PUSH -> LegacyGpSculptEngine.Tool.PUSH
-        SculptBrush.PINCH -> LegacyGpSculptEngine.Tool.PINCH
-        SculptBrush.TWIST -> LegacyGpSculptEngine.Tool.TWIST
-        SculptBrush.RANDOMIZE -> LegacyGpSculptEngine.Tool.RANDOMIZE
-    }
-
-    fun begin(x: Float, y: Float, radius: Float, pressure: Float = 1f): Boolean {
-        settings.radius = radius.coerceIn(2f, 300f)
-        settings.pressure = pressure.coerceIn(0f, 1f)
-        settings.strength = settings.strength.coerceIn(0f, 1f)
-        return engine.begin(tool(), x, y, settings)
-    }
-
-    fun update(x: Float, y: Float, pressure: Float = 1f): Boolean {
-        settings.pressure = pressure.coerceIn(0f, 1f)
-        return engine.update(x, y, settings)
-    }
-
-    fun end() = engine.end()
-
-    fun cancel() = engine.cancel()
+    fun setInvert(value: Boolean) { invert = value }
 }
 
 class OnionSkinController {
@@ -516,7 +481,7 @@ class EditorController {
     val view=ViewController()
     val selection=SelectionController(native)
     val modifiers=ModifierController()
-    val sculpt=SculptController(native)
+    val sculpt=SculptController()
     val onion=OnionSkinController()
     private var rendererHandle=0L
     fun attachRenderer(handle:Long) {
@@ -552,37 +517,83 @@ class EditorController {
         }
         return tools.select(tool)
     }
-    private var sculptGestureChanged = false
-    private fun applySculptPoint(x:Float,y:Float,pressure:Float=1f):Boolean {
-        if (rendererHandle == 0L) return false
-        val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
-        sculpt.setStrength(brushes.strength)
-        sculpt.setPressureCurve(brushes.pressureCurve)
-        val ok = sculpt.update(x, y, pressure)
-        if (ok) {
-            sculptGestureChanged = true
+    // ---- Native tool session (ToolSession.kt / project_grease_tool_session.h) ----
+    /** The session tool the current gesture uses, or -1. */
+    private var sessionTool = -1
+    private var sessionGestureChanged = false
+    private var sessionSeed = 1
+
+    /** Which native session tool a touch on the canvas runs, or -1 (other tools keep their path). */
+    fun sessionToolForTouch():Int = when {
+        mode == GreaseMode.VERTEX_PAINT && paintsInMode() -> ToolSession.TOOL_VERTEX_PAINT
+        mode == GreaseMode.WEIGHT_PAINT && paintsInMode() -> ToolSession.TOOL_WEIGHT_PAINT
+        tools.activeTool == GreaseTool.SCULPT -> ToolSession.TOOL_SCULPT
+        tools.activeTool == GreaseTool.DRAW -> ToolSession.TOOL_DRAW
+        else -> -1
+    }
+    /** Draw keeps the grid snapping of the former per-point path; the brushes use raw samples. */
+    fun snapForTool(tool:Int, p:Pair<Float,Float>):Pair<Float,Float> =
+        if (tool == ToolSession.TOOL_DRAW) view.snapPoint(p.first, p.second) else p
+    private fun paintsInMode() = tools.activeTool != GreaseTool.PAN && tools.activeTool != GreaseTool.EYEDROPPER
+
+    private fun sessionParams(tool:Int, pxPerUnit:Float):FloatArray? {
+        val argb = materials.colorArgb
+        val r = ((argb shr 16) and 0xFF) / 255f
+        val g = ((argb shr 8) and 0xFF) / 255f
+        val b = (argb and 0xFF) / 255f
+        return when (tool) {
+            ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
+                ToolSession.sculptTool(sculpt.brush), (brushes.size * 2.0f).coerceIn(8f, 180f),
+                brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++)
+            ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
+                ToolSession.vertexTool(vertexPaintBrush), brushes.size.coerceAtLeast(1f), brushes.strength,
+                pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget)
+            ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
+                weightPaintBrush, brushes.size.coerceAtLeast(1f), brushes.strength, pxPerUnit,
+                invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue)
+            ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
+                material = materials.activeMaterial, thickness = materials.thickness,
+                strength = brushes.strength, usePressure = true, useStrengthPressure = false,
+                pressureCurve = brushes.pressureCurve, inputSamples = legacyInputSamples,
+                lazy = legacyLazyEnabled, lazyRadius = legacyLazyRadius, lazyFactor = legacyLazyFactor,
+                disableStabilizer = legacyDisableStabilizer, manhattan = legacyManhattanThreshold,
+                euclidean = legacyEuclideanThreshold, activeSmooth = legacyActiveSmooth, jitter = legacyJitter,
+                angleFactor = legacyDrawAngleFactor, angle = legacyDrawAngle
+            ).toParams()
+            else -> null
+        }
+    }
+
+    /**
+     * One input batch for the native tool session: [samples] holds [count] samples of
+     * (x, y, pressure, time) in canvas units, every historical sample included. Native applies the
+     * tool and renders once. The gesture's END records one undo step when it changed the document.
+     */
+    fun toolSamples(tool:Int, samples:FloatArray, count:Int, phase:Int, pxPerUnit:Float = 1f):Int {
+        if (rendererHandle == 0L || tool < 0) return 0
+        if (phase == ToolSession.PHASE_BEGIN) {
+            if (tool == ToolSession.TOOL_WEIGHT_PAINT) syncWeightPaintGroup()
+            sessionTool = tool
+            sessionGestureChanged = false
+        } else if (tool != sessionTool) {
+            return 0
+        }
+        val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
+        val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
+        if ((result and ToolSession.RESULT_CHANGED) != 0 && tool != ToolSession.TOOL_DRAW) {
+            sessionGestureChanged = true
             document.markDirty()
         }
-        return ok
-    }
-    fun beginSculpt(x:Float,y:Float,pressure:Float=1f):Boolean {
-        if (rendererHandle == 0L) return false
-        val radius = (brushes.size * 2.0f).coerceIn(8f, 180f)
-        sculpt.setStrength(brushes.strength)
-        sculpt.setPressureCurve(brushes.pressureCurve)
-        val ok = sculpt.begin(x, y, radius, pressure)
-        if (ok) {
-            sculptGestureChanged = true
-            document.markDirty()
+        if (phase == ToolSession.PHASE_END || phase == ToolSession.PHASE_CANCEL) {
+            if ((result and ToolSession.RESULT_ENDED) != 0 || sessionGestureChanged) {
+                if (phase == ToolSession.PHASE_END) { history.markEdit(); document.markDirty() }
+            }
+            sessionTool = -1
+            sessionGestureChanged = false
         }
-        return ok
+        return result
     }
-    fun sculptAt(x:Float,y:Float,pressure:Float=1f):Boolean = applySculptPoint(x,y,pressure)
-    fun endSculpt() {
-        sculpt.end()
-        if (sculptGestureChanged) history.markEdit()
-        sculptGestureChanged = false
-    }
+
     fun selectBrush(preset:BrushPreset) {
         brushes.select(preset)
         setMaterialColor(materials.colorArgb)
@@ -651,7 +662,6 @@ class EditorController {
     private var polylineAwaitingPress = false
     private var polylineLastX = 0f
     private var polylineLastY = 0f
-    private val brushStrokeEngine = LegacyGpBrushStrokeEngine()
 
     private var legacyInputSamples = 4
     private var legacyLazyEnabled = false
@@ -690,48 +700,10 @@ class EditorController {
     /** Active smoothing of the Legacy GP brush (0 = off, 1 = strongest). */
     fun setActiveSmooth(value:Float) { legacyActiveSmooth = value.coerceIn(0f, 1f) }
 
-    private fun sendBrushPoints(points:List<LegacyGpBrushStrokeEngine.StrokePoint>) {
-        points.forEach { point ->
-            GPNative.nativeAddPointEglRenderer(
-                rendererHandle, point.x, point.y, 0f,
-                point.pressure.coerceAtLeast(TouchInputRules.MIN_NATIVE_PRESSURE),
-                point.strength.coerceAtLeast(0f),
-                point.time
-            )
-        }
-    }
-
-    private fun beginLegacyBrushStroke() {
-        brushStrokeEngine.begin(
-            LegacyGpBrushStrokeEngine.Settings(
-                drawStrength=brushes.strength,
-                usePressure=true,
-                useStrengthPressure=false,
-                pressureCurve=brushes.pressureCurve,
-                inputSamples=legacyInputSamples,
-                lazyEnabled=legacyLazyEnabled,
-                smoothStrokeRadius=legacyLazyRadius,
-                smoothStrokeFactor=legacyLazyFactor,
-                disableStabilizer=legacyDisableStabilizer,
-                manhattanThreshold=legacyManhattanThreshold,
-                euclideanThreshold=legacyEuclideanThreshold,
-                activeSmooth=legacyActiveSmooth,
-                jitter=legacyJitter,
-                drawAngleFactor=legacyDrawAngleFactor,
-                drawAngle=legacyDrawAngle
-            )
-        )
-    }
-
     fun beginStroke():Boolean {
         if (rendererHandle == 0L) return false
         return when (tools.activeTool) {
-            GreaseTool.DRAW -> {
-                pendingShapePoints.clear()
-                pendingShapeTool = null
-                beginLegacyBrushStroke()
-                GPNative.nativeBeginStrokeEglRenderer(rendererHandle, materials.activeMaterial, materials.thickness)
-            }
+            // Draw runs in the native tool session (toolSamples), not through beginStroke.
             GreaseTool.LASSO -> { pendingLassoPoints.clear(); true }
             GreaseTool.POLYLINE -> {
                 // The polyline outlives a single gesture: each gesture adds a vertex.
@@ -762,14 +734,6 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val snapped=view.snapPoint(x,y)
             pendingLassoPoints += snapped.first to snapped.second
-        } else if (tools.activeTool == GreaseTool.DRAW) {
-            val snapped=view.snapPoint(x,y)
-            val emitted = brushStrokeEngine.add(
-                LegacyGpBrushStrokeEngine.InputEvent(
-                    snapped.first, snapped.second, pressure.coerceIn(0f,1f), timeSeconds
-                )
-            )
-            sendBrushPoints(emitted)
         } else if (tools.activeTool == GreaseTool.POLYLINE) {
             val snapped=view.snapPoint(x,y)
             polylineLastX = snapped.first
@@ -892,15 +856,6 @@ class EditorController {
             runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(selectMode), noose))
             return
         }
-        if (tools.activeTool == GreaseTool.DRAW) {
-            // The engine holds back the newest points (Blender edits them in place); flush them
-            // into the native buffer before the stroke is committed.
-            sendBrushPoints(brushStrokeEngine.end())
-            if (GPNative.nativeEndStrokeEglRenderer(rendererHandle)) {
-                history.markEdit(); document.markDirty()
-            }
-            return
-        }
         if (tools.activeTool == GreaseTool.POLYLINE) {
             when (polyline.release(polylineLastX, polylineLastY)) {
                 PolylineSession.Release.FINISH -> finishPolyline()
@@ -938,9 +893,8 @@ class EditorController {
     }
 
     fun cancelStroke(){
-        if (rendererHandle != 0L && tools.activeTool == GreaseTool.DRAW) {
-            brushStrokeEngine.cancel()
-            GPNative.nativeCancelStrokeEglRenderer(rendererHandle)
+        if (rendererHandle != 0L && sessionTool >= 0) {
+            toolSamples(sessionTool, FloatArray(0), 0, ToolSession.PHASE_CANCEL)
         }
         pendingShapePoints.clear()
         pendingShapeTool=null
@@ -1279,6 +1233,8 @@ class EditorController {
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
+            // Edit mode shows the points of the editable strokes, selected ones highlighted.
+            GPNative.nativeSetSelectionOverlay(rendererHandle, mode == GreaseMode.EDIT)
             GPNative.nativeRenderEgl(rendererHandle)
         }
     }
@@ -1738,30 +1694,8 @@ class EditorController {
         private set
     var vertexPaintTarget = ProjectGreaseSelect.PAINT_STROKE
         private set
-    private var vertexPaintChanged = false
     fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_REPLACE) vertexPaintBrush = brush }
     fun setVertexPaintTarget(target:Int) { if (target in ProjectGreaseSelect.PAINT_STROKE..ProjectGreaseSelect.PAINT_BOTH) vertexPaintTarget = target }
-    /** [render] is false when the caller paints several samples and renders once afterwards. */
-    fun vertexPaintDab(x:Float, y:Float, dx:Float=0f, dy:Float=0f, pressure:Float=1f, render:Boolean=true):Boolean {
-        if (native.handle == 0L) return false
-        val argb = materials.colorArgb
-        val cmd = ProjectGreaseSelect.vertexPaint(vertexPaintBrush, x, y, brushes.size.coerceAtLeast(1f),
-            (brushes.strength * pressure).coerceIn(0f, 1f),
-            ((argb shr 16) and 0xFF) / 255f, ((argb shr 8) and 0xFF) / 255f, (argb and 0xFF) / 255f,
-            vertexPaintTarget, dx, dy) ?: return false
-        val changed = native.applyEditCommand(cmd.id, cmd.args)
-        if (changed) { vertexPaintChanged = true; document.markDirty(); if (render) render() }
-        return changed
-    }
-    fun endVertexPaint() { if (vertexPaintChanged) history.markEdit(); vertexPaintChanged = false }
-    /** One dab of the active paint mode (Vertex Paint colors or Weight Paint weights). */
-    fun paintModeDab(x:Float, y:Float, dx:Float=0f, dy:Float=0f, pressure:Float=1f, render:Boolean=true):Boolean = when (mode) {
-        GreaseMode.VERTEX_PAINT -> vertexPaintDab(x, y, dx, dy, pressure, render)
-        GreaseMode.WEIGHT_PAINT -> weightPaintDab(x, y, pressure, render)
-        else -> false
-    }
-    /** Ends the drag of either paint mode: one undo step. */
-    fun endPaintMode() { endVertexPaint(); endWeightPaint() }
     /** Mirror modifier as copies, about the selection median (Blender uses the object origin). */
     fun mirrorSelectionCopy(axisX:Boolean, axisY:Boolean):Boolean {
         val pivot = selectionPivot() ?: return false
@@ -1772,11 +1706,18 @@ class EditorController {
         private set
     var weightPaintValue = 1f
         private set
-    private var weightPaintChanged = false
+    /** GPWEIGHT_TOOL_* (Draw, Blur, Average, Smear). */
+    var weightPaintBrush = ToolSession.GPWEIGHT_DRAW
+        private set
+    /** Draw subtracts the weight instead of adding it (Blender's brush direction). */
+    var weightPaintSubtract = false
+        private set
+    fun setWeightPaintBrush(brush:Int) { if (brush in ToolSession.GPWEIGHT_DRAW..ToolSession.GPWEIGHT_SMEAR) weightPaintBrush = brush }
+    fun setWeightPaintSubtract(value:Boolean) { weightPaintSubtract = value }
     fun setWeightPaintGroup(group:Int) { if (group >= 0) weightPaintGroup = group }
     fun setWeightPaintValue(value:Float) { weightPaintValue = value.coerceIn(0f, 1f) }
     /** The group to paint: the document's active vertex group, created ("Group") when there is none. */
-    private fun syncWeightPaintGroup() {
+    fun syncWeightPaintGroup() {
         if (native.handle == 0L) return
         if (native.vertexGroupCount() == 0) native.vertexGroupAdd("Group")
         val active = native.vertexGroupActive()
@@ -1804,15 +1745,6 @@ class EditorController {
         if (ok) syncWeightPaintGroup()
         return vertexGroupChanged(ok)
     }
-    fun weightPaintDab(x:Float, y:Float, pressure:Float=1f, render:Boolean=true):Boolean {
-        if (native.handle == 0L) return false
-        val cmd = ProjectGreaseSelect.weightPaint(weightPaintGroup, x, y, brushes.size.coerceAtLeast(1f),
-            (brushes.strength * pressure).coerceIn(0f, 1f), weightPaintValue) ?: return false
-        val changed = native.applyEditCommand(cmd.id, cmd.args)
-        if (changed) { weightPaintChanged = true; document.markDirty(); if (render) render() }
-        return changed
-    }
-    fun endWeightPaint() { if (weightPaintChanged) history.markEdit(); weightPaintChanged = false }
     fun applyThicknessModifierWithWeights(factor:Float, invert:Boolean=false) =
         runSelectCommand(ProjectGreaseSelect.thicknessModifierVGroup(weightPaintGroup, invert, factor))
     fun selectByVertexColor(threshold:Float=0.05f, extend:Boolean=false):Boolean {

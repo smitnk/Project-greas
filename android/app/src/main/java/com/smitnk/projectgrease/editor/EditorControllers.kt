@@ -556,13 +556,13 @@ class EditorController {
         val b = (argb and 0xFF) / 255f
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
-                ToolSession.sculptTool(sculpt.brush), (brushes.size * pxPerUnit).coerceAtLeast(1f),
+                ToolSession.sculptTool(sculpt.brush), brushes.size.coerceAtLeast(0.5f),
                 brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(vertexPaintBrush), (brushes.size * pxPerUnit).coerceAtLeast(1f), brushes.strength,
+                ToolSession.vertexTool(vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
-                weightPaintBrush, (brushes.size * pxPerUnit).coerceAtLeast(1f), brushes.strength, pxPerUnit,
+                weightPaintBrush, brushes.size.coerceAtLeast(0.5f), brushes.strength, pxPerUnit,
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
                 material = materials.activeMaterial, thickness = materials.thickness,

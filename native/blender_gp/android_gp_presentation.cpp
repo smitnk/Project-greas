@@ -22,7 +22,7 @@ struct Vertex { float x; float y; };
 
 GLuint g_program=0, g_vbo=0;
 GLint g_position=-1, g_color=-1;
-GLuint g_vc_program=0;
+GLuint g_vc_program=0, g_vc_mask_program=0;
 // Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
 // stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
 // stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
@@ -105,17 +105,22 @@ bool ensure_program(){
   glGenBuffers(1,&g_vbo);
   return g_position>=0&&g_color>=0&&g_vbo!=0;
 }
-bool ensure_vc_program(){
-  if(g_vc_program) return true;
-  GLuint vs=compile_shader(GL_VERTEX_SHADER,vc_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_src());
-  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_vc_program=glCreateProgram(); glAttachShader(g_vc_program,vs); glAttachShader(g_vc_program,fs);
-  glBindAttribLocation(g_vc_program,0,"a_position"); glBindAttribLocation(g_vc_program,1,"a_color");
-  glLinkProgram(g_vc_program);
+GLuint link_vc(const char* fs_text){
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,vc_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_text);
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return 0;}
+  GLuint p=glCreateProgram(); glAttachShader(p,vs); glAttachShader(p,fs);
+  glBindAttribLocation(p,0,"a_position"); glBindAttribLocation(p,1,"a_color");
+  glLinkProgram(p);
   glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_vc_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_vc_program);g_vc_program=0;return false;}
-  return true;
+  GLint ok=GL_FALSE;glGetProgramiv(p,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(p);return 0;}
+  return p;
+}
+// Plain and layer-masked (same mask texture as draw_vertices) per-vertex-colour programs.
+bool ensure_vc_program(){
+  if(!g_vc_program)g_vc_program=link_vc(fs_src());
+  if(!g_vc_mask_program)g_vc_mask_program=link_vc(mask_fs_src());
+  return g_vc_program!=0&&g_vc_mask_program!=0;
 }
 bool coverage_begin(){
   GLint bits=0;glGetIntegerv(GL_STENCIL_BITS,&bits);
@@ -393,13 +398,23 @@ void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
     }
     if(verts.empty())continue;
     const bool on=coverage_begin();
-    glUseProgram(g_vc_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+    const bool masked=g_active_mask_tex!=0;
+    const GLuint prog=masked?g_vc_mask_program:g_vc_program;
+    glUseProgram(prog);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+    if(masked){
+      glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
+      glUniform1i(glGetUniformLocation(prog,"u_mask"),0);
+      glUniform2f(glGetUniformLocation(prog,"u_size"),float(g_active_w),float(g_active_h));
+    }
     glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(verts.size()*sizeof(VC)),verts.data(),GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
     glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(VC),nullptr);
     glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(VC),reinterpret_cast<const void*>(2*sizeof(float)));
+    glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLES,0,(GLsizei)verts.size());
+    glDisable(GL_BLEND);
     glDisableVertexAttribArray(1);glDisableVertexAttribArray(0);
+    if(masked)glBindTexture(GL_TEXTURE_2D,0);
     glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
     coverage_end(on);
   }
@@ -647,5 +662,5 @@ extern "C" void project_grease_android_present_set_color(float r,float g,float b
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
   if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
-  if(g_vc_program)glDeleteProgram(g_vc_program);g_vc_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+  if(g_vc_program)glDeleteProgram(g_vc_program);if(g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
   project_grease_fx_reset();}

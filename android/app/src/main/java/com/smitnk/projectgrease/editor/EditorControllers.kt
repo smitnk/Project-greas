@@ -513,6 +513,7 @@ class EditorController {
             detachedSnapshot = null
             // A destroyed surface takes its native renderer and document with it, and a new surface
             // starts from an empty "Layer 1" document: restore the document as it was at detach.
+            setupTrace("attach pending=${pending != null} snapshot=${snapshot != null} layers=${native.layerCount()}")
             if (pending != null) pending() else if (snapshot != null) loadDocumentJson(snapshot)
         }
     }
@@ -525,16 +526,25 @@ class EditorController {
      * (New Project kept "Layer 1"); it is now kept and run on attach. The latest request wins.
      */
     fun runWhenAttached(setup: () -> Unit) {
+        setupTrace("runWhenAttached ready=$rendererReady")
         if (rendererReady) setup() else pendingDocumentSetup = setup
+    }
+    /** Document setup trace (attach / template / restore steps), logged and read by device tests. */
+    val setupLog = ArrayList<String>()
+    fun setupTrace(msg: String) {
+        setupLog += msg
+        runCatching { android.util.Log.i("ProjectGrease", "setup: $msg") }
     }
     fun detachRenderer(){
         animation.stop()
+        setupTrace("detach ready=$rendererReady")
         if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it }
         rendererHandle=0L;native.detach()
     }
     fun resetDocument():Boolean {
         if (rendererHandle == 0L) return false
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
+        setupTrace("resetDocument ok=$ok")
         if(ok){
             reapplyOnion()
             selectedLayer=0
@@ -1355,20 +1365,21 @@ class EditorController {
      * fps and the scene end frame. The top layer and material 0 end up active.
      */
     fun applyTemplate(template:GreaseTemplates.Template):Boolean {
+        setupTrace("applyTemplate ${template.id} handle=${native.handle != 0L} layers=${native.layerCount()}")
         if (native.handle == 0L || template.layers.isEmpty()) return false
         if (native.layerCount() == 0) {
-            if (!native.createLayer(template.layers[0])) return false
+            if (!native.createLayer(template.layers[0])) { setupTrace("createLayer0 failed"); return false }
         } else {
             native.renameLayer(0, template.layers[0])
         }
         native.selectLayer(0)
         if (native.frameCount() == 0) native.createFrame(1)
         for (name in template.layers.drop(1)) {
-            if (!native.createLayer(name)) return false
+            if (!native.createLayer(name)) { setupTrace("createLayer $name failed"); return false }
             native.createFrame(1)
         }
         template.materials.forEachIndexed { i, m ->
-            while (native.materialCount() <= i) if (!native.createMaterial()) return false
+            while (native.materialCount() <= i) if (!native.createMaterial()) { setupTrace("createMaterial failed"); return false }
             val stroke = colorToFloats(m.stroke)
             val fill = m.fill?.let { colorToFloats(it) } ?: stroke
             native.setMaterialColors(i, stroke, fill)

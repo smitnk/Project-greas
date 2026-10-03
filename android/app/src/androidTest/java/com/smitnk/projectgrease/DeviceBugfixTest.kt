@@ -317,7 +317,8 @@ class DeviceBugfixTest {
         val expected = GreaseTemplates.byId("2d_animation")!!.layers
         val names = onUi { (0 until controller.layerCount()).map { controller.layerName(it) } }
         screenshot("11_new_project_layers")
-        assertEquals(expected, names)
+        val trace = onUi { controller.setupLog.joinToString(" | ") }
+        assertEquals("setup trace: $trace", expected, names)
     }
 
     @Test fun saveReloadIsIdentical() {

@@ -53,7 +53,8 @@ static bool init_gl()
   if (!eglInitialize(d, &maj, &min)) return false;
   eglBindAPI(EGL_OPENGL_ES_API);
   const EGLint ca[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-                       EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_NONE};
+                       EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+                       EGL_STENCIL_SIZE, 8, EGL_NONE};
   EGLConfig cfg;
   EGLint n = 0;
   if (!eglChooseConfig(d, ca, &cfg, 1, &n) || n == 0) return false;
@@ -417,6 +418,99 @@ static void test_weight_view()
   CHECK(near_rgb(pixel_at_canvas(100, 90), 0, 255, 0));
 }
 
+/* Device report: Strength 100% drew grey. A stroke with point strength 1 shows the material colour
+ * exactly (alpha applied once: material alpha x point strength). */
+static void test_strength_full()
+{
+  Doc d = make_doc();
+  set_color(d, 0.0f, 0.0f, 0.0f);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20, 1.0f);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 0, 2));
+}
+
+/* A stroke at half strength that crosses itself is blended once per pixel: the crossing is not
+ * darker than the rest of the stroke (Blender draws a stroke as one surface). */
+static void test_self_overlap()
+{
+  Doc d = make_doc();
+  set_color(d, 0.0f, 0.0f, 0.0f);
+  bGPDlayer *l = add_layer(d, "A");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  /* a figure "Z" folded back: (20,30) -> (180,90) -> (20,90) -> (180,30); segments 1 and 3 cross */
+  const float xy[4][2] = {{20, 30}, {180, 90}, {20, 90}, {180, 30}};
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 4, 12, false);
+  for (int i = 0; i < 4; i++) {
+    s->points[i].x = xy[i][0];
+    s->points[i].y = xy[i][1];
+    s->points[i].pressure = 1.0f;
+    s->points[i].strength = 0.5f;
+  }
+  present(d);
+  const Rgba cross = pixel_at_canvas(100, 60), single = pixel_at_canvas(60, 45);
+  CHECK(cross.r < 200);                       /* drawn */
+  CHECK(std::abs(cross.r - single.r) <= 3);   /* not darkened by the second pass */
+}
+
+/* Device report: a thick rectangle (cyclic primitive) showed offset blocks with misaligned corners.
+ * The four corners of a cyclic square are solid miter joins, the edges continuous, the inside empty. */
+static void test_cyclic_square()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  const float xy[4][2] = {{50, 30}, {150, 30}, {150, 90}, {50, 90}};
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 4, 16, false);
+  s->flag |= GP_STROKE_CYCLIC;
+  for (int i = 0; i < 4; i++) {
+    s->points[i].x = xy[i][0];
+    s->points[i].y = xy[i][1];
+    s->points[i].pressure = 1.0f;
+    s->points[i].strength = 1.0f;
+  }
+  present(d);
+  for (int i = 0; i < 4; i++) {
+    const float ox = xy[i][0] < 100 ? -6.0f : 6.0f, oy = xy[i][1] < 60 ? -6.0f : 6.0f;
+    CHECK(near_rgb(pixel_at_canvas(xy[i][0] + ox, xy[i][1] + oy), 255, 0, 0)); /* outer corner */
+    CHECK(near_rgb(pixel_at_canvas(xy[i][0], xy[i][1]), 255, 0, 0));
+  }
+  /* the closing edge (last -> first point) exists */
+  CHECK(near_rgb(pixel_at_canvas(50, 60), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(100, 30), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 245, 245, 245)); /* hollow */
+  CHECK(near_rgb(pixel_at_canvas(30, 60), 245, 245, 245));  /* nothing outside */
+}
+
+static void test_weight_view_smooth()
+{
+  /* weight display is continuous along a stroke: neighbouring pixels differ by a small step,
+   * not by the jumps of per-segment blocks */
+  Doc d = make_doc();
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 16);
+  bGPDstroke *s = static_cast<bGPDstroke *>(static_cast<bGPDframe *>(l->frames.first)->strokes.first);
+  s->dvert = static_cast<MDeformVert *>(MEM_callocN(sizeof(MDeformVert) * 2, "dvert"));
+  for (int i = 0; i < 2; i++) {
+    s->dvert[i].dw = static_cast<MDeformWeight *>(MEM_callocN(sizeof(MDeformWeight), "dw"));
+    s->dvert[i].totweight = 1;
+    s->dvert[i].dw[0].def_nr = 0;
+    s->dvert[i].dw[0].weight = static_cast<float>(i);
+  }
+  project_grease_android_present_set_weight_view(0);
+  present(d);
+  project_grease_android_present_set_weight_view(-1);
+  int max_step = 0;
+  for (int x = 30; x < 170; x++) {
+    const Rgba a = pixel_at_canvas(float(x), 60), b = pixel_at_canvas(float(x + 1), 60);
+    max_step = std::max({max_step, std::abs(a.r - b.r), std::abs(a.g - b.g), std::abs(a.b - b.b)});
+  }
+  CHECK(max_step <= 24);
+  /* the stroke edge follows the normal outline (round cap), not a square block */
+  CHECK(near_rgb(pixel_at_canvas(14, 54), 245, 245, 245));
+}
+
 static PGFxEntry fxe(int type, std::initializer_list<std::pair<int, float>> set = {}) {
   PGFxEntry e;
   pg_fx_entry_init(&e, type);
@@ -618,6 +712,10 @@ int main()
   test_selection_overlay();
   test_masks();
   test_weight_view();
+  test_strength_full();
+  test_self_overlap();
+  test_cyclic_square();
+  test_weight_view_smooth();
   test_shader_fx_gl();
   test_fx_through_presenter();
   project_grease_android_present_reset();

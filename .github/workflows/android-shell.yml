@@ -193,7 +193,7 @@ jobs:
 
       - name: Build Android GP application
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
 
       - name: Verify Android GP native link closure
         shell: bash
@@ -297,3 +297,55 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload instrumented test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-grease-android-test-apk
+          path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  # Device-bugfix checks on an x86_64 emulator: the debug APK (arm64-v8a + x86_64) and the
+  # instrumented test APK from the job above; real touches, native state and screenshots.
+  emulator-tests:
+    needs: android-shell
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: project-grease-*-apk
+          merge-multiple: true
+          path: apks
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run DeviceBugfixTest on the emulator (API 30, x86_64)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            set -x; adb install -r -g apks/app-debug.apk && adb install -r -g apks/app-debug-androidTest.apk && adb shell am instrument -w -r -e class com.smitnk.projectgrease.DeviceBugfixTest com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.txt; mkdir -p screenshots; adb pull /sdcard/Android/data/com.smitnk.projectgrease/files/screenshots/. screenshots/ || true; adb logcat -d -s ProjectGrease:* TestRunner:* AndroidRuntime:* > logcat.txt || true; grep -q "^OK (" instrument.txt
+
+      - name: Upload emulator screenshots and test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-bugfix-screenshots
+          path: |
+            screenshots/
+            instrument.txt
+            logcat.txt
+          if-no-files-found: warn
+          retention-days: 14

@@ -85,6 +85,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativePointCount(
   return project_grease_gp_point_count(from_handle(handle));
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectedPointCount(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_selected_point_count(from_handle(handle));
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateLayer(
     JNIEnv *env, jobject, jlong handle, jstring name)

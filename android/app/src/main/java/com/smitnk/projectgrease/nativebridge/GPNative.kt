@@ -65,6 +65,7 @@ object GPNative {
     external fun nativeRender(handle: Long): Boolean
     external fun nativeStrokeCount(handle: Long): Int
     external fun nativePointCount(handle: Long): Int
+    external fun nativeSelectedPointCount(handle: Long): Int
     external fun nativeCreateLayer(handle: Long, name: String): Boolean
     external fun nativeSelectLayer(handle: Long, index: Int): Boolean
     external fun nativeLayerCount(handle: Long): Int

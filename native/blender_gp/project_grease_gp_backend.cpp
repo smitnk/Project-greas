@@ -1330,6 +1330,20 @@ int Backend::point_count() const {
   return count;
 }
 
+int Backend::frame_selected_point_count() const {
+  if (!impl_->frame) {
+    return 0;
+  }
+  int count = 0;
+  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first); stroke != nullptr;
+       stroke = stroke->next) {
+    for (int i = 0; i < stroke->totpoints; i++) {
+      if (stroke->points[i].flag & GP_SPOINT_SELECT) count++;
+    }
+  }
+  return count;
+}
+
 bool Backend::select_stroke(int index) {
   if (!impl_->frame || index < 0) {
     impl_->last_error = "invalid stroke selection";

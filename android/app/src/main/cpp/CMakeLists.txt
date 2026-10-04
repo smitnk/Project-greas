@@ -178,7 +178,7 @@ if(PG_GL_DEBUG)
         "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_presentation.cpp"
         "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_shader_fx.cpp"
         "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
-        "${CMAKE_CURRENT_LIST_DIR}/project_grease_android_egl_renderer.cpp"
+        "${PROJECT_GREASE_ROOT}/android/app/src/main/cpp/project_grease_android_egl_renderer.cpp"
     )
     foreach(src IN LISTS PG_GL_DEBUG_SOURCES)
         list(FIND PROJECT_GREASE_ALL_SOURCES "${src}" found)

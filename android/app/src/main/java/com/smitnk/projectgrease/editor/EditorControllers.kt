@@ -848,6 +848,8 @@ class EditorController {
         }
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
+        // Native presents BEGIN / END at once; a changed MOVE batch is drawn at the next display frame.
+        if (phase == ToolSession.PHASE_MOVE && (result and ToolSession.RESULT_CHANGED) != 0) requestFrame()
         if ((result and ToolSession.RESULT_CHANGED) != 0 && tool != ToolSession.TOOL_DRAW) {
             sessionGestureChanged = true
             document.markDirty()
@@ -1776,7 +1778,26 @@ class EditorController {
         (argb and 255)/255f,
         ((argb ushr 24) and 255)/255f
     )
+    // One redraw per display frame while a gesture streams samples (Choreographer, vsync-paced):
+    // input batches arrive faster than the display refreshes, and presenting each one blocked the
+    // UI thread in eglSwapBuffers waiting for a free buffer.
+    private var framePending = false
+    /** Durations (ms) of the frames drawn by requestFrame(), for the frame-time tests. */
+    val frameTimesMs = ArrayList<Double>()
+    private val frameCallback = android.view.Choreographer.FrameCallback {
+        if (framePending) {
+            val t0 = System.nanoTime()
+            render()
+            synchronized(frameTimesMs) { if (frameTimesMs.size >= 4096) frameTimesMs.clear(); frameTimesMs += (System.nanoTime() - t0) / 1e6 }
+        }
+    }
+    fun requestFrame() {
+        if (framePending) return
+        framePending = true
+        android.view.Choreographer.getInstance().postFrameCallback(frameCallback)
+    }
     fun render(){
+        framePending = false
         if(rendererHandle!=0L){
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)

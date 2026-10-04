@@ -56,6 +56,8 @@ abstract class SweepBase {
     protected val controller: EditorController get() = rule.activity.controller
 
     @Before fun openNewProject() {
+        // a system ANR dialog left by a slow emulator would own the focus and block event injection
+        shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
         rule.onNodeWithContentDescription("New").performClick()
         rule.onNodeWithText("Create Project").performScrollTo().performClick()
         rule.waitUntil(15_000) { onUi { controller.rendererReady } }

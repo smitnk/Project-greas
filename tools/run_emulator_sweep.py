@@ -33,7 +33,15 @@ def sh(cmd, out=None, check=False):
     return r.stdout
 
 
+def quiet_system_dialogs():
+    # A slow emulator's own "System UI isn't responding" dialog takes focus and every injected
+    # gesture then fails with INJECT_EVENTS: keep system error dialogs off and close any open one.
+    sh("adb shell settings put global hide_error_dialogs 1")
+    sh("adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
+
+
 def instrument(filter_args):
+    quiet_system_dialogs()
     return sh(f"adb shell am instrument -w -r {filter_args} {RUNNER}", out="instrument.txt")
 
 

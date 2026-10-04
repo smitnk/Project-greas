@@ -1778,26 +1778,31 @@ class EditorController {
         (argb and 255)/255f,
         ((argb ushr 24) and 255)/255f
     )
-    // One redraw per display frame while a gesture streams samples (Choreographer, vsync-paced):
-    // input batches arrive faster than the display refreshes, and presenting each one blocked the
-    // UI thread in eglSwapBuffers waiting for a free buffer.
+    // While a gesture streams samples, redraw at most once per display refresh (16 ms), on the
+    // input path itself: presenting every input batch blocked the UI thread in eglSwapBuffers for
+    // a free buffer (28 ms median / 38 ms p95 per sample on 200 strokes). A batch inside the 16 ms
+    // window only applies the tool; a trailing redraw shows the last samples. (A Choreographer
+    // callback was tried first: under a stream of input it ran only 3 times in a 400-sample stroke.)
     private var framePending = false
+    private var lastFrameNs = 0L
     /** Durations (ms) of the frames drawn by requestFrame(), for the frame-time tests. */
     val frameTimesMs = ArrayList<Double>()
-    private val frameCallback = android.view.Choreographer.FrameCallback {
-        if (framePending) {
-            val t0 = System.nanoTime()
-            render()
-            synchronized(frameTimesMs) { if (frameTimesMs.size >= 4096) frameTimesMs.clear(); frameTimesMs += (System.nanoTime() - t0) / 1e6 }
-        }
+    private val frameHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    private val trailingFrame = Runnable { if (framePending) drawFrame() }
+    private fun drawFrame() {
+        val t0 = System.nanoTime()
+        render()
+        lastFrameNs = System.nanoTime()
+        synchronized(frameTimesMs) { if (frameTimesMs.size >= 4096) frameTimesMs.clear(); frameTimesMs += (lastFrameNs - t0) / 1e6 }
     }
     fun requestFrame() {
+        if (System.nanoTime() - lastFrameNs >= FRAME_INTERVAL_NS) { drawFrame(); return }
         if (framePending) return
         framePending = true
-        android.view.Choreographer.getInstance().postFrameCallback(frameCallback)
+        frameHandler.postDelayed(trailingFrame, FRAME_INTERVAL_NS / 1_000_000)
     }
     fun render(){
-        framePending = false
+        if (framePending) { framePending = false; frameHandler.removeCallbacks(trailingFrame) }
         if(rendererHandle!=0L){
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
@@ -1929,6 +1934,7 @@ class EditorController {
         const val ANNOT_BEGIN = 0; const val ANNOT_ADD_POINT = 1; const val ANNOT_END = 2; const val ANNOT_CANCEL = 3
         const val ANNOT_ERASE = 4; const val ANNOT_CLEAR = 5; const val ANNOT_SET_STYLE = 6; const val ANNOT_SET_VISIBLE = 7
         const val ANNOT_COUNT = 8
+        const val FRAME_INTERVAL_NS = 16_000_000L
     }
     /** Annotate tool mode: false draws notes, true erases notes only. */
     var annotationEraser = false

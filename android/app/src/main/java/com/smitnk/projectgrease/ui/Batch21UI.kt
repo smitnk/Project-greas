@@ -113,12 +113,13 @@ fun ShapeEditOverlay(controller: EditorController, tick: Int, redraw: () -> Unit
             handles.forEach { h -> drawCircle(Color.Black, 12f, m.screen(h)); drawCircle(Color.White, 9f, m.screen(h)) }
         }
         Row(Modifier.align(Alignment.BottomCenter).padding(8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Confirm / Cancel first so they stay on screen on narrow devices.
+            Button(onClick = { controller.confirmShape(); redraw() }, modifier = Modifier.testTag("shapeConfirm")) { Text("Confirm") }
+            OutlinedButton(onClick = { controller.cancelShape(); redraw() }) { Text("Cancel") }
             OutlinedButton(onClick = { controller.changeShapeSubdivisions(-1); redraw() }) { Text("Subdiv -") }
             Text(if (controller.shapeSubdivisions() > 0) "${controller.shapeSubdivisions()}" else "default", Modifier.align(Alignment.CenterVertically))
             OutlinedButton(onClick = { controller.changeShapeSubdivisions(1); redraw() }) { Text("Subdiv +") }
             OutlinedButton(onClick = { controller.extrudeShape(); redraw() }) { Text("Extrude") }
-            Button(onClick = { controller.confirmShape(); redraw() }, modifier = Modifier.testTag("shapeConfirm")) { Text("Confirm") }
-            OutlinedButton(onClick = { controller.cancelShape(); redraw() }) { Text("Cancel") }
         }
     }
 }

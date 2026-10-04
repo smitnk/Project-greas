@@ -17,7 +17,7 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /** Where the expected document is kept between the two runs (the test package's files survive). */
-private fun expectedFile() = File(InstrumentationRegistry.getInstrumentation().context.filesDir, "process_death_expected.json")
+private fun expectedFile() = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "process_death_expected.json")
 private const val PROJECT = "ProcessDeath"
 private fun signature(raw: String) = JSONObject(raw).also { it.remove("frame") }.toString()
 

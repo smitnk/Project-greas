@@ -33,7 +33,7 @@ typedef struct bGPDstroke {
   int totpoints;
   short caps[2];
   struct MDeformVert *dvert;
-  int flag;
+  short flag; /* a short in Blender's DNA: a wider shim hid the annotation open-flag bug */
   int mat_nr;
   int select_index;
   short thickness;

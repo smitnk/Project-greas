@@ -135,7 +135,7 @@ class SweepEditTest : SweepBase() {
         drag(200f to 300f, 1000f to 200f); onUi { controller.selectAll() }
         val first = points(strokes()[0])[0][1]
         onUi { controller.selectTool(GreaseTool.MIRROR) }
-        undoableGesture("mirror") { drag(600f to 100f, 600f to 500f) }
+        undoableGesture("mirror") { drag(600f to 250f, 600f to 500f) } // press on the stroke, drag vertically
         assertTrue("mirrored x", abs(points(strokes()[0])[0][0] - 200.0) > 100)
         shot("transform_mirror"); assertTrue(first > 0)
     }
@@ -164,7 +164,7 @@ class SweepEditTest : SweepBase() {
     }, check = { assertTrue(strokes().sumOf { points(it).size } < 40) }) { controller.deleteSelectedPoints() }
     @Test fun opSplit() = op("split", setup = {
         line(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) }
-    }, check = { assertEquals(2, strokes().size) }) { controller.splitSelection() }
+    }, check = { assertEquals("gpencil split: the selected run becomes its own stroke, the rest stays in two pieces", 3, strokes().size) }) { controller.splitSelection() }
     @Test fun opSubdivide() {
         line(300f); onUi { controller.selectStroke(0); controller.selectAll() }
         val n = points(strokes()[0]).size
@@ -172,7 +172,8 @@ class SweepEditTest : SweepBase() {
         assertTrue(points(strokes()[0]).size > n); shot("op_subdivide")
     }
     @Test fun opTrim() {
-        line(300f); drag(400f to 200f, 400f to 400f); drag(800f to 200f, 800f to 400f)
+        // BKE_gpencil_stroke_trim cuts a stroke at its own first self-intersection (a loop).
+        drag(200f to 300f, 700f to 300f, 600f to 150f, 450f to 450f, steps = 20)
         onUi { controller.selectStroke(0) }
         undoable("trim") { controller.trimSelectedStrokeToIntersection() }
         shot("op_trim")
@@ -191,7 +192,8 @@ class SweepEditTest : SweepBase() {
     @Test fun opDash() = op("dash", check = { assertTrue(strokes().size > 1) }) { controller.dashSelection(3, 2) }
     @Test fun opMultiply() = op("multiply", check = { assertTrue(strokes().size > 1) }) { controller.multiplySelection(2, 8f) }
     @Test fun opArray() = op("array", check = { assertEquals(3, strokes().size) }) { controller.arraySelection(3, 0f, 60f) }
-    @Test fun opMergeByDistance() = op("merge_by_distance", setup = { drag(300f to 300f, 302f to 300f, 900f to 300f, steps = 30); onUi { controller.selectAll() } }) { controller.mergeSelectionByDistance(5f) }
+    @Test fun opMergeByDistance() = op("merge_by_distance", setup = { drag(300f to 300f, 900f to 300f, steps = 60); onUi { controller.selectAll() } },
+        check = { assertTrue(points(strokes()[0]).size < 40) }) { controller.mergeSelectionByDistance(30f) }
     @Test fun opCaps() = op("caps") { controller.toggleSelectionCaps(S.CAPS_TOGGLE_BOTH) }
     @Test fun opStartPoint() = op("start_point", setup = {
         drag(300f to 300f, 600f to 150f, 900f to 300f, 600f to 450f, 300f to 300f)
@@ -218,8 +220,8 @@ class SweepEditTest : SweepBase() {
     @Test fun opThicknessModifier() = op("thickness_mod", check = { assertTrue(points(strokes()[0]).all { abs(it[3] - 2.0) < 0.05 } || strokes()[0].getDouble("thickness") != 8.0) }) { controller.applyThicknessModifier(2f) }
     @Test fun opOpacityModifier() = op("opacity_mod", check = { assertTrue(points(strokes()[0]).all { it[4] < 0.9 }) }) { controller.applyOpacityModifier(S.PAINT_STROKE, 0.5f) }
     @Test fun opLengthModifier() = op("length_mod") { controller.applyLengthModifier(0.2f, 0.2f) }
-    @Test fun opTintModifier() = op("tint_mod") { controller.setMaterialColor(0xFFFF0000.toInt()); controller.applyTintModifier(1f) }
-    @Test fun opColorModifier() = op("color_mod") { controller.setSelectionVertexColor(); controller.applyColorModifier(0.3f, 1f, 1f) }
+    @Test fun opTintModifier() = op("tint_mod", setup = { line(300f); onUi { controller.selectAll(); controller.setMaterialColor(0xFFFF0000.toInt()) } }) { controller.applyTintModifier(1f) }
+    @Test fun opColorModifier() = op("color_mod", setup = { line(300f); onUi { controller.selectAll(); controller.setMaterialColor(0xFFFF0000.toInt()); controller.setSelectionVertexColor() } }) { controller.applyColorModifier(0.3f, 1f, 1f) }
     @Test fun opArrange() = op("arrange", setup = { line(300f); line(320f); onUi { controller.selectStroke(0) } }) { controller.arrangeSelection(S.ARRANGE_TOP) }
     @Test fun opAssignMaterial() = op("assign_material", check = { assertEquals(2, strokes()[0].getInt("material")) }) { controller.selectMaterial(2); controller.assignActiveMaterialToSelection() }
     @Test fun opSnapToGrid() = op("snap_grid", setup = { line(313f, 207f, 993f); onUi { controller.selectAll() } }) { controller.snapSelectionToGrid() }
@@ -227,7 +229,7 @@ class SweepEditTest : SweepBase() {
     @Test fun opExtrude() = op("extrude", setup = { line(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.deselectAll(); controller.selectLastPoints() } }) { controller.extrudeSelection() }
     @Test fun opSimplify() = op("simplify", setup = { drag(200f to 300f, 1000f to 300f, steps = 60); onUi { controller.selectAll() } }) { controller.simplifySelectionFixed(1) }
     @Test fun opSample() = op("sample") { controller.sampleSelection(10f) }
-    @Test fun opNormalize() = op("normalize", setup = { drag(200f to 300f, 1000f to 300f, pressure = 0.5f); onUi { controller.selectAll() } }) { controller.normalizeSelection(S.NORMALIZE_THICKNESS, 1f) }
+    @Test fun opNormalize() = op("normalize", setup = { drag(200f to 300f, 1000f to 300f, pressure = 0.5f, pen = true); onUi { controller.selectAll() } }) { controller.normalizeSelection(S.NORMALIZE_THICKNESS, 1f) }
     @Test fun opSmooth() = op("smooth", setup = { drag(200f to 300f, 400f to 200f, 600f to 400f, 800f to 200f, 1000f to 300f); onUi { controller.selectStroke(0); controller.selectAll() } }) { controller.smoothSelectedStroke(1f, 4) }
     @Test fun opOutline() = op("outline", check = { assertTrue(strokes()[0].getBoolean("cyclic")) }) { controller.outlineSelection(2) }
     @Test fun opShrink() = op("shrink") { controller.shrinkSelectedStroke(50f, 0) }
@@ -246,6 +248,7 @@ class SweepEditTest : SweepBase() {
         shot("op_vertex_color")
     }
     @Test fun opFillSelected() = op("fill_selected", setup = {
-        drag(300f to 200f, 900f to 200f, 900f to 500f, 300f to 500f, 300f to 200f); onUi { controller.selectStroke(0); controller.selectAll() }
+        drag(300f to 200f, 900f to 200f, 900f to 500f, 300f to 500f, 300f to 200f)
+        onUi { controller.selectStroke(0); controller.selectAll(); controller.setSelectionCyclic(S.CYCLIC_CLOSE); controller.selectStroke(0) }
     }) { controller.fillSelectedStroke() }
 }

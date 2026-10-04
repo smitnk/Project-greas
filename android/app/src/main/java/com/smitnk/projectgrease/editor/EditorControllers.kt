@@ -156,7 +156,24 @@ class HistoryController(private val native: NativeEditorBridge) {
     val canRedo: Boolean get() = native.historyCanRedo()
 
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
-    fun markEdit(): Boolean = native.historyRecord()
+    fun markEdit(): Boolean {
+        if (batching) { batchChanged = true; return true }
+        return native.historyRecord()
+    }
+    private var batching = false
+    private var batchChanged = false
+    /**
+     * One undo step for a whole gesture (Blender's modal transform pushes a single undo on confirm):
+     * edits between beginBatch and endBatch are recorded once, at the end.
+     */
+    fun beginBatch() { batching = true; batchChanged = false }
+    fun endBatch(): Boolean {
+        if (!batching) return false
+        batching = false
+        val changed = batchChanged
+        batchChanged = false
+        return if (changed) native.historyRecord() else false
+    }
     fun reset(): Boolean = native.historyReset()
     fun undo(): Boolean = native.historyUndo()
     fun redo(): Boolean = native.historyRedo()
@@ -780,9 +797,15 @@ class EditorController {
      * (x, y, pressure, time) in canvas units, every historical sample included. Native applies the
      * tool and renders once. The gesture's END records one undo step when it changed the document.
      */
+    /** BKE_gpencil_layer_is_editable(): the active layer is neither locked nor hidden. */
+    fun activeLayerEditable():Boolean = layerState()?.let { !it.locked && it.visible } ?: true
+
     fun toolSamples(tool:Int, samples:FloatArray, count:Int, phase:Int, pxPerUnit:Float = 1f):Int {
         if (rendererHandle == 0L || tool < 0) return 0
         if (phase == ToolSession.PHASE_BEGIN) {
+            // gpencil_draw_init(): "Active layer is locked or hidden" cancels the stroke; the sculpt
+            // and paint brushes skip non-editable layers (BKE_gpencil_layer_is_editable).
+            if (!activeLayerEditable()) { sessionTool = -1; return 0 }
             if (tool == ToolSession.TOOL_WEIGHT_PAINT) syncWeightPaintGroup()
             sessionTool = tool
             sessionGestureChanged = false
@@ -930,6 +953,9 @@ class EditorController {
         if (shapeEdit.isActive && tools.activeTool in setOf(GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC)) {
             shapeAwaitingPress = true; shapeConfirmOnRelease = false; return true
         }
+        // The primitive tools create strokes: not on a locked or hidden layer (gpencil_primitive_invoke).
+        if (tools.activeTool in setOf(GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC,
+                GreaseTool.POLYLINE, GreaseTool.CURVE) && !activeLayerEditable()) return false
         return when (tools.activeTool) {
             GreaseTool.BOX_SELECT -> { areaStart = null; boxSelectRect = null; true }
             GreaseTool.CIRCLE_SELECT -> { areaFirstDab = true; true }
@@ -1398,6 +1424,7 @@ class EditorController {
         val plan = FrameSequenceExport.plan(keys, s.frameStart.coerceAtLeast(1), s.frameEnd.coerceAtLeast(s.frameStart.coerceAtLeast(1)), document.projectName.ifBlank { "frame" }.replace(Regex("[^A-Za-z0-9_-]"), "_"), "png")
         val original = animation.currentFrame
         var ok = true
+        GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
         for (item in plan) {
             native.selectFrameOrHold(item.frame)
             val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent || s.transparentBackground)
@@ -1562,7 +1589,7 @@ class EditorController {
         fillBoundary = boundary.coerceIn(FILL_BOUNDARY_ALL, FILL_BOUNDARY_EDIT_LINES)
     }
     fun fillAt(x: Float, y: Float): Boolean {
-        if (rendererHandle == 0L) return false
+        if (rendererHandle == 0L || !activeLayerEditable()) return false
         // Blender Legacy GP Fill creates a closed filled stroke using the active material.
         // Enable the material's Fill component only when the Fill tool is actually used.
         if (!materials.fillEnabled) {
@@ -1651,6 +1678,17 @@ class EditorController {
         val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent)
         render()
         return px?.takeIf { it.size == document.canvasWidth * document.canvasHeight }
+    }
+
+    /**
+     * The current frame as the PNG export writes it: like every animation export, transparent when
+     * asked or when the project settings say so, otherwise composited over the project background.
+     */
+    fun exportCanvasPixels(transparent:Boolean):IntArray? {
+        val s = projectSettings
+        if (rendererHandle == 0L) return null
+        GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
+        return renderCanvasPixels(transparent || s.transparentBackground)
     }
 
     fun setMaterialFillEnabled(enabled:Boolean):Boolean {
@@ -2000,6 +2038,16 @@ class EditorController {
         }
         return ok
     }
+    /** Timeline frame edits as one undo step each (Blender's ACTION_OT_duplicate / delete, interpolate). */
+    private fun frameEdit(ok:Boolean):Boolean {
+        if (ok) { history.markEdit(); document.markDirty(); render() }
+        return ok
+    }
+    fun duplicateFrame(sourceFrame:Int, targetFrame:Int):Boolean = frameEdit(animation.duplicateFrame(sourceFrame, targetFrame))
+    fun deleteFrame(frameNumber:Int):Boolean = frameEdit(animation.deleteFrame(frameNumber))
+    fun interpolateFrameAt(frame:Int):Boolean = frameEdit(animation.interpolateAt(frame))
+    fun interpolateSequence(frame:Int = animation.currentFrame):Int = animation.interpolateSequence(frame).also { frameEdit(it > 0) }
+
     fun selectFrame(frame:Int):Boolean {
         val ok = animation.ensureFrame(frame)
         if (ok) render()

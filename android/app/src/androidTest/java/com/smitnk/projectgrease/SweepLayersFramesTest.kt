@@ -94,13 +94,15 @@ class SweepLayersFramesTest : SweepBase() {
         onUi { controller.selectLayer(1); controller.selectMaterial(2); controller.setMaterialColor(0xFFFF0000.toInt()); controller.brushes.setSize(20f) }
         line(300f) // full line on layer 1
         undoable("add mask") { controller.addLayerMask(0, 1) }
-        undoable("use mask") { controller.setLayerUsesMask(true, 1) }
+        assertTrue("adding a mask turns Use Mask on (gpencil_layer_mask_add)", onUi { controller.layerUsesMask(1) })
         val bmp = shot("layer_mask")
         assertTrue("inside the mask red", inkNear(bmp, 600f, 300f, 3) { Color.red(it) > 150 && Color.green(it) < 90 })
         assertTrue("outside the mask hidden", !inkNear(bmp, 300f, 300f, 2) { Color.red(it) > 150 && Color.green(it) < 90 })
         undoable("invert mask") { controller.setLayerMaskFlags(0, false, true, 1) }
         shot("layer_mask_inverted")
         assertEquals(1, onUi { controller.layerMasks(1).size })
+        undoable("use mask off") { controller.setLayerUsesMask(false, 1) }
+        assertInk(shot("layer_mask_off"), 300f, 300f, "unmasked line")
     }
 
     @Test fun layerMergeDown() {
@@ -138,21 +140,22 @@ class SweepLayersFramesTest : SweepBase() {
 
     @Test fun frameDuplicate() {
         line(300f)
-        undoable("duplicate frame") { controller.animation.duplicateFrame(1, 3) }
-        onUi { controller.selectFrame(3); controller.render() }
+        undoable("duplicate frame") { controller.duplicateFrame(1, 3) }
+        onUi { controller.animation.setFrame(3); controller.render() }
         assertInk(shot("frame_duplicate_3"), 600f, 300f, "duplicated drawing")
     }
 
     @Test fun frameDelete() {
+        line(300f) // frame 1 (the last keyframe of a layer is kept, as the Delete button does)
         onUi { controller.createFrame(4) }
-        undoable("delete frame") { controller.animation.deleteFrame(4) }
+        undoable("delete frame") { controller.deleteFrame(4) }
         assertTrue(4 !in onUi { controller.frameNumbers() }.toList())
         shot("frame_delete")
     }
 
     @Test fun frameHolds() {
         line(300f)
-        onUi { controller.createFrame(10); controller.selectFrame(6); controller.render() }
+        onUi { controller.createFrame(10); controller.animation.setFrame(6); controller.render() }
         assertInk(shot("frame_hold_6"), 600f, 300f, "frame 1 held at 6")
     }
 
@@ -193,11 +196,11 @@ class SweepLayersFramesTest : SweepBase() {
 
     @Test fun interpolation() {
         drag(200f to 300f, 600f to 300f)
-        onUi { controller.createFrame(9); controller.selectFrame(9) }
+        onUi { controller.createFrame(9) }
         drag(200f to 600f, 600f to 600f)
-        onUi { controller.selectFrame(5) }
-        assertTrue(onUi { controller.animation.interpolateAt(5) })
-        onUi { controller.selectFrame(5); controller.render() }
+        onUi { controller.animation.setFrame(5) }
+        undoable("interpolate") { controller.interpolateFrameAt(5) }
+        onUi { controller.animation.setFrame(5); controller.render() }
         assertInk(shot("interpolate_5"), 400f, 450f, "in-between at frame 5")
     }
 
@@ -206,7 +209,7 @@ class SweepLayersFramesTest : SweepBase() {
         onUi { controller.createFrame(9); controller.selectFrame(9) }
         drag(200f to 600f, 600f to 600f)
         onUi { controller.animation.setEasing(3, 0); controller.animation.setElastic(0.5f, 0.3f) }
-        val made = onUi { controller.animation.interpolateSequence(1) }
+        val made = onUi { controller.interpolateSequence(1) }
         assertEquals(7, made)
         assertTrue(onUi { controller.frameNumbers() }.toList().containsAll((2..8).toList()))
         shot("interpolate_sequence")
@@ -214,9 +217,11 @@ class SweepLayersFramesTest : SweepBase() {
 
     @Test fun multiframeEditing() {
         line(300f)
-        onUi { controller.createFrame(3); controller.selectFrame(3) }
+        onUi { controller.createFrame(3) }
         line(500f)
         assertTrue(onUi { controller.setMultiframeEditing(true) })
+        // Multiframe edits the keyframes selected in the timeline (GP_FRAME_SELECT), as in Blender.
+        assertTrue(onUi { controller.selectTimelineFrame(1, S.FRAME_SELECT_SET) && controller.selectTimelineFrame(3, S.FRAME_SELECT_ADD) })
         onUi { controller.selectAll() }
         assertTrue("both frames selected", onUi { controller.selectedPointCount() } >= points(strokes()[0]).size + points(strokes()[1]).size)
         shot("multiframe")

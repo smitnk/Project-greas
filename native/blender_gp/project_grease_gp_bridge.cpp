@@ -933,7 +933,7 @@ int project_grease_gp_apply_legacy_geometry_batch(
     project_grease::gp::Backend::LegacyGeometryOp dst{};
     if (src.type < 0 ||
         src.type > static_cast<int>(
-                       project_grease::gp::Backend::LegacyGeometryOpType::FillTriangulate)) {
+                       project_grease::gp::Backend::LegacyGeometryOpType::RandomColor)) {
       return 0;
     }
     dst.type = static_cast<project_grease::gp::Backend::LegacyGeometryOpType>(src.type);

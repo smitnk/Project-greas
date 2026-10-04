@@ -143,6 +143,47 @@ int main()
     CHECK(static_cast<const bGPDstroke *>(frame_a->strokes.first)->points[0].vert_color[3] > 0.0f); /* original painted too */
   }
 
+  /* --- undo / redo keep the layer the user selected active --- */
+  {
+    const int layers_before = b.layer_count();
+    CHECK(b.create_layer("Second") && b.create_frame(1));
+    add_line(b, 50.0f, 50.0f);
+    CHECK(b.select_layer(0) && b.select_frame(1));
+    const bGPDlayer *chosen = b.active_layer_data();
+    CHECK(b.history_record());
+    CHECK(b.history_record()); /* a second step on layer A */
+    CHECK(b.history_undo());
+    CHECK(b.active_layer_data() != nullptr && std::strcmp(b.active_layer_data()->info, chosen->info) == 0);
+    CHECK(b.history_redo());
+    CHECK(std::strcmp(b.active_layer_data()->info, "A") == 0);
+    CHECK(b.delete_layer(layers_before) && b.select_layer(0) && b.select_frame(1) && b.history_record());
+    layer_a = b.active_layer_data();
+    frame_a = static_cast<bGPDframe *>(layer_a->frames.first);
+    gpd = b.document_data();
+  }
+
+  /* --- undo / redo restore material state (snapshots own deep copies) --- */
+  {
+    CHECK(b.material_count() >= 1);
+    CHECK(b.history_record());
+    const float red[4] = {1, 0, 0, 1};
+    const float black[4] = {0, 0, 0, 1};
+    CHECK(b.set_material_colors(0, black, black) && b.set_material_fill_enabled(0, false) && b.history_record());
+    CHECK(b.set_material_colors(0, red, red) && b.set_material_fill_enabled(0, true) && b.history_record());
+    CHECK(b.material_fill_enabled(0));
+    CHECK(b.history_undo());
+    CHECK(!b.material_fill_enabled(0));
+    PGMaterialInfo info = {};
+    CHECK(b.get_material_info(0, &info) && info.stroke_rgba[0] == 0.0f);
+    CHECK(b.history_redo());
+    CHECK(b.material_fill_enabled(0) && b.get_material_info(0, &info) && info.stroke_rgba[0] == 1.0f);
+    const int slots = b.material_count();
+    CHECK(b.create_material() && b.history_record() && b.material_count() == slots + 1);
+    CHECK(b.history_undo() && b.material_count() == slots);
+    CHECK(b.history_redo() && b.material_count() == slots + 1);
+    gpd = b.document_data();
+  }
+
   /* --- undo / redo carry the stack --- */
   CHECK(b.history_record());
   CHECK(b.modifier_add(0, PG_MOD_NOISE) == 1 && b.history_record());

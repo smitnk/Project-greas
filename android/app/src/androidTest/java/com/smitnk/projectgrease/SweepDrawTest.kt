@@ -25,7 +25,7 @@ class SweepDrawTest : SweepBase() {
 
     @Test fun pressure() {
         onUi { controller.brushes.setUsePressure(true) }
-        drag(200f to 300f, 1000f to 300f, pressure = 0.3f)
+        drag(200f to 300f, 1000f to 300f, pressure = 0.3f, pen = true)
         val p = points(strokes().single())
         assertTrue("pressure recorded ${p[p.size / 2][3]}", p[p.size / 2][3] in 0.05..0.6)
         shot("draw_pressure")
@@ -36,7 +36,7 @@ class SweepDrawTest : SweepBase() {
             controller.brushes.setUsePressure(true)
             controller.brushes.setPressureCurvePoints(listOf(0f to 1f, 1f to 1f)) // flat: always full
         }
-        drag(200f to 300f, 1000f to 300f, pressure = 0.2f)
+        drag(200f to 300f, 1000f to 300f, pressure = 0.2f, pen = true)
         val p = points(strokes().single())
         assertEquals("curve maps 0.2 to 1", 1.0, p[p.size / 2][3], 0.05)
         shot("draw_pressure_curve")
@@ -76,10 +76,11 @@ class SweepDrawTest : SweepBase() {
     }
 
     @Test fun spacing() {
-        drag(200f to 300f, 1000f to 300f)
+        // 60 moves of ~13 units: the default filter keeps them all, spacing 40 drops most.
+        drag(200f to 300f, 1000f to 300f, steps = 60)
         val dense = points(strokes().single()).size
         onUi { controller.setSpacing(40f) }
-        drag(200f to 500f, 1000f to 500f)
+        drag(200f to 500f, 1000f to 500f, steps = 60)
         val sparse = points(strokes()[1]).size
         assertTrue("spacing 40 has fewer points ($sparse < $dense)", sparse < dense)
         shot("draw_spacing")
@@ -274,9 +275,11 @@ class SweepDrawTest : SweepBase() {
         assertEquals(1, onUi { controller.annotationCount() })
         assertEquals("annotations are not document strokes", 0, strokes().size)
         val bmp = shot("annotation")
-        assertTrue("annotation drawn", inkNear(bmp, 600f, 600f, 6) { Color.blue(it) > 180 && Color.red(it) < 80 })
+        // The annotation line is thin and antialiased: bluish rather than pure blue.
+        val bluish = { c: Int -> Color.blue(c) > Color.red(c) + 50 }
+        assertTrue("annotation drawn", inkNear(bmp, 600f, 600f, 8, bluish))
         onUi { controller.setAnnotationsVisible(false) }
-        assertTrue(!inkNear(shot("annotation_hidden"), 600f, 600f, 2) { Color.blue(it) > 180 && Color.red(it) < 80 })
+        assertTrue("annotation hidden", !inkNear(shot("annotation_hidden"), 600f, 600f, 8, bluish))
         onUi { controller.setAnnotationsVisible(true); controller.clearAnnotations() }
         assertEquals(0, onUi { controller.annotationCount() })
     }

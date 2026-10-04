@@ -341,7 +341,7 @@ jobs:
           profile: pixel_4
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash tools/run_emulator_sweep.sh
+          script: python3 tools/run_emulator_sweep.py
 
       - name: Upload emulator screenshots and test output
         if: always()

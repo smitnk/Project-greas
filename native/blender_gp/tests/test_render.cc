@@ -28,6 +28,7 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
@@ -961,6 +962,11 @@ static void test_batch21_guide()
   project_grease_android_present_set_export_mode(1);
   present(d);
   CHECK(near_rgb(pixel_at_canvas(100, 70), 245, 245, 245)); /* never exported */
+  /* opaque exports use the project background, not the viewport paper */
+  project_grease_android_present_set_export_background(0.0f, 0.0f, 1.0f);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(110, 70), 0, 0, 255));
+  project_grease_android_present_set_export_background(0.96f, 0.96f, 0.96f);
   project_grease_android_present_set_export_mode(0);
   project_grease_android_present_set_guide(-1, 0, 0, 0, 0);
   present(d);

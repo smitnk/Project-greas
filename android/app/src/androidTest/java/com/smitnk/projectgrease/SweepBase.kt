@@ -96,27 +96,33 @@ abstract class SweepBase {
         return loc[0] + x to loc[1] + y
     }
 
-    protected fun event(action: Int, down: Long, x: Float, y: Float, pressure: Float = 1f): MotionEvent =
-        MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, pressure, 1f, 0, 1f, 1f, 0, 0).also {
+    protected fun event(action: Int, down: Long, x: Float, y: Float, pressure: Float = 1f, pen: Boolean = false): MotionEvent {
+        if (!pen) return MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, pressure, 1f, 0, 1f, 1f, 0, 0).also {
             it.source = InputDevice.SOURCE_TOUCHSCREEN
         }
+        // A stylus: fingers always draw at pressure 1 (TouchInputRules), as a mouse does in Blender.
+        val props = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_STYLUS })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y; this.pressure = pressure; size = 1f })
+        return MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, 1, props, coords, 0, 0, 1f, 1f, 0, 0,
+            InputDevice.SOURCE_STYLUS or InputDevice.SOURCE_TOUCHSCREEN, 0)
+    }
 
     /** A finger drag through canvas points (~12 ms per step). */
-    protected fun drag(vararg canvas: Pair<Float, Float>, steps: Int = 12, pressure: Float = 1f) {
+    protected fun drag(vararg canvas: Pair<Float, Float>, steps: Int = 12, pressure: Float = 1f, pen: Boolean = false) {
         val pts = canvas.map { screen(it.first, it.second) }
         val down = SystemClock.uptimeMillis()
-        instrumentation.sendPointerSync(event(MotionEvent.ACTION_DOWN, down, pts[0].first, pts[0].second, pressure))
+        instrumentation.sendPointerSync(event(MotionEvent.ACTION_DOWN, down, pts[0].first, pts[0].second, pressure, pen))
         for (k in 1 until pts.size) {
             val a = pts[k - 1]; val b = pts[k]
             for (s in 1..steps) {
                 val t = s.toFloat() / steps
                 SystemClock.sleep(12)
                 instrumentation.sendPointerSync(event(MotionEvent.ACTION_MOVE, down,
-                    a.first + (b.first - a.first) * t, a.second + (b.second - a.second) * t, pressure))
+                    a.first + (b.first - a.first) * t, a.second + (b.second - a.second) * t, pressure, pen))
             }
         }
         val last = pts.last()
-        instrumentation.sendPointerSync(event(MotionEvent.ACTION_UP, down, last.first, last.second, pressure))
+        instrumentation.sendPointerSync(event(MotionEvent.ACTION_UP, down, last.first, last.second, pressure, pen))
         rule.waitForIdle()
     }
 

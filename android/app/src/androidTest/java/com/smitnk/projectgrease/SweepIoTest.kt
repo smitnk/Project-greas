@@ -77,7 +77,7 @@ class SweepIoTest : SweepBase() {
 
     @Test fun exportPng() {
         onUi { controller.brushes.setSize(30f) }; line(300f)
-        val px = onUi { controller.renderCanvasPixels(false) }!!
+        val px = onUi { controller.exportCanvasPixels(false) }!!
         val w = onUi { controller.document.canvasWidth }; val h = onUi { controller.document.canvasHeight }
         assertEquals(w * h, px.size)
         val bmp = android.graphics.Bitmap.createBitmap(px, w, h, android.graphics.Bitmap.Config.ARGB_8888)
@@ -86,8 +86,8 @@ class SweepIoTest : SweepBase() {
         val back = BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
         assertEquals(w, back.width)
         assertTrue("stroke in the PNG", isDark(back.getPixel(600, 300)))
-        assertTrue("background white", back.getPixel(600, 700) == Color.WHITE)
-        val transparent = onUi { controller.renderCanvasPixels(true) }!!
+        assertEquals("project background", onUi { controller.projectSettings.background }, back.getPixel(600, 700))
+        val transparent = onUi { controller.exportCanvasPixels(true) }!!
         assertEquals("transparent background", 0, Color.alpha(transparent[700 * w + 600]))
         shot("export_png")
     }
@@ -164,8 +164,12 @@ class SweepIoTest : SweepBase() {
         assertTrue("invalid settings rejected", bad != null)
         assertEquals(1280, onUi { controller.document.canvasWidth })
         assertEquals(30, onUi { controller.animation.fps })
-        val c = pixel(shot("project_settings"), 640f, 360f)
-        assertTrue("background ${Integer.toHexString(c)}", Color.blue(c) in 40..90 && Color.red(c) < 60)
+        shot("project_settings")
+        // Exports use the project background (the viewport keeps its paper colour, as Blender's does).
+        var first = 0
+        assertTrue(onUi { controller.renderExportFrames(false) { _, p -> if (first == 0) first = p[360 * 1280 + 640] } })
+        assertEquals(0xFF203040.toInt(), first)
+        assertEquals(0xFF203040.toInt(), onUi { controller.exportCanvasPixels(false) }!![10])
     }
 
     @Test fun lineArt() {

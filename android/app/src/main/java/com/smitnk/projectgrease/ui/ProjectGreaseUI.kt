@@ -758,17 +758,17 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
                 TextButton(
                     enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
-                    onClick={if(controller.animation.interpolateAt(controller.animation.currentFrame)){redraw()}}
+                    onClick={if(controller.interpolateFrameAt(controller.animation.currentFrame)){redraw()}}
                 ){Text("Interpolate")}
                 FilterChip(selected=controller.animation.loop,onClick={controller.animation.toggleLoop();redraw()},label={Text("Loop")})
                 TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
-                TextButton(onClick={controller.animation.duplicateFrame(controller.animation.currentFrame,controller.animation.currentFrame+1);redraw()}){Text("Duplicate")}
-                TextButton(onClick={if(controller.animation.frameCount>1){controller.animation.deleteFrame(controller.animation.currentFrame);redraw()}}){Text("Delete")}
+                TextButton(onClick={controller.duplicateFrame(controller.animation.currentFrame,controller.animation.currentFrame+1);redraw()}){Text("Duplicate")}
+                TextButton(onClick={if(controller.animation.frameCount>1){controller.deleteFrame(controller.animation.currentFrame);redraw()}}){Text("Delete")}
                 // GPENCIL_OT_blank_frame_add / GPENCIL_OT_frame_clean_duplicate; the strip below re-reads
                 // the native frame numbers, and the controller refreshes frame count/end.
                 TextButton(onClick={if(controller.insertBlankFrame())redraw()}){Text("Insert blank keyframe")}
                 TextButton(onClick={if(controller.cleanDuplicateFrames())redraw()}){Text("Clean duplicate frames")}
-                TextButton(onClick={if(controller.animation.interpolateSequence()>0){controller.history.markEdit();controller.document.markDirty();redraw()}},
+                TextButton(onClick={if(controller.interpolateSequence()>0){redraw()}},
                     modifier=Modifier.testTag("interpolateSequence")){Text("Interpolate sequence")}
                 FilterChip(selected=controller.multiframeEditing,onClick={controller.setMultiframeEditing(!controller.multiframeEditing);redraw()},
                     label={Text("Multiframe")},modifier=Modifier.testTag("multiframe"))
@@ -1479,8 +1479,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text("Period " + "%.2f".format(per),Modifier.padding(horizontal=16.dp))
                 Slider(per,{per=it;controller.animation.setElastic(amp,per)},valueRange=0f..2f,modifier=Modifier.padding(horizontal=16.dp))
             }
-            Button(onClick={controller.animation.interpolateAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
-            Button(onClick={if(controller.animation.interpolateSequence()>0){controller.history.markEdit();controller.document.markDirty()}},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Interpolate sequence (all in-betweens)")}
+            Button(onClick={controller.interpolateFrameAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
+            Button(onClick={controller.interpolateSequence()},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Interpolate sequence (all in-betweens)")}
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Button(onClick={controller.view.reset();controller.render()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Reset canvas view")}
             Button(onClick={controller.smoothSelectedStroke()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Smooth selected stroke")}

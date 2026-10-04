@@ -30,6 +30,7 @@ extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" int project_grease_android_present_pending_stroke(
@@ -732,6 +733,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillExtendEglRender
   Renderer *renderer = from_handle(handle);
   if (!renderer) return JNI_FALSE;
   renderer->fill_extend = std::isfinite(factor) ? std::max(0.0f, std::min(10.0f, static_cast<float>(factor))) : 0.0f;
+  return JNI_TRUE;
+}
+
+/* Background colour (ARGB, alpha ignored) of the next opaque exports. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetExportBackgroundEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint argb)
+{
+  if (!from_handle(handle)) return JNI_FALSE;
+  project_grease_android_present_set_export_background(((argb >> 16) & 255) / 255.0f,
+                                                       ((argb >> 8) & 255) / 255.0f,
+                                                       (argb & 255) / 255.0f);
   return JNI_TRUE;
 }
 

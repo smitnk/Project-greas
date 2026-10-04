@@ -12,6 +12,7 @@
 #include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 #include "DNA_gpencil_legacy_types.h"
+#include "MEM_guardedalloc.h"
 #include "DNA_material_types.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
@@ -73,13 +74,19 @@ static void pe4_deselect(bGPDstroke *gps)
 /* copy of points [a, b] of `src` as a new stroke (duplicate, then trim the point array) */
 static bGPDstroke *pe4_copy_range(bGPDstroke *src, int a, int b)
 {
-  bGPDstroke *d = BKE_gpencil_stroke_duplicate(src, true, true);
+  /* The piece gets an array of its own n points: duplicating the whole point array and trimming
+   * the count left every piece holding the full source block (fuzzer: dashing a long stroke and
+   * the undo snapshots that copy each block whole took gigabytes). */
+  bGPDstroke *d = BKE_gpencil_stroke_duplicate(src, false, true);
   if (d == NULL) return NULL;
   const int n = b - a + 1;
-  memmove(d->points, d->points + a, sizeof(bGPDspoint) * (size_t)n);
+  d->points = MEM_mallocN(sizeof(bGPDspoint) * (size_t)n, "pg_piece_points");
+  memcpy(d->points, src->points + a, sizeof(bGPDspoint) * (size_t)n);
   d->totpoints = n;
+  d->dvert = NULL; /* weights are not carried into generated pieces (nothing was copied) */
+  MEM_SAFE_FREE(d->triangles); /* the duplicate's copy of the source fill; rebuilt for the piece */
+  d->tot_triangles = 0;
   d->flag &= ~GP_STROKE_CYCLIC;
-  d->dvert = NULL; /* weights are not carried into generated pieces */
   return d;
 }
 

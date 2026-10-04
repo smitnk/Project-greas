@@ -114,7 +114,13 @@ public final class SvgImport {
     static float[] numbers(String text) {
         Matcher m = NUMBER.matcher(text);
         List<Float> list = new ArrayList<>();
-        while (m.find()) list.add(Float.parseFloat(m.group()));
+        // A value outside the float range is an error: the list ends there (SVG 1.1 F.2), so a lone
+        // bad attribute reads as its default (0) and a point list keeps its valid head.
+        while (m.find()) {
+            float v = Float.parseFloat(m.group());
+            if (Float.isNaN(v) || Float.isInfinite(v)) break;
+            list.add(v);
+        }
         float[] r = new float[list.size()];
         for (int i = 0; i < r.length; i++) r[i] = list.get(i);
         return r;
@@ -174,8 +180,18 @@ public final class SvgImport {
             char c = Character.toUpperCase(cmd);
             int need = c == 'H' || c == 'V' ? 1 : c == 'C' ? 6 : c == 'S' || c == 'Q' ? 4 : c == 'A' ? 7 : 2;
             if (i + need > tokens.size()) break;
+            // SVG path error handling (SVG 1.1 F.2): the path is drawn up to the last complete segment
+            // and the rest is ignored. A command letter where a number belongs or a value outside the
+            // float range is such an error (a malformed file used to throw and close the app).
             float[] v = new float[need];
-            for (int k = 0; k < need; k++) v[k] = Float.parseFloat(tokens.get(i + k));
+            boolean bad = false;
+            for (int k = 0; k < need && !bad; k++) {
+                String n = tokens.get(i + k);
+                if (Character.isLetter(n.charAt(0))) { bad = true; break; }
+                v[k] = Float.parseFloat(n);
+                if (Float.isNaN(v[k]) || Float.isInfinite(v[k])) bad = true;
+            }
+            if (bad) break;
             i += need;
             float ox = rel ? x : 0, oy = rel ? y : 0;
             if (c != 'M' && cur == null) { // drawing after Z (or without M) starts at the current point

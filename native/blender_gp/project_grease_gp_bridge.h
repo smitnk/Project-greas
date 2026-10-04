@@ -24,6 +24,8 @@ typedef struct ProjectGreaseGPStrokeStyle {
 
 ProjectGreaseGPHandle *project_grease_gp_create(void);
 void project_grease_gp_destroy(ProjectGreaseGPHandle *handle);
+/* Read-only view of the Legacy GP document (host checks: fuzzer invariants). */
+const struct bGPdata *project_grease_gp_document_data(const ProjectGreaseGPHandle *handle);
 
 typedef struct ProjectGreaseGPLegacyPaintSettings {
   int draw_smooth_level;

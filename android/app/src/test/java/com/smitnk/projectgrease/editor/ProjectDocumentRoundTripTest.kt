@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** In-memory stand-in for the native document, with the same starting state (layer 0, material 0). */
-private class FakeDocument : DocumentNative {
+internal class FakeDocument : DocumentNative {
     class Frame(val number: Int, val strokes: MutableList<StrokeRecord> = mutableListOf(), var keyType: Int = 0)
     class Layer(
         var record: LayerRecord,

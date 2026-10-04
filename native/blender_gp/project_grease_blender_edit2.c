@@ -5,6 +5,7 @@
  * the named 3.6.23 operators using BKE functions where Blender has them.
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -182,6 +183,18 @@ int pg_gp_stroke_sample(bGPdata *gpd, const bGPDlayer *only_layer, float length,
   int changed = 0;
   PE2_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
     if (!(gps->flag & GP_STROKE_SELECT) || gps->totpoints < 2) continue;
+    /* BKE_gpencil_stroke_sample allocates stroke length / length points: past the ceiling the
+     * stroke is left as it is. */
+    const double estimate = (double)BKE_gpencil_stroke_length(gps, false) / (double)length + gps->totpoints;
+    if (!(estimate <= PG_MAX_STROKE_POINTS)) continue;
+    /* stroke_march_next_point_no_interp() steps by `length` from point to point: where the spacing
+     * is below the float resolution at the stroke's coordinates a step does not move the point and
+     * the march never ends (fuzzer: strokes moved to ~1e9, where a float step is 64 units). */
+    float extent = 0.0f;
+    for (int i = 0; i < gps->totpoints; i++) {
+      extent = fmaxf(extent, fmaxf(fabsf(gps->points[i].x), fmaxf(fabsf(gps->points[i].y), fabsf(gps->points[i].z))));
+    }
+    if (!(length > extent * 8.0f * FLT_EPSILON)) continue;
     if (BKE_gpencil_stroke_sample(gpd, gps, length, true, sharp_threshold)) changed = 1;
   }
   PE2_STROKES_END;

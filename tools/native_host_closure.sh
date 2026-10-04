@@ -25,6 +25,8 @@ INC=(-I"$BL/draw" -I"$BL/draw/intern" -I"$BL/draw/engines/gpencil" -I"$BL/gpu" -
      -I"$B/intern/clog" -I"$ROOT/build/blender-dna")
 CF=(-std=gnu11 -DNDEBUG -DMATH_STANDALONE -w -DMALLOC_USABLE_SIZE_DISABLED -ffunction-sections -fdata-sections)
 XF=(-std=gnu++17 -DNDEBUG -w -ffunction-sections -fdata-sections)
+# PG_SANITIZE_FLAGS (e.g. "-fsanitize=address,undefined -g -O1") instruments the whole closure.
+if [[ -n "${PG_SANITIZE_FLAGS:-}" ]]; then read -r -a _san <<< "$PG_SANITIZE_FLAGS"; CF+=("${_san[@]}"); XF+=("${_san[@]}"); fi
 C_SRC=(
   "$ROOT/native/blender_gp/project_grease_modifier_stack.c"
   "$ROOT/native/blender_gp/project_grease_modifier_stack2.c"
@@ -73,5 +75,10 @@ CXX_SRC=(
   "$B/intern/guardedalloc/intern/leak_detector.cc" "$B/intern/guardedalloc/intern/memory_usage.cc"
 )
 OBJS=()
-for s in "${C_SRC[@]}"; do o="$OUT/$(basename "$s").o"; gcc "${CF[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
-for s in "${CXX_SRC[@]}"; do o="$OUT/$(basename "$s").o"; g++ "${XF[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
+HCC="${PG_HOST_CC:-gcc}"; HCXX="${PG_HOST_CXX:-g++}"
+# PG_SANITIZE_UPSTREAM_EXCLUDE: sanitizer checks switched off for the pinned upstream Blender sources
+# only (verbatim code this project does not change; our own sources keep every check).
+UP=(); if [[ -n "${PG_SANITIZE_FLAGS:-}" && -n "${PG_SANITIZE_UPSTREAM_EXCLUDE:-}" ]]; then UP=(-fno-sanitize="$PG_SANITIZE_UPSTREAM_EXCLUDE"); fi
+upstream() { if [[ ${#UP[@]} -gt 0 && "$1" == "$B/"* ]]; then printf '%s\n' "${UP[@]}"; fi; }
+for s in "${C_SRC[@]}"; do o="$OUT/$(basename "$s").o"; mapfile -t U < <(upstream "$s"); "$HCC" "${CF[@]}" "${U[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
+for s in "${CXX_SRC[@]}"; do o="$OUT/$(basename "$s").o"; mapfile -t U < <(upstream "$s"); "$HCXX" "${XF[@]}" "${U[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done

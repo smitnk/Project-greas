@@ -188,7 +188,8 @@ jobs:
 
   report:
     needs: hunt
-    if: always()
+    # Not when the run was cancelled (a newer push supersedes it): there are no cells to report.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -197,4 +198,7 @@ jobs:
           path: cells
       - name: All cells
         run: |
-          for f in cells/*/*/bughunt_summary.txt; do echo; cat "$f"; done
+          shopt -s nullglob
+          files=(cells/*/*/bughunt_summary.txt)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no cell produced a bughunt_summary.txt (see the build / hunt jobs)"; exit 1; fi
+          for f in "${files[@]}"; do echo; cat "$f"; done

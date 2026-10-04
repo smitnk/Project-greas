@@ -136,7 +136,8 @@ class SweepEditTest : SweepBase() {
         val first = points(strokes()[0])[0][1]
         onUi { controller.selectTool(GreaseTool.MIRROR) }
         undoableGesture("mirror") { drag(600f to 250f, 600f to 500f) } // press on the stroke, drag vertically
-        assertTrue("mirrored x", abs(points(strokes()[0])[0][0] - 200.0) > 100)
+        // A vertical drag reflects across the stroke's horizontal centre line: y 300 <-> 200.
+        assertEquals("mirrored y", 200.0, points(strokes()[0])[0][1], 3.0)
         shot("transform_mirror"); assertTrue(first > 0)
     }
 
@@ -232,7 +233,7 @@ class SweepEditTest : SweepBase() {
     @Test fun opNormalize() = op("normalize", setup = { drag(200f to 300f, 1000f to 300f, pressure = 0.5f, pen = true); onUi { controller.selectAll() } }) { controller.normalizeSelection(S.NORMALIZE_THICKNESS, 1f) }
     @Test fun opSmooth() = op("smooth", setup = { drag(200f to 300f, 400f to 200f, 600f to 400f, 800f to 200f, 1000f to 300f); onUi { controller.selectStroke(0); controller.selectAll() } }) { controller.smoothSelectedStroke(1f, 4) }
     @Test fun opOutline() = op("outline", check = { assertTrue(strokes()[0].getBoolean("cyclic")) }) { controller.outlineSelection(2) }
-    @Test fun opShrink() = op("shrink") { controller.shrinkSelectedStroke(50f, 0) }
+    @Test fun opShrink() = op("shrink") { controller.shrinkSelectedStroke(50f, 1) } // BKE_gpencil_stroke_shrink mode 1 = start
     @Test fun opUniformSubdivide() = op("uniform_subdivide", check = { assertEquals(64, points(strokes()[0]).size) }) { controller.uniformSubdivideSelectedStroke(64) }
     @Test fun opRandomizeColor() = op("randomize_color") { controller.randomizeSelectedStrokeColor() }
     @Test fun opMirrorCopy() = op("mirror_copy", check = { assertEquals(2, strokes().size) }) { controller.mirrorSelectionCopy(true, false) }

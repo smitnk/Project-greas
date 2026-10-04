@@ -16,6 +16,7 @@
 #include "BKE_gpencil_legacy.h"
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
+#include "ED_gpencil_legacy.h"
 #include "DNA_material_types.h"
 #include "DNA_meshdata_types.h"
 #include "MEM_guardedalloc.h"
@@ -973,6 +974,35 @@ static void test_batch21_guide()
   CHECK(near_rgb(pixel_at_canvas(100, 70), 245, 245, 245));
 }
 
+/* While a stroke is open (sbuffer) the committed drawing is reused from a cache: later frames of the
+ * gesture must show the same committed strokes and the growing open stroke, and the cache must go
+ * away when the stroke closes. */
+static void test_open_stroke_cache()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  tGPspoint pts[3] = {};
+  for (int i = 0; i < 3; i++) { pts[i].m_xy[0] = 20.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* first frame of the gesture: full render, cache stored */
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));
+  CHECK(!near_rgb(pixel_at_canvas(40, 88), 245, 245, 245)); /* open stroke drawn */
+  CHECK(near_rgb(pixel_at_canvas(130, 88), 245, 245, 245)); /* not yet reaching x 130 */
+  d.gpd->runtime.sbuffer_used = 3; /* the stroke grows */
+  present(d); /* cached frame */
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(100, 100), 245, 245, 245));
+  CHECK(!near_rgb(pixel_at_canvas(130, 88), 245, 245, 245)); /* the new segment is drawn */
+  d.gpd->runtime.sbuffer_used = 0; /* stroke closed: the cache is dropped */
+  d.gpd->runtime.sbuffer = nullptr;
+  set_color(d, 0, 0, 1);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
+}
+
 int main()
 {
   if (!init_gl()) {
@@ -1009,6 +1039,7 @@ int main()
   test_batch21_dots_squares();
   test_batch21_onion_filter_loop();
   test_batch21_guide();
+  test_open_stroke_cache();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

@@ -26,7 +26,7 @@ class SweepPaintTest : SweepBase() {
         assertInk(shot("sculpt_${brush.name.lowercase()}"), 200f, 300f, "sculpted stroke start")
     }
 
-    @Test fun sculptSmooth() = sculpt(SculptBrush.SMOOTH) { drag(300f to 300f, 900f to 300f); drag(300f to 300f, 900f to 300f) }
+    @Test fun sculptSmooth() = sculpt(SculptBrush.SMOOTH) { drag(300f to 300f, 900f to 300f) } // one stroke = one undo step
     @Test fun sculptThickness() = sculpt(SculptBrush.THICKNESS)
     @Test fun sculptStrength() = sculpt(SculptBrush.STRENGTH) { onUi { controller.sculpt.setInvert(true) }; drag(400f to 300f, 800f to 300f) }
     @Test fun sculptGrab() = sculpt(SculptBrush.GRAB) { drag(600f to 330f, 600f to 500f) }
@@ -89,7 +89,7 @@ class SweepPaintTest : SweepBase() {
         assertEquals(listOf("A", "B"), onUi { controller.vertexGroups() })
         assertTrue(onUi { controller.renameVertexGroup(1, "Bee") }); assertEquals("Bee", onUi { controller.vertexGroups()[1] })
         onUi { controller.selectVertexGroup(0); controller.selectAll() }
-        undoable("vg assign") { controller.assignSelectionToGroup(0.5f) }
+        undoable("vg assign") { controller.assignSelectionToGroup(0.25f) } // 0.5 would be its own inverse
         assertTrue(weights() > 0)
         onUi { controller.deselectAll() }
         assertTrue(onUi { controller.selectGroupPoints() }); assertEquals(onUi { controller.pointCount() }, onUi { controller.selectedPointCount() })

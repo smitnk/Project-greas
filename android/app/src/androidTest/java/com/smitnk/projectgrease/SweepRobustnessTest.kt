@@ -68,7 +68,8 @@ class SweepRobustnessTest : SweepBase() {
         val states = arrayListOf(signature())
         line(200f); states += signature()
         onUi { controller.selectTool(GreaseTool.RECTANGLE) }; drag(300f to 300f, 600f to 500f); onUi { controller.confirmShape() }; states += signature()
-        onUi { controller.selectAll(); controller.duplicateSelection() }; states += signature()
+        onUi { controller.selectAll() }; states += signature() // selecting is an undo step, as in Blender
+        onUi { controller.duplicateSelection() }; states += signature()
         onUi { controller.translateSelectedStroke(30f, 30f) }; states += signature()
         onUi { controller.createLayer("X") }; states += signature()
         onUi { controller.selectTool(GreaseTool.DRAW) }; line(650f); states += signature()

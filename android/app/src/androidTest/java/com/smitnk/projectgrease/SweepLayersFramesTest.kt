@@ -102,7 +102,7 @@ class SweepLayersFramesTest : SweepBase() {
         shot("layer_mask_inverted")
         assertEquals(1, onUi { controller.layerMasks(1).size })
         undoable("use mask off") { controller.setLayerUsesMask(false, 1) }
-        assertInk(shot("layer_mask_off"), 300f, 300f, "unmasked line")
+        assertTrue("unmasked red line visible", inkNear(shot("layer_mask_off"), 300f, 300f, 3) { Color.red(it) > 150 && Color.green(it) < 90 })
     }
 
     @Test fun layerMergeDown() {
@@ -148,6 +148,7 @@ class SweepLayersFramesTest : SweepBase() {
     @Test fun frameDelete() {
         line(300f) // frame 1 (the last keyframe of a layer is kept, as the Delete button does)
         onUi { controller.createFrame(4) }
+        assertEquals("keys before delete", listOf(1, 4), onUi { controller.frameNumbers() }.sorted())
         undoable("delete frame") { controller.deleteFrame(4) }
         assertTrue(4 !in onUi { controller.frameNumbers() }.toList())
         shot("frame_delete")
@@ -223,7 +224,13 @@ class SweepLayersFramesTest : SweepBase() {
         // Multiframe edits the keyframes selected in the timeline (GP_FRAME_SELECT), as in Blender.
         assertTrue(onUi { controller.selectTimelineFrame(1, S.FRAME_SELECT_SET) && controller.selectTimelineFrame(3, S.FRAME_SELECT_ADD) })
         onUi { controller.selectAll() }
-        assertTrue("both frames selected", onUi { controller.selectedPointCount() } >= points(strokes()[0]).size + points(strokes()[1]).size)
+        // An edit in multiframe mode reaches every selected keyframe: both strokes move.
+        val ys = { strokes().map { s -> points(s).map { it[1] }.average() } }
+        val before = ys()
+        assertTrue(onUi { controller.translateSelectedStroke(0f, 50f) })
+        val after = ys()
+        assertEquals("frame 1 moved", before[0] + 50.0, after[0], 1.0)
+        assertEquals("frame 3 moved", before[1] + 50.0, after[1], 1.0)
         shot("multiframe")
         onUi { controller.setMultiframeEditing(false) }
     }

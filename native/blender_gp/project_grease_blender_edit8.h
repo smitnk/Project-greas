@@ -28,6 +28,7 @@ enum {
   PG_DOC_Q_LAYER = 1,    /* args: layer -> [blend, tint r, g, b, factor, line_change, pass_index] */
   PG_DOC_Q_MATERIAL = 2, /* args: slot -> [mode, alignment, rotation, locked, hidden, pass_index] */
   PG_DOC_Q_ONION = 3,    /* -> [onion_keytype, loop, multiedit] */
+  PG_DOC_Q_SELECTED_STROKES = 4, /* -> indices of the active frame's strokes with GP_STROKE_SELECT */
 };
 int pg_gp_frame_set_keytype(struct bGPdata *gpd, struct bGPDlayer *active, int framenum, int key_type, int all_layers);
 int pg_gp_frame_select(struct bGPdata *gpd, struct bGPDlayer *active, int framenum, int mode, int all_layers);

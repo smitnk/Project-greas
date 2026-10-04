@@ -50,6 +50,20 @@ int main()
   CHECK(out[1] == BEZT_KEYTYPE_JITTER);
   const float bad[2] = {5, 9};
   CHECK(pg_gp_edit8_dispatch(gpd, a, PG_EDIT8_CMD_FRAME_KEYTYPE, bad, 2) == 0);
+  /* selected strokes of the active frame */
+  {
+    bGPDframe *f1 = static_cast<bGPDframe *>(a->frames.first);
+    a->actframe = f1;
+    for (int i = 0; i < 3; i++) {
+      bGPDstroke *gps = static_cast<bGPDstroke *>(MEM_callocN(sizeof(bGPDstroke), "s"));
+      if (i != 0) gps->flag |= GP_STROKE_SELECT;
+      BLI_addtail(&f1->strokes, gps);
+    }
+    n = pg_gp_doc_query(gpd, a, PG_DOC_Q_SELECTED_STROKES, nullptr, 0, out, 64);
+    CHECK(n == 2 && out[0] == 1 && out[1] == 2);
+    LISTBASE_FOREACH (bGPDstroke *, gps, &f1->strokes) gps->flag &= ~GP_STROKE_SELECT;
+    CHECK(pg_gp_doc_query(gpd, a, PG_DOC_Q_SELECTED_STROKES, nullptr, 0, out, 64) == 0);
+  }
   /* frame selection: set, toggle, add; deselect */
   const float s1[2] = {1, 0};
   CHECK(pg_gp_edit8_dispatch(gpd, a, PG_EDIT8_CMD_FRAME_SELECT, s1, 2) == 1);

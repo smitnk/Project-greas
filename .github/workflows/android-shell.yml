@@ -355,5 +355,6 @@ jobs:
             logcat_full.txt
             monkey.txt
             sweep_summary.txt
+            anr/
           if-no-files-found: warn
           retention-days: 14

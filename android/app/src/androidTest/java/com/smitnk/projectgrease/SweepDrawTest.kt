@@ -191,9 +191,23 @@ class SweepDrawTest : SweepBase() {
 
     private fun fillAt(name: String) {
         onUi { controller.selectMaterial(2); controller.setMaterialColor(0xFFFF0000.toInt()); controller.selectTool(GreaseTool.FILL) }
-        undoableGesture("fill $name") { tap(600f, 350f) }
+        val before = signature()
+        tap(600f, 350f)
+        fun diag(): String {
+            val s = strokes().lastOrNull() ?: return "no strokes"
+            val p = points(s)
+            return "last stroke: material ${s.optInt("material")} cyclic ${s.optBoolean("cyclic")} points ${p.size} " +
+                "x ${p.minOfOrNull { it[0] }}..${p.maxOfOrNull { it[0] }} y ${p.minOfOrNull { it[1] }}..${p.maxOfOrNull { it[1] }}; " +
+                "material 2 ${document().getJSONArray("materials").optJSONObject(2)}"
+        }
         val c = pixel(shot("fill_$name"), 600f, 350f)
-        assertTrue("$name: red inside ${Integer.toHexString(c)}", Color.red(c) > 180 && Color.green(c) < 90)
+        assertTrue("$name: red inside ${Integer.toHexString(c)}; ${diag()}", Color.red(c) > 180 && Color.green(c) < 90)
+        val after = signature()
+        assertTrue("fill $name changed the document", before != after)
+        assertTrue(onUi { controller.undo() }); assertEquals("fill $name: undo restores", before, signature())
+        assertTrue(onUi { controller.redo() }); assertEquals("fill $name: redo reapplies", after, signature())
+        val c2 = pixel(shot("fill_${name}_redo"), 600f, 350f)
+        assertTrue("$name after redo: red inside ${Integer.toHexString(c2)}; ${diag()}", Color.red(c2) > 180 && Color.green(c2) < 90)
     }
 
     @Test fun fillClosed() { box(); fillAt("closed"); assertEquals(2, strokes().size) }
@@ -277,7 +291,7 @@ class SweepDrawTest : SweepBase() {
         val bmp = shot("annotation")
         // The annotation line is thin and antialiased: bluish rather than pure blue.
         val bluish = { c: Int -> Color.blue(c) > Color.red(c) + 50 }
-        assertTrue("annotation drawn", inkNear(bmp, 600f, 600f, 8, bluish))
+        assertTrue("annotation drawn near (600,600); bluish pixels on the canvas: ${countPixels(bmp, 2, bluish)}", inkNear(bmp, 600f, 600f, 8, bluish))
         onUi { controller.setAnnotationsVisible(false) }
         assertTrue("annotation hidden", !inkNear(shot("annotation_hidden"), 600f, 600f, 8, bluish))
         onUi { controller.setAnnotationsVisible(true); controller.clearAnnotations() }

@@ -23,10 +23,13 @@ class SweepModsMaterialsTest : SweepBase() {
     private fun canvasPixels(): IntArray = onUi { controller.renderCanvasPixels(false) }!!
 
     /** Adds the modifier, checks it is live (render + persistence), then applies it. */
-    private fun modifier(type: Int, name: String, changesRender: Boolean, changesOnApply: Boolean) {
+    private fun modifier(type: Int, name: String, changesRender: Boolean, changesOnApply: Boolean,
+                         param: Pair<Int, Float>? = null) {
         scene()
         val plain = canvasPixels()
         undoable("add $name") { controller.addModifier(type) }
+        // Blender's defaults of some modifiers (factor 1) leave the strokes as they are.
+        param?.let { (i, v) -> undoable("$name param") { controller.setModifierParam(0, i, v) } }
         val mods = onUi { controller.modifiers() }
         assertEquals(1, mods.size); assertEquals(type, mods[0].type)
         val live = canvasPixels()
@@ -50,8 +53,8 @@ class SweepModsMaterialsTest : SweepBase() {
         shot("modifier_${name}_applied")
     }
 
-    @Test fun modThickness() = modifier(M.THICKNESS, "thickness", true, true)
-    @Test fun modOpacity() = modifier(M.OPACITY, "opacity", true, true)
+    @Test fun modThickness() = modifier(M.THICKNESS, "thickness", true, true, 2 to 3f)
+    @Test fun modOpacity() = modifier(M.OPACITY, "opacity", true, true, 1 to 0.3f)
     @Test fun modTint() = modifier(M.TINT, "tint", true, true)
     @Test fun modColor() = modifier(M.COLOR, "color", false, false)
     @Test fun modLength() = modifier(M.LENGTH, "length", true, true)

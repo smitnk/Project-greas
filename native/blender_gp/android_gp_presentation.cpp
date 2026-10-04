@@ -686,6 +686,67 @@ void draw_selection_overlay(const bGPDframe*frame,int w,int h){
   draw_vertices(unsel,dark);
   draw_vertices(sel,orange);
 }
+// Open-stroke cache: while a stroke is being drawn (the sbuffer is open) nothing else in the document
+// changes, so the committed drawing of the first frame of the gesture is kept in a texture and every
+// later frame of the gesture redraws only that texture and the open stroke. Blender's draw engine
+// does the same with its cached batches; without it each input sample re-tessellated and redrew
+// every stroke of the frame.
+struct OpenStrokeCache {
+  GLuint tex=0, program=0, vbo=0;
+  int w=0, h=0, frame=0;
+  const bGPdata* gpd=nullptr;
+  float scale=0, ox=0, oy=0;
+  bool valid=false;
+} g_open_cache;
+bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
+  const OpenStrokeCache& c=g_open_cache;
+  return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y;
+}
+bool open_cache_program(){
+  OpenStrokeCache& c=g_open_cache;
+  if(c.program)return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec2 a_position; varying vec2 v_uv; "
+      "void main(){v_uv=a_position*0.5+0.5;gl_Position=vec4(a_position,0.0,1.0);}");
+  GLuint fs=compile_shader(GL_FRAGMENT_SHADER,"precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; "
+      "void main(){gl_FragColor=vec4(texture2D(u_tex,v_uv).rgb,1.0);}");
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  GLuint p=glCreateProgram();glAttachShader(p,vs);glAttachShader(p,fs);
+  glBindAttribLocation(p,0,"a_position");glLinkProgram(p);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(p,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(p);return false;}
+  c.program=p;glGenBuffers(1,&c.vbo);
+  return c.vbo!=0;
+}
+// Copies the framebuffer as drawn so far (canvas and committed strokes) into the cache texture.
+void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
+  OpenStrokeCache& c=g_open_cache;
+  if(!c.tex)glGenTextures(1,&c.tex);
+  glBindTexture(GL_TEXTURE_2D,c.tex);
+  if(c.w!=w||c.h!=h){
+    // GL_RGB: a subset of both RGB and RGBA surfaces, as glCopyTexSubImage2D requires.
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,w,h,0,GL_RGB,GL_UNSIGNED_BYTE,nullptr);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+  }
+  glCopyTexSubImage2D(GL_TEXTURE_2D,0,0,0,0,0,w,h);
+  glBindTexture(GL_TEXTURE_2D,0);
+  c.valid=glGetError()==GL_NO_ERROR;
+  c.gpd=gpd;c.frame=frame;c.w=w;c.h=h;c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;
+}
+bool open_cache_draw(){
+  OpenStrokeCache& c=g_open_cache;
+  if(!open_cache_program())return false;
+  const float quad[12]={-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1};
+  glUseProgram(c.program);
+  glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,c.tex);
+  glUniform1i(glGetUniformLocation(c.program,"u_tex"),0);
+  glBindBuffer(GL_ARRAY_BUFFER,c.vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(quad),quad,GL_STREAM_DRAW);
+  glEnableVertexAttribArray(0);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,nullptr);
+  glDisable(GL_BLEND);
+  glDrawArrays(GL_TRIANGLES,0,6);
+  glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,0);glUseProgram(0);
+  return glGetError()==GL_NO_ERROR;
+}
 } // namespace
 
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
@@ -696,6 +757,10 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   glClear(GL_COLOR_BUFFER_BIT);
   g_stencil_fbo=-1;
   update_canvas_map(w,h);
+  const bool drawing=!g_export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
+  if(!drawing)g_open_cache.valid=false;
+  const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h)&&open_cache_draw();
+  if(!reuse){
   std::vector<Vertex> canvas;
   const float x0=g_map_origin_x, y0=g_map_origin_y;
   const float x1=x0+float(g_canvas_width)*g_map_scale, y1=y0+float(g_canvas_height)*g_map_scale;
@@ -817,6 +882,8 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     g_line_change=0.0f;
     g_active_mask_tex=0;
     if(g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
+  }
+  if(drawing)open_cache_store(gpd,frame_number,w,h);
   }
   // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
   // active guide in the theme's guide colour, over the canvas, not exported.

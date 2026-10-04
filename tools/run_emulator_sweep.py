@@ -116,6 +116,16 @@ def main():
     monkey = sh(f"adb shell monkey -p {PKG} -s {SEED} --throttle 50 --pct-syskeys 0 --pct-appswitch 0 "
                 f"--ignore-timeouts -v {EVENTS}", out="monkey.txt")
     sh("adb shell screencap -p /data/local/tmp/monkey_end.png && adb pull /data/local/tmp/monkey_end.png screenshots/monkey_end.png")
+    # ANR traces (google_apis images allow adb root): the app's main-thread stack goes to the log.
+    sh("adb root && sleep 2 && mkdir -p anr && adb pull /data/anr/. anr/")
+    anr_stacks = []
+    for name in sorted(os.listdir("anr")) if os.path.isdir("anr") else []:
+        text = open(os.path.join("anr", name), errors="replace").read()
+        if PKG not in text:
+            continue
+        m = re.search(r'"main".*?(?=\n\n)', text, re.S)
+        if m:
+            anr_stacks.append(f"  {name}:\n  " + m.group(0)[:3000].replace("\n", "\n  "))
     time.sleep(2)
     logcat.terminate()
     sh("adb logcat -d -s ProjectGrease:* TestRunner:* AndroidRuntime:* PGSweep:* DEBUG:*", out="logcat.txt")
@@ -147,6 +157,9 @@ def main():
     # crash details: fatal signal + abort message + the first frames of each tombstone backtrace
     for m in re.finditer(r"(Fatal signal.*|Abort message.*|FATAL EXCEPTION.*(?:\n.*AndroidRuntime.*){0,12})", log):
         lines.append("  " + m.group(1)[:400].replace("\n", "\n  "))
+    for m in re.finditer(r"ANR in " + re.escape(PKG) + r".*(?:\n.*ActivityManager.*){0,14}", log):
+        lines.append("  " + m.group(0)[:2000].replace("\n", "\n  "))
+    lines += anr_stacks[:3]
     for m in re.finditer(r"backtrace:\n((?:.*DEBUG.*#\d\d.*\n){1,12})", log):
         lines.append("  backtrace:\n" + m.group(1))
     summary = "\n".join(lines)

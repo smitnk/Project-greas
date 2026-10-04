@@ -1055,6 +1055,12 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
 }
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
+extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy){
+  update_canvas_map(w,h);
+  if(scale)*scale=g_map_scale;
+  if(ox)*ox=g_map_origin_x;
+  if(oy)*oy=g_map_origin_y;
+}
 extern "C" void project_grease_android_present_set_export_background(float r,float g,float b){
   g_export_background[0]=std::clamp(r,0.0f,1.0f);g_export_background[1]=std::clamp(g,0.0f,1.0f);
   g_export_background[2]=std::clamp(b,0.0f,1.0f);g_export_background[3]=1.0f;

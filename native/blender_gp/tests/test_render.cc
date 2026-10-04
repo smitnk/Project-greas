@@ -1003,6 +1003,29 @@ static void test_open_stroke_cache()
   CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
 }
 
+extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
+/* Annotations draw over the document in their layer colour. */
+static void test_annotations()
+{
+  Doc d = make_doc();
+  add_layer(d, "A");
+  bGPdata *annot = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "annot"));
+  bGPDlayer *al = BKE_gpencil_layer_addnew(annot, "Note", true, false);
+  al->thickness = 4;
+  al->color[0] = 0.0f; al->color[1] = 0.6f; al->color[2] = 1.0f; al->color[3] = 1.0f;
+  bGPDframe *af = BKE_gpencil_frame_addnew(al, 1);
+  bGPDstroke *s = BKE_gpencil_stroke_add(af, 0, 2, 4, false);
+  s->points[0].x = 20; s->points[1].x = 180;
+  s->points[0].y = s->points[1].y = 60;
+  s->points[0].pressure = s->points[1].pressure = 1.0f;
+  glViewport(0, 0, W, H);
+  CHECK(project_grease_android_present_gp_document(d.gpd, 1) == 1);
+  CHECK(project_grease_android_present_annotations(annot, 1) == 1);
+  read_back();
+  const Rgba c = pixel_at_canvas(100, 60);
+  CHECK(c.b > 200 && c.r < 60);
+}
+
 int main()
 {
   if (!init_gl()) {
@@ -1040,6 +1063,7 @@ int main()
   test_batch21_onion_filter_loop();
   test_batch21_guide();
   test_open_stroke_cache();
+  test_annotations();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

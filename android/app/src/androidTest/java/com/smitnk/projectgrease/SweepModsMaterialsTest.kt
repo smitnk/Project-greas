@@ -151,8 +151,9 @@ class SweepModsMaterialsTest : SweepBase() {
     }
 
     @Test fun materialNameOrderLockHideSolo() {
-        onUi { controller.selectMaterial(1) }; line(300f)
-        onUi { controller.selectMaterial(2) }; line(500f)
+        // both slots black: the template's slot 1 is White, invisible on the canvas
+        onUi { controller.selectMaterial(1); controller.setMaterialColor(0xFF000000.toInt()) }; line(300f)
+        onUi { controller.selectMaterial(2); controller.setMaterialColor(0xFF000000.toInt()) }; line(500f)
         undoable("rename material") { controller.renameMaterial(1, "Ink") }
         assertEquals("Ink", onUi { controller.materialName(1) })
         undoable("move material") { controller.moveMaterial(1, 1) }

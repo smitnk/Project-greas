@@ -75,7 +75,8 @@ class SweepPaintTest : SweepBase() {
         onUi { controller.setWeightPaintBrush(brush) }
         undoableGesture("wpaint $name") { drag(450f to 300f, 900f to 300f) }
         assertTrue("$name weights", weights() > 0)
-        assertTrue("weight view red", inkNear(shot("wpaint_$name"), 400f, 300f, 4) { Color.red(it) > 150 && Color.blue(it) < 120 })
+        val bmp = shot("wpaint_$name")
+        assertTrue("weight view red: ${colorsNear(bmp, 700f, 300f, 6)}", inkNear(bmp, 700f, 300f, 4) { Color.red(it) > 150 && Color.blue(it) < 120 })
     }
 
     @Test fun weightPaintDraw() = wpaint(ToolSession.GPWEIGHT_DRAW, "draw")
@@ -94,6 +95,7 @@ class SweepPaintTest : SweepBase() {
         onUi { controller.deselectAll() }
         assertTrue(onUi { controller.selectGroupPoints() }); assertEquals(onUi { controller.pointCount() }, onUi { controller.selectedPointCount() })
         assertTrue(onUi { controller.deselectGroupPoints() }); assertEquals(0, onUi { controller.selectedPointCount() })
+        onUi { controller.selectAll() } // the group operators act on the selected strokes
         undoable("vg invert") { controller.invertGroupWeights() }
         undoable("vg normalize") { controller.normalizeGroupWeights() }
         onUi { controller.selectAll() }

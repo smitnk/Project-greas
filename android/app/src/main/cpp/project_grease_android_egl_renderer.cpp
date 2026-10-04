@@ -30,6 +30,7 @@ extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy);
 extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
@@ -618,6 +619,9 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
     rgba[i] = static_cast<float>(pixels[i]) / 255.0f;
   }
 
+  float map_scale = 1.0f, map_ox = 0.0f, map_oy = 0.0f;
+  project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy);
+  project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy);
   const bool filled = project_grease_gp_fill_at_screen(
       renderer->gp_handle,
       rgba.data(),

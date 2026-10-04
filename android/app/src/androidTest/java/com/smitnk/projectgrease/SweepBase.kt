@@ -263,5 +263,17 @@ abstract class SweepBase {
         return n
     }
 
+    /** The most frequent colours within [r] screen px of a canvas point (failure diagnostics). */
+    protected fun colorsNear(bmp: Bitmap, cx: Float, cy: Float, r: Int = 20): String {
+        val p = screen(cx, cy)
+        val hist = HashMap<Int, Int>()
+        for (dy in -r..r) for (dx in -r..r) {
+            val x = p.first.toInt() + dx; val y = p.second.toInt() + dy
+            if (x in 0 until bmp.width && y in 0 until bmp.height) hist.merge(bmp.getPixel(x, y), 1, Int::plus)
+        }
+        return "screen ${p.first.toInt()},${p.second.toInt()}: " +
+            hist.entries.sortedByDescending { it.value }.take(5).joinToString { "#" + Integer.toHexString(it.key) + "x" + it.value }
+    }
+
     protected fun selectAllStrokes() = onUi { controller.selectAll() }
 }

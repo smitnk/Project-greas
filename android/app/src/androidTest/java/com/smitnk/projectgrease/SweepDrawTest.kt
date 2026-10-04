@@ -291,7 +291,7 @@ class SweepDrawTest : SweepBase() {
         val bmp = shot("annotation")
         // The annotation line is thin and antialiased: bluish rather than pure blue.
         val bluish = { c: Int -> Color.blue(c) > Color.red(c) + 50 }
-        assertTrue("annotation drawn near (600,600); bluish pixels on the canvas: ${countPixels(bmp, 2, bluish)}", inkNear(bmp, 600f, 600f, 8, bluish))
+        assertTrue("annotation drawn near (600,600); bluish pixels on the canvas: ${countPixels(bmp, 2, bluish)}; ${colorsNear(bmp, 600f, 600f)}; annotation style ${onUi { controller.annotationStyle().toList() }}", inkNear(bmp, 600f, 600f, 8, bluish))
         onUi { controller.setAnnotationsVisible(false) }
         assertTrue("annotation hidden", !inkNear(shot("annotation_hidden"), 600f, 600f, 8, bluish))
         onUi { controller.setAnnotationsVisible(true); controller.clearAnnotations() }

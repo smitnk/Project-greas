@@ -137,7 +137,8 @@ class SweepEditTest : SweepBase() {
         onUi { controller.selectTool(GreaseTool.MIRROR) }
         undoableGesture("mirror") { drag(600f to 250f, 600f to 500f) } // press on the stroke, drag vertically
         // A vertical drag reflects across the stroke's horizontal centre line: y 300 <-> 200.
-        assertEquals("mirrored y", 200.0, points(strokes()[0])[0][1], 3.0)
+        // about the median of the stroke's points (Blender's transform pivot), close to y 250
+        assertEquals("mirrored y", 200.0, points(strokes()[0])[0][1], 10.0)
         shot("transform_mirror"); assertTrue(first > 0)
     }
 
@@ -248,8 +249,14 @@ class SweepEditTest : SweepBase() {
         undoable("vcolor_reset") { controller.resetSelectionVertexColor() }
         shot("op_vertex_color")
     }
-    @Test fun opFillSelected() = op("fill_selected", setup = {
+    @Test fun opFillSelected() {
         drag(300f to 200f, 900f to 200f, 900f to 500f, 300f to 500f, 300f to 200f)
         onUi { controller.selectStroke(0); controller.selectAll(); controller.setSelectionCyclic(S.CYCLIC_CLOSE); controller.selectStroke(0) }
-    }) { controller.fillSelectedStroke() }
+        // BKE_gpencil_stroke_fill_triangulate builds the fill triangles (runtime data, not saved):
+        // checked on screen with the material's fill switched on.
+        assertTrue("fill selected applied", onUi { controller.fillSelectedStroke() })
+        onUi { controller.selectMaterial(0); controller.setMaterialFillEnabled(true) }
+        val bmp = shot("op_fill_selected")
+        assertTrue("filled inside: ${colorsNear(bmp, 600f, 350f, 4)}", inkNear(bmp, 600f, 350f, 3))
+    }
 }

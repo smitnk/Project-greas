@@ -1012,6 +1012,11 @@ int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index)
 }
 
 
+void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float scale, float origin_x, float origin_y)
+{
+  if (handle) handle->backend.set_fill_screen_map(scale, origin_x, origin_y);
+}
+
 int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      const float *rgba,
                                      int width,

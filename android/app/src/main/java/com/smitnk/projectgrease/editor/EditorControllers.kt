@@ -1412,6 +1412,7 @@ class EditorController {
             textureImages[key] = Triple(argb, width, height)
             if (rendererHandle != 0L) GPNative.nativeSetMaterialTextureEglRenderer(rendererHandle, slot, fill, argb, width, height)
         }
+        history.markEdit()
         document.markDirty()
         render()
         return true

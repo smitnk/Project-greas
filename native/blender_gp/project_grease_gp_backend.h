@@ -268,6 +268,9 @@ class Backend {
   // stroke using BKE_gpencil_stroke_fill_triangulate().
   bool fill_stroke(int index);
   // Real Blender 3.6.23 fill boundary extraction fed by Android's rendered mask.
+  // Screen-pixel to canvas mapping of the image fill_at_screen() reads (the presenter's canvas map:
+  // screen = origin + canvas * scale, y down). Identity until set.
+  void set_fill_screen_map(float scale, float origin_x, float origin_y);
   bool fill_at_screen(const float* rgba,
                       int width,
                       int height,

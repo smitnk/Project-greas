@@ -252,6 +252,7 @@ struct Backend::Impl {
   bool stroke_open = false;
 
   std::vector<HistorySnapshot *> undo_history;
+  float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
   std::vector<HistorySnapshot *> redo_history;
 
   // Live modifier stacks: stacks[i] belongs to the i-th layer of gpd->layers. They are document
@@ -1379,10 +1380,9 @@ bool Backend::delete_frame(int frame_number)
     impl_->last_error = "frame number not found";
     return false;
   }
-  if (!BKE_gpencil_layer_frame_delete(impl_->layer, target)) {
-    impl_->last_error = "BKE_gpencil_layer_frame_delete() failed";
-    return false;
-  }
+  // BKE_gpencil_layer_frame_delete() returns whether strokes were freed, not whether the frame
+  // went away: an empty keyframe is deleted too, so its result is not a failure.
+  BKE_gpencil_layer_frame_delete(impl_->layer, target);
   impl_->frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
   impl_->layer->actframe = impl_->frame;
   impl_->frame_created = impl_->frame != nullptr;
@@ -3453,7 +3453,15 @@ bool Backend::render_with_gpu_context()
   ob->data = impl_->gpd;
 #endif
 
+#ifdef __ANDROID__
+  // While a stroke is open (sbuffer in use) nothing committed changes, and the Android presenter
+  // never draws from this batch: rebuilding and freeing Blender's whole-frame batch cache on every
+  // input sample made drawing over a full frame cost ~150 ms per sample on the emulator.
+  const bool stroke_open = impl_->gpd->runtime.sbuffer && impl_->gpd->runtime.sbuffer_used > 0;
+  GPUBatch *batch = stroke_open ? nullptr : DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+#else
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+#endif
   const bool cache_ready = batch != nullptr;
 #ifdef __ANDROID__
   // Android presentation is the focused Project Grease renderer. It must not
@@ -4718,6 +4726,13 @@ bool Backend::fill_stroke(int index)
 }
 
 
+void Backend::set_fill_screen_map(float scale, float origin_x, float origin_y)
+{
+  impl_->fill_map_scale = scale;
+  impl_->fill_map_origin_x = origin_x;
+  impl_->fill_map_origin_y = origin_y;
+}
+
 bool Backend::fill_at_screen(const float* rgba,
                              int width,
                              int height,
@@ -4757,11 +4772,14 @@ bool Backend::fill_at_screen(const float* rgba,
     return false;
   }
 
+  // The outline is in screen pixels of the rendered view: back to canvas units, as Blender's fill
+  // unprojects its 2D boundary (gpencil_points_from_stack -> gpencil_stroke_convertcoords_tpoint).
+  const float map_scale = impl_->fill_map_scale > 1e-6f ? impl_->fill_map_scale : 1.0f;
   std::vector<StrokePoint> points;
   points.reserve(result.outline.size());
   for (const legacy_gp_fill::Point& p : result.outline) {
-    points.push_back({p.x,
-                      static_cast<float>(height) - p.y,
+    points.push_back({(p.x - impl_->fill_map_origin_x) / map_scale,
+                      (static_cast<float>(height) - p.y - impl_->fill_map_origin_y) / map_scale,
                       0.0f,
                       1.0f,
                       1.0f,

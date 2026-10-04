@@ -4,6 +4,12 @@
 #include <vector>
 
 #include <GLES2/gl2.h>
+#if defined(__has_include)
+#if __has_include(<android/log.h>)
+#include <android/log.h>
+#define PG_HAVE_ANDROID_LOG 1
+#endif
+#endif
 
 #include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
@@ -698,6 +704,7 @@ struct OpenStrokeCache {
   float scale=0, ox=0, oy=0;
   bool valid=false;
 } g_open_cache;
+long g_open_cache_stores=0, g_open_cache_reuses=0;
 bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
   const OpenStrokeCache& c=g_open_cache;
   return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y;
@@ -717,9 +724,14 @@ bool open_cache_program(){
   c.program=p;glGenBuffers(1,&c.vbo);
   return c.vbo!=0;
 }
+// Clears GL's sticky error flags, so a check after a call reports that call only: an error left
+// by an earlier, unrelated draw call otherwise marked every store / reuse as failed and each input
+// sample of the open stroke redrew the whole frame.
+void clear_gl_errors(){for(int i=0;i<16&&glGetError()!=GL_NO_ERROR;i++){}}
 // Copies the framebuffer as drawn so far (canvas and committed strokes) into the cache texture.
 void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
   OpenStrokeCache& c=g_open_cache;
+  clear_gl_errors();
   if(!c.tex)glGenTextures(1,&c.tex);
   glBindTexture(GL_TEXTURE_2D,c.tex);
   if(c.w!=w||c.h!=h){
@@ -731,11 +743,13 @@ void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
   glCopyTexSubImage2D(GL_TEXTURE_2D,0,0,0,0,0,w,h);
   glBindTexture(GL_TEXTURE_2D,0);
   c.valid=glGetError()==GL_NO_ERROR;
+  if(c.valid)g_open_cache_stores++;
   c.gpd=gpd;c.frame=frame;c.w=w;c.h=h;c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;
 }
 bool open_cache_draw(){
   OpenStrokeCache& c=g_open_cache;
   if(!open_cache_program())return false;
+  clear_gl_errors();
   const float quad[12]={-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1};
   glUseProgram(c.program);
   glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,c.tex);
@@ -749,6 +763,11 @@ bool open_cache_draw(){
 }
 } // namespace
 
+extern "C" void project_grease_android_present_cache_stats(long* stores,long* reuses){
+  if(stores)*stores=g_open_cache_stores;
+  if(reuses)*reuses=g_open_cache_reuses;
+}
+
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
@@ -760,6 +779,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   const bool drawing=!g_export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
   if(!drawing)g_open_cache.valid=false;
   const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h)&&open_cache_draw();
+  if(reuse)g_open_cache_reuses++;
   if(!reuse){
   std::vector<Vertex> canvas;
   const float x0=g_map_origin_x, y0=g_map_origin_y;
@@ -1009,8 +1029,20 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
     for(int i=0;i<s->totpoints;i++)pts.push_back(outline_point(s->points[i].x,s->points[i].y,px));
     append_outline(v,pts,0,w,h);
   }
+  clear_gl_errors(); // an earlier pass's error is not this draw's
   draw_vertices(v,layer->color);
-  return glGetError()==GL_NO_ERROR?1:0;
+  const GLenum err=glGetError();
+#ifdef PG_HAVE_ANDROID_LOG
+  // Evidence for the emulator sweep: what the annotation pass drew, once per change of the count.
+  static size_t last_logged=size_t(-1);
+  if(v.size()!=last_logged){
+    last_logged=v.size();
+    int strokes=0;for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next)strokes++;
+    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d strokes=%d verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
+        frame_number,strokes,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
+  }
+#endif
+  return err==GL_NO_ERROR?1:0;
 }
 
 extern "C" int project_grease_android_present_gp_frame(const bGPDframe*frame){

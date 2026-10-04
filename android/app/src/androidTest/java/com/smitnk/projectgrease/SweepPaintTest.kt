@@ -76,7 +76,15 @@ class SweepPaintTest : SweepBase() {
         undoableGesture("wpaint $name") { drag(450f to 300f, 900f to 300f) }
         assertTrue("$name weights", weights() > 0)
         val bmp = shot("wpaint_$name")
-        assertTrue("weight view red: ${colorsNear(bmp, 700f, 300f, 6)}", inkNear(bmp, 700f, 300f, 4) { Color.red(it) > 150 && Color.blue(it) < 120 })
+        if (brush == ToolSession.GPWEIGHT_DRAW) {
+            assertTrue("weight view red: ${colorsNear(bmp, 700f, 300f, 6)}", inkNear(bmp, 700f, 300f, 4) { Color.red(it) > 150 && Color.blue(it) < 120 })
+        } else {
+            // Blur / Average / Smear only move the existing weights (Blender's brushes never raise them
+            // past their neighbours): the painted part stays red and weight spreads into the unpainted
+            // part, which is no longer pure blue (weight 0) on the weight ramp.
+            assertTrue("painted part red: ${colorsNear(bmp, 350f, 300f, 6)}", inkNear(bmp, 350f, 300f, 4) { Color.red(it) > 150 && Color.blue(it) < 120 })
+            assertTrue("weight spread past the paint: ${colorsNear(bmp, 700f, 300f, 6)}", inkNear(bmp, 700f, 300f, 4) { Color.green(it) > 60 && Color.red(it) < 240 })
+        }
     }
 
     @Test fun weightPaintDraw() = wpaint(ToolSession.GPWEIGHT_DRAW, "draw")

@@ -1,4 +1,10 @@
 #include "project_grease_gp_backend.h"
+#if defined(__has_include)
+#if __has_include(<android/log.h>)
+#include <android/log.h>
+#define PG_HAVE_ANDROID_LOG 1
+#endif
+#endif
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_annotations.h"
@@ -3486,8 +3492,15 @@ bool Backend::render_with_gpu_context()
   bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
   // Annotations are drawn over every layer, in screen-space thickness.
-  if (presented && impl_->annotations && impl_->annotations_visible) {
-    presented = project_grease_android_present_annotations(impl_->annotations, impl_->frame->framenum) != 0;
+  if (impl_->annotations && impl_->annotations_visible) {
+    if (!presented) {
+#ifdef PG_HAVE_ANDROID_LOG
+      __android_log_print(ANDROID_LOG_WARN, "ProjectGrease", "annotpass skipped: document pass failed");
+#endif
+    }
+    else {
+      presented = project_grease_android_present_annotations(impl_->annotations, impl_->frame->framenum) != 0;
+    }
   }
   project_grease_android_set_frame_evaluator(nullptr, nullptr);
   project_grease_android_set_fx_provider(nullptr, nullptr);

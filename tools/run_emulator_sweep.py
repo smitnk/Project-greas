@@ -129,7 +129,7 @@ def main():
     anr_stacks = []
     for name in sorted(os.listdir("anr")) if os.path.isdir("anr") else []:
         text = open(os.path.join("anr", name), errors="replace").read()
-        if PKG not in text:
+        if f"Cmd line: {PKG}" not in text:  # only the app's own ANR traces, not systemui's
             continue
         m = re.search(r'"main".*?(?=\n\n)', text, re.S)
         if m:
@@ -146,8 +146,12 @@ def main():
     for (c, t), (code, stack) in failed:
         first = "\n      ".join(stack.splitlines()[:4])
         lines.append(f"FAIL {c.split('.')[-1]}.{t} (code {code}): {first}")
+    lines.append("== annotation pass ==")
+    lines += re.findall(r"annotpass .*", log)[:12]
     lines.append("== frame time ==")
     lines += re.findall(r"FRAMETIME .*", log)
+    # native input-path timing of the long gestures (the timed strokes): tool vs. redraw per batch
+    lines += [m for m in re.findall(r"toolstats .*", log) if int(re.search(r"batches=(\d+)", m).group(1)) >= 300]
     injected = re.findall(r"Events injected: (\d+)", monkey)
     app_crash = re.findall(r"// CRASH: " + re.escape(PKG) + r".*", monkey)
     app_anr = re.findall(r"// NOT RESPONDING: " + re.escape(PKG) + r".*", monkey)

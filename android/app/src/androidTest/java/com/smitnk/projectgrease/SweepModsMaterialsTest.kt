@@ -184,11 +184,16 @@ class SweepModsMaterialsTest : SweepBase() {
         onUi { controller.brushes.setSize(60f) }; line(300f)
         val w = 8; val h = 8
         val checker = IntArray(w * h) { i -> if (((i % w) + (i / w)) % 2 == 0) 0xFFFF0000.toInt() else 0xFF0000FF.toInt() }
-        val tex = MaterialTexture(uri = "test://checker", enabled = true, mix = 1f, scaleX = 1f, scaleY = 1f, pixelSize = 20f)
+        // mix_stroke_factor 0 = the texture only (gpencil_frag.glsl: texture * (1 - mix) + colour * mix)
+        val tex = MaterialTexture(uri = "test://checker", enabled = true, mix = 0f, scaleX = 1f, scaleY = 1f, pixelSize = 20f)
         undoable("stroke texture") { controller.setMaterialTexture(0, false, tex, checker, w, h) }
         assertTrue(onUi { controller.materialTexture(0, false) }.enabled)
         val bmp = shot("material_texture")
-        assertTrue("textured stroke red/blue", inkNear(bmp, 600f, 300f, 12) { Color.red(it) > 150 || Color.blue(it) > 150 })
+        assertTrue("textured stroke red/blue: ${colorsNear(bmp, 600f, 300f, 12)}", inkNear(bmp, 600f, 300f, 12) { Color.red(it) > 150 || Color.blue(it) > 150 })
+        // mix 1 = the material colour (black) over the texture
+        undoable("stroke texture mix") { controller.setMaterialTexture(0, false, tex.copy(mix = 1f), checker, w, h) }
+        val mixed = shot("material_texture_mix1")
+        assertTrue("mix 1 shows the black material colour: ${colorsNear(mixed, 600f, 300f, 12)}", !inkNear(mixed, 600f, 300f, 12) { Color.red(it) > 150 || Color.blue(it) > 150 })
     }
 
     @Test fun materialDelete() {

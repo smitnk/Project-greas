@@ -213,8 +213,16 @@ class SweepDrawTest : SweepBase() {
     @Test fun fillClosed() { box(); fillAt("closed"); assertEquals(2, strokes().size) }
 
     @Test fun fillLeakGap() {
+        // Blender's leak test (is_leak_narrow) samples the boundary exactly leak-1 px either side
+        // across the flood direction, so it closes a gap in a straight wall: right wall broken
+        // between y 330 and 350.
         line(200f, 300f, 900f); line(500f, 300f, 900f)
-        drag(300f to 200f, 300f to 500f); drag(900f to 200f, 900f to 480f) // 20 unit gap at the bottom right
+        drag(300f to 200f, 300f to 500f); drag(900f to 200f, 900f to 330f); drag(900f to 350f, 900f to 500f)
+        // control: with a 1 px leak size the fill runs out through the gap and nothing is added
+        onUi { controller.selectTool(GreaseTool.FILL); controller.setFillOptions(leak = 1) }
+        val open = signature()
+        tap(600f, 350f)
+        assertEquals("leak 1: fill escapes through the gap", open, signature())
         onUi { controller.setFillOptions(leak = 30) }
         fillAt("leak_gap")
     }

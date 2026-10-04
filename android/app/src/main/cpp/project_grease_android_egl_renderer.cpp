@@ -3,12 +3,14 @@
 #include <iterator>
 #include <jni.h>
 
+#include <android/log.h>
 #include <android/native_window_jni.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <GLES3/gl3.h>
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -32,6 +34,7 @@ extern "C" int project_grease_android_present_set_material_texture(int slot, int
 extern "C" void project_grease_android_present_set_export_mode(int mode);
 extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy);
 extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
+extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" int project_grease_android_present_pending_stroke(
@@ -861,10 +864,31 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeToolSamples(
   if (length > 0) env->GetFloatArrayRegion(samples, 0, length, data.data());
   const float *params = length > sample_floats ? data.data() + sample_floats : nullptr;
   const int param_count = static_cast<int>(length - sample_floats);
+  using clock = std::chrono::steady_clock;
+  const auto t0 = clock::now();
   const int result = project_grease_gp_tool_samples(
       renderer->gp_handle, tool, data.data(), count, phase, params, param_count);
-  if (result != 0 && (result & 2 /* PG_TOOL_RESULT_CHANGED */) != 0) {
+  const auto t1 = clock::now();
+  const bool rendered = result != 0 && (result & 2 /* PG_TOOL_RESULT_CHANGED */) != 0;
+  if (rendered) {
     render_now(renderer);
+  }
+  // Per-gesture timing of the input path (tool vs. redraw) and the open-stroke cache hits, for
+  // the frame-time evidence of the emulator sweep.
+  static double tool_ms = 0, render_ms = 0;
+  static int batches = 0, renders = 0;
+  tool_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+  if (rendered) { render_ms += std::chrono::duration<double, std::milli>(clock::now() - t1).count(); renders++; }
+  batches++;
+  if (phase == 2 /* END */ || phase == 3 /* CANCEL */) {
+    long stores = 0, reuses = 0;
+    project_grease_android_present_cache_stats(&stores, &reuses);
+    if (batches >= 50) {
+      __android_log_print(ANDROID_LOG_INFO, "ProjectGrease",
+          "toolstats tool=%d batches=%d tool_ms_avg=%.2f renders=%d render_ms_avg=%.2f cache_stores=%ld cache_reuses=%ld",
+          tool, batches, tool_ms / batches, renders, renders ? render_ms / renders : 0.0, stores, reuses);
+    }
+    tool_ms = render_ms = 0; batches = renders = 0;
   }
   return result;
 }

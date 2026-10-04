@@ -1033,16 +1033,18 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
   draw_vertices(v,layer->color);
   const GLenum err=glGetError();
 #ifdef PG_HAVE_ANDROID_LOG
-  // Evidence for the emulator sweep: what the annotation pass drew, once per change of the count.
-  static size_t last_logged=size_t(-1);
-  if(v.size()!=last_logged){
-    last_logged=v.size();
-    int strokes=0;for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next)strokes++;
-    const bGPDstroke*first=static_cast<const bGPDstroke*>(frame->strokes.first);
-    const int np=first?first->totpoints:0;
-    const float fx=np?first->points[0].x:0, fy=np?first->points[0].y:0, lx=np?first->points[np-1].x:0, ly=np?first->points[np-1].y:0;
-    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d strokes=%d points=%d first=(%.1f,%.1f) last=(%.1f,%.1f) verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
-        frame_number,strokes,np,fx,fy,lx,ly,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
+  // Evidence for the emulator sweep: what the annotation pass drew, whenever that changes.
+  int strokes=0; long points=0;
+  for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){strokes++;points+=s->totpoints;}
+  static long last_key=-1;
+  const long key=((long(frame_number)*1000+strokes)*1000000+points)*7+long(v.size()%7)+long(v.size())*1000003L;
+  if(key!=last_key){
+    last_key=key;
+    const bGPDstroke*last=static_cast<const bGPDstroke*>(frame->strokes.last);
+    const int np=last?last->totpoints:0;
+    const float fx=np?last->points[0].x:0, fy=np?last->points[0].y:0, lx=np?last->points[np-1].x:0, ly=np?last->points[np-1].y:0;
+    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d/%d strokes=%d points=%ld last_stroke_points=%d first=(%.1f,%.1f) last=(%.1f,%.1f) verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
+        frame_number,frame->framenum,strokes,points,np,fx,fy,lx,ly,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
   }
 #endif
   return err==GL_NO_ERROR?1:0;

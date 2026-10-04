@@ -112,7 +112,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         if (uri == null) return@rememberLauncherForActivityResult
         val w = controller.document.canvasWidth
         val h = controller.document.canvasHeight
-        val pixels = controller.renderCanvasPixels(transparent)
+        val pixels = controller.exportCanvasPixels(transparent)
         val ok = pixels != null && writePng(context, uri, pixels, w, h)
         toast(if (ok) "Exported PNG ${w}×$h" else "PNG export failed")
         if (ok) onDismiss()

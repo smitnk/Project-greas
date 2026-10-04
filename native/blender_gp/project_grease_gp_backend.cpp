@@ -173,6 +173,34 @@ static void gp_materials_free(bGPdata *gpd)
   gpd->totcol = 0;
 }
 
+/* Deep copy of a material slot array: undo snapshots own their materials (Blender's memfile undo
+ * restores Material datablocks too), so a colour/fill/line-type edit is undone and a slot freed by
+ * Delete Material never leaves a snapshot pointing at freed memory. */
+static Material **gp_materials_duplicate(Material *const *source, int count)
+{
+  if (!source || count <= 0) {
+    return nullptr;
+  }
+  Material **out = static_cast<Material **>(MEM_callocN(sizeof(Material *) * count, "PG history materials"));
+  if (!out) {
+    return nullptr;
+  }
+  for (int i = 0; i < count; ++i) {
+    if (!source[i]) {
+      continue;
+    }
+    Material *ma = static_cast<Material *>(MEM_dupallocN(source[i]));
+    if (!ma) {
+      continue;
+    }
+    ma->gp_style = source[i]->gp_style ?
+                       static_cast<MaterialGPencilStyle *>(MEM_dupallocN(source[i]->gp_style)) :
+                       nullptr;
+    out[i] = ma;
+  }
+  return out;
+}
+
 using ModifierStacks = std::vector<std::vector<PGModEntry>>;
 using FxStacks = std::vector<std::vector<PGFxEntry>>;
 
@@ -378,7 +406,7 @@ static void history_snapshot_free(HistorySnapshot *snapshot)
   if (snapshot->data) {
     BKE_gpencil_free_layers(&snapshot->data->layers);
     BLI_freelistN(&snapshot->data->vertex_group_names);
-    MEM_SAFE_FREE(snapshot->data->mat);
+    gp_materials_free(snapshot->data);
     MEM_freeN(snapshot->data);
   }
   delete snapshot;
@@ -407,8 +435,9 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   BLI_listbase_clear(&destination->vertex_group_names);
   BKE_defgroup_copy_list(&destination->vertex_group_names, &source->vertex_group_names);
 
-  if (source->mat) {
-    destination->mat = static_cast<Material **>(MEM_dupallocN(source->mat));
+  destination->mat = gp_materials_duplicate(source->mat, source->totcol);
+  if (!destination->mat) {
+    destination->totcol = 0;
   }
 
   // Do not shallow-copy the source list nodes.
@@ -419,7 +448,7 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
     if (!destination_layer) {
       BLI_freelistN(&destination->vertex_group_names);
       BKE_gpencil_free_layers(&destination->layers);
-      MEM_SAFE_FREE(destination->mat);
+      gp_materials_free(destination);
       MEM_freeN(destination);
       return nullptr;
     }
@@ -496,11 +525,11 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   std::memset(&restored->runtime, 0, sizeof(restored->runtime));
 
   BKE_gpencil_free_layers(&impl->gpd->layers);
-  MEM_SAFE_FREE(impl->gpd->mat);
+  gp_materials_free(impl->gpd);
   BLI_listbase_clear(&impl->gpd->layers);
-  impl->gpd->mat = nullptr;
 
   history_copy_settings(snapshot->data, impl->gpd);
+  impl->gpd->totcol = restored->mat ? restored->totcol : 0;
   BLI_freelistN(&impl->gpd->vertex_group_names);
   impl->gpd->vertex_group_names = restored->vertex_group_names;
   BLI_listbase_clear(&restored->vertex_group_names);
@@ -936,6 +965,8 @@ bool Backend::select_layer(int index) {
        layer = layer->next, ++current) {
     if (current == index) {
       impl_->layer = layer;
+      // The active layer is document state (GP_LAYER_ACTIVE): undo/redo restore it from the flag.
+      BKE_gpencil_layer_active_set(impl_->gpd, layer);
       impl_->frame = nullptr;
       impl_->stroke = nullptr;
       impl_->layer_created = true;

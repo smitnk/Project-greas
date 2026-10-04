@@ -57,6 +57,8 @@ float g_fill_extend=0.0f;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
 // open sbuffer are not part of an export.
 int g_export_mode=0;
+/* Background of opaque exports (export mode 1): the project settings' background colour. */
+float g_export_background[4]={0.96f,0.96f,0.96f,1.0f};
 // Edit-mode overlay: the points of the editable strokes (Blender's edit-mode vertices), selected
 // points in the theme's vertex-select orange.
 int g_selection_overlay=0;
@@ -702,7 +704,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
   });
   const float canvas_color[4]={0.96f,0.96f,0.96f,1.0f};
-  if(g_export_mode!=2)draw_vertices(canvas,canvas_color,false);
+  if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:canvas_color,false);
   (void)x0; (void)y0; (void)x1; (void)y1;
   for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
     if(layer->flag&GP_LAYER_HIDE)continue;
@@ -986,6 +988,10 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
 }
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
+extern "C" void project_grease_android_present_set_export_background(float r,float g,float b){
+  g_export_background[0]=std::clamp(r,0.0f,1.0f);g_export_background[1]=std::clamp(g,0.0f,1.0f);
+  g_export_background[2]=std::clamp(b,0.0f,1.0f);g_export_background[3]=1.0f;
+}
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled){g_selection_overlay=enabled!=0;}
 extern "C" void project_grease_android_present_get_view_transform(float*zoom,float*pan_x,float*pan_y){
   if(zoom)*zoom=g_view_zoom;if(pan_x)*pan_x=g_view_pan_x;if(pan_y)*pan_y=g_view_pan_y;}

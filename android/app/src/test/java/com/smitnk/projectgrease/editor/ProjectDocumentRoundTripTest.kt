@@ -259,6 +259,21 @@ class ProjectDocumentRoundTripTest {
     }
 
     @Test
+    fun strokeCapsSurviveARoundTrip() {
+        val doc = FakeDocument().apply {
+            createFrame(1)
+            addStroke(StrokeRecord(listOf(FloatArray(10), FloatArray(10) { if (it == 0) 5f else 0f }), caps = intArrayOf(1, 0)))
+            addStroke(StrokeRecord(listOf(FloatArray(10), FloatArray(10))))
+        }
+        val raw = save(doc)
+        val restored = load(raw)
+        val strokes = restored.layers[0].frames[0].strokes
+        assertArrayEquals(intArrayOf(1, 0), strokes[0].caps)
+        assertArrayEquals(intArrayOf(0, 0), strokes[1].caps)
+        assertEquals("default caps write no key", 1, Regex("\"caps\"").findAll(raw).count())
+    }
+
+    @Test
     fun savedTextIsStableAcrossAFullRoundTrip() {
         val first = save(sampleDocument())
         val second = save(load(first))

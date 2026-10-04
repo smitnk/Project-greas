@@ -314,8 +314,11 @@ jobs:
   emulator-tests:
     needs: android-shell
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
+      - name: Checkout (sweep script)
+        uses: actions/checkout@v4
+
       - name: Download APKs
         uses: actions/download-artifact@v4
         with:
@@ -329,7 +332,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run DeviceBugfixTest on the emulator (API 30, x86_64)
+      - name: Run the device tests, the sweep and the monkey on the emulator (API 30, x86_64)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -338,8 +341,7 @@ jobs:
           profile: pixel_4
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            set -x; adb install -r -g apks/app-debug.apk && adb install -r -g apks/app-debug-androidTest.apk && adb shell am instrument -w -r -e class com.smitnk.projectgrease.DeviceBugfixTest com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.txt; mkdir -p screenshots; adb pull /data/local/tmp/pg_screenshots/. screenshots/ || true; adb logcat -d -s ProjectGrease:* TestRunner:* AndroidRuntime:* > logcat.txt || true; grep -q "^OK (" instrument.txt
+          script: python3 tools/run_emulator_sweep.py
 
       - name: Upload emulator screenshots and test output
         if: always()
@@ -350,5 +352,8 @@ jobs:
             screenshots/
             instrument.txt
             logcat.txt
+            logcat_full.txt
+            monkey.txt
+            sweep_summary.txt
           if-no-files-found: warn
           retention-days: 14

@@ -5,8 +5,10 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/native_host_closure.sh" "render test"
 if ! echo '#include <EGL/egl.h>' | g++ -x c++ -fsyntax-only - 2>/dev/null; then
-  if [[ "${PG_REQUIRE_GL:-0}" == "1" ]]; then echo "EGL headers missing" >&2; exit 1; fi
-  echo "SKIP render test (EGL/GLES development files missing)"; exit 0
+  if [[ "${PG_ALLOW_SKIP:-0}" == "1" && "${PG_REQUIRE_GL:-0}" != "1" ]]; then
+    echo "SKIP render test (EGL/GLES development files missing)"; exit 0
+  fi
+  echo "ERROR: render test: EGL/GLES development files missing (set PG_ALLOW_SKIP=1 to skip locally)" >&2; exit 1
 fi
 g++ "${XF[@]}" -D__ANDROID__ -DWITH_OPENGL "${INC[@]}" -c "$ROOT/native/blender_gp/android_gp_presentation.cpp" -o "$OUT/presentation.o"
 g++ "${XF[@]}" -D__ANDROID__ "${INC[@]}" -c "$ROOT/native/blender_gp/android_gp_shader_fx.cpp" -o "$OUT/shader_fx.o"

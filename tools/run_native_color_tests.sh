@@ -19,11 +19,11 @@ if [[ -f "$SHADER" ]]; then
     fi
   done
   echo "shader expressions match the pinned Blender source"
-elif [[ "${PG_REQUIRE_BLENDER_SOURCE:-0}" == "1" ]]; then
-  echo "Pinned Blender source missing: $SHADER" >&2
-  exit 1
-else
+elif [[ "${PG_ALLOW_SKIP:-0}" == "1" && "${PG_REQUIRE_BLENDER_SOURCE:-0}" != "1" ]]; then
   echo "SKIP shader drift check (run tools/import_blender_gp.sh first)"
+else
+  echo "ERROR: Pinned Blender source missing: $SHADER (set PG_ALLOW_SKIP=1 to skip locally)" >&2
+  exit 1
 fi
 
 OUT="$(mktemp -d)"

@@ -170,7 +170,11 @@ target_link_libraries(projectgrease_jni
 option(PG_ASAN "AddressSanitizer build (bug hunt)" OFF)
 option(PG_GL_DEBUG "Check glGetError after every GLES call (bug hunt)" OFF)
 if(PG_ASAN)
-    target_compile_options(projectgrease_jni PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    # Globals dead stripping keeps --gc-sections working: without it ASan's global metadata keeps
+    # every function alive, and the unused BLI_mempool_create's BLI_mutex_init reference (never
+    # linked into this library) fails the link. Same flag as tools/run_native_fuzz.sh.
+    target_compile_options(projectgrease_jni PRIVATE -fsanitize=address -fno-omit-frame-pointer
+        -fsanitize-address-globals-dead-stripping)
     target_link_options(projectgrease_jni PRIVATE -fsanitize=address)
 endif()
 if(PG_GL_DEBUG)

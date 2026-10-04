@@ -1,17 +1,17 @@
 # Graph Report - Project-greas  (2026-10-04)
 
 ## Corpus Check
-- 312 files · ~330,266 words
+- 312 files · ~330,279 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 14 file(s) not represented in the graph (top: .obj 6, .xml 3, .properties 2)
 
 ## Summary
-- 5243 nodes · 14509 edges · 282 communities (140 shown, 142 thin omitted)
+- 5243 nodes · 14508 edges · 278 communities (136 shown, 142 thin omitted)
 - Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 1786 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b5d7530a`
+- Built from commit: `da6e8964`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -20,12 +20,12 @@
 - project_grease_gp_bridge.cpp
 - project_grease_gp_jni.cpp
 - project_grease_android_egl_renderer.cpp
-- AnnotationData
-- Backend
+- LineartData
+- project_grease_gp_backend.cpp
 - pg_eraser_dostroke
-- project_grease_legacy_sculpt.cpp
-- Batch21UI.kt
 - FxNative
+- Batch21UI.kt
+- FxRecord
 - test_tool_session.c
 - NativeEditorBridge
 - AndroidBackend
@@ -33,7 +33,7 @@
 - project_grease_tool_util.c
 - ReferenceSheet.kt
 - LegacyGeometryOpType
-- PGMeshLite
+- lineart_scene_lite_replacements.cc
 - impl_
 - ProjectGreaseUI.kt
 - test_fuzz_regressions.cc
@@ -59,7 +59,7 @@
 - AndroidBatch
 - Blender 3.6.23 Legacy Grease Pencil (pinned baseline)
 - GenerateGolden.kt
-- Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGenerateBlenderPrimitive
+- Java_com_smitnk_projectgrease_nativebridge_GPNative_nativePing
 - project_grease_modifier_stack.c
 - Native Backend Status
 - ProjectGreaseDrawingSurfaceView
@@ -71,18 +71,18 @@
 - test_modifier_stack.cc
 - project_grease_annotations.c
 - Android Shell README
-- Context
+- project_grease_legacy_sculpt.cpp
 - Bundled Blender Legacy GP Engine Worklog
 - android_blender_gp_gpu_drw_probe.sh
 - project_grease_shader_fx.c
-- math
+- gen_modifier_golden.py
 - blender_reference.py
 - test_shader_fx.cc
 - project_grease_modifier_stack2.c
 - test_document_state.c
 - blender_string_legacy_extract.c
-- project_grease_legacy_fill.cpp
-- bGPDlayer
+- cmath
+- project_grease_blender_edit.c
 - VideoFrames
 - test_blender_select.c
 - ModifierRecord
@@ -97,7 +97,7 @@
 - test_blender_edit.c
 - android_gp_shader_fx.cpp
 - .strokes
-- BKE_gpencil_stroke_geometry_update
+- bGPDlayer
 - FakeDocument
 - main
 - StrokeRecord
@@ -108,10 +108,10 @@
 - ReferenceScene
 - project_grease_blender_edit3.c
 - .finite
-- BLI_remlink
+- project_grease_legacy_build.cpp
 - pg_stroke_outline
 - DeviceBugfixTest.kt
-- ProjectGreaseGPLegacyGeometryOp
+- PGCameraLite
 - android_blender_gp_core_probe.sh
 - android_blender_gp_minimal_buffer_backend_probe.sh
 - android_blender_gp_minimal_probe.sh
@@ -119,14 +119,14 @@
 - project_grease_blender_primitive.c
 - GP_SelectUserData
 - MainActivity.kt
-- test_backend_modifier_stack.cc
+- test_lineart.c
 - dna_gpencil_legacy_types
 - ColorMath
 - NativeDocumentAdapter
 - CurveSession
 - fuzz_edit_commands.cc
 - ImportDialogs.kt
-- EdgeFeatData
+- PGMeshLite
 - project_grease_blender_edit7.c
 - project_grease_scene_lite.c
 - FuzzDeviceTest
@@ -136,7 +136,7 @@
 - .capability
 - ToolSession
 - project_grease_lineart_cpu.cc
-- project_grease_gp_backend.cpp
+- Backend
 - SvgImport
 - bli_utildefines
 - BlenderPrimitiveRulesTest
@@ -156,7 +156,7 @@
 - SweepPaintTest
 - BlenderColorModifierRulesTest
 - .mirrorCopy
-- Rng
+- lineart_geometry_object_load
 - SweepBase
 - ShapeEditSession
 - android_gp_presentation.cpp
@@ -174,17 +174,17 @@
 - project_grease_android_gpu_configure_batch
 - bGPdata
 - ProjectGreaseGPPoint
-- cmath
+- math
 - BrushSizeTest.kt
-- LineartPointTri
-- project_grease_blender_edit5.c
+- BLI_remlink
+- test_lineart_reference.c
 - FakeModifierNative
 - Press
 - SweepIoTest
 - apk_size.py
 - run_native_edit_tests.sh
 - LegacyPaintSettings
-- dna_meshdata_types
+- mem_guardedalloc
 - run_native_tool_session_tests.sh
 - Screen
 - run_native_edit5_tests.sh
@@ -196,9 +196,9 @@
 - .packsArguments
 - InputFuzzTest
 - ExportDialog
-- project_grease_gp_backend.h
+- test_backend_modifier_stack.cc
 - CLAUDE.md
-- Tool
+- BLI_spin_lock
 - verify_blender_verbatim.py
 - native_host_closure.sh
 - run_native_annotation_tests.sh
@@ -213,27 +213,23 @@
 - run_native_select_tests.sh
 - run_native_shader_fx_tests.sh
 - OpenStrokeCache
-- project_grease_legacy_primitive.cpp
 - .projectName
 - run_native_stroke_outline_tests.sh
-- Settings
+- LISTBASE_FOREACH
 - generate.sh
 - project_grease_android_set_fx_provider
 - run_blender_reference.sh
-- project_grease_blender_edit6.c
+- stdbool
 - PerfTest
 - .materialTexture
 - .from
-- 01 — Full emulator bug hunt (branch `test/full-emulator-sweep`, PR #44)
 - test_select_op_tables
 - run_native_fuzz.sh
 - ProjectStore
 - ParamKind
 - BlenderEdit7RulesTest.kt
 - wrap.sh
-- LooseEdgeData
 - run_native_mod2_tests.sh
-- BKE_brush_curve_strength
 - BLI_lasso_boundbox
 - run_emulator_sweep.py
 - pg_matset_has
@@ -253,14 +249,14 @@
 ## Surprising Connections (you probably didn't know these)
 - `Files changed (main ones)` --references--> `ProjectDocumentRoundTripTest`  [INFERRED]
   docs/chat-history/01-full-emulator-sweep.md → android/app/src/test/java/com/smitnk/projectgrease/editor/ProjectDocumentRoundTripTest.kt
-- `Decisions and why` --references--> `is_leak_narrow()`  [INFERRED]
-  docs/chat-history/01-full-emulator-sweep.md → native/blender_gp/project_grease_legacy_fill.cpp
 - `What we built` --references--> `SweepDrawTest`  [INFERRED]
   docs/chat-history/01-full-emulator-sweep.md → android/app/src/androidTest/java/com/smitnk/projectgrease/SweepDrawTest.kt
 - `What we built` --references--> `SweepEditTest`  [INFERRED]
   docs/chat-history/01-full-emulator-sweep.md → android/app/src/androidTest/java/com/smitnk/projectgrease/SweepEditTest.kt
 - `What we built` --references--> `SweepIoTest`  [INFERRED]
   docs/chat-history/01-full-emulator-sweep.md → android/app/src/androidTest/java/com/smitnk/projectgrease/SweepIoTest.kt
+- `What we built` --references--> `SweepLayersFramesTest`  [INFERRED]
+  docs/chat-history/01-full-emulator-sweep.md → android/app/src/androidTest/java/com/smitnk/projectgrease/SweepLayersFramesTest.kt
 
 ## Import Cycles
 - None detected.
@@ -270,7 +266,7 @@
 - **Evidence-driven minimal Blender dependency philosophy** — project_grease_gp_scope_minimal_dependency_rule, docs_project_grease_legacy_gp_engine_plan_no_approximation_rule, docs_project_grease_engine_worklog_error_solving_procedure, native_blender_gp_readme_rules, native_blender_gp_ci_link_diagnostic [INFERRED 0.85]
 - **Focused Android Legacy GP native closure (manifest + JNI CMake + link probe)** — tools_android_gp_source_manifest, android_app_src_main_cpp_cmakelists, tools_android_blender_gp_native_link_probe, native_blender_gp_project_grease_android_link_closure_notes [INFERRED 0.90]
 
-## Communities (282 total, 142 thin omitted)
+## Communities (278 total, 142 thin omitted)
 
 ### Community 0 - "FeatureId"
 Cohesion: 0.01
@@ -278,39 +274,39 @@ Nodes (167): FeatureId, ADD_FRAME, ADVANCED_FILL, ADVANCED_INTERPOLATION, ADVANC
 
 ### Community 1 - "project_grease_gp_bridge.cpp"
 Cohesion: 0.04
-Nodes (136): main(), bridge_material(), ensure_ready(), project_grease_gp_add_stroke(), project_grease_gp_annotation_dump(), project_grease_gp_annotation_load(), project_grease_gp_annotation_style(), project_grease_gp_apply_blender_modifier() (+128 more)
+Nodes (132): bridge_material(), ensure_ready(), project_grease_gp_add_stroke(), project_grease_gp_annotation_dump(), project_grease_gp_annotation_load(), project_grease_gp_annotation_style(), project_grease_gp_apply_blender_modifier(), project_grease_gp_apply_blender_modifier_named() (+124 more)
 
 ### Community 2 - "project_grease_gp_jni.cpp"
 Cohesion: 0.10
-Nodes (125): from_handle(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPoint(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationCommand(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationDump(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationLoad(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationStyle(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyBlenderModifier() (+117 more)
+Nodes (124): from_handle(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPoint(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationCommand(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationDump(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationLoad(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAnnotationStyle(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyBlenderModifier() (+116 more)
 
 ### Community 3 - "project_grease_android_egl_renderer.cpp"
 Cohesion: 0.09
-Nodes (59): attach_window(), choose_config(), connect_blender_gp(), create_context(), destroy_renderer(), detach_window(), disconnect_blender_gp(), from_handle() (+51 more)
+Nodes (57): attach_window(), choose_config(), create_context(), destroy_renderer(), detach_window(), from_handle(), initialize_egl(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPointEglRenderer() (+49 more)
 
-### Community 4 - "AnnotationData"
-Cohesion: 0.27
-Nodes (4): AnnotationData, Frame, Parsed, AnnotationDataTest
+### Community 4 - "LineartData"
+Cohesion: 0.10
+Nodes (40): BLI_task_pool_create(), BLI_task_pool_free(), lineart_main_make_enclosed_shapes(), pg_lineart_compute_occlusion(), lineart_bounding_area_edge_intersect(), lineart_bounding_area_link_edge(), lineart_bounding_area_link_triangle(), lineart_bounding_area_next() (+32 more)
 
-### Community 5 - "Backend"
-Cohesion: 0.07
-Nodes (60): main(), Backend, annotations_visible, apply_blender_generator, apply_blender_modifier, apply_blender_modifier_stack, clear_selection, close_stroke (+52 more)
+### Community 5 - "project_grease_gp_backend.cpp"
+Cohesion: 0.08
+Nodes (49): main(), apply_blender_generator, apply_blender_modifier, apply_blender_modifier_stack, clear_selection, close_stroke, delete_last_stroke, dissolve_selected_points (+41 more)
 
 ### Community 6 - "pg_eraser_dostroke"
 Cohesion: 0.10
 Nodes (32): BLI_lasso_is_point_inside(), closest_to_line_segment_v2(), closest_to_line_segment_v3(), closest_to_line_v2(), closest_to_line_v3(), cross_poly_v2(), dist_squared_to_line_segment_v2(), isect_line_line_v3() (+24 more)
 
-### Community 7 - "project_grease_legacy_sculpt.cpp"
-Cohesion: 0.33
-Nodes (5): apply(), apply_position_smooth(), apply_strength_smooth(), apply_thickness_smooth(), influence()
+### Community 7 - "FxNative"
+Cohesion: 0.12
+Nodes (4): FxCommands, FxNative, FxTarget, FakeFxNative
 
 ### Community 8 - "Batch21UI.kt"
 Cohesion: 0.16
 Nodes (15): BoxSelectOverlay(), BrushCurvesSection(), CurveEditor(), DrawingGuideSection(), KeyframeMenu(), keyTypeColor(), keyTypeMark(), LayerLookSection() (+7 more)
 
-### Community 9 - "FxNative"
-Cohesion: 0.07
-Nodes (10): FxCommands, FxJson, FxNative, FxPacking, FxRecord, FxSpecs, FxTarget, FxType (+2 more)
+### Community 9 - "FxRecord"
+Cohesion: 0.13
+Nodes (6): FxJson, FxPacking, FxRecord, FxSpecs, FxType, ShaderFxTest
 
 ### Community 10 - "test_tool_session.c"
 Cohesion: 0.05
@@ -322,7 +318,7 @@ Nodes (28): engine_feature_map(), EngineFeature, Drawing, Editing, Eraser, Fill,
 
 ### Community 14 - "project_grease_tool_util.c"
 Cohesion: 0.12
-Nodes (16): BKE_boundbox_init_from_minmax(), ED_gpencil_projected_2d_bound_box(), ED_gpencil_stroke_check_collision(), ED_gpencil_stroke_point_is_inside(), ED_view3d_project_float_global(), ED_view3d_project_int_global(), ED_view3d_win_to_delta(), edge_inside_circle() (+8 more)
+Nodes (22): gpencil_brush_calc_midpoint(), BKE_boundbox_init_from_minmax(), BKE_brush_curve_strength(), ED_gpencil_projected_2d_bound_box(), ED_gpencil_stroke_check_collision(), ED_gpencil_stroke_point_is_inside(), ED_view3d_calc_zfac(), ED_view3d_calc_zfac_ex() (+14 more)
 
 ### Community 15 - "ReferenceSheet.kt"
 Cohesion: 0.06
@@ -332,9 +328,9 @@ Nodes (4): DocumentController, ProjectSettingsDialog(), decodeForTrace(), TraceI
 Cohesion: 0.07
 Nodes (28): LegacyGeometryOp, flag0, flag1, int0, int1, type, value0, value1 (+20 more)
 
-### Community 17 - "PGMeshLite"
-Cohesion: 0.05
-Nodes (55): lineart_edge_neighbor_init_task(), lineart_geometry_check_visible(), lineart_identify_mlooptri_feature_edges(), lineart_intersection_mask_check(), lineart_intersection_priority_check(), lineart_load_tri_task(), lineart_object_load_single_instance(), lineart_usage_check() (+47 more)
+### Community 17 - "lineart_scene_lite_replacements.cc"
+Cohesion: 0.11
+Nodes (23): lineart_edge_neighbor_init_task(), lineart_geometry_check_visible(), lineart_geometry_object_load(), lineart_intersection_mask_check(), lineart_intersection_priority_check(), lineart_load_tri_task(), lineart_main_load_geometries(), lineart_object_load_single_instance() (+15 more)
 
 ### Community 18 - "impl_"
 Cohesion: 0.06
@@ -345,8 +341,8 @@ Cohesion: 0.18
 Nodes (30): AdvancedSheet(), AnnotationBar(), CapabilityRow(), CurveHandlesOverlay(), DrawingGuidesOverlay(), Editor(), FillBar(), FpsDialog() (+22 more)
 
 ### Community 20 - "test_fuzz_regressions.cc"
-Cohesion: 0.19
-Nodes (25): project_grease_gp_add_point(), project_grease_gp_apply_edit_command(), project_grease_gp_begin_stroke(), project_grease_gp_create(), project_grease_gp_destroy(), project_grease_gp_reset_document(), apply(), BLI_mutex_init() (+17 more)
+Cohesion: 0.15
+Nodes (31): connect_blender_gp(), disconnect_blender_gp(), main(), project_grease_gp_add_point(), project_grease_gp_apply_edit_command(), project_grease_gp_begin_stroke(), project_grease_gp_create(), project_grease_gp_destroy() (+23 more)
 
 ### Community 21 - "project_grease_blender_select.c"
 Cohesion: 0.17
@@ -354,7 +350,7 @@ Nodes (27): gpencil_stroke_do_circle_sel(), pg_deselect_all_selected(), pg_gener
 
 ### Community 22 - "PGLineartSettings"
 Cohesion: 0.05
-Nodes (57): BLI_spin_init(), lineart_create_render_buffer(), lineart_gpencil_generate(), pg_lineart_compute(), pg_lineart_compute_occlusion(), pg_lineart_compute_strokes(), pg_lineart_free_segments(), pg_lineart_free_strokes() (+49 more)
+Nodes (55): BLI_spin_end(), lineart_gpencil_generate(), pg_lineart_compute(), pg_lineart_compute_strokes(), pg_lineart_free_segments(), pg_lineart_free_strokes(), pg_lineart_object_index(), pg_lineart_settings_default() (+47 more)
 
 ### Community 23 - "import_blender_gp.sh"
 Cohesion: 0.19
@@ -369,8 +365,8 @@ Cohesion: 0.12
 Nodes (3): vertbuf_alloc, AndroidVertBuf, vbo_id_
 
 ### Community 30 - "project_grease_tool_sculpt.c"
-Cohesion: 0.20
-Nodes (22): gpencil_brush_calc_midpoint(), gpencil_brush_grab_apply_cached(), gpencil_brush_grab_calc_dvec(), gpencil_brush_grab_store_points(), gpencil_brush_grab_stroke_init(), gpencil_brush_influence_calc(), gpencil_brush_invert_check(), gpencil_brush_pinch_apply() (+14 more)
+Cohesion: 0.24
+Nodes (19): gpencil_brush_grab_apply_cached(), gpencil_brush_grab_calc_dvec(), gpencil_brush_grab_store_points(), gpencil_brush_grab_stroke_init(), gpencil_brush_influence_calc(), gpencil_brush_invert_check(), gpencil_brush_pinch_apply(), gpencil_brush_push_apply() (+11 more)
 
 ### Community 31 - "Workflow: Native Blender GP Backend"
 Cohesion: 0.26
@@ -381,8 +377,8 @@ Cohesion: 0.16
 Nodes (3): indexbuf_alloc, AndroidIndexBuf, ibo_id_
 
 ### Community 33 - "evaluated_frame"
-Cohesion: 0.11
-Nodes (23): begin_stroke, create_polyline, create_primitive, evaluated_frame, fill_at_screen, fx_for_layer, render, render_external_context (+15 more)
+Cohesion: 0.17
+Nodes (12): evaluated_frame, fx_for_layer, eval_frame_trampoline(), EvalCacheEntry, cfra, frame, layer, revision (+4 more)
 
 ### Community 34 - "test_render.cc"
 Cohesion: 0.21
@@ -397,8 +393,8 @@ Cohesion: 0.31
 Nodes (11): Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteClear(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteCreate(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteFree(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArt(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArtStrokes(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLoadObj(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteProjectEdges(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteSetCamera() (+3 more)
 
 ### Community 39 - "lineart_lite_runtime.cc"
-Cohesion: 0.06
-Nodes (30): BLI_task_pool_create(), BLI_task_pool_free(), BLI_task_pool_push(), BLI_task_pool_user_data(), BLI_task_pool_work_and_wait(), lineart_find_matching_edge(), lineart_find_matching_eln(), lineart_main_make_enclosed_shapes() (+22 more)
+Cohesion: 0.07
+Nodes (21): BLI_task_pool_push(), BLI_task_pool_user_data(), BLI_task_pool_work_and_wait(), lineart_find_matching_edge(), lineart_find_matching_eln(), lineart_main_transform_and_add_shadow(), lineart_main_try_generate_shadow(), lineart_register_intersection_shadow_cuts() (+13 more)
 
 ### Community 40 - "StrokePoint"
 Cohesion: 0.15
@@ -416,13 +412,9 @@ Nodes (8): Blender GP Import Manifest (docs), group_of(), select_gp(), extract_g
 Cohesion: 0.20
 Nodes (5): b(), fmt(), line(), main(), InputEvent
 
-### Community 44 - "Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGenerateBlenderPrimitive"
-Cohesion: 0.16
-Nodes (3): Java_com_smitnk_projectgrease_nativebridge_GPNative_nativePing(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBlenderPrimitiveDefaultEdges(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGenerateBlenderPrimitive()
-
 ### Community 45 - "project_grease_modifier_stack.c"
 Cohesion: 0.13
-Nodes (27): pg_mod2_defaults(), pg_mod2_is_frame_level(), pg_mod_has_point_influence(), noise_table(), pg_deform_noise(), pg_deform_offset(), pg_deform_simplify(), pg_deform_smooth() (+19 more)
+Nodes (27): get_modifier_point_weight(), pg_mod2_defaults(), pg_mod2_is_frame_level(), noise_table(), pg_deform_noise(), pg_deform_offset(), pg_deform_simplify(), pg_deform_smooth() (+19 more)
 
 ### Community 46 - "Native Backend Status"
 Cohesion: 0.20
@@ -446,7 +438,7 @@ Nodes (12): AuditStatus, BLOCKED, COMPLETE, IN_PROGRESS, NOT_IMPLEMENTED, Entry,
 
 ### Community 52 - "main"
 Cohesion: 0.07
-Nodes (47): BLI_uniquename(), active_layer_data, delete_frame, delete_layer, delete_stroke, duplicate_layer, frame_count, fx_add (+39 more)
+Nodes (50): BLI_uniquename(), active_layer_data, delete_frame, delete_layer, delete_stroke, duplicate_layer, fx_add, fx_count (+42 more)
 
 ### Community 53 - "test_modifier_stack.cc"
 Cohesion: 0.20
@@ -460,9 +452,9 @@ Nodes (30): pa_frame_ensure(), pa_frame_free(), pa_frames_free(), pa_layer(), pa
 Cohesion: 0.40
 Nodes (5): projectgrease_jni shared library, Android Shell README, Native EGL renderer (clear and present only), Android SurfaceView -> ANativeWindow -> EGL -> GLES2 transport, Android-owned EGL/GLES context
 
-### Community 56 - "Context"
-Cohesion: 0.17
-Nodes (10): bGPdata, bGPDframe, bGPDstroke, Context, delta_x, delta_y, mouse_x, mouse_y (+2 more)
+### Community 56 - "project_grease_legacy_sculpt.cpp"
+Cohesion: 0.06
+Nodes (34): apply(), apply_position_smooth(), apply_strength_smooth(), apply_thickness_smooth(), bGPdata, bGPDframe, bGPDstroke, Context (+26 more)
 
 ### Community 57 - "Bundled Blender Legacy GP Engine Worklog"
 Cohesion: 0.40
@@ -476,12 +468,12 @@ Nodes (3): compile_one(), run_group(), android_blender_gp_gpu_drw_probe.sh scrip
 Cohesion: 0.18
 Nodes (25): apply_blend(), blend_mode_output(), copy_plane(), floor_v2_nonzero(), fx_clampf(), fx_dot3(), fx_mixf(), gaussian_weight() (+17 more)
 
-### Community 62 - "math"
-Cohesion: 0.28
-Nodes (12): fmodf(), i32(), noise_points(), offset_point(), f32(), final(), halton_3d(), halton_ex() (+4 more)
+### Community 62 - "gen_modifier_golden.py"
+Cohesion: 0.22
+Nodes (13): fmodf(), i32(), noise_points(), offset_point(), f32(), final(), halton_3d(), halton_ex() (+5 more)
 
 ### Community 63 - "blender_reference.py"
-Cohesion: 0.32
+Cohesion: 0.28
 Nodes (3): main(), orbit_matrix(), run_scene()
 
 ### Community 64 - "test_shader_fx.cc"
@@ -490,7 +482,7 @@ Nodes (19): pg_fx_composite_cpu(), pg_fx_image_free(), pg_fx_name(), pg_fx_valid
 
 ### Community 65 - "project_grease_modifier_stack2.c"
 Cohesion: 0.16
-Nodes (24): BKE_defvert_array_copy(), add_stroke(), add_stroke_cyclic(), add_stroke_simple(), apply_stroke_envelope(), calc_min_radius_v3v3(), calc_radius_limit(), get_modifier_point_weight() (+16 more)
+Nodes (25): BKE_defvert_array_copy(), add_stroke(), add_stroke_cyclic(), add_stroke_simple(), apply_stroke_envelope(), calc_min_radius_v3v3(), calc_radius_limit(), m2_assign_weight() (+17 more)
 
 ### Community 66 - "test_document_state.c"
 Cohesion: 0.17
@@ -500,16 +492,16 @@ Nodes (17): clamp01(), pg_doc_layer_info_apply(), pg_doc_layer_info_get(), pg_do
 Cohesion: 0.16
 Nodes (13): BLI_snprintf(), BLI_snprintf_rlen(), BLI_string_split_name_number(), BLI_strncpy(), BLI_strncpy_utf8(), BLI_strncpy_utf8_rlen(), BLI_strnlen(), BLI_uniquename_cb() (+5 more)
 
-### Community 68 - "project_grease_legacy_fill.cpp"
-Cohesion: 0.23
-Nodes (13): boundary_fill(), contract_shape(), dilate_shape(), Image, rgba_, is_leak_narrow(), normalize_to_legacy_mask(), outline_points() (+5 more)
+### Community 68 - "cmath"
+Cohesion: 0.07
+Nodes (38): 01 — Full emulator bug hunt (branch `test/full-emulator-sweep`, PR #44), Bugs fixed (root cause → fix), Decisions and why, Files changed (main ones), Goal, Next steps, Results so far, legacy_influence() (+30 more)
 
-### Community 69 - "bGPDlayer"
-Cohesion: 0.08
-Nodes (69): pe3_fn_hsv(), copy_v3_v3_pge(), pg_gp_dissolve(), pg_gp_duplicate(), pg_gp_edit_delete_points(), pg_gp_edit_delete_strokes(), pg_gp_edit_dispatch(), pg_gp_edit_mirror() (+61 more)
+### Community 69 - "project_grease_blender_edit.c"
+Cohesion: 0.06
+Nodes (65): pe3_fn_hsv(), copy_v3_v3_pge(), pg_gp_duplicate(), pg_gp_edit_delete_points(), pg_gp_edit_mirror(), pg_gp_edit_pick(), pg_gp_edit_rotate(), pg_gp_edit_scale() (+57 more)
 
 ### Community 71 - "test_blender_select.c"
-Cohesion: 0.22
+Cohesion: 0.23
 Nodes (27): add_frame(), add_layer(), add_stroke(), BKE_gpencil_batch_cache_dirty_tag(), BKE_gpencil_layer_is_editable(), BKE_gpencil_stroke_select_check(), BKE_gpencil_stroke_select_index_reset(), BKE_gpencil_stroke_select_index_set() (+19 more)
 
 ### Community 72 - "ModifierRecord"
@@ -521,12 +513,12 @@ Cohesion: 0.10
 Nodes (21): lineart_destroy_isec_thread(), LineartIsecData, ld, thread_count, threads, LineartIsecSingle, tri1, tri2 (+13 more)
 
 ### Community 75 - "ExportDoc"
-Cohesion: 0.10
-Nodes (8): VectorExport, VectorLayer, VectorPage, VectorShape, ExportDoc, Frame, Layer, VectorExportTest
+Cohesion: 0.07
+Nodes (12): AnnotationData, Frame, Parsed, VectorExport, VectorLayer, VectorPage, VectorShape, AnnotationDataTest (+4 more)
 
 ### Community 76 - "project_grease_tool_vertex_paint.c"
-Cohesion: 0.25
-Nodes (19): brush_average_apply(), brush_blur_apply(), brush_calc_dvec_2d(), brush_influence_calc(), brush_invert_check(), brush_replace_apply(), brush_smear_apply(), brush_tint_apply() (+11 more)
+Cohesion: 0.26
+Nodes (18): brush_average_apply(), brush_blur_apply(), brush_calc_dvec_2d(), brush_influence_calc(), brush_invert_check(), brush_replace_apply(), brush_smear_apply(), brush_tint_apply() (+10 more)
 
 ### Community 78 - ".paramCount"
 Cohesion: 0.20
@@ -537,24 +529,24 @@ Cohesion: 0.07
 Nodes (3): Command, ProjectGreaseSelect, BlenderEditRulesTest
 
 ### Community 81 - "test_blender_edit.c"
-Cohesion: 0.12
-Nodes (56): pge_length_modify_stroke(), apply_legacy_geometry_batch, add_frame(), add_layer(), add_stroke(), BKE_gpencil_batch_cache_dirty_tag(), BKE_gpencil_layer_delete(), BKE_gpencil_layer_frame_delete() (+48 more)
+Cohesion: 0.13
+Nodes (52): pg_gp_edit_dispatch(), pg_gp_stroke_cyclical_set(), pge_length_modify_stroke(), apply_legacy_geometry_batch, add_frame(), add_layer(), add_stroke(), BKE_gpencil_batch_cache_dirty_tag() (+44 more)
 
 ### Community 82 - "android_gp_shader_fx.cpp"
 Cohesion: 0.09
 Nodes (41): bind_tex(), Buffer, color, reveal, compile(), count_passes(), draw_triangle(), ensure_blend() (+33 more)
 
-### Community 84 - "BKE_gpencil_stroke_geometry_update"
-Cohesion: 0.25
-Nodes (23): pe4_copy_range(), pe4_deselect(), pe4_editable(), pe4_insert_after(), pe4_move_selected(), pe4_normal(), pe4_sel(), pe4_style() (+15 more)
+### Community 84 - "bGPDlayer"
+Cohesion: 0.18
+Nodes (32): pe4_copy_range(), pe4_deselect(), pe4_editable(), pe4_insert_after(), pe4_move_selected(), pe4_normal(), pe4_sel(), pe4_style() (+24 more)
 
 ### Community 85 - "FakeDocument"
 Cohesion: 0.10
 Nodes (4): FakeDocument, Frame, Layer, ProjectDocumentRoundTripTest
 
 ### Community 86 - "main"
-Cohesion: 0.11
-Nodes (19): main(), add_point, add_stroke, cancel_stroke, create_document, create_frame, create_layer, create_material (+11 more)
+Cohesion: 0.09
+Nodes (27): main(), add_point, add_stroke, begin_stroke, cancel_stroke, create_document, create_frame, create_layer (+19 more)
 
 ### Community 87 - "StrokeRecord"
 Cohesion: 0.14
@@ -576,25 +568,25 @@ Nodes (3): ReferenceCamera, ReferenceScene, ReferenceCameraTest
 Cohesion: 0.19
 Nodes (19): pe3_apply_vcolor(), pe3_clampf(), pe3_editable(), pe3_fn_bc(), pe3_fn_levels(), pe3_frames_equal(), pe3_style(), pg_gp_blank_frame_add() (+11 more)
 
-### Community 95 - "BLI_remlink"
-Cohesion: 0.12
-Nodes (8): pg_clear_stroke(), pg_fade(), pg_reduce(), project_grease_legacy_build_apply(), process_stroke(), BLI_remlink(), BKE_gpencil_free_stroke(), BKE_gpencil_stroke_delete_tagged_points()
+### Community 95 - "project_grease_legacy_build.cpp"
+Cohesion: 0.28
+Nodes (4): pg_clear_stroke(), pg_fade(), pg_reduce(), project_grease_legacy_build_apply()
 
 ### Community 96 - "pg_stroke_outline"
-Cohesion: 0.19
-Nodes (19): add(), cross2(), dot2(), fan(), mul(), perp(), pg_stroke_outline(), safe_normalize() (+11 more)
+Cohesion: 0.37
+Nodes (11): add(), cross2(), dot2(), fan(), mul(), perp(), pg_stroke_outline(), safe_normalize() (+3 more)
 
 ### Community 97 - "DeviceBugfixTest.kt"
 Cohesion: 0.06
 Nodes (7): expectedFile(), ProcessDeathSetupTest, ProcessDeathVerifyTest, signature(), onUi(), openNewProject(), surface()
 
-### Community 98 - "ProjectGreaseGPLegacyGeometryOp"
-Cohesion: 0.22
-Nodes (9): ProjectGreaseGPLegacyGeometryOp, flag0, flag1, int0, int1, type, value0, value1 (+1 more)
+### Community 98 - "PGCameraLite"
+Cohesion: 0.09
+Nodes (22): PGCameraLite, clip_end, clip_start, lens, matrix_world, ortho_scale, sensor_fit, sensor_x (+14 more)
 
 ### Community 109 - "project_grease_blender_primitive.c"
-Cohesion: 0.17
-Nodes (19): pg_anchors_valid(), pg_blender_type(), pg_generate(), pg_resolve_edges(), pg_to_region(), pg_total_points(), project_grease_blender_primitive_default_edges(), project_grease_blender_primitive_generate() (+11 more)
+Cohesion: 0.11
+Nodes (21): Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBlenderPrimitiveDefaultEdges(), Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGenerateBlenderPrimitive(), pg_anchors_valid(), pg_blender_type(), pg_generate(), pg_resolve_edges(), pg_to_region(), pg_total_points() (+13 more)
 
 ### Community 110 - "GP_SelectUserData"
 Cohesion: 0.33
@@ -604,13 +596,13 @@ Nodes (5): pg_point_copy(), pg_point_to_screen(), pg_point_to_xy(), pg_test_box(
 Cohesion: 0.10
 Nodes (6): MainActivity, ProjectGreaseTheme(), ProjectGreaseThemeMode, DARK, LIGHT, SYSTEM
 
-### Community 112 - "test_backend_modifier_stack.cc"
-Cohesion: 0.20
-Nodes (3): DRW_gpencil_batch_cache_dirty_tag(), DRW_gpencil_batch_cache_free(), first_x()
+### Community 112 - "test_lineart.c"
+Cohesion: 0.22
+Nodes (15): pg_lite_scene_clear(), pg_lite_scene_create(), pg_lite_scene_free(), pg_lite_stats(), main(), run(), scene_with(), test_cube() (+7 more)
 
 ### Community 113 - "dna_gpencil_legacy_types"
-Cohesion: 0.08
-Nodes (26): project_grease_android_gp_cache_upload_probe(), pe8_deselect_frames(), pe8_layer(), pe8_style(), pg_gp_doc_query(), pg_gp_edit8_dispatch(), pg_gp_frame_select(), pg_gp_frame_set_keytype() (+18 more)
+Cohesion: 0.07
+Nodes (31): project_grease_android_gp_cache_upload_probe(), ED_gpencil_select_stroke_segment(), gpencil_check_collision(), gpencil_copy_points(), gpencil_insert_point(), pg4_material_editable(), pg4_stroke_2d_xy(), pg_gp_edit5_dispatch() (+23 more)
 
 ### Community 114 - "ColorMath"
 Cohesion: 0.20
@@ -621,24 +613,24 @@ Cohesion: 0.14
 Nodes (6): CurveSession, Phase, DRAG_LINE, EDIT, IDLE, CurveSessionTest
 
 ### Community 117 - "fuzz_edit_commands.cc"
-Cohesion: 0.14
+Cohesion: 0.16
 Nodes (9): BLI_mutex_init(), check_document(), document_points(), DRW_gpencil_batch_cache_dirty_tag(), DRW_gpencil_batch_cache_free(), largest_stroke(), on_alarm(), rss_mb() (+1 more)
 
 ### Community 118 - "ImportDialogs.kt"
 Cohesion: 0.21
 Nodes (4): rememberSvgImport(), toast(), ReferenceOverlay(), ReferenceSheet()
 
-### Community 119 - "EdgeFeatData"
-Cohesion: 0.07
-Nodes (28): BLI_task_parallel_range(), EdgeNeighborData, adj_e, edge_nabr, me, lineart_build_edge_neighbor(), lineart_geometry_object_load(), EdgeFeatData (+20 more)
+### Community 119 - "PGMeshLite"
+Cohesion: 0.06
+Nodes (36): BLI_task_parallel_range(), EdgeNeighborData, adj_e, edge_nabr, me, lineart_build_edge_neighbor(), EdgeFeatData, crease_threshold (+28 more)
 
 ### Community 120 - "project_grease_blender_edit7.c"
 Cohesion: 0.26
 Nodes (16): pe7_dvert_ensure(), pe7_ensure(), pe7_find(), pe7_frame_at(), pe7_frame_before(), pe7_remove(), pg_gp_edit7_dispatch(), pg_gp_layer_isolate() (+8 more)
 
 ### Community 121 - "project_grease_scene_lite.c"
-Cohesion: 0.06
-Nodes (60): BKE_camera_sensor_fit(), BKE_camera_sensor_size(), cross_v3(), focallength_to_fov(), grow_push(), invert_m4(), lineart_matrix_ortho_44d(), lineart_matrix_perspective_44d() (+52 more)
+Cohesion: 0.13
+Nodes (26): BLI_spin_init(), lineart_create_render_buffer(), lineart_create_render_buffer(), BKE_camera_sensor_fit(), BKE_camera_sensor_size(), cross_v3(), focallength_to_fov(), grow_push() (+18 more)
 
 ### Community 122 - "FuzzDeviceTest"
 Cohesion: 0.17
@@ -653,16 +645,16 @@ Cohesion: 0.19
 Nodes (7): Fit, NewMaterial, Plan, PlannedStroke, Source, StrokeImport, StrokeImportTest
 
 ### Community 125 - "project_grease_blender_edit2.c"
-Cohesion: 0.20
+Cohesion: 0.24
 Nodes (12): pe2_clampf(), pe2_insert_point(), pe2_stroke_editable(), pe2_style(), pg_gp_edit2_dispatch(), pg_gp_extrude(), pg_gp_mod_thickness_vgroup(), pg_gp_modifier_point_weight() (+4 more)
 
 ### Community 128 - "project_grease_lineart_cpu.cc"
-Cohesion: 0.06
-Nodes (78): BLI_spin_end(), BLI_spin_lock(), BLI_spin_unlock(), EdgeFeatReduceData, feat_edges, lineart_add_edge_to_array(), lineart_add_edge_to_array_thread(), lineart_add_isec_thread() (+70 more)
+Cohesion: 0.08
+Nodes (44): lineart_identify_mlooptri_feature_edges(), EdgeFeatReduceData, feat_edges, lineart_add_isec_thread(), lineart_add_triangles_worker(), lineart_bounding_area_line_add(), lineart_discard_duplicated_edges(), lineart_edge_cut() (+36 more)
 
-### Community 129 - "project_grease_gp_backend.cpp"
-Cohesion: 0.09
-Nodes (30): get_layer_info, layer_use_mask, mask_add, mask_count, mask_get, mask_remove, mask_set_flags, mirror_stroke (+22 more)
+### Community 129 - "Backend"
+Cohesion: 0.07
+Nodes (41): Backend, annotations_visible, current_frame_number, frame_end, frame_numbers, frame_selected_point_count, get_layer_info, hit_test_stroke (+33 more)
 
 ### Community 130 - "SvgImport"
 Cohesion: 0.07
@@ -689,16 +681,20 @@ Cohesion: 0.33
 Nodes (3): decodeTextureImage(), loadPendingTextureImages(), MaterialTextureSection()
 
 ### Community 142 - "project_grease_blender_mod2.c"
-Cohesion: 0.19
-Nodes (15): clampf01(), falloff_w(), pg_build_visible(), pg_envelope_segments(), pg_guide_snap(), pg_hook_deform(), pg_lattice_deform(), pg_onion_keytype_filter() (+7 more)
+Cohesion: 0.20
+Nodes (14): clampf01(), falloff_w(), pg_build_visible(), pg_envelope_segments(), pg_guide_snap(), pg_hook_deform(), pg_lattice_deform(), pg_onion_keytype_filter() (+6 more)
 
 ### Community 144 - "UVVertex"
 Cohesion: 0.40
 Nodes (5): UVVertex, u, v, x, y
 
 ### Community 145 - "EdgeFeatData"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (17): EdgeFeatData, crease_threshold, edge_nabr, ld, material_indices, me, tri_array, use_auto_smooth (+9 more)
+
+### Community 149 - "lineart_geometry_object_load"
+Cohesion: 0.13
+Nodes (15): lineart_add_edge_to_array(), lineart_add_edge_to_array_thread(), lineart_create_edges_from_isec_data(), lineart_finalize_object_edge_array(), lineart_finalize_object_edge_array_reserve(), lineart_geometry_object_load(), lineart_main_load_geometries(), pg_obi_object() (+7 more)
 
 ### Community 150 - "SweepBase"
 Cohesion: 0.15
@@ -710,7 +706,7 @@ Nodes (69): annot_early(), append_dots(), append_fill(), append_outline(), appen
 
 ### Community 154 - "pg_sculpt_session_begin"
 Cohesion: 0.11
-Nodes (11): pg_sculpt_session_begin(), pg_sculpt_session_end(), pgt_sculpt_preset(), pgt_sculpt_update_geometry(), pg_tool_link_runtime(), pg_tool_material_style(), pg_tool_view_init(), pg_vpaint_session_begin() (+3 more)
+Nodes (10): pg_sculpt_session_begin(), pg_sculpt_session_end(), pgt_sculpt_preset(), pgt_sculpt_update_geometry(), pg_tool_link_runtime(), pg_tool_material_style(), pg_vpaint_session_begin(), pg_vpaint_session_end() (+2 more)
 
 ### Community 156 - "GreaseTemplates.java"
 Cohesion: 0.31
@@ -737,20 +733,20 @@ Cohesion: 0.15
 Nodes (14): android_document_free(), annotation_data, document_data, history_redo, history_undo, merge_layer_down, shutdown, eval_cache_clear() (+6 more)
 
 ### Community 167 - "ProjectGreaseGPPoint"
-Cohesion: 0.09
-Nodes (21): bGPdata, project_grease_gp_create_polyline(), project_grease_gp_get_point(), project_grease_gp_set_legacy_paint_settings(), project_grease_gp_set_point(), ProjectGreaseGPLegacyPaintSettings, draw_smooth_factor, draw_smooth_level (+13 more)
+Cohesion: 0.06
+Nodes (31): bGPdata, project_grease_gp_apply_legacy_geometry_batch(), project_grease_gp_create_polyline(), project_grease_gp_get_point(), project_grease_gp_set_legacy_paint_settings(), project_grease_gp_set_point(), ProjectGreaseGPLegacyGeometryOp, flag0 (+23 more)
 
-### Community 168 - "cmath"
-Cohesion: 0.19
-Nodes (9): legacy_influence(), main(), legacy_pressure_curve(), legacy_spacing_accept(), main(), main(), near(), influence() (+1 more)
+### Community 168 - "math"
+Cohesion: 0.24
+Nodes (8): build(), covered(), inside(), main(), max_vertex_reach(), seg_dist(), turn_case(), uncovered_samples()
 
-### Community 170 - "LineartPointTri"
-Cohesion: 0.50
-Nodes (4): LineartPointTri, LRT_INSIDE_TRIANGLE, LRT_ON_TRIANGLE, LRT_OUTSIDE_TRIANGLE
+### Community 170 - "BLI_remlink"
+Cohesion: 0.16
+Nodes (8): pg_gp_dissolve(), pg_gp_edit_delete_strokes(), pg_gp_join(), process_stroke(), BLI_remlink(), BKE_gpencil_free_stroke(), BKE_gpencil_layer_delete(), BKE_gpencil_stroke_join()
 
-### Community 171 - "project_grease_blender_edit5.c"
-Cohesion: 0.23
-Nodes (11): ED_gpencil_select_stroke_segment(), gpencil_check_collision(), gpencil_copy_points(), gpencil_insert_point(), pg4_material_editable(), pg4_stroke_2d_xy(), pg_gp_edit5_dispatch(), pg_gp_layer_onion_set() (+3 more)
+### Community 171 - "test_lineart_reference.c"
+Cohesion: 0.26
+Nodes (10): compare_scene(), compare_strokes(), dist_point_seg(), load_reference(), load_world_strokes(), nearest(), pg_lineart_reference_compare(), push() (+2 more)
 
 ### Community 173 - "Press"
 Cohesion: 0.33
@@ -764,7 +760,7 @@ Nodes (6): apkanalyzer(), group(), main(), mb(), compare(), main()
 Cohesion: 0.29
 Nodes (7): set_legacy_paint_settings, LegacyPaintSettings, draw_smooth_factor, draw_smooth_level, input_samples, smooth_position, smooth_strength
 
-### Community 178 - "dna_meshdata_types"
+### Community 178 - "mem_guardedalloc"
 Cohesion: 0.18
 Nodes (3): CLG_log_str(), CLG_logf(), CLG_logref_init()
 
@@ -784,33 +780,21 @@ Nodes (6): raw_pixel(), Rgba, a, b, g, r
 Cohesion: 0.43
 Nodes (4): ExportDialog(), writeGif(), writePng(), writePngSequence()
 
-### Community 195 - "project_grease_gp_backend.h"
-Cohesion: 0.11
-Nodes (12): bGPdata, bGPDframe, Point, x, y, Result, border_contact, outline (+4 more)
+### Community 195 - "test_backend_modifier_stack.cc"
+Cohesion: 0.07
+Nodes (15): bGPdata, bGPDframe, Point, x, y, Result, border_contact, outline (+7 more)
 
-### Community 197 - "Tool"
-Cohesion: 0.22
-Nodes (9): Tool, Grab, Pinch, Push, Randomize, Smooth, Strength, Thickness (+1 more)
+### Community 197 - "BLI_spin_lock"
+Cohesion: 0.33
+Nodes (7): BLI_spin_lock(), BLI_spin_unlock(), lineart_discard_segment(), lineart_give_segment(), lineart_occlusion_make_task_info(), lineart_occlusion_worker(), lineart_schedule_new_triangle_task()
 
 ### Community 221 - "OpenStrokeCache"
 Cohesion: 0.17
 Nodes (12): OpenStrokeCache, frame, gpd, h, ox, oy, program, scale (+4 more)
 
-### Community 222 - "project_grease_legacy_primitive.cpp"
-Cohesion: 0.53
-Nodes (9): arc(), bezier(), circle(), generate(), lerp(), line(), polyline(), rectangle() (+1 more)
-
-### Community 227 - "Settings"
-Cohesion: 0.20
-Nodes (10): Settings, apply_position, apply_strength, apply_thickness, apply_uv, brush_alpha, invert, multiframe_falloff (+2 more)
-
-### Community 234 - "project_grease_blender_edit6.c"
+### Community 234 - "stdbool"
 Cohesion: 0.13
-Nodes (9): pe6_alpha(), pe6_dir(), pe6_editable(), pg_fill_extend_segments(), pg_gp_edit6_dispatch(), pg_gp_interpolate_strokes(), pg_gp_material_texture_set(), pg_gp_outline() (+1 more)
-
-### Community 244 - "01 — Full emulator bug hunt (branch `test/full-emulator-sweep`, PR #44)"
-Cohesion: 0.25
-Nodes (7): 01 — Full emulator bug hunt (branch `test/full-emulator-sweep`, PR #44), Bugs fixed (root cause → fix), Decisions and why, Files changed (main ones), Goal, Next steps, Results so far
+Nodes (10): pe8_deselect_frames(), pe8_layer(), pe8_style(), pg_gp_doc_query(), pg_gp_edit8_dispatch(), pg_gp_frame_select(), pg_gp_frame_set_keytype(), pg_gp_material_isolate() (+2 more)
 
 ### Community 245 - "test_select_op_tables"
 Cohesion: 0.32
@@ -823,10 +807,6 @@ Nodes (7): ASAN_OPTIONS, PG_HOST_CC, PG_HOST_CXX, PG_SANITIZE_FLAGS, PG_SANITIZE
 ### Community 251 - "ParamKind"
 Cohesion: 0.40
 Nodes (5): ParamKind, BOOL, ENUM, FLOAT, INT
-
-### Community 257 - "LooseEdgeData"
-Cohesion: 0.67
-Nodes (3): LooseEdgeData, loose_array, loose_count
 
 ### Community 278 - "run_emulator_sweep.py"
 Cohesion: 0.23
@@ -841,16 +821,16 @@ Nodes (11): class_tests(), main(), monkey(), run_class(), blocks(), instrument()
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GPNative` connect `GPNative` to `.selectedPointCount`, `.deleteLastStroke`, `.setMultiframeEditing`, `.duplicateLayer`, `.duplicateStroke`, `.fxSetTarget`, `.setOnionSkin`, `.setVertexGroupActive`, `NativeEditorBridge`, `Feature table`, `.trimStrokeToIntersection`, `.vertexGroupActive`, `ReferenceSheet.kt`, `.render`, `.scaleStrokeAbout`, `.vertexGroupAdd`, `.vertexGroupCount`, `.modifierCount`, `HistoryController`, `FloatArray`, `.surfaceCreated`, `.vertexGroupName`, `.createFrame`, `.deleteLayer`, `.duplicateFrame`, `IntArray`, `.eraseAt`, `.fxTarget`, `ReferenceScene`, `.hitTestStroke`, `.layerCount`, `DeviceBugfixTest.kt`, `.layerUseMask`, `.maskSetFlags`, `.maskAdd`, `MainActivity.kt`, `.maskFlags`, `.frameCount`, `.frameEnd`, `.maskRemove`, `.moveLayer`, `FuzzDeviceTest`, `.materialName`, `.pointCount`, `.renameLayer`?**
-  _High betweenness centrality (0.118) - this node is a cross-community bridge._
+  _High betweenness centrality (0.117) - this node is a cross-community bridge._
 - **Why does `FeatureId` connect `FeatureId` to `ProjectGreaseUI.kt`, `FeatureRegistry`, `.capability`?**
   _High betweenness centrality (0.087) - this node is a cross-community bridge._
 - **Why does `SweepBase` connect `SweepBase` to `DeviceBugfixTest.kt`, `SweepEditTest`, `.shot`, `PerfTest`, `SweepIoTest`, `SweepModsMaterialsTest`, `SweepPaintTest`, `.strokes`, `FuzzDeviceTest`?**
-  _High betweenness centrality (0.066) - this node is a cross-community bridge._
+  _High betweenness centrality (0.065) - this node is a cross-community bridge._
 - **What connects `wrap.sh script`, `ASAN_OPTIONS`, `display` to the rest of the system?**
   _627 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `FeatureId` be split into smaller, more focused modules?**
   _Cohesion score 0.011976047904191617 - nodes in this community are weakly interconnected._
 - **Should `project_grease_gp_bridge.cpp` be split into smaller, more focused modules?**
-  _Cohesion score 0.039584317430325935 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.03935670762161622 - nodes in this community are weakly interconnected._
 - **Should `project_grease_gp_jni.cpp` be split into smaller, more focused modules?**
-  _Cohesion score 0.09773355444997237 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09841768600605992 - nodes in this community are weakly interconnected._

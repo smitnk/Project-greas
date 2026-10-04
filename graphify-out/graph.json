@@ -23429,7 +23429,7 @@
       "file_type": "code",
       "norm_label": "java_com_smitnk_projectgrease_nativebridge_gpnative_nativesetselectionoverlay()",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897"
+      "source_location": "L904"
     },
     {
       "id": "android_app_src_main_cpp_project_grease_android_egl_renderer_java_com_smitnk_projectgrease_nativebridge_gpnative_nativesetstrokecoloreglrenderer",
@@ -71072,7 +71072,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L901",
+      "source_location": "L908",
       "weight": 1.0
     },
     {
@@ -71132,7 +71132,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L874",
+      "source_location": "L881",
       "weight": 1.0
     },
     {
@@ -140814,7 +140814,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897",
+      "source_location": "L904",
       "weight": 1.0
     },
     {
@@ -140826,7 +140826,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897",
+      "source_location": "L904",
       "weight": 1.0
     },
     {
@@ -140838,7 +140838,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897",
+      "source_location": "L904",
       "weight": 1.0
     },
     {
@@ -140850,7 +140850,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897",
+      "source_location": "L904",
       "weight": 1.0
     },
     {
@@ -166950,7 +166950,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897",
+      "source_location": "L904",
       "weight": 1.0
     },
     {
@@ -174710,7 +174710,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L897",
+      "source_location": "L904",
       "weight": 1.0
     },
     {
@@ -219308,7 +219308,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L120",
+      "source_location": "L121",
       "weight": 1.0
     },
     {
@@ -219320,7 +219320,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L121",
+      "source_location": "L122",
       "weight": 1.0
     },
     {
@@ -219332,7 +219332,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L123",
+      "source_location": "L129",
       "weight": 1.0
     },
     {
@@ -219920,7 +219920,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L902",
+      "source_location": "L909",
       "weight": 1.0
     },
     {
@@ -219980,7 +219980,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/cpp/project_grease_android_egl_renderer.cpp",
-      "source_location": "L885",
+      "source_location": "L892",
       "weight": 1.0
     },
     {
@@ -235012,5 +235012,5 @@
       "source_file": "tools/android_gp_source_manifest.txt"
     }
   ],
-  "built_at_commit": "da6e8964c6b1f500205617a8d02e7aec31cca75d"
+  "built_at_commit": "f6cc33c0151a2c8f27ffb3c184fbab0fad11820d"
 }

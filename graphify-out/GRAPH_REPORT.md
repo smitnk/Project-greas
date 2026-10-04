@@ -1,7 +1,7 @@
 # Graph Report - Project-greas  (2026-10-04)
 
 ## Corpus Check
-- 312 files · ~330,279 words
+- 312 files · ~330,677 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 14 file(s) not represented in the graph (top: .obj 6, .xml 3, .properties 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `da6e8964`
+- Built from commit: `f6cc33c0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -821,7 +821,7 @@ Nodes (11): class_tests(), main(), monkey(), run_class(), blocks(), instrument()
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GPNative` connect `GPNative` to `.selectedPointCount`, `.deleteLastStroke`, `.setMultiframeEditing`, `.duplicateLayer`, `.duplicateStroke`, `.fxSetTarget`, `.setOnionSkin`, `.setVertexGroupActive`, `NativeEditorBridge`, `Feature table`, `.trimStrokeToIntersection`, `.vertexGroupActive`, `ReferenceSheet.kt`, `.render`, `.scaleStrokeAbout`, `.vertexGroupAdd`, `.vertexGroupCount`, `.modifierCount`, `HistoryController`, `FloatArray`, `.surfaceCreated`, `.vertexGroupName`, `.createFrame`, `.deleteLayer`, `.duplicateFrame`, `IntArray`, `.eraseAt`, `.fxTarget`, `ReferenceScene`, `.hitTestStroke`, `.layerCount`, `DeviceBugfixTest.kt`, `.layerUseMask`, `.maskSetFlags`, `.maskAdd`, `MainActivity.kt`, `.maskFlags`, `.frameCount`, `.frameEnd`, `.maskRemove`, `.moveLayer`, `FuzzDeviceTest`, `.materialName`, `.pointCount`, `.renameLayer`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
+  _High betweenness centrality (0.118) - this node is a cross-community bridge._
 - **Why does `FeatureId` connect `FeatureId` to `ProjectGreaseUI.kt`, `FeatureRegistry`, `.capability`?**
   _High betweenness centrality (0.087) - this node is a cross-community bridge._
 - **Why does `SweepBase` connect `SweepBase` to `DeviceBugfixTest.kt`, `SweepEditTest`, `.shot`, `PerfTest`, `SweepIoTest`, `SweepModsMaterialsTest`, `SweepPaintTest`, `.strokes`, `FuzzDeviceTest`?**

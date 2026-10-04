@@ -55,7 +55,8 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             cyclic = info[2] != 0f,
             fillOpacity = info[3],
             fillColor = info.copyOfRange(4, 8),
-            weights = weights
+            weights = weights,
+            caps = if (info.size >= 10) intArrayOf(info[8].toInt(), info[9].toInt()) else intArrayOf(0, 0)
         )
     }
 
@@ -108,7 +109,8 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         }
         val info = floatArrayOf(
             record.materialIndex.toFloat(), record.thickness, if (record.cyclic) 1f else 0f, record.fillOpacity,
-            record.fillColor[0], record.fillColor[1], record.fillColor[2], record.fillColor[3]
+            record.fillColor[0], record.fillColor[1], record.fillColor[2], record.fillColor[3],
+            record.caps.getOrElse(0) { 0 }.toFloat(), record.caps.getOrElse(1) { 0 }.toFloat()
         )
         if (!native.addStroke(flat, record.points.size, info, colors)) return false
         if (record.weights.isNotEmpty()) {

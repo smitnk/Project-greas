@@ -469,6 +469,8 @@ object ProjectGreaseSelect {
     const val ONION_MODE_ABSOLUTE = 0
     const val ONION_MODE_RELATIVE = 1
     const val ONION_MODE_SELECTED = 2
+    /** pg_gp_doc_query: indices of the active frame's selected strokes (PG_DOC_Q_SELECTED_STROKES). */
+    const val DOC_Q_SELECTED_STROKES = 4
 
     fun outline(thickness: Int = 2, capSegments: Int = 8): Command? =
         if (thickness >= 1 && capSegments in 1..64) Command(CMD_OUTLINE, floatArrayOf(thickness.toFloat(), capSegments.toFloat())) else null

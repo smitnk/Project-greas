@@ -82,6 +82,20 @@ int main(void)
   pg_annot_free(a);
   pg_annot_free(b);
   pg_annot_free(NULL);
+  /* Regression (emulator sweep: annotations drew nothing): a drag's points all reach the stroke.
+   * The open marker lived in bit 30 of bGPDstroke.flag, a short in Blender's DNA, so it was lost
+   * and every point after begin was dropped. */
+  {
+    bGPdata *b = pg_annot_create();
+    line(b, 1, 50.0f, 25);
+    const bGPDframe *f = pg_annot_frame_at(b, 1);
+    const bGPDstroke *s = f ? (const bGPDstroke *)f->strokes.last : NULL;
+    CHECK(s && s->totpoints == 25, "every point of the drag is in the stroke");
+    CHECK(pg_annot_stroke_count(b) == 1, "one finished stroke");
+    short as_short = (short)(1 << 5);
+    CHECK(as_short != 0, "the open marker fits a short flag");
+    pg_annot_free(b);
+  }
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

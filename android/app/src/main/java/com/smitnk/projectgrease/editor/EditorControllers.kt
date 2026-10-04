@@ -155,11 +155,57 @@ class HistoryController(private val native: NativeEditorBridge) {
     val canUndo: Boolean get() = native.historyCanUndo()
     val canRedo: Boolean get() = native.historyCanRedo()
 
+    /**
+     * Document state kept on the Kotlin side (material texture settings and images) is snapshotted
+     * with every native step and restored with it, so undo/redo cover it like the Blender data.
+     */
+    var captureExtras: () -> Any? = { null }
+    var restoreExtras: (Any?) -> Unit = {}
+    private val undoExtras = ArrayList<Any?>()
+    private val redoExtras = ArrayList<Any?>()
+
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
-    fun markEdit(): Boolean = native.historyRecord()
-    fun reset(): Boolean = native.historyReset()
-    fun undo(): Boolean = native.historyUndo()
-    fun redo(): Boolean = native.historyRedo()
+    fun markEdit(): Boolean {
+        if (batching) { batchChanged = true; return true }
+        return record()
+    }
+    private fun record(): Boolean {
+        val ok = native.historyRecord()
+        if (ok) {
+            undoExtras += captureExtras(); redoExtras.clear()
+            while (undoExtras.size > MAX_STEPS) undoExtras.removeAt(0)
+        }
+        return ok
+    }
+    private var batching = false
+    private var batchChanged = false
+    /**
+     * One undo step for a whole gesture (Blender's modal transform pushes a single undo on confirm):
+     * edits between beginBatch and endBatch are recorded once, at the end.
+     */
+    fun beginBatch() { batching = true; batchChanged = false }
+    fun endBatch(): Boolean {
+        if (!batching) return false
+        batching = false
+        val changed = batchChanged
+        batchChanged = false
+        return if (changed) record() else false
+    }
+    fun reset(): Boolean {
+        undoExtras.clear(); redoExtras.clear()
+        return native.historyReset().also { if (it) undoExtras += captureExtras() }
+    }
+    fun undo(): Boolean {
+        if (!native.historyUndo()) return false
+        if (undoExtras.size >= 2) { redoExtras += undoExtras.removeAt(undoExtras.size - 1); restoreExtras(undoExtras.last()) }
+        return true
+    }
+    fun redo(): Boolean {
+        if (!native.historyRedo()) return false
+        if (redoExtras.isNotEmpty()) { val e = redoExtras.removeAt(redoExtras.size - 1); undoExtras += e; restoreExtras(e) }
+        return true
+    }
+    companion object { const val MAX_STEPS = 64 } // kMaxHistory of the native history
 }
 
 class DocumentController {
@@ -633,7 +679,10 @@ class EditorController {
     /** 3D reference scene for Line Art (Scene-lite): OBJ meshes + camera, previewed as a wireframe. */
     val reference=ReferenceScene()
     val document=DocumentController()
-    val history=HistoryController(native)
+    val history=HistoryController(native).also { h ->
+        h.captureExtras = { captureTextures() }
+        h.restoreExtras = { restoreTextures(it) }
+    }
     val animation=AnimationController(native) { render() }
     val materials=MaterialController()
     val brushes=BrushController(materials)
@@ -780,9 +829,15 @@ class EditorController {
      * (x, y, pressure, time) in canvas units, every historical sample included. Native applies the
      * tool and renders once. The gesture's END records one undo step when it changed the document.
      */
+    /** BKE_gpencil_layer_is_editable(): the active layer is neither locked nor hidden. */
+    fun activeLayerEditable():Boolean = layerState()?.let { !it.locked && it.visible } ?: true
+
     fun toolSamples(tool:Int, samples:FloatArray, count:Int, phase:Int, pxPerUnit:Float = 1f):Int {
         if (rendererHandle == 0L || tool < 0) return 0
         if (phase == ToolSession.PHASE_BEGIN) {
+            // gpencil_draw_init(): "Active layer is locked or hidden" cancels the stroke; the sculpt
+            // and paint brushes skip non-editable layers (BKE_gpencil_layer_is_editable).
+            if (!activeLayerEditable()) { sessionTool = -1; return 0 }
             if (tool == ToolSession.TOOL_WEIGHT_PAINT) syncWeightPaintGroup()
             sessionTool = tool
             sessionGestureChanged = false
@@ -930,6 +985,9 @@ class EditorController {
         if (shapeEdit.isActive && tools.activeTool in setOf(GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC)) {
             shapeAwaitingPress = true; shapeConfirmOnRelease = false; return true
         }
+        // The primitive tools create strokes: not on a locked or hidden layer (gpencil_primitive_invoke).
+        if (tools.activeTool in setOf(GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC,
+                GreaseTool.POLYLINE, GreaseTool.CURVE) && !activeLayerEditable()) return false
         return when (tools.activeTool) {
             GreaseTool.BOX_SELECT -> { areaStart = null; boxSelectRect = null; true }
             GreaseTool.CIRCLE_SELECT -> { areaFirstDab = true; true }
@@ -1332,6 +1390,17 @@ class EditorController {
     /** Texture images whose URI is known but whose pixels are not loaded (after opening a project). */
     fun texturesNeedingImages():List<Triple<Int, Boolean, String>> =
         materialTextures.mapNotNull { (k, t) -> t.uri?.takeIf { textureImages[k] == null }?.let { Triple(k / 2, k % 2 == 1, it) } }
+    private class TextureState(val settings: Map<Int, MaterialTexture>, val images: Map<Int, Triple<IntArray, Int, Int>>)
+    private fun captureTextures(): Any = TextureState(HashMap(materialTextures), HashMap(textureImages))
+    private fun restoreTextures(state: Any?) {
+        val t = state as? TextureState ?: return
+        if (t.settings == materialTextures && t.images == textureImages) return
+        clearTextures()
+        materialTextures.putAll(t.settings); textureImages.putAll(t.images)
+        if (rendererHandle != 0L) for ((key, img) in textureImages)
+            GPNative.nativeSetMaterialTextureEglRenderer(rendererHandle, key / 2, key % 2 == 1, img.first, img.second, img.third)
+    }
+
     /** Sets the texture settings (and, when given, the image as ARGB pixels) of a material slot. */
     fun setMaterialTexture(slot:Int, fill:Boolean, texture:MaterialTexture, argb:IntArray? = null, width:Int = 0, height:Int = 0):Boolean {
         val command = ProjectGreaseSelect.materialTexture(slot, fill, texture.enabled, texture.mix, texture.scaleX, texture.scaleY,
@@ -1343,6 +1412,7 @@ class EditorController {
             textureImages[key] = Triple(argb, width, height)
             if (rendererHandle != 0L) GPNative.nativeSetMaterialTextureEglRenderer(rendererHandle, slot, fill, argb, width, height)
         }
+        history.markEdit()
         document.markDirty()
         render()
         return true
@@ -1398,6 +1468,7 @@ class EditorController {
         val plan = FrameSequenceExport.plan(keys, s.frameStart.coerceAtLeast(1), s.frameEnd.coerceAtLeast(s.frameStart.coerceAtLeast(1)), document.projectName.ifBlank { "frame" }.replace(Regex("[^A-Za-z0-9_-]"), "_"), "png")
         val original = animation.currentFrame
         var ok = true
+        GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
         for (item in plan) {
             native.selectFrameOrHold(item.frame)
             val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent || s.transparentBackground)
@@ -1562,16 +1633,25 @@ class EditorController {
         fillBoundary = boundary.coerceIn(FILL_BOUNDARY_ALL, FILL_BOUNDARY_EDIT_LINES)
     }
     fun fillAt(x: Float, y: Float): Boolean {
-        if (rendererHandle == 0L) return false
+        if (rendererHandle == 0L || !activeLayerEditable()) return false
         // Blender Legacy GP Fill creates a closed filled stroke using the active material.
         // Enable the material's Fill component only when the Fill tool is actually used.
-        if (!materials.fillEnabled) {
-            setMaterialFillEnabled(true)
+        val enabledFill = !materials.fillEnabled
+        if (enabledFill) {
+            // Part of the fill's own undo step, recorded below.
+            materials.setFillEnabled(true)
+            native.setMaterialFillEnabled(materials.activeMaterial, true)
         }
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
+        else if (enabledFill) {
+            // No fill was made (it leaked, or the tap was outside a boundary): the material is left
+            // as it was, since there is no undo step that could restore it.
+            materials.setFillEnabled(false)
+            native.setMaterialFillEnabled(materials.activeMaterial, false)
+        }
         return ok
     }
 
@@ -1604,8 +1684,14 @@ class EditorController {
         val alpha=c[3]*materials.opacity
         val stroke=floatArrayOf(c[0],c[1],c[2],alpha)
         val fill=floatArrayOf(c[0],c[1],c[2],alpha)
+        val before=native.materialInfo(materials.activeMaterial)
         val ok=native.setMaterialColors(materials.activeMaterial,stroke,fill)
-        if(ok) pushMaterialColor()
+        if(ok) {
+            pushMaterialColor()
+            // A material colour change is its own undo step (Blender pushes one per property edit);
+            // unrecorded, the next operation's undo would also revert it.
+            if (before == null || !before.copyOfRange(0, 8).contentEquals(stroke + fill)) { history.markEdit(); document.markDirty() }
+        }
         return ok
     }
     fun selectMaterial(index:Int):Boolean {
@@ -1653,9 +1739,23 @@ class EditorController {
         return px?.takeIf { it.size == document.canvasWidth * document.canvasHeight }
     }
 
+    /**
+     * The current frame as the PNG export writes it: like every animation export, transparent when
+     * asked or when the project settings say so, otherwise composited over the project background.
+     */
+    fun exportCanvasPixels(transparent:Boolean):IntArray? {
+        val s = projectSettings
+        if (rendererHandle == 0L) return null
+        GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
+        return renderCanvasPixels(transparent || s.transparentBackground)
+    }
+
     fun setMaterialFillEnabled(enabled:Boolean):Boolean {
+        val was = native.materialInfo(materials.activeMaterial)?.getOrNull(9)?.let { it != 0f }
         materials.setFillEnabled(enabled)
-        return native.setMaterialFillEnabled(materials.activeMaterial,enabled)
+        val ok = native.setMaterialFillEnabled(materials.activeMaterial,enabled)
+        if (ok && was != enabled) { history.markEdit(); document.markDirty(); render() }
+        return ok
     }
     fun pushMaterialColor(){
         if(rendererHandle==0L)return
@@ -2000,6 +2100,16 @@ class EditorController {
         }
         return ok
     }
+    /** Timeline frame edits as one undo step each (Blender's ACTION_OT_duplicate / delete, interpolate). */
+    private fun frameEdit(ok:Boolean):Boolean {
+        if (ok) { history.markEdit(); document.markDirty(); render() }
+        return ok
+    }
+    fun duplicateFrame(sourceFrame:Int, targetFrame:Int):Boolean = frameEdit(animation.duplicateFrame(sourceFrame, targetFrame))
+    fun deleteFrame(frameNumber:Int):Boolean = frameEdit(animation.deleteFrame(frameNumber))
+    fun interpolateFrameAt(frame:Int):Boolean = frameEdit(animation.interpolateAt(frame))
+    fun interpolateSequence(frame:Int = animation.currentFrame):Int = animation.interpolateSequence(frame).also { frameEdit(it > 0) }
+
     fun selectFrame(frame:Int):Boolean {
         val ok = animation.ensureFrame(frame)
         if (ok) render()
@@ -2178,7 +2288,9 @@ class EditorController {
     /** The group to paint: the document's active vertex group, created ("Group") when there is none. */
     fun syncWeightPaintGroup() {
         if (native.handle == 0L) return
-        if (native.vertexGroupCount() == 0) native.vertexGroupAdd("Group")
+        // Weight Paint creates the first group itself (as Blender does on the first stroke): an undo
+        // step of its own, so undoing a paint stroke keeps the group.
+        if (native.vertexGroupCount() == 0 && native.vertexGroupAdd("Group") >= 0) { history.markEdit(); document.markDirty() }
         val active = native.vertexGroupActive()
         weightPaintGroup = if (active >= 0) active else 0
     }
@@ -2277,11 +2389,19 @@ class EditorController {
 
     fun trimSelectedStrokeToIntersection():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStrokeToIntersection(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun splitSelectedStroke(beforeIndex:Int):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.splitStroke(i,beforeIndex);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    /**
+     * Undo/redo restore the selection with the document (GP_STROKE_SELECT is stroke data): the
+     * "selected stroke" the stroke menu acts on follows it instead of being dropped.
+     */
+    private fun restoreSelectedStroke() {
+        val first = native.docQuery(ProjectGreaseSelect.DOC_Q_SELECTED_STROKES)?.firstOrNull()?.toInt()
+        if (first != null && first >= 0) selection.note(first) else selection.clear()
+    }
     fun undo():Boolean {
         val ok = history.undo()
         if (ok) {
             reapplyOnion()
-            selection.clear()
+            restoreSelectedStroke()
             animation.initialize()
             document.markDirty()
             render()
@@ -2292,7 +2412,7 @@ class EditorController {
         val ok = history.redo()
         if (ok) {
             reapplyOnion()
-            selection.clear()
+            restoreSelectedStroke()
             animation.initialize()
             document.markDirty()
             render()
@@ -2349,9 +2469,7 @@ class EditorController {
     fun materialRecord(slot:Int = materials.activeMaterial):MaterialRecord? = NativeDocumentAdapter(native).materialRecord(slot)
     fun materialName(slot:Int):String = native.materialName(slot)?.takeIf { it.isNotBlank() } ?: "Material ${slot + 1}"
     fun renameMaterial(slot:Int, name:String):Boolean {
-        val ok = native.setMaterialName(slot, name.trim())
-        if (ok) { document.markDirty(); render() }
-        return ok
+        return docChanged(native.setMaterialName(slot, name.trim()))
     }
     /** Moves a slot (GPENCIL_OT_material_slot_move): strokes keep their material, textures follow. */
     fun moveMaterial(slot:Int, delta:Int):Boolean {

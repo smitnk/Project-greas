@@ -16,6 +16,7 @@
 #include "BKE_gpencil_legacy.h"
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
+#include "ED_gpencil_legacy.h"
 #include "DNA_material_types.h"
 #include "DNA_meshdata_types.h"
 #include "MEM_guardedalloc.h"
@@ -28,6 +29,7 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
@@ -50,6 +52,22 @@ static int failures = 0;
     } \
   } while (0)
 
+static EGLDisplay g_dpy = EGL_NO_DISPLAY;
+static EGLConfig g_cfg;
+static EGLSurface g_surf = EGL_NO_SURFACE;
+static EGLContext g_ctx = EGL_NO_CONTEXT;
+/* What the app does when the window goes away and comes back (rotation, resume, a new activity):
+ * the presenter is reset and the GL context is destroyed, then a new context is made current. */
+static bool recreate_context()
+{
+  const EGLint xa[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+  eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  eglDestroyContext(g_dpy, g_ctx);
+  g_ctx = eglCreateContext(g_dpy, g_cfg, EGL_NO_CONTEXT, xa);
+  if (g_ctx == EGL_NO_CONTEXT || !eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx)) return false;
+  glViewport(0, 0, W, H);
+  return true;
+}
 static bool init_gl()
 {
   EGLDisplay d = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -68,6 +86,7 @@ static bool init_gl()
   EGLContext c = eglCreateContext(d, cfg, EGL_NO_CONTEXT, xa);
   if (s == EGL_NO_SURFACE || c == EGL_NO_CONTEXT) return false;
   if (!eglMakeCurrent(d, s, s, c)) return false;
+  g_dpy = d; g_cfg = cfg; g_surf = s; g_ctx = c;
   glViewport(0, 0, W, H);
   return true;
 }
@@ -961,10 +980,121 @@ static void test_batch21_guide()
   project_grease_android_present_set_export_mode(1);
   present(d);
   CHECK(near_rgb(pixel_at_canvas(100, 70), 245, 245, 245)); /* never exported */
+  /* opaque exports use the project background, not the viewport paper */
+  project_grease_android_present_set_export_background(0.0f, 0.0f, 1.0f);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(110, 70), 0, 0, 255));
+  project_grease_android_present_set_export_background(0.96f, 0.96f, 0.96f);
   project_grease_android_present_set_export_mode(0);
   project_grease_android_present_set_guide(-1, 0, 0, 0, 0);
   present(d);
   CHECK(near_rgb(pixel_at_canvas(100, 70), 245, 245, 245));
+}
+
+/* While a stroke is open (sbuffer) the committed drawing is reused from a cache: later frames of the
+ * gesture must show the same committed strokes and the growing open stroke, and the cache must go
+ * away when the stroke closes. */
+static void test_open_stroke_cache()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  tGPspoint pts[3] = {};
+  for (int i = 0; i < 3; i++) { pts[i].m_xy[0] = 20.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* first frame of the gesture: full render, cache stored */
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));
+  CHECK(!near_rgb(pixel_at_canvas(40, 88), 245, 245, 245)); /* open stroke drawn */
+  CHECK(near_rgb(pixel_at_canvas(130, 88), 245, 245, 245)); /* not yet reaching x 130 */
+  d.gpd->runtime.sbuffer_used = 3; /* the stroke grows */
+  present(d); /* cached frame */
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(100, 100), 245, 245, 245));
+  CHECK(!near_rgb(pixel_at_canvas(130, 88), 245, 245, 245)); /* the new segment is drawn */
+  d.gpd->runtime.sbuffer_used = 0; /* stroke closed: the cache is dropped */
+  d.gpd->runtime.sbuffer = nullptr;
+  set_color(d, 0, 0, 1);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
+}
+
+extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
+/* Regression (emulator sweep: cache stored once per run): present_reset() runs when the window and
+ * its GL context go away; the cache must not keep its texture id into the next context, or every
+ * later store fails and each input sample redraws the whole frame. */
+static void test_open_stroke_cache_after_reset()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  tGPspoint pts[3] = {};
+  for (int i = 0; i < 3; i++) { pts[i].m_xy[0] = 20.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* gesture 1: cache stored */
+  d.gpd->runtime.sbuffer_used = 0;
+  present(d);
+  project_grease_android_present_reset(); /* window / context torn down ... */
+  CHECK(recreate_context());              /* ... and a new one made current */
+  long stores0 = 0, reuses0 = 0, stores1 = 0, reuses1 = 0;
+  project_grease_android_present_cache_stats(&stores0, &reuses0);
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* gesture 2 after the reset: must store again */
+  d.gpd->runtime.sbuffer_used = 3;
+  present(d); /* and reuse it */
+  project_grease_android_present_cache_stats(&stores1, &reuses1);
+  CHECK(stores1 == stores0 + 1);
+  CHECK(reuses1 == reuses0 + 1);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));
+  CHECK(!near_rgb(pixel_at_canvas(130, 88), 245, 245, 245));
+  d.gpd->runtime.sbuffer_used = 0;
+  d.gpd->runtime.sbuffer = nullptr;
+  present(d);
+}
+
+extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
+/* Annotations draw over the document in their layer colour. */
+static void test_annotations()
+{
+  Doc d = make_doc();
+  add_layer(d, "A");
+  bGPdata *annot = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "annot"));
+  bGPDlayer *al = BKE_gpencil_layer_addnew(annot, "Note", true, false);
+  al->thickness = 4;
+  al->color[0] = 0.0f; al->color[1] = 0.6f; al->color[2] = 1.0f; al->color[3] = 1.0f;
+  bGPDframe *af = BKE_gpencil_frame_addnew(al, 1);
+  bGPDstroke *s = BKE_gpencil_stroke_add(af, 0, 2, 4, false);
+  s->points[0].x = 20; s->points[1].x = 180;
+  s->points[0].y = s->points[1].y = 60;
+  s->points[0].pressure = s->points[1].pressure = 1.0f;
+  glViewport(0, 0, W, H);
+  CHECK(project_grease_android_present_gp_document(d.gpd, 1) == 1);
+  CHECK(project_grease_android_present_annotations(annot, 1) == 1);
+  read_back();
+  const Rgba c = pixel_at_canvas(100, 60);
+  CHECK(c.b > 200 && c.r < 60);
+
+  /* as the touch path records it: many close points from a drag */
+  bGPDstroke *m = BKE_gpencil_stroke_add(af, 0, 40, 4, false);
+  for (int i = 0; i < 40; i++) {
+    m->points[i].x = 20.0f + 2.5f * i; m->points[i].y = 90.0f;
+    m->points[i].pressure = m->points[i].strength = 1.0f;
+  }
+  /* a tap: one point, drawn as a dot (annotation_draw_stroke_point) */
+  bGPDstroke *dot = BKE_gpencil_stroke_add(af, 0, 1, 4, false);
+  dot->points[0].x = 170; dot->points[0].y = 100;
+  dot->points[0].pressure = dot->points[0].strength = 1.0f;
+  CHECK(project_grease_android_present_gp_document(d.gpd, 1) == 1);
+  CHECK(project_grease_android_present_annotations(annot, 1) == 1);
+  read_back();
+  const Rgba cm = pixel_at_canvas(70, 90);
+  CHECK(cm.b > 200 && cm.r < 60);
+  const Rgba cd = pixel_at_canvas(170, 100);
+  printf("  annotation dot pixel %d,%d,%d\n", cd.r, cd.g, cd.b);
+  CHECK(cd.b > 200 && cd.r < 60);
 }
 
 int main()
@@ -1003,6 +1133,9 @@ int main()
   test_batch21_dots_squares();
   test_batch21_onion_filter_loop();
   test_batch21_guide();
+  test_open_stroke_cache();
+  test_open_stroke_cache_after_reset();
+  test_annotations();
   project_grease_android_present_reset();
   if (failures) {
     printf("%d FAILURES\n", failures);

@@ -153,6 +153,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                         controller.render()
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
+                        // Click-select + transform drag = one undo step (Blender's tweak transform).
+                        controller.history.beginBatch()
                         moveOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (moveOpen) {
                             lastMoveX = start.first
@@ -161,6 +163,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                         }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> {
+                        // Click-select + transform drag = one undo step (Blender's tweak transform).
+                        controller.history.beginBatch()
                         rotateOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (rotateOpen) {
                             val center = controller.selectedStrokeCenter()
@@ -178,6 +182,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                         }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.SCALE -> {
+                        // Click-select + transform drag = one undo step (Blender's tweak transform).
+                        controller.history.beginBatch()
                         scaleOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (scaleOpen) {
                             val center = controller.selectedStrokeCenter()
@@ -197,6 +203,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                         }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
+                        // Click-select + transform drag = one undo step (Blender's tweak transform).
+                        controller.history.beginBatch()
                         mirrorOpen = controller.hitTestAndSelectStroke(start.first, start.second)
                         if (mirrorOpen) {
                             val center = controller.selectedStrokeCenter()
@@ -484,6 +492,7 @@ internal class ProjectGreaseDrawingSurfaceView(
     }
 
     private fun resetGestureState() {
+        controller.history.endBatch()
         moveOpen = false
         rotateOpen = false
         scaleOpen = false

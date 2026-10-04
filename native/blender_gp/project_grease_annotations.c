@@ -15,8 +15,12 @@
 
 #include "project_grease_annotations.h"
 
-/* Private stroke flag: the stroke pg_annot_begin() opened (not a Blender flag bit). */
-#define PG_ANNOT_STROKE_OPEN (1 << 30)
+/* Private stroke flag: the stroke pg_annot_begin() opened. bGPDstroke.flag is a short and Blender's
+ * eGPDstroke_Flag uses bits 0-3 and 7-15, so bit 5 is free. (It was 1 << 30, which the short
+ * truncated to 0: the stroke was never open, every point of a drag was dropped and the annotation
+ * stayed a zero-point stroke that drew nothing.) */
+#define PG_ANNOT_STROKE_OPEN (1 << 5)
+_Static_assert(PG_ANNOT_STROKE_OPEN <= 0x7FFF, "the open flag must fit bGPDstroke.flag (short)");
 #define PG_ANNOT_POINT_CHUNK 64
 
 static void pa_link_append(ListBase *list, void *vlink)

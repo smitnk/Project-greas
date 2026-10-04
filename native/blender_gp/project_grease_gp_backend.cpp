@@ -1,4 +1,10 @@
 #include "project_grease_gp_backend.h"
+#if defined(__has_include)
+#if __has_include(<android/log.h>)
+#include <android/log.h>
+#define PG_HAVE_ANDROID_LOG 1
+#endif
+#endif
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_annotations.h"
@@ -173,6 +179,34 @@ static void gp_materials_free(bGPdata *gpd)
   gpd->totcol = 0;
 }
 
+/* Deep copy of a material slot array: undo snapshots own their materials (Blender's memfile undo
+ * restores Material datablocks too), so a colour/fill/line-type edit is undone and a slot freed by
+ * Delete Material never leaves a snapshot pointing at freed memory. */
+static Material **gp_materials_duplicate(Material *const *source, int count)
+{
+  if (!source || count <= 0) {
+    return nullptr;
+  }
+  Material **out = static_cast<Material **>(MEM_callocN(sizeof(Material *) * count, "PG history materials"));
+  if (!out) {
+    return nullptr;
+  }
+  for (int i = 0; i < count; ++i) {
+    if (!source[i]) {
+      continue;
+    }
+    Material *ma = static_cast<Material *>(MEM_dupallocN(source[i]));
+    if (!ma) {
+      continue;
+    }
+    ma->gp_style = source[i]->gp_style ?
+                       static_cast<MaterialGPencilStyle *>(MEM_dupallocN(source[i]->gp_style)) :
+                       nullptr;
+    out[i] = ma;
+  }
+  return out;
+}
+
 using ModifierStacks = std::vector<std::vector<PGModEntry>>;
 using FxStacks = std::vector<std::vector<PGFxEntry>>;
 
@@ -224,6 +258,7 @@ struct Backend::Impl {
   bool stroke_open = false;
 
   std::vector<HistorySnapshot *> undo_history;
+  float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
   std::vector<HistorySnapshot *> redo_history;
 
   // Live modifier stacks: stacks[i] belongs to the i-th layer of gpd->layers. They are document
@@ -378,7 +413,7 @@ static void history_snapshot_free(HistorySnapshot *snapshot)
   if (snapshot->data) {
     BKE_gpencil_free_layers(&snapshot->data->layers);
     BLI_freelistN(&snapshot->data->vertex_group_names);
-    MEM_SAFE_FREE(snapshot->data->mat);
+    gp_materials_free(snapshot->data);
     MEM_freeN(snapshot->data);
   }
   delete snapshot;
@@ -407,8 +442,9 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   BLI_listbase_clear(&destination->vertex_group_names);
   BKE_defgroup_copy_list(&destination->vertex_group_names, &source->vertex_group_names);
 
-  if (source->mat) {
-    destination->mat = static_cast<Material **>(MEM_dupallocN(source->mat));
+  destination->mat = gp_materials_duplicate(source->mat, source->totcol);
+  if (!destination->mat) {
+    destination->totcol = 0;
   }
 
   // Do not shallow-copy the source list nodes.
@@ -419,7 +455,7 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
     if (!destination_layer) {
       BLI_freelistN(&destination->vertex_group_names);
       BKE_gpencil_free_layers(&destination->layers);
-      MEM_SAFE_FREE(destination->mat);
+      gp_materials_free(destination);
       MEM_freeN(destination);
       return nullptr;
     }
@@ -496,11 +532,11 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   std::memset(&restored->runtime, 0, sizeof(restored->runtime));
 
   BKE_gpencil_free_layers(&impl->gpd->layers);
-  MEM_SAFE_FREE(impl->gpd->mat);
+  gp_materials_free(impl->gpd);
   BLI_listbase_clear(&impl->gpd->layers);
-  impl->gpd->mat = nullptr;
 
   history_copy_settings(snapshot->data, impl->gpd);
+  impl->gpd->totcol = restored->mat ? restored->totcol : 0;
   BLI_freelistN(&impl->gpd->vertex_group_names);
   impl->gpd->vertex_group_names = restored->vertex_group_names;
   BLI_listbase_clear(&restored->vertex_group_names);
@@ -936,6 +972,8 @@ bool Backend::select_layer(int index) {
        layer = layer->next, ++current) {
     if (current == index) {
       impl_->layer = layer;
+      // The active layer is document state (GP_LAYER_ACTIVE): undo/redo restore it from the flag.
+      BKE_gpencil_layer_active_set(impl_->gpd, layer);
       impl_->frame = nullptr;
       impl_->stroke = nullptr;
       impl_->layer_created = true;
@@ -1348,10 +1386,9 @@ bool Backend::delete_frame(int frame_number)
     impl_->last_error = "frame number not found";
     return false;
   }
-  if (!BKE_gpencil_layer_frame_delete(impl_->layer, target)) {
-    impl_->last_error = "BKE_gpencil_layer_frame_delete() failed";
-    return false;
-  }
+  // BKE_gpencil_layer_frame_delete() returns whether strokes were freed, not whether the frame
+  // went away: an empty keyframe is deleted too, so its result is not a failure.
+  BKE_gpencil_layer_frame_delete(impl_->layer, target);
   impl_->frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
   impl_->layer->actframe = impl_->frame;
   impl_->frame_created = impl_->frame != nullptr;
@@ -3422,7 +3459,15 @@ bool Backend::render_with_gpu_context()
   ob->data = impl_->gpd;
 #endif
 
+#ifdef __ANDROID__
+  // While a stroke is open (sbuffer in use) nothing committed changes, and the Android presenter
+  // never draws from this batch: rebuilding and freeing Blender's whole-frame batch cache on every
+  // input sample made drawing over a full frame cost ~150 ms per sample on the emulator.
+  const bool stroke_open = impl_->gpd->runtime.sbuffer && impl_->gpd->runtime.sbuffer_used > 0;
+  GPUBatch *batch = stroke_open ? nullptr : DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+#else
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+#endif
   const bool cache_ready = batch != nullptr;
 #ifdef __ANDROID__
   // Android presentation is the focused Project Grease renderer. It must not
@@ -3447,8 +3492,15 @@ bool Backend::render_with_gpu_context()
   bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
   // Annotations are drawn over every layer, in screen-space thickness.
-  if (presented && impl_->annotations && impl_->annotations_visible) {
-    presented = project_grease_android_present_annotations(impl_->annotations, impl_->frame->framenum) != 0;
+  if (impl_->annotations && impl_->annotations_visible) {
+    if (!presented) {
+#ifdef PG_HAVE_ANDROID_LOG
+      __android_log_print(ANDROID_LOG_WARN, "ProjectGrease", "annotpass skipped: document pass failed");
+#endif
+    }
+    else {
+      presented = project_grease_android_present_annotations(impl_->annotations, impl_->frame->framenum) != 0;
+    }
   }
   project_grease_android_set_frame_evaluator(nullptr, nullptr);
   project_grease_android_set_fx_provider(nullptr, nullptr);
@@ -4687,6 +4739,13 @@ bool Backend::fill_stroke(int index)
 }
 
 
+void Backend::set_fill_screen_map(float scale, float origin_x, float origin_y)
+{
+  impl_->fill_map_scale = scale;
+  impl_->fill_map_origin_x = origin_x;
+  impl_->fill_map_origin_y = origin_y;
+}
+
 bool Backend::fill_at_screen(const float* rgba,
                              int width,
                              int height,
@@ -4726,11 +4785,14 @@ bool Backend::fill_at_screen(const float* rgba,
     return false;
   }
 
+  // The outline is in screen pixels of the rendered view: back to canvas units, as Blender's fill
+  // unprojects its 2D boundary (gpencil_points_from_stack -> gpencil_stroke_convertcoords_tpoint).
+  const float map_scale = impl_->fill_map_scale > 1e-6f ? impl_->fill_map_scale : 1.0f;
   std::vector<StrokePoint> points;
   points.reserve(result.outline.size());
   for (const legacy_gp_fill::Point& p : result.outline) {
-    points.push_back({p.x,
-                      static_cast<float>(height) - p.y,
+    points.push_back({(p.x - impl_->fill_map_origin_x) / map_scale,
+                      (static_cast<float>(height) - p.y - impl_->fill_map_origin_y) / map_scale,
                       0.0f,
                       1.0f,
                       1.0f,

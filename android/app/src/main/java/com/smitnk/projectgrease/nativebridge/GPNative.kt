@@ -52,6 +52,7 @@ object GPNative {
     external fun nativeFxSetTarget(handle: Long, layer: Int, index: Int, target: Int): Boolean
     external fun nativeFxGetTarget(handle: Long, layer: Int, index: Int): Int
     /** Current frame rendered offscreen at width x height (canvas units = pixels): ARGB, top row first. */
+    external fun nativeSetExportBackgroundEglRenderer(handle: Long, argb: Int): Boolean
     external fun nativeRenderCanvasPixelsEglRenderer(handle: Long, width: Int, height: Int, transparent: Boolean): IntArray?
 
     external fun nativeCreate(): Long

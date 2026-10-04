@@ -164,6 +164,7 @@ int project_grease_gp_apply_blender_modifier_stack(ProjectGreaseGPHandle *handle
 int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity);
 int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled);
 int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index);
+void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float scale, float origin_x, float origin_y);
 int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      const float *rgba,
                                      int width,

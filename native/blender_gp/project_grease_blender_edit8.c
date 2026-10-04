@@ -296,6 +296,16 @@ int pg_gp_doc_query(const bGPdata *gpd, const bGPDlayer *active, int what, const
       PUT(st->index);
       break;
     }
+    case PG_DOC_Q_SELECTED_STROKES: {
+      const bGPDframe *gpf = active ? active->actframe : NULL;
+      if (gpf == NULL) break;
+      int index = 0;
+      LISTBASE_FOREACH (const bGPDstroke *, gps, &gpf->strokes) {
+        if (gps->flag & GP_STROKE_SELECT) PUT(index);
+        index++;
+      }
+      break;
+    }
     case PG_DOC_Q_ONION:
       PUT(gpd->onion_keytype);
       PUT((gpd->onion_flag & GP_ONION_LOOP) ? 1 : 0);

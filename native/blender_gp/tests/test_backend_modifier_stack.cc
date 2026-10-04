@@ -2,6 +2,7 @@
  * undo/redo, Apply and the evaluated-frame cache (project_grease_gp_backend.cpp compiled with
  * __ANDROID__ against the real pinned Blender legacy GP code; the GPU/draw layer is stubbed because
  * nothing here renders). See tools/run_native_modifier_stack_tests.sh. */
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -141,6 +142,80 @@ int main()
     const bGPDstroke *painted = static_cast<const bGPDstroke *>(e2->strokes.first);
     CHECK(painted->points[0].vert_color[3] > 0.0f);
     CHECK(static_cast<const bGPDstroke *>(frame_a->strokes.first)->points[0].vert_color[3] > 0.0f); /* original painted too */
+  }
+
+  /* --- deleting an empty keyframe succeeds (BKE's return value means "strokes were freed") --- */
+  {
+    CHECK(b.create_frame(7));
+    const int frames = b.frame_count();
+    CHECK(b.delete_frame(7));
+    CHECK(b.frame_count() == frames - 1);
+    CHECK(b.select_frame(1));
+  }
+
+  /* --- fill: the outline (screen pixels of the view) is mapped back to canvas units --- */
+  {
+    constexpr int W = 40, H = 40;
+    static float rgba[W * H * 4];
+    std::memset(rgba, 0, sizeof(rgba));
+    auto mark = [&](int x, int y) { float *p = &rgba[(y * W + x) * 4]; p[0] = p[1] = p[2] = p[3] = 1.0f; };
+    for (int k = 10; k <= 30; ++k) { mark(k, 10); mark(k, 30); mark(10, k); mark(30, k); }
+    b.set_fill_screen_map(2.0f, 4.0f, 6.0f); /* screen = origin + canvas * 2 */
+    const int before = b.stroke_count();
+    CHECK(b.fill_at_screen(rgba, W, H, 20, 20, 1, 0, {0, 2.0f}));
+    CHECK(b.stroke_count() == before + 1);
+    float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f;
+    const bGPDstroke *f = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.last);
+    for (int i = 0; i < f->totpoints; i++) {
+      minx = std::min(minx, f->points[i].x); maxx = std::max(maxx, f->points[i].x);
+      miny = std::min(miny, f->points[i].y); maxy = std::max(maxy, f->points[i].y);
+    }
+    /* the square's interior is screen 11..29 -> canvas (11-4)/2 .. (29-4)/2 = 3.5 .. 12.5 in x */
+    CHECK(minx > 2.5f && maxx < 13.5f && maxx - minx > 7.0f);
+    CHECK(miny > 1.0f && maxy < 13.0f && maxy - miny > 7.0f); /* (y - 6) / 2 */
+    b.set_fill_screen_map(1.0f, 0.0f, 0.0f);
+    CHECK(b.delete_stroke(b.stroke_count() - 1));
+  }
+
+  /* --- undo / redo keep the layer the user selected active --- */
+  {
+    const int layers_before = b.layer_count();
+    CHECK(b.create_layer("Second") && b.create_frame(1));
+    add_line(b, 50.0f, 50.0f);
+    CHECK(b.select_layer(0) && b.select_frame(1));
+    const bGPDlayer *chosen = b.active_layer_data();
+    CHECK(b.history_record());
+    CHECK(b.history_record()); /* a second step on layer A */
+    CHECK(b.history_undo());
+    CHECK(b.active_layer_data() != nullptr && std::strcmp(b.active_layer_data()->info, chosen->info) == 0);
+    CHECK(b.history_redo());
+    CHECK(std::strcmp(b.active_layer_data()->info, "A") == 0);
+    CHECK(b.delete_layer(layers_before) && b.select_layer(0) && b.select_frame(1) && b.history_record());
+    layer_a = b.active_layer_data();
+    frame_a = static_cast<bGPDframe *>(layer_a->frames.first);
+    gpd = b.document_data();
+  }
+
+  /* --- undo / redo restore material state (snapshots own deep copies) --- */
+  {
+    CHECK(b.material_count() >= 1);
+    CHECK(b.history_record());
+    const float red[4] = {1, 0, 0, 1};
+    const float black[4] = {0, 0, 0, 1};
+    CHECK(b.set_material_colors(0, black, black) && b.set_material_fill_enabled(0, false) && b.history_record());
+    CHECK(b.set_material_colors(0, red, red) && b.set_material_fill_enabled(0, true) && b.history_record());
+    CHECK(b.material_fill_enabled(0));
+    CHECK(b.history_undo());
+    CHECK(!b.material_fill_enabled(0));
+    PGMaterialInfo info = {};
+    CHECK(b.get_material_info(0, &info) && info.stroke_rgba[0] == 0.0f);
+    CHECK(b.history_redo());
+    CHECK(b.material_fill_enabled(0) && b.get_material_info(0, &info) && info.stroke_rgba[0] == 1.0f);
+    const int slots = b.material_count();
+    CHECK(b.create_material() && b.history_record() && b.material_count() == slots + 1);
+    CHECK(b.history_undo() && b.material_count() == slots);
+    CHECK(b.history_redo() && b.material_count() == slots + 1);
+    gpd = b.document_data();
   }
 
   /* --- undo / redo carry the stack --- */

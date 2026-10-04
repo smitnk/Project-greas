@@ -4,6 +4,12 @@
 #include <vector>
 
 #include <GLES2/gl2.h>
+#if defined(__has_include)
+#if __has_include(<android/log.h>)
+#include <android/log.h>
+#define PG_HAVE_ANDROID_LOG 1
+#endif
+#endif
 
 #include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
@@ -57,6 +63,8 @@ float g_fill_extend=0.0f;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
 // open sbuffer are not part of an export.
 int g_export_mode=0;
+/* Background of opaque exports (export mode 1): the project settings' background colour. */
+float g_export_background[4]={0.96f,0.96f,0.96f,1.0f};
 // Edit-mode overlay: the points of the editable strokes (Blender's edit-mode vertices), selected
 // points in the theme's vertex-select orange.
 int g_selection_overlay=0;
@@ -684,7 +692,81 @@ void draw_selection_overlay(const bGPDframe*frame,int w,int h){
   draw_vertices(unsel,dark);
   draw_vertices(sel,orange);
 }
+// Open-stroke cache: while a stroke is being drawn (the sbuffer is open) nothing else in the document
+// changes, so the committed drawing of the first frame of the gesture is kept in a texture and every
+// later frame of the gesture redraws only that texture and the open stroke. Blender's draw engine
+// does the same with its cached batches; without it each input sample re-tessellated and redrew
+// every stroke of the frame.
+struct OpenStrokeCache {
+  GLuint tex=0, program=0, vbo=0;
+  int w=0, h=0, frame=0;
+  const bGPdata* gpd=nullptr;
+  float scale=0, ox=0, oy=0;
+  bool valid=false;
+} g_open_cache;
+long g_open_cache_stores=0, g_open_cache_reuses=0;
+bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
+  const OpenStrokeCache& c=g_open_cache;
+  return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y;
+}
+bool open_cache_program(){
+  OpenStrokeCache& c=g_open_cache;
+  if(c.program)return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec2 a_position; varying vec2 v_uv; "
+      "void main(){v_uv=a_position*0.5+0.5;gl_Position=vec4(a_position,0.0,1.0);}");
+  GLuint fs=compile_shader(GL_FRAGMENT_SHADER,"precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; "
+      "void main(){gl_FragColor=vec4(texture2D(u_tex,v_uv).rgb,1.0);}");
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  GLuint p=glCreateProgram();glAttachShader(p,vs);glAttachShader(p,fs);
+  glBindAttribLocation(p,0,"a_position");glLinkProgram(p);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(p,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(p);return false;}
+  c.program=p;glGenBuffers(1,&c.vbo);
+  return c.vbo!=0;
+}
+// Clears GL's sticky error flags, so a check after a call reports that call only: an error left
+// by an earlier, unrelated draw call otherwise marked every store / reuse as failed and each input
+// sample of the open stroke redrew the whole frame.
+void clear_gl_errors(){for(int i=0;i<16&&glGetError()!=GL_NO_ERROR;i++){}}
+// Copies the framebuffer as drawn so far (canvas and committed strokes) into the cache texture.
+void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
+  OpenStrokeCache& c=g_open_cache;
+  clear_gl_errors();
+  if(!c.tex)glGenTextures(1,&c.tex);
+  glBindTexture(GL_TEXTURE_2D,c.tex);
+  if(c.w!=w||c.h!=h){
+    // GL_RGB: a subset of both RGB and RGBA surfaces, as glCopyTexSubImage2D requires.
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,w,h,0,GL_RGB,GL_UNSIGNED_BYTE,nullptr);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+  }
+  glCopyTexSubImage2D(GL_TEXTURE_2D,0,0,0,0,0,w,h);
+  glBindTexture(GL_TEXTURE_2D,0);
+  c.valid=glGetError()==GL_NO_ERROR;
+  if(c.valid)g_open_cache_stores++;
+  c.gpd=gpd;c.frame=frame;c.w=w;c.h=h;c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;
+}
+bool open_cache_draw(){
+  OpenStrokeCache& c=g_open_cache;
+  if(!open_cache_program())return false;
+  clear_gl_errors();
+  const float quad[12]={-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1};
+  glUseProgram(c.program);
+  glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,c.tex);
+  glUniform1i(glGetUniformLocation(c.program,"u_tex"),0);
+  glBindBuffer(GL_ARRAY_BUFFER,c.vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(quad),quad,GL_STREAM_DRAW);
+  glEnableVertexAttribArray(0);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,nullptr);
+  glDisable(GL_BLEND);
+  glDrawArrays(GL_TRIANGLES,0,6);
+  glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,0);glUseProgram(0);
+  return glGetError()==GL_NO_ERROR;
+}
 } // namespace
+
+extern "C" void project_grease_android_present_cache_stats(long* stores,long* reuses){
+  if(stores)*stores=g_open_cache_stores;
+  if(reuses)*reuses=g_open_cache_reuses;
+}
 
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
@@ -694,6 +776,11 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   glClear(GL_COLOR_BUFFER_BIT);
   g_stencil_fbo=-1;
   update_canvas_map(w,h);
+  const bool drawing=!g_export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
+  if(!drawing)g_open_cache.valid=false;
+  const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h)&&open_cache_draw();
+  if(reuse)g_open_cache_reuses++;
+  if(!reuse){
   std::vector<Vertex> canvas;
   const float x0=g_map_origin_x, y0=g_map_origin_y;
   const float x1=x0+float(g_canvas_width)*g_map_scale, y1=y0+float(g_canvas_height)*g_map_scale;
@@ -702,7 +789,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
   });
   const float canvas_color[4]={0.96f,0.96f,0.96f,1.0f};
-  if(g_export_mode!=2)draw_vertices(canvas,canvas_color,false);
+  if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:canvas_color,false);
   (void)x0; (void)y0; (void)x1; (void)y1;
   for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
     if(layer->flag&GP_LAYER_HIDE)continue;
@@ -816,6 +903,8 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
     g_active_mask_tex=0;
     if(g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
   }
+  if(drawing)open_cache_store(gpd,frame_number,w,h);
+  }
   // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
   // active guide in the theme's guide colour, over the canvas, not exported.
   if(!g_export_mode&&g_guide_type>=0){
@@ -923,15 +1012,24 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
 // annotation layer, in the layer color with a fixed screen-space thickness (layer->thickness px,
 // independent of zoom), drawn over the document like Blender's annotation overlay.
 extern "C" const bGPDframe *pg_annot_frame_at(const bGPdata *annot, int frame);
+#ifdef PG_HAVE_ANDROID_LOG
+static void annot_early(const char*why,int frame_number){
+  static const char*last=nullptr;
+  if(why!=last){last=why;__android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass early-return %s frame=%d",why,frame_number);}
+}
+#else
+static void annot_early(const char*,int){}
+#endif
 extern "C" int project_grease_android_present_annotations(const bGPdata* annot,int frame_number){
-  if(g_export_mode)return 1;
-  if(!annot||!ensure_program())return 0;
-  GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
+  if(g_export_mode){annot_early("export-mode",frame_number);return 1;}
+  if(!annot||!ensure_program()){annot_early("no-annot-or-program",frame_number);return 0;}
+  GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0){annot_early("viewport",frame_number);return 0;}
   update_canvas_map(w,h);
   const bGPDlayer*layer=static_cast<const bGPDlayer*>(annot->layers.first);
-  if(!layer||(layer->flag&GP_LAYER_HIDE))return 1;
+  if(!layer||(layer->flag&GP_LAYER_HIDE)){annot_early("layer-hidden",frame_number);return 1;}
   const bGPDframe*frame=pg_annot_frame_at(annot,frame_number);
-  if(!frame)return 1;
+  if(!frame){annot_early("no-frame",frame_number);return 1;}
+  annot_early("drawing",frame_number);
   const float px=std::max(1.0f,float(layer->thickness))/std::max(g_map_scale,1e-6f);
   std::vector<Vertex> v; v.reserve(1024);
   for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
@@ -940,8 +1038,25 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
     for(int i=0;i<s->totpoints;i++)pts.push_back(outline_point(s->points[i].x,s->points[i].y,px));
     append_outline(v,pts,0,w,h);
   }
+  clear_gl_errors(); // an earlier pass's error is not this draw's
   draw_vertices(v,layer->color);
-  return glGetError()==GL_NO_ERROR?1:0;
+  const GLenum err=glGetError();
+#ifdef PG_HAVE_ANDROID_LOG
+  // Evidence for the emulator sweep: what the annotation pass drew, whenever that changes.
+  int strokes=0; long points=0;
+  for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){strokes++;points+=s->totpoints;}
+  static long last_key=-1;
+  const long key=((long(frame_number)*1000+strokes)*1000000+points)*7+long(v.size()%7)+long(v.size())*1000003L;
+  if(key!=last_key){
+    last_key=key;
+    const bGPDstroke*last=static_cast<const bGPDstroke*>(frame->strokes.last);
+    const int np=last?last->totpoints:0;
+    const float fx=np?last->points[0].x:0, fy=np?last->points[0].y:0, lx=np?last->points[np-1].x:0, ly=np?last->points[np-1].y:0;
+    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d/%d strokes=%d points=%ld last_stroke_points=%d first=(%.1f,%.1f) last=(%.1f,%.1f) verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
+        frame_number,frame->framenum,strokes,points,np,fx,fy,lx,ly,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
+  }
+#endif
+  return err==GL_NO_ERROR?1:0;
 }
 
 extern "C" int project_grease_android_present_gp_frame(const bGPDframe*frame){
@@ -986,6 +1101,16 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
 }
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
+extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy){
+  update_canvas_map(w,h);
+  if(scale)*scale=g_map_scale;
+  if(ox)*ox=g_map_origin_x;
+  if(oy)*oy=g_map_origin_y;
+}
+extern "C" void project_grease_android_present_set_export_background(float r,float g,float b){
+  g_export_background[0]=std::clamp(r,0.0f,1.0f);g_export_background[1]=std::clamp(g,0.0f,1.0f);
+  g_export_background[2]=std::clamp(b,0.0f,1.0f);g_export_background[3]=1.0f;
+}
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled){g_selection_overlay=enabled!=0;}
 extern "C" void project_grease_android_present_get_view_transform(float*zoom,float*pan_x,float*pan_y){
   if(zoom)*zoom=g_view_zoom;if(pan_x)*pan_x=g_view_pan_x;if(pan_y)*pan_y=g_view_pan_y;}
@@ -1000,4 +1125,8 @@ extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
   for(auto&kv:g_mat_tex)if(kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;
   if(g_vc_program)glDeleteProgram(g_vc_program);if(g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+  // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
+  // stale id in the next context has no storage, every later store failed and each input sample
+  // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
+  {OpenStrokeCache&c=g_open_cache;if(c.tex)glDeleteTextures(1,&c.tex);if(c.program)glDeleteProgram(c.program);if(c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
   project_grease_fx_reset();}

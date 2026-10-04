@@ -24,6 +24,7 @@ typedef struct PGStrokeInfo {
   int cyclic;              /* GP_STROKE_CYCLIC */
   float fill_opacity_fac;  /* bGPDstroke.fill_opacity_fac */
   float fill_color[4];     /* bGPDstroke.vert_color_fill */
+  int caps[2];             /* bGPDstroke.caps: GP_STROKE_CAP_ROUND (0) / GP_STROKE_CAP_FLAT (1) */
 } PGStrokeInfo;
 
 typedef struct PGLayerInfo {

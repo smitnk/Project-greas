@@ -14,7 +14,8 @@ data class ProjectRecord(
 
 class ProjectStore(context: Context) {
     private val appContext = context.applicationContext
-    private val documentDir = java.io.File(appContext.filesDir, "projects").apply { mkdirs() }
+    /** Atomic, Android-free document storage (see ProjectFiles; unit-tested on the JVM). */
+    val files = ProjectFiles(java.io.File(appContext.filesDir, "projects"))
     private val prefs = context.applicationContext.getSharedPreferences("project_grease_projects", Context.MODE_PRIVATE)
     private val key = "records"
 
@@ -45,16 +46,21 @@ class ProjectStore(context: Context) {
         save(records.sortedByDescending { it.lastOpened })
     }
 
-    fun saveDocument(name:String, json:String) {
-        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "Project_Grease" }
-        val file = java.io.File(documentDir, safe + ".gpjson")
-        file.writeText(json, Charsets.UTF_8)
+    /** Saves an existing project to its own file (overwrites it atomically). */
+    fun saveDocument(name:String, json:String) = files.write(name, json)
+
+    fun loadDocument(name:String):String? = files.read(name)
+
+    /** A name for a new/duplicated project that collides with neither a file nor a record. */
+    fun uniqueProjectName(name:String):String {
+        val names = load().map { it.name }.toSet()
+        return files.uniqueName(name) { it in names }
     }
 
-    fun loadDocument(name:String):String? {
-        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "Project_Grease" }
-        val file = java.io.File(documentDir, safe + ".gpjson")
-        return file.takeIf { it.isFile }?.readText(Charsets.UTF_8)
+    /** Duplicates [source] under a fresh unique name; never overwrites another project. */
+    fun duplicateDocument(source:String, newName:String = source):String? {
+        val names = load().map { it.name }.toSet()
+        return files.duplicate(source, newName) { it in names }
     }
 
     fun save(records: List<ProjectRecord>) {

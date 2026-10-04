@@ -170,12 +170,11 @@ target_link_libraries(projectgrease_jni
 option(PG_ASAN "AddressSanitizer build (bug hunt)" OFF)
 option(PG_GL_DEBUG "Check glGetError after every GLES call (bug hunt)" OFF)
 if(PG_ASAN)
-    # Globals dead stripping keeps --gc-sections working: without it ASan's global metadata keeps
-    # every function alive, and the unused BLI_mempool_create's BLI_mutex_init reference (never
-    # linked into this library) fails the link. Same flag as tools/run_native_fuzz.sh.
     target_compile_options(projectgrease_jni PRIVATE -fsanitize=address -fno-omit-frame-pointer
         -fsanitize-address-globals-dead-stripping)
     target_link_options(projectgrease_jni PRIVATE -fsanitize=address)
+    # ASan keeps the unused BLI_mempool_create and its BLI_mutex_init reference alive.
+    target_sources(projectgrease_jni PRIVATE "${PROJECT_GREASE_ROOT}/native/blender_gp/pg_asan_compat.c")
 endif()
 if(PG_GL_DEBUG)
     set(PG_GL_DEBUG_SOURCES

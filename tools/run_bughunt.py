@@ -53,10 +53,10 @@ def class_tests(cls):
 def run_class(cls, extra=""):
     """Runs one test class; tests a crash left without a result are run one by one."""
     planned = class_tests(cls)
-    results = sweep.parse(sweep.instrument(f"{extra} -e class {cls}"))
+    results = sweep.parse(sweep.instrument(f"{extra} -e class {cls}")[0])
     for c, t in planned:
         if (c, t) not in results:
-            r = sweep.parse(sweep.instrument(f"{extra} -e class {c}#{t}"))
+            r = sweep.parse(sweep.instrument(f"{extra} -e class {c}#{t}")[0])
             results.update(r)
             if (c, t) not in r:
                 results[(c, t)] = (-99, "no result (process crashed before the test reported)")

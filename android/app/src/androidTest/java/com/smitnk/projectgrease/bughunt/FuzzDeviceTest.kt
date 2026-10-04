@@ -5,7 +5,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.smitnk.projectgrease.SweepBase
 import com.smitnk.projectgrease.nativebridge.GPNative
-import com.smitnk.projectgrease.nativebridge.ProjectGreaseEglSurface
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -26,7 +25,7 @@ class FuzzDeviceTest : SweepBase() {
     private val seed = (InstrumentationRegistry.getArguments().getString("fuzzSeed") ?: "20240501").toInt()
 
     private fun gpHandle(): Long = onUi {
-        GPNative.nativeGetGpHandle((surface() as ProjectGreaseEglSurface).getRendererHandle())
+        GPNative.nativeGetGpHandle(controller.rendererHandleForTest())
     }
 
     /** The document survives a save/load round trip unchanged (no corrupted state). */

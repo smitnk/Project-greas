@@ -696,6 +696,8 @@ class EditorController {
     val sculpt=SculptController()
     val onion=OnionSkinController()
     private var rendererHandle=0L
+    /** The attached renderer, for on-device tests that drive JNI directly. */
+    fun rendererHandleForTest(): Long = rendererHandle
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L

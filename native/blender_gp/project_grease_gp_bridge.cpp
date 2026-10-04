@@ -1,4 +1,9 @@
 #include <algorithm>
+#if defined(__has_include)
+#if __has_include(<android/log.h>)
+#include <android/log.h>
+#endif
+#endif
 #include "project_grease_gp_bridge.h"
 
 #include <string>
@@ -520,6 +525,14 @@ int project_grease_gp_annotation_command(ProjectGreaseGPHandle *handle, int comm
   bGPdata *annot = handle->backend.annotation_data();
   if (!annot) return 0;
   const int frame = handle->backend.current_frame_number();
+#if defined(__ANDROID__) && defined(__has_include)
+#if __has_include(<android/log.h>)
+  // Sweep evidence (annotations test): the commands the touch path sends.
+  if (command != PG_ANNOT_CMD_ADD_POINT && command != PG_ANNOT_CMD_COUNT) {
+    __android_log_print(ANDROID_LOG_INFO, "ProjectGrease", "annotcmd %d frame=%d strokes=%d", command, frame, pg_annot_stroke_count(annot));
+  }
+#endif
+#endif
   switch (command) {
     case PG_ANNOT_CMD_BEGIN:
       return pg_annot_begin(annot, frame);

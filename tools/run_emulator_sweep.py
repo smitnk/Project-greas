@@ -150,7 +150,7 @@ def main():
         first = "\n      ".join(stack.splitlines()[:4])
         lines.append(f"FAIL {c.split('.')[-1]}.{t} (code {code}): {first}")
     lines.append("== annotation pass ==")
-    lines += re.findall(r"annotpass .*", log)[:12]
+    lines += re.findall(r"annot(?:pass|cmd) .*", log)[:30]
     lines.append("== frame time ==")
     lines += re.findall(r"FRAMETIME .*", log)
     # native input-path timing of the long gestures (the timed strokes): tool vs. redraw per batch

@@ -1012,15 +1012,24 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
 // annotation layer, in the layer color with a fixed screen-space thickness (layer->thickness px,
 // independent of zoom), drawn over the document like Blender's annotation overlay.
 extern "C" const bGPDframe *pg_annot_frame_at(const bGPdata *annot, int frame);
+#ifdef PG_HAVE_ANDROID_LOG
+static void annot_early(const char*why,int frame_number){
+  static const char*last=nullptr;
+  if(why!=last){last=why;__android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass early-return %s frame=%d",why,frame_number);}
+}
+#else
+static void annot_early(const char*,int){}
+#endif
 extern "C" int project_grease_android_present_annotations(const bGPdata* annot,int frame_number){
-  if(g_export_mode)return 1;
-  if(!annot||!ensure_program())return 0;
-  GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
+  if(g_export_mode){annot_early("export-mode",frame_number);return 1;}
+  if(!annot||!ensure_program()){annot_early("no-annot-or-program",frame_number);return 0;}
+  GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0){annot_early("viewport",frame_number);return 0;}
   update_canvas_map(w,h);
   const bGPDlayer*layer=static_cast<const bGPDlayer*>(annot->layers.first);
-  if(!layer||(layer->flag&GP_LAYER_HIDE))return 1;
+  if(!layer||(layer->flag&GP_LAYER_HIDE)){annot_early("layer-hidden",frame_number);return 1;}
   const bGPDframe*frame=pg_annot_frame_at(annot,frame_number);
-  if(!frame)return 1;
+  if(!frame){annot_early("no-frame",frame_number);return 1;}
+  annot_early("drawing",frame_number);
   const float px=std::max(1.0f,float(layer->thickness))/std::max(g_map_scale,1e-6f);
   std::vector<Vertex> v; v.reserve(1024);
   for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){

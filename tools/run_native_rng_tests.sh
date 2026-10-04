@@ -7,12 +7,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 B="$ROOT/third_party/blender"
 BL="$B/source/blender"
 if [[ ! -f "$BL/blenlib/intern/rand.cc" ]]; then
-  if [[ "${PG_REQUIRE_BLENDER_SOURCE:-0}" == "1" ]]; then
-    echo "Pinned Blender source missing: $BL/blenlib/intern/rand.cc" >&2
-    exit 1
+  if [[ "${PG_ALLOW_SKIP:-0}" == "1" && "${PG_REQUIRE_BLENDER_SOURCE:-0}" != "1" ]]; then
+    echo "SKIP RNG test (run tools/import_blender_gp.sh first)"
+    exit 0
   fi
-  echo "SKIP RNG test (run tools/import_blender_gp.sh first)"
-  exit 0
+  echo "ERROR: Pinned Blender source missing: $BL/blenlib/intern/rand.cc (set PG_ALLOW_SKIP=1 to skip locally)" >&2
+  exit 1
 fi
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT

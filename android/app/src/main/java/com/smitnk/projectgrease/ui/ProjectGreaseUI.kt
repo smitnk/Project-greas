@@ -134,7 +134,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 screen=Screen.EDITOR
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},templateId,{templateId=it},controller,{screen=Screen.HOME}){
-                controller.document.projectName=name.ifBlank{"Project Grease"}
+                // Never overwrite an existing project: pick "Name (2)", "Name (3)", ... if taken.
+                controller.document.projectName=projectStore.uniqueProjectName(name.ifBlank{"Project Grease"})
                 controller.document.canvasWidth=preset.width
                 controller.document.canvasHeight=preset.height
                 controller.animation.setFps(preset.fps)
@@ -854,7 +855,10 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     val saveAs=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
         if(uri==null)return@rememberLauncherForActivityResult
         val json=controller.saveDocumentJson()
-        val ok=json!=null&&runCatching{context.contentResolver.openOutputStream(uri)?.use{it.write(json.toByteArray(Charsets.UTF_8))}!=null}.getOrDefault(false)
+        // Serialize fully before opening the destination, then truncate ("wt") and write in one go,
+        // so a serialization failure never leaves a truncated file behind.
+        val bytes=json?.let{runCatching{it.toByteArray(Charsets.UTF_8)}.getOrNull()}
+        val ok=bytes!=null&&runCatching{context.contentResolver.openOutputStream(uri,"wt")?.use{it.write(bytes);it.flush()}!=null}.getOrDefault(false)
         if(ok){
             // The written file becomes the current document: continue under its name.
             val display=runCatching{

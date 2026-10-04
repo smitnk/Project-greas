@@ -1038,8 +1038,11 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
   if(v.size()!=last_logged){
     last_logged=v.size();
     int strokes=0;for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next)strokes++;
-    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d strokes=%d verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
-        frame_number,strokes,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
+    const bGPDstroke*first=static_cast<const bGPDstroke*>(frame->strokes.first);
+    const int np=first?first->totpoints:0;
+    const float fx=np?first->points[0].x:0, fy=np?first->points[0].y:0, lx=np?first->points[np-1].x:0, ly=np?first->points[np-1].y:0;
+    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d strokes=%d points=%d first=(%.1f,%.1f) last=(%.1f,%.1f) verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
+        frame_number,strokes,np,fx,fy,lx,ly,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
   }
 #endif
   return err==GL_NO_ERROR?1:0;
@@ -1111,4 +1114,8 @@ extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
   for(auto&kv:g_mat_tex)if(kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;
   if(g_vc_program)glDeleteProgram(g_vc_program);if(g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+  // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
+  // stale id in the next context has no storage, every later store failed and each input sample
+  // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
+  {OpenStrokeCache&c=g_open_cache;if(c.tex)glDeleteTextures(1,&c.tex);if(c.program)glDeleteProgram(c.program);if(c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
   project_grease_fx_reset();}

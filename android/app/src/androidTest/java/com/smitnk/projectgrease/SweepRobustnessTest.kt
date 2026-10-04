@@ -19,6 +19,25 @@ class SweepRobustnessTest : SweepBase() {
         rule.waitForIdle()
     }
 
+    /** Regression (monkey ANR in Timeline): the timeline composed a cell for every frame up to the
+     * scene end (up to 100000) on each recomposition. With the end at 100000 the UI must answer. */
+    @Test fun largeTimelineStaysResponsive() {
+        line(300f)
+        onUi { controller.animation.setSceneEnd(100000) }
+        val t0 = SystemClock.uptimeMillis()
+        rule.waitForIdle()
+        val settle = SystemClock.uptimeMillis() - t0
+        val t1 = SystemClock.uptimeMillis()
+        onUi { controller.selectFrame(2) }
+        rule.waitForIdle()
+        val step = SystemClock.uptimeMillis() - t1
+        Log.i(TAG, "timeline 100000 frames: settle $settle ms, frame step $step ms")
+        shot("timeline_100000")
+        assertEquals(100000, onUi { controller.animation.timelineEnd })
+        assertTrue("timeline with 100000 frames settles in $settle ms", settle < 2000)
+        assertTrue("frame step with 100000 frames takes $step ms", step < 2000)
+    }
+
     @Test fun rotationKeepsDocument() {
         line(300f); line(500f)
         val before = signature()

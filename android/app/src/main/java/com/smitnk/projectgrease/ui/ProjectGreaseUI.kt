@@ -773,10 +773,15 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 FilterChip(selected=controller.multiframeEditing,onClick={controller.setMultiframeEditing(!controller.multiframeEditing);redraw()},
                     label={Text("Multiframe")},modifier=Modifier.testTag("multiframe"))
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(5.dp)){
-                val keyframes=controller.animation.keyframes.toSet()
-                var menuFrame by remember{mutableIntStateOf(-1)}
-                (1..controller.animation.timelineEnd.coerceAtLeast(1)).forEach{frame->
+            // Lazy: only the visible frame cells are composed. The scene end can be up to 100000
+            // frames; composing a cell for each one on every recomposition froze the main thread
+            // (monkey ANR in Timeline).
+            val keyframes=remember(controller.animation.keyframes){controller.animation.keyframes.toSet()}
+            var menuFrame by remember{mutableIntStateOf(-1)}
+            val frameTotal=controller.animation.timelineEnd.coerceAtLeast(1)
+            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp)){
+                items(frameTotal,key={it+1}){index->
+                    val frame=index+1
                     val key=frame in keyframes
                     val type=controller.animation.keyTypes[frame]?:0
                     val selectedKey=frame in controller.animation.selectedFrames
@@ -797,10 +802,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                         if(menuFrame==frame)KeyframeMenu(controller,frame,{menuFrame=-1},redraw)
                     }
                 }
-                Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
-                    controller.createFrame((controller.animation.timelineEnd+1).coerceAtLeast(1));redraw()
-                },shape=RoundedCornerShape(8.dp)){
-                    Box(contentAlignment=Alignment.Center){Text("+")}
+                item(key="add"){
+                    Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
+                        controller.createFrame((controller.animation.timelineEnd+1).coerceAtLeast(1));redraw()
+                    },shape=RoundedCornerShape(8.dp)){
+                        Box(contentAlignment=Alignment.Center){Text("+")}
+                    }
                 }
             }
         }

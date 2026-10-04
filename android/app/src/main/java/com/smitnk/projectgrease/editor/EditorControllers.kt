@@ -1636,7 +1636,8 @@ class EditorController {
         if (rendererHandle == 0L || !activeLayerEditable()) return false
         // Blender Legacy GP Fill creates a closed filled stroke using the active material.
         // Enable the material's Fill component only when the Fill tool is actually used.
-        if (!materials.fillEnabled) {
+        val enabledFill = !materials.fillEnabled
+        if (enabledFill) {
             // Part of the fill's own undo step, recorded below.
             materials.setFillEnabled(true)
             native.setMaterialFillEnabled(materials.activeMaterial, true)
@@ -1645,6 +1646,12 @@ class EditorController {
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
+        else if (enabledFill) {
+            // No fill was made (it leaked, or the tap was outside a boundary): the material is left
+            // as it was, since there is no undo step that could restore it.
+            materials.setFillEnabled(false)
+            native.setMaterialFillEnabled(materials.activeMaterial, false)
+        }
         return ok
     }
 

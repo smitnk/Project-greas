@@ -85,7 +85,11 @@ jobs:
       - name: Build the release APK (unsigned, for the size breakdown)
         working-directory: android
         run: |
-          gradle :app:assembleRelease --no-daemon
+          # This APK is built only for the size breakdown. lintVital is skipped here: under this AGP it
+          # crashes inside androidx.lifecycle's NonNullableMutableLiveDataDetector
+          # (IncompatibleClassChangeError: KaCallableMemberCall), a lint/library incompatibility,
+          # not a finding in app code.
+          gradle :app:assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease --no-daemon
           ls app/build/outputs/apk/release/
 
       - name: APK size breakdown (debug and release)

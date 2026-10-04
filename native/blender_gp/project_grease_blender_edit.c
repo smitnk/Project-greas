@@ -736,7 +736,8 @@ int pg_gp_modstroke_length(bGPdata *gpd, bGPDstroke *gps, const PGLengthParams *
   }
   /* rna_gpencil_legacy_modifier.c: point_density range 0.1 .. 1000. */
   const float density = p->point_density < 0.1f ? 0.1f : (p->point_density > 1000.0f ? 1000.0f : p->point_density);
-  const double extra_first = ceil((double)first_fac * density), extra_second = ceil((double)second_fac * density);
+  /* float math as in Blender (ceilf of a float product): 0.1f * 30 must stay 3, not 3.00000004 -> 4 */
+  const double extra_first = (double)ceilf(first_fac * density), extra_second = (double)ceilf(second_fac * density);
   /* The extension adds these points: past the per-stroke ceiling the stroke is left as it is
    * (fuzzer: factor 944 x density 892 asked for 842000 points per end and hung). */
   if (!(totpoints + fmax(extra_first, 0.0) + fmax(extra_second, 0.0) <= PG_MAX_STROKE_POINTS)) {

@@ -15,6 +15,7 @@
 #include "project_grease_document_state.h"
 #include "project_grease_modifier_stack.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_stroke_trim.h"
 
 #include <algorithm>
 #include <cmath>
@@ -3081,7 +3082,7 @@ bool Backend::trim_stroke(int index) {
       impl_->last_error = "stroke needs at least four points for Legacy GP trim";
       return false;
     }
-    if (!BKE_gpencil_stroke_trim(impl_->gpd, stroke)) {
+    if (!pg_gpencil_stroke_trim(impl_->gpd, stroke)) {
       impl_->last_error = "BKE_gpencil_stroke_trim() found no intersection";
       return false;
     }

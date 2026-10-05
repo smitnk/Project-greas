@@ -448,6 +448,39 @@ int main() {
   }
   std::fprintf(stderr, "[TRIM] Legacy GP first-intersection trim/render passed\\n");
 
+  // Regression (bug hunt opTrim): the loop crosses back exactly through sample point (1,0), the
+  // shared end of segments 0 and 1. Blender's strict 0 < lambda < 1 test misses it.
+  std::fprintf(stderr, "[TRIM] self-crossing through a sample point\\n");
+  if (!backend.begin_stroke({0, 5.0f})) {
+    std::fprintf(stderr, "vertex trim setup failed: %s\\n", backend.last_error());
+    return 43;
+  }
+  backend.add_point({0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({2.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  backend.add_point({1.0f, -2.0f, 0.0f, 1.0f, 1.0f, 0.0f});
+  if (!backend.end_stroke()) {
+    std::fprintf(stderr, "vertex trim end_stroke failed: %s\\n", backend.last_error());
+    return 43;
+  }
+  {
+    const int vertex_trim_index = backend.stroke_count() - 1;
+    project_grease::gp::StrokePoint first{}, last{};
+    if (!backend.trim_stroke(vertex_trim_index) || backend.point_count() != 6 ||
+        !backend.get_point(vertex_trim_index, 0, &first) ||
+        !backend.get_point(vertex_trim_index, 5, &last) ||
+        std::fabs(first.x - 1.0f) > 1e-5f || std::fabs(first.y) > 1e-5f ||
+        std::fabs(last.x - 1.0f) > 1e-5f || std::fabs(last.y) > 1e-5f || !backend.render()) {
+      std::fprintf(stderr, "vertex-crossing trim failed (%d points): %s\\n", backend.point_count(),
+                   backend.last_error());
+      return 44;
+    }
+  }
+  std::fprintf(stderr, "[TRIM] self-crossing through a sample point passed\\n");
+
   std::fprintf(stderr, "[DELETE] delete duplicated stroke\n");
   if (!backend.delete_stroke(1) || backend.stroke_count() != 1 ||
       !backend.render()) {

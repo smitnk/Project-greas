@@ -146,6 +146,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_edit5_tests.sh
 
+      - name: Native self-intersection trim tests (vertex crossings, plain + ASan/UBSan)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_stroke_trim_tests.sh
+
       - name: Run native tool session tests (draw input golden, sculpt / vertex / weight paint ports)
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

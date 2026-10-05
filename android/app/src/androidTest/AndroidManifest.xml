@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!--
+    The bug-hunt build adds leakcanary-android-instrumentation to the test APK. Its content providers
+    would start in the test APK's own process, where the Kotlin stdlib is absent (AGP leaves out of
+    the test APK what the app already ships): NoClassDefFoundError kotlin.jvm.internal.Intrinsics,
+    218 times in one API 34 cell. FailTestOnLeakRunListener runs in the app's process and does not
+    need them. tools:node="remove" is a no-op when LeakCanary is not on the classpath.
+    -->
+    <application>
+        <provider android:name="leakcanary.internal.LeakCanaryFileProvider"
+            android:authorities="${applicationId}.leakcanary-fileprovider" tools:node="remove" />
+        <provider android:name="leakcanary.internal.MainProcessAppWatcherInstaller"
+            android:authorities="${applicationId}.leakcanary-installer" tools:node="remove" />
+        <provider android:name="leakcanary.internal.PlumberInstaller"
+            android:authorities="${applicationId}.plumber-installer" tools:node="remove" />
+    </application>
+</manifest>

@@ -74,7 +74,10 @@ def monkey(seed):
     injected = re.findall(r"Events injected: (\d+)", out)
     crash = re.findall(r"// CRASH: " + re.escape(PKG) + r".*", out)
     anr = re.findall(r"// NOT RESPONDING: " + re.escape(PKG) + r".*", out)
-    return f"monkey seed {seed}: injected {injected[-1] if injected else 0}/{MONKEY_EVENTS}, app crashes {len(crash)}, app ANRs {len(anr)}", bool(crash or anr)
+    done = int(injected[-1]) if injected else 0
+    # A run that stopped short (the emulator died, monkey could not start) found nothing: a failure.
+    return (f"monkey seed {seed}: injected {done}/{MONKEY_EVENTS}, app crashes {len(crash)}, app ANRs {len(anr)}",
+            bool(crash or anr or done < MONKEY_EVENTS))
 
 
 def main():
@@ -120,7 +123,14 @@ def main():
         sh(f"adb pull /data/misc/perfetto-traces/perf.pftrace {OUT}/perf_{CELL}.pftrace")
     # LeakCanary's listener ships in the bug-hunt test APK only (the API 26 cell runs the plain one).
     leak = " -e listener leakcanary.FailTestOnLeakRunListener" if ASAN else ""
-    results.update(run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}{leak}"))
+    soak = run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}{leak}")
+    results.update(soak)
+    if leak and any(code == -99 for code, _ in soak.values()):
+        # The listener run died before reporting: keep that failure, and still get the soak's
+        # memory numbers from a run without the listener.
+        summary.append("soak: the LeakCanary-listener run crashed; re-running the soak without it")
+        rerun = run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}")
+        results.update({(c, t + "[no-leak-listener]"): r for (c, t), r in rerun.items()})
 
     # 5. monkey
     for seed in MONKEY_SEEDS:

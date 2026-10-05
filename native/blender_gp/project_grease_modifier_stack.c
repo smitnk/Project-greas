@@ -360,6 +360,7 @@ BLI_INLINE float table_sample(float *table, float x)
 {
   return interpf(table[(int)ceilf(x)], table[(int)floor(x)], fractf(x));
 }
+/* END VERBATIM */
 
 /* MOD_gpencil_legacy_length.c applyLength(): the random start / end offsets (rand[] from the halton
  * sequence of the stroke index and the noise table), added to start_fac / end_fac. */
@@ -390,7 +391,6 @@ static void pg_length_random_facs(const PGModContext *ctx, const float *p, bGPDs
   *first_fac = *first_fac + rand[0] * rand_start_fac;
   *second_fac = *second_fac + rand[1] * rand_end_fac;
 }
-/* END VERBATIM */
 
 static void pg_deform_noise(const PGModContext *ctx, const float *p, bGPDstroke *gps)
 {

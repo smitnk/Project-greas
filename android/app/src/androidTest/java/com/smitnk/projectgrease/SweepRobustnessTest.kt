@@ -115,7 +115,9 @@ class SweepRobustnessTest : SweepBase() {
 
     @Test fun frameTime200Strokes() {
         // 200 real strokes, then timed drawing on top of them.
-        repeat(200) { i -> val y = 50f + (i % 50) * 18f; val x0 = 50f + (i / 50) * 300f; drag(x0 to y, x0 + 240f to y, steps = 3) }
+        // Rows stay inside the 1280x720 canvas (y 50..638): on a landscape tablet the canvas fills the
+        // screen height, and rows below it (y up to 932 before) started on the UI, not the canvas.
+        repeat(200) { i -> val y = 50f + (i % 50) * 12f; val x0 = 50f + (i / 50) * 300f; drag(x0 to y, x0 + 240f to y, steps = 3) }
         assertEquals(200, strokes().size)
         onUi { synchronized(controller.frameTimesMs) { controller.frameTimesMs.clear() } }
         // 400 samples at 120 Hz (a finger on a 120 Hz panel), about 3.2 s of drawing.

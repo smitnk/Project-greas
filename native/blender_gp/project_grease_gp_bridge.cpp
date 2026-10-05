@@ -17,6 +17,7 @@
 #include "project_grease_blender_edit3.h"
 #include "project_grease_blender_edit5.h"
 #include "project_grease_blender_edit8.h"
+#include "project_grease_blender_edit9.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_tool_session.h"
 #include "project_grease_annotations.h"
@@ -490,6 +491,18 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
       // Selection-aware editing (ids 31..37), then the selection operators (20..30).
       if (command == PG_EDIT7_CMD_LAYER_MERGE) {
         return handle->backend.merge_layer_down() ? 1 : 0;
+      }
+      if (command >= PG_EDIT9_CMD_FIRST && command <= PG_EDIT9_CMD_LAST) {
+        const int changed = pg_gp_edit9_dispatch(handle->backend.document_data(),
+                                                 handle->backend.active_layer_data(),
+                                                 command,
+                                                 args,
+                                                 arg_count);
+        /* moving, scaling and pasting frames can renumber or free the layer's actframe */
+        if (changed && command >= PG_EDIT9_CMD_FRAMES_MOVE && command <= PG_EDIT9_CMD_FRAMES_PASTE) {
+          handle->backend.sync_active_frame();
+        }
+        return changed;
       }
       if (command >= PG_EDIT5_CMD_FIRST && command <= PG_EDIT5_CMD_LAST) {
         return pg_gp_edit5_dispatch(handle->backend.document_data(),

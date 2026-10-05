@@ -18,6 +18,7 @@
 #include "project_grease_blender_edit4.h"
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_edit7.h"
+#include "project_grease_blender_edit9.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -1397,6 +1398,95 @@ static void test_edit7(void)
   CHECK(pg_gp_edit_dispatch(g3, a2, PG_EDIT7_CMD_LOCK_ALL, NULL, 0) == 1, "routed to edit6");
 }
 
+static int frames_of(bGPDlayer *l, int *out) { int n = 0; for (bGPDframe *f = l->frames.first; f; f = f->next) out[n++] = f->framenum; return n; }
+
+static void test_edit9(void)
+{
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_SMOOTH, 5, 10), 0.5f) && NEAR(pg_prop_falloff(PG_PROP_LIN, 2.5f, 10), 0.75f) &&
+        NEAR(pg_prop_falloff(PG_PROP_SHARP, 5, 10), 0.25f) && NEAR(pg_prop_falloff(PG_PROP_ROOT, 7.5f, 10), 0.5f) &&
+        NEAR(pg_prop_falloff(PG_PROP_CONST, 9, 10), 1.0f) && pg_prop_falloff(PG_PROP_LIN, 10, 10) == 0.0f, "falloff curves");
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_SPHERE, 5, 10), sqrtf(0.75f)), "sphere falloff");
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_SMOOTH, 7.5f, 10), 0.15625f), "smooth curve differs from linear at a quarter");
+
+  /* proportional translate: select point 0 of a 5-point line (x 0..40), radius 20, linear */
+  bGPdata *gpd = make_gpd(); bGPDlayer *l = add_layer(gpd, 0); bGPDframe *f = add_frame(l);
+  bGPDstroke *s = add_stroke(f, 5, 0, 0, 0, 10, 0);
+  bGPDstroke *other = add_stroke(f, 1, 0, 5, 100, 0, 0);
+  select_points(gpd, s, 1);
+  PGTransform t = {PG_XFORM_TRANSLATE, 0, 10, PG_PIVOT_MEDIAN, {0, 0}, 1, 0, PG_PROP_LIN, 20};
+  CHECK(pg_gp_transform(gpd, NULL, &t) == 1, "proportional translate");
+  CHECK(NEAR(s->points[0].y, 10) && NEAR(s->points[1].y, 5) && NEAR(s->points[2].y, 0), "weights 1, 0.5, 0 along distance");
+  CHECK(NEAR(other->points[0].y, 100), "points outside the radius stay");
+  /* connected: distance along the stroke; a U-shaped stroke whose far end is near in a straight line */
+  bGPdata *g2 = make_gpd(); bGPDlayer *l2 = add_layer(g2, 0); bGPDframe *f2 = add_frame(l2);
+  bGPDstroke *u = add_stroke(f2, 3, 0, 0, 0, 0, 0);
+  u->points[1].x = 30; u->points[2].x = 0; u->points[2].y = 5; /* end 5 px from the start in a line, 60 px along */
+  select_points(g2, u, 1);
+  PGTransform tc = {PG_XFORM_TRANSLATE, 10, 0, PG_PIVOT_MEDIAN, {0, 0}, 1, 1, PG_PROP_LIN, 20};
+  pg_gp_transform(g2, NULL, &tc);
+  CHECK(NEAR(u->points[2].x, 0), "connected mode ignores the straight-line neighbour");
+  PGTransform ts = tc; ts.connected = 0;
+  pg_gp_transform(g2, NULL, &ts);
+  CHECK(fabsf(u->points[2].x - 10.0f * (1.0f - hypotf(10, 5) / 20.0f)) < 1e-3f, "straight-line mode moves it by its falloff weight (~4.4)");
+
+  /* pivots: scale x2 of two selected strokes */
+  bGPdata *g3 = make_gpd(); bGPDlayer *l3 = add_layer(g3, 0); bGPDframe *f3 = add_frame(l3);
+  bGPDstroke *a = add_stroke(f3, 2, 0, 0, 0, 10, 0);   /* 0..10 */
+  bGPDstroke *b = add_stroke(f3, 2, 0, 100, 0, 10, 0); /* 100..110 */
+  select_points(g3, a, 3); select_points(g3, b, 3);
+  PGTransform ti = {PG_XFORM_SCALE, 2, 2, PG_PIVOT_INDIVIDUAL, {0, 0}, 0, 0, 0, 0};
+  pg_gp_transform(g3, NULL, &ti);
+  CHECK(NEAR(a->points[0].x, -5) && NEAR(a->points[1].x, 15) && NEAR(b->points[0].x, 95), "individual origins: each about its own centre");
+  PGTransform tb = {PG_XFORM_SCALE, 0.5f, 0.5f, PG_PIVOT_BOUNDS, {0, 0}, 0, 0, 0, 0};
+  pg_gp_transform(g3, NULL, &tb); /* bounds -5..115 -> centre 55 */
+  CHECK(NEAR(a->points[0].x, 25), "bounding box centre pivot");
+  PGTransform tk = {PG_XFORM_ROTATE, (float)M_PI, 0, PG_PIVOT_CURSOR, {0, 0}, 0, 0, 0, 0};
+  pg_gp_transform(g3, NULL, &tk);
+  CHECK(NEAR(a->points[0].x, -25), "2D cursor pivot");
+
+  /* dope sheet */
+  bGPdata *g4 = make_gpd(); bGPDlayer *l4 = add_layer(g4, 0); bGPDframe *k1 = add_frame(l4);
+  BKE_gpencil_frame_addnew(l4, 5); BKE_gpencil_frame_addnew(l4, 9);
+  add_stroke(k1, 2, 0, 0, 0, 1, 0);
+  int fr[8];
+  CHECK(pg_gp_frames_select_range(g4, l4, 4, 9, 0) == 1, "select frames 4..9");
+  CHECK(pg_gp_frames_move(g4, l4, 2) == 1 && frames_of(l4, fr) == 3 && fr[1] == 7 && fr[2] == 11, "move selected frames +2");
+  CHECK(pg_gp_frames_scale(g4, l4, 1, 0.5f) == 1 && frames_of(l4, fr) == 3 && fr[1] == 4 && fr[2] == 6, "scale around frame 1 (7->4, 11->6)");
+  pg_gp_frames_select_range(g4, l4, 6, 6, 0);
+  CHECK(pg_gp_frames_move(g4, l4, -2) == 1 && frames_of(l4, fr) == 2 && fr[1] == 4, "moving onto an occupied frame leaves one frame");
+  CHECK((((bGPDframe *)l4->frames.last)->flag & GP_FRAME_SELECT) != 0, "...and it is the moved (selected) one");
+  pg_gp_frames_select_range(g4, l4, 1, 1, 0);
+  pg_gp_frames_copy(g4, l4);
+  CHECK(pg_gp_frames_paste(g4, l4, 20) == 1 && frames_of(l4, fr) == 3 && fr[2] == 20, "paste at frame 20");
+  bGPDframe *last = l4->frames.last;
+  CHECK(stroke_count(last) == 1 && (last->flag & GP_FRAME_SELECT), "pasted frame has the drawing and is selected");
+  pg_gp_frames_clipboard_free();
+  CHECK(pg_gp_frames_paste(g4, l4, 30) == 0, "empty clipboard");
+
+  /* dash with two segments: (2 on, 1 off) then (1 on, 1 off) -> period 5 on 10 points */
+  bGPdata *g5 = make_gpd(); bGPDlayer *l5 = add_layer(g5, 0); bGPDframe *f5 = add_frame(l5);
+  bGPDstroke *d = add_stroke(f5, 10, 0, 0, 0, 10, 0);
+  select_points(g5, d, 0x3FF);
+  const int dash[2] = {2, 1}, gap[2] = {1, 1};
+  CHECK(pg_gp_dash_segments(g5, NULL, dash, gap, 2, 0) == 1 && stroke_count(f5) == 2, "two-segment pattern: 1-point dashes drop, 2-point dashes kept");
+  CHECK(NEAR(((bGPDstroke *)f5->strokes.first)->points[0].x, 0) && NEAR(((bGPDstroke *)f5->strokes.last)->points[0].x, 50), "dashes at points 0-1 and 5-6");
+  /* calculatePropRatio edge cases and the command path */
+  CHECK(pg_prop_falloff(PG_PROP_CONST, 10, 10) == 1.0f && pg_prop_falloff(PG_PROP_CONST, 10.01f, 10) == 0.0f,
+        "Constant: 1 up to and including the radius (rdist > prop_size is outside)");
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_INVSQUARE, 5, 10), 0.75f), "inverse square falloff");
+  bGPdata *g6 = make_gpd(); bGPDlayer *l6 = add_layer(g6, 0); bGPDframe *f6 = add_frame(l6);
+  bGPDstroke *e = add_stroke(f6, 2, 0, 0, 0, 10, 0);
+  select_points(g6, e, 3);
+  const float snapped[11] = {PG_XFORM_TRANSLATE, 13, 4, PG_PIVOT_MEDIAN, 0, 0, 0, 0, 0, 0, 10};
+  CHECK(pg_gp_edit9_dispatch(g6, l6, PG_EDIT9_CMD_TRANSFORM, snapped, 11) == 1 &&
+        NEAR(e->points[0].x, 10) && NEAR(e->points[0].y, 0), "increment snapping: (13, 4) moves by (10, 0)");
+  const float bad[10] = {PG_XFORM_TRANSLATE, 1, 1, 9, 0, 0, 0, 0, 0, 0};
+  CHECK(pg_gp_edit9_dispatch(g6, l6, PG_EDIT9_CMD_TRANSFORM, bad, 10) == 0, "unknown pivot rejected");
+  const float dash_args[4] = {0, 1, 2, 1};
+  CHECK(pg_gp_edit9_dispatch(g6, l6, PG_EDIT9_CMD_DASH_SEGMENTS, dash_args, 3) == 0, "dash args shorter than 2 + 2n rejected");
+}
+
+
 int main(void)
 {
   test_pick();
@@ -1426,6 +1516,7 @@ int main(void)
   test_edit4();
   test_edit6();
   test_edit7();
+  test_edit9();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

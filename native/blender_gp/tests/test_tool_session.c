@@ -440,6 +440,23 @@ static void test_automask_and_select_mask(PGToolSession *ts)
   free_doc(&f);
 }
 
+/* Vertex paint selection mask (gpencil_selectmode_vertex): only the selected point is painted. */
+static void test_vertex_select_mask(PGToolSession *ts)
+{
+  Doc d = doc();
+  bGPDstroke *s = stroke(&d, 11, 0, 100, 10, 0);
+  s->points[5].flag |= GP_SPOINT_SELECT;
+  s->flag |= GP_STROKE_SELECT;
+  const float tap[3][2] = {{50, 100}, {51, 100}, {52, 100}};
+  const float *p = brush(GPVERTEX_TOOL_DRAW, 30, 1.0f);
+  params[PG_TOOL_P_R] = 1; params[PG_TOOL_P_TARGET] = GPPAINT_MODE_STROKE;
+  params[PG_TOOL_P_SELECT_MASK] = GP_VERTEX_MASK_SELECTMODE_POINT;
+  gesture(ts, d.gpd, PG_TOOL_VERTEX_PAINT, p, tap, 3);
+  CHECK(s->points[5].vert_color[3] > 0.0f && s->points[4].vert_color[3] == 0.0f && s->points[6].vert_color[3] == 0.0f,
+        "vertex selection mask (%g %g %g)", s->points[4].vert_color[3], s->points[5].vert_color[3], s->points[6].vert_color[3]);
+  free_doc(&d);
+}
+
 int main(void)
 {
   BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
@@ -452,6 +469,7 @@ int main(void)
   test_clone(ts);
   test_automask_and_select_mask(ts);
   test_vertex_paint(ts);
+  test_vertex_select_mask(ts);
   test_weight_paint(ts);
   test_draw(ts);
   test_draw_guide_and_curve(ts);

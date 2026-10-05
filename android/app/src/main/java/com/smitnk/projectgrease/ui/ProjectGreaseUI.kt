@@ -597,7 +597,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                         com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_BLUR to "Blur",
                         com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_AVERAGE to "Average",
                         com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_SMEAR to "Smear",
-                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_REPLACE to "Replace"
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_REPLACE to "Replace",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_TINT to "Tint"
                     ).forEach { (brush,label) ->
                         FilterChip(
                             selected=controller.vertexPaintBrush == brush,
@@ -625,6 +626,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             if (controller.mode == GreaseMode.WEIGHT_PAINT) {
                 WeightPaintBar(controller,redraw)
             }
+            if (controller.mode == GreaseMode.VERTEX_PAINT || controller.mode == GreaseMode.WEIGHT_PAINT) PaintOptionsBar(controller,redraw)
+            if (controller.mode == GreaseMode.DRAW || controller.mode == GreaseMode.VERTEX_PAINT) VertexPaletteBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ANNOTATE) AnnotationBar(controller,redraw)
             if (controller.mode == GreaseMode.EDIT) {
                 Row(

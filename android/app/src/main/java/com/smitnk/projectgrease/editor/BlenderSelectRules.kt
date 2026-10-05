@@ -270,6 +270,8 @@ object ProjectGreaseSelect {
     const val VPAINT_AVERAGE = 2
     const val VPAINT_SMEAR = 3
     const val VPAINT_REPLACE = 4
+    /** GPAINT_TOOL_TINT / GPVERTEX_TOOL_TINT (the Draw-mode Tint tool; native session only). */
+    const val VPAINT_TINT = 5
 
     fun vertexPaint(brush: Int, x: Float, y: Float, radius: Float, strength: Float,
                     r: Float, g: Float, b: Float, target: Int, dx: Float = 0f, dy: Float = 0f): Command? {

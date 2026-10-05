@@ -795,6 +795,8 @@ class EditorController {
         mode == GreaseMode.VERTEX_PAINT && paintsInMode() -> ToolSession.TOOL_VERTEX_PAINT
         mode == GreaseMode.WEIGHT_PAINT && paintsInMode() -> ToolSession.TOOL_WEIGHT_PAINT
         tools.activeTool == GreaseTool.SCULPT -> ToolSession.TOOL_SCULPT
+        // Draw mode's Tint tool (GPAINT_TOOL_TINT) runs the vertex paint session
+        tools.activeTool == GreaseTool.DRAW && mode == GreaseMode.DRAW && drawTint -> ToolSession.TOOL_VERTEX_PAINT
         tools.activeTool == GreaseTool.DRAW -> ToolSession.TOOL_DRAW
         else -> -1
     }
@@ -814,11 +816,13 @@ class EditorController {
                 brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
                 selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
-                pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget)
+                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
+                pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
+                curvePreset = paintCurvePreset)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
                 weightPaintBrush, brushes.size.coerceAtLeast(0.5f), brushes.strength, pxPerUnit,
-                invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue)
+                invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue,
+                curvePreset = paintCurvePreset)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
                 material = materials.activeMaterial, thickness = materials.thickness,
                 strength = brushes.strength, usePressure = brushes.usePressure,
@@ -2280,8 +2284,18 @@ class EditorController {
         private set
     var vertexPaintTarget = ProjectGreaseSelect.PAINT_STROKE
         private set
-    fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_REPLACE) vertexPaintBrush = brush }
+    fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_TINT) vertexPaintBrush = brush }
+    /** Vertex colour palette (Paint.palette swatches): picking one makes it the paint colour. */
+    val vertexPalette = androidx.compose.runtime.mutableStateListOf<Int>()
+    fun addPaletteColor(argb:Int = materials.colorArgb):Boolean { if (argb in vertexPalette || vertexPalette.size >= 64) return false; vertexPalette.add(argb); document.markDirty(); return true }
+    fun removePaletteColor(index:Int):Boolean { if (index !in vertexPalette.indices) return false; vertexPalette.removeAt(index); document.markDirty(); return true }
+    fun usePaletteColor(index:Int):Boolean { val c = vertexPalette.getOrNull(index) ?: return false; materials.setColor(c); return true }
     fun setVertexPaintTarget(target:Int) { if (target in ProjectGreaseSelect.PAINT_STROKE..ProjectGreaseSelect.PAINT_BOTH) vertexPaintTarget = target }
+    /** Draw mode's Tint tool: paints vertex colour with the active colour instead of drawing. */
+    var drawTint by androidx.compose.runtime.mutableStateOf(false)
+    /** gpencil_selectmode_vertex (GP_VERTEX_MASK_SELECTMODE_*) and the paint brushes' falloff curve preset. */
+    var vertexSelectMask = 0
+    var paintCurvePreset = 0
     /** Mirror modifier as copies, about the selection median (Blender uses the object origin). */
     fun mirrorSelectionCopy(axisX:Boolean, axisY:Boolean):Boolean {
         val pivot = selectionPivot() ?: return false

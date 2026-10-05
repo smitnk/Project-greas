@@ -73,6 +73,7 @@ object ToolSession {
     const val GPVERTEX_AVERAGE = 2
     const val GPVERTEX_SMEAR = 4
     const val GPVERTEX_REPLACE = 5
+    const val GPVERTEX_TINT = 3
     const val GPWEIGHT_DRAW = 0
     const val GPWEIGHT_BLUR = 1
     const val GPWEIGHT_AVERAGE = 2
@@ -96,6 +97,7 @@ object ToolSession {
         ProjectGreaseSelect.VPAINT_AVERAGE -> GPVERTEX_AVERAGE
         ProjectGreaseSelect.VPAINT_SMEAR -> GPVERTEX_SMEAR
         ProjectGreaseSelect.VPAINT_REPLACE -> GPVERTEX_REPLACE
+        ProjectGreaseSelect.VPAINT_TINT -> GPVERTEX_TINT
         else -> GPVERTEX_DRAW
     }
 

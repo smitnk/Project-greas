@@ -612,3 +612,46 @@ fun InterpolationOptionsSection(anim: com.smitnk.projectgrease.editor.AnimationC
         }
     }
 }
+
+/** Vertex paint selection mask (points / strokes / segments) and the paint brushes' falloff curve. */
+@Composable
+fun PaintOptionsBar(controller: EditorController, redraw: () -> Unit) {
+    var tick by remember { mutableIntStateOf(0) }
+    key(tick) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.VERTEX_PAINT) {
+                Text("Mask", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
+                listOf(0 to "Off", com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
+                    com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_STROKE to "Strokes",
+                    com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_SEGMENT to "Segments").forEach { (m, label) ->
+                    FilterChip(selected = controller.vertexSelectMask == m, onClick = { controller.vertexSelectMask = m; tick++; redraw() },
+                        label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("vpaintMask_$m"))
+                }
+            }
+            Text("Falloff", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 6.dp))
+            com.smitnk.projectgrease.editor.ToolSession.CURVE_PRESETS.forEach { (preset, label) ->
+                FilterChip(selected = controller.paintCurvePreset == preset, onClick = { controller.paintCurvePreset = preset; tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            }
+        }
+    }
+}
+
+/** Draw-mode Tint tool toggle and the vertex colour palette (Paint.palette swatches). */
+@Composable
+fun VertexPaletteBar(controller: EditorController, redraw: () -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.DRAW) {
+            FilterChip(selected = controller.drawTint, onClick = { controller.drawTint = !controller.drawTint; redraw() },
+                label = { Text("Tint", fontSize = 10.sp) }, modifier = Modifier.padding(end = 6.dp).testTag("drawTint"))
+        }
+        Text("Palette", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
+        controller.vertexPalette.forEachIndexed { i, argb ->
+            Box(Modifier.padding(2.dp).size(22.dp).background(Color(argb), CircleShape)
+                .border(if (argb == controller.materials.colorArgb) 2.dp else 1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                .pointerInput(i) { detectTapGestures(onTap = { controller.usePaletteColor(i); redraw() }, onLongPress = { controller.removePaletteColor(i); redraw() }) }
+                .testTag("palette_$i"))
+        }
+        TextButton(onClick = { controller.addPaletteColor(); redraw() }, modifier = Modifier.testTag("paletteAdd")) { Text("+ colour", fontSize = 10.sp) }
+    }
+}

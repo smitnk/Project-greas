@@ -106,6 +106,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         controller.document.markSaved()
     }
 
+    // The 5 s autosave alone loses the last edits when the process is killed in the background
+    // (low memory, "Don't keep activities", swipe-away): also save the moment the app stops.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, screen) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && screen == Screen.EDITOR) saveCurrentProject()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(screen) {
         if (screen == Screen.EDITOR) {
             while (true) {

@@ -1,7 +1,7 @@
 # Graph Report - Project-greas  (2026-10-05)
 
 ## Corpus Check
-- 392 files · ~487,984 words
+- 392 files · ~488,101 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 15 file(s) not represented in the graph (top: .obj 6, .xml 3, .properties 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `45fe5b00`
+- Built from commit: `5251910c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1259,7 +1259,7 @@ Nodes (5): ParamKind, BOOL, ENUM, FLOAT, INT
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GPNative` connect `GPNative` to `.createFrame`, `NativeEditorBridge`, `EditorControllers.kt`, `.deleteStroke`, `HistoryController`, `.selectFrame`, `FloatArray`, `.surfaceCreated`, `🎯 Your Core Mission`, `.fxSetEnabled`, `.fxTarget`, `.historyCanUndo`, `.hitTestStroke`, `.layerCount`, `.maskAdd`, `IntArray`, `.modifierRemove`, `.pointCount`, `.selectLayer`, `.setLayerLocked`, `.setMultiframeEditing`, `.duplicateStroke`, `.setVertexGroupActive`, `.subdivideStroke`, `.trimStroke`, `.trimStrokeToIntersection`, `.vertexGroupActive`, `.vertexGroupCount`, `ReferenceScene`, `.layerName`, `.materialCount`, `.renameLayer`, `.scaleStroke`, `.selectedPointCount`, `MainActivity.kt`, `FuzzDeviceTest.kt`?**
-  _High betweenness centrality (0.071) - this node is a cross-community bridge._
+  _High betweenness centrality (0.069) - this node is a cross-community bridge._
 - **Why does `FeatureId` connect `FeatureId` to `ProjectGreaseUI.kt`, `FeatureRegistry`, `.capability`?**
   _High betweenness centrality (0.061) - this node is a cross-community bridge._
 - **Why does `SweepBase` connect `SweepBase` to `DeviceBugfixTest.kt`, `.line`, `.shot`, `SweepIoTest`, `SweepModsMaterialsTest`, `FuzzDeviceTest.kt`, `SweepPaintTest`, `.strokes`?**

@@ -148,15 +148,8 @@ def main():
         summary.append(line)
         failed.append(line)
 
-    log = open(os.path.join(OUT, "logcat_full.txt"), errors="replace").read()
-    summary.append("== frame time / perf ==")
-    summary += re.findall(r"(?:FRAMETIME|PERF) .*", log)
-    summary += [m for m in re.findall(r"toolstats .*", log) if int(re.search(r"batches=(\d+)", m).group(1)) >= 300]
-    summary.append("== soak ==")
-    summary += re.findall(r"SOAK result .*", log)
-    sh(f"python3 tools/memory_graph.py {OUT}/logcat_full.txt {OUT}/memory_{CELL}.svg 'Soak memory, {CELL}'")
-
-    # logcat scan: every hit is a finding
+    # The logcat can reach hundreds of MB (an emulator dying under ASan floods it), so it is
+    # streamed line by line rather than read whole.
     checks = [
         ("AddressSanitizer", r"AddressSanitizer|==\d+==ERROR"),
         ("GL error (PG_GL_ERROR)", r"PG_GL_ERROR"),
@@ -167,20 +160,56 @@ def main():
         ("StrictMode", r"StrictMode policy violation"),
         ("LeakCanary leak", r"HEAP ANALYSIS RESULT|LEAK FOUND|Application Leaks"),
     ]
+    compiled = [(name, re.compile(pattern)) for name, pattern in checks]
+    hits = {name: [] for name, _ in checks}
+    context = {}       # name -> the first hit and the lines after it (stack / report)
+    open_ctx = []      # [name, remaining chars] still collecting context
+    strict_tail = 0    # chars left to scan for app frames after a StrictMode violation
+    sites = set()
+    perf, toolstats, soak = [], [], []
+    with open(os.path.join(OUT, "logcat_full.txt"), errors="replace") as f:
+        for line in f:
+            for c in open_ctx:
+                context[c[0]] += line
+                c[1] -= len(line)
+            open_ctx = [c for c in open_ctx if c[1] > 0]
+            if strict_tail > 0:
+                sites.update(re.findall(r"at (com\.smitnk\.projectgrease\.[\w.$]+\([\w.]+:\d+\))", line))
+                strict_tail -= len(line)
+            m = re.search(r"(?:FRAMETIME|PERF) .*", line)
+            if m:
+                perf.append(m.group(0))
+            m = re.search(r"toolstats .*", line)
+            if m and int(re.search(r"batches=(\d+)", m.group(0)).group(1)) >= 300:
+                toolstats.append(m.group(0))
+            m = re.search(r"SOAK result .*", line)
+            if m:
+                soak.append(m.group(0))
+            for name, rx in compiled:
+                if rx.search(line):
+                    hits[name].append(line.rstrip("\n"))
+                    if name not in context:
+                        context[name] = line
+                        open_ctx.append([name, 2500 - len(line)])
+                    if name == "StrictMode":
+                        strict_tail = 3000
+    summary.append("== frame time / perf ==")
+    summary += perf + toolstats
+    summary.append("== soak ==")
+    summary += soak
+    sh(f"python3 tools/memory_graph.py {OUT}/logcat_full.txt {OUT}/memory_{CELL}.svg 'Soak memory, {CELL}'")
+
+    # logcat scan: every hit is a finding
     summary.append("== logcat scan ==")
-    for name, pattern in checks:
-        lines = [l for l in log.splitlines() if re.search(pattern, l)]
+    for name, _ in checks:
+        lines = hits[name]
         summary.append(f"{name}: {len(lines)}")
         if lines:
-            # the first hits with their context (stack / report) for the job log
-            idx = log.find(lines[0])
-            summary.append("  " + log[idx:idx + 2500].replace("\n", "\n  "))
+            summary.append("  " + context[name][:2500].rstrip("\n").replace("\n", "\n  "))
             if name != "StrictMode" or any(PKG.replace(".", "/") in l or PKG in l for l in lines):
                 failed.append(f"{name}: {len(lines)} in logcat")
     # StrictMode: the distinct violation sites of the app's own code
-    sites = sorted(set(re.findall(r"at (com\.smitnk\.projectgrease\.[\w.$]+\([\w.]+:\d+\))", "\n".join(
-        log[m.start():m.start() + 3000] for m in re.finditer("StrictMode policy violation", log)))))
-    summary += [f"  StrictMode site: {s}" for s in sites[:30]]
+    summary += [f"  StrictMode site: {s}" for s in sorted(sites)[:30]]
 
     # goldens
     g = subprocess.run(f"python3 tools/golden_compare.py {OUT}/screenshots android/app/src/androidTest/goldens {OUT} {CELL}",

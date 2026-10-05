@@ -7,8 +7,9 @@ import sys
 
 def main():
     log, out, title = sys.argv[1], sys.argv[2], sys.argv[3]
-    pts = [tuple(float(v) for v in m) for m in re.findall(
-        r"SOAK t_min=([\d.]+) pss_kb=(\d+) native_kb=(\d+) java_kb=(\d+)", open(log, errors="replace").read())]
+    rx = re.compile(r"SOAK t_min=([\d.]+) pss_kb=(\d+) native_kb=(\d+) java_kb=(\d+)")
+    with open(log, errors="replace") as f:  # streamed: the logcat can be hundreds of MB
+        pts = [tuple(float(v) for v in m.groups()) for m in map(rx.search, f) if m]
     W, H, L, B = 760, 360, 70, 40
     series = [("PSS", 1, "#1f77b4"), ("native heap", 2, "#d62728"), ("Java heap", 3, "#2ca02c")]
     svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" font-family="sans-serif" font-size="12">',

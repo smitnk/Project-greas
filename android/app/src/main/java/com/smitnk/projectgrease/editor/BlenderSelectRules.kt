@@ -465,6 +465,62 @@ object ProjectGreaseSelect {
         if (keyType in -1..KEY_MOVEHOLD) Command(CMD_ONION_FILTER, floatArrayOf(keyType.toFloat(), if (loop) 1f else 0f)) else null
     fun easingParams(amplitude: Float, period: Float) = Command(CMD_EASING_PARAMS, floatArrayOf(amplitude, period))
 
+    /** edit9 (project_grease_blender_edit9.h): proportional transform, pivots, dope-sheet frame ops, dash segments. */
+    const val CMD_TRANSFORM = 117
+    const val CMD_FRAMES_SELECT_RANGE = 118
+    const val CMD_FRAMES_MOVE = 119
+    const val CMD_FRAMES_SCALE = 120
+    const val CMD_FRAMES_COPY = 121
+    const val CMD_FRAMES_PASTE = 122
+    const val CMD_DASH_SEGMENTS = 123
+    const val XFORM_TRANSLATE = 0
+    const val XFORM_ROTATE = 1
+    const val XFORM_SCALE = 2
+    /** Pivot point (V3D_AROUND_*) order of PG_PIVOT_*. */
+    const val PIVOT_MEDIAN = 0
+    const val PIVOT_BOUNDS = 1
+    const val PIVOT_INDIVIDUAL = 2
+    const val PIVOT_CURSOR = 3
+    val PIVOT_LABELS = listOf("Median Point", "Bounding Box Center", "Individual Origins", "2D Cursor")
+    /** Proportional falloff (PROP_*), RANDOM (6) is not offered. */
+    val FALLOFF_VALUES = intArrayOf(0, 1, 2, 3, 4, 5, 7)
+    val FALLOFF_LABELS = listOf("Smooth", "Sphere", "Root", "Sharp", "Linear", "Constant", "Inverse Square")
+
+    data class TransformSettings(
+        val pivot: Int = PIVOT_MEDIAN,
+        val cursorX: Float = 0f,
+        val cursorY: Float = 0f,
+        val proportional: Boolean = false,
+        val connected: Boolean = false,
+        val falloff: Int = 0,
+        val size: Float = 100f,
+        val snapIncrement: Float = 0f,
+    ) {
+        /** True when the plain (non-edit9) transform path would give a different result. */
+        val needsEdit9: Boolean get() = proportional || pivot != PIVOT_MEDIAN || snapIncrement > 0f
+    }
+
+    fun transform(type: Int, a: Float, b: Float, s: TransformSettings): Command? {
+        if (type !in XFORM_TRANSLATE..XFORM_SCALE || s.pivot !in PIVOT_MEDIAN..PIVOT_CURSOR || !a.isFinite() || !b.isFinite()) return null
+        return Command(CMD_TRANSFORM, floatArrayOf(type.toFloat(), a, b, s.pivot.toFloat(), s.cursorX, s.cursorY,
+            if (s.proportional) 1f else 0f, if (s.connected) 1f else 0f, s.falloff.toFloat(), s.size, 0f))
+    }
+    fun framesSelectRange(fmin: Int, fmax: Int, extend: Boolean = false, allLayers: Boolean = false) =
+        Command(CMD_FRAMES_SELECT_RANGE, floatArrayOf(minOf(fmin, fmax).toFloat(), maxOf(fmin, fmax).toFloat(), if (extend) 1f else 0f, if (allLayers) 1f else 0f))
+    fun framesMove(offset: Int, allLayers: Boolean = false) = Command(CMD_FRAMES_MOVE, floatArrayOf(offset.toFloat(), if (allLayers) 1f else 0f))
+    fun framesScale(center: Int, factor: Float, allLayers: Boolean = false): Command? =
+        if (factor.isFinite() && factor > 0f) Command(CMD_FRAMES_SCALE, floatArrayOf(center.toFloat(), factor, if (allLayers) 1f else 0f)) else null
+    fun framesCopy(allLayers: Boolean = false) = Command(CMD_FRAMES_COPY, floatArrayOf(if (allLayers) 1f else 0f))
+    fun framesPaste(frame: Int) = Command(CMD_FRAMES_PASTE, floatArrayOf(frame.toFloat()))
+    /** Multi-segment dash (DashGpencilModifierSegment list): pairs of dash/gap point counts. */
+    fun dashSegments(offset: Int, segments: List<Pair<Int, Int>>): Command? {
+        if (segments.isEmpty() || segments.size > 32 || segments.any { it.first < 1 || it.second < 0 }) return null
+        val a = FloatArray(2 + 2 * segments.size)
+        a[0] = offset.toFloat(); a[1] = segments.size.toFloat()
+        segments.forEachIndexed { k, (d, g) -> a[2 + 2 * k] = d.toFloat(); a[3 + 2 * k] = g.toFloat() }
+        return Command(CMD_DASH_SEGMENTS, a)
+    }
+
     /** Blender bGPdata.onion_mode values (GP_ONION_MODE_*). */
     const val ONION_MODE_ABSOLUTE = 0
     const val ONION_MODE_RELATIVE = 1

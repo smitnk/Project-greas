@@ -203,6 +203,21 @@ fun KeyframeMenu(controller: EditorController, frame: Int, onDismiss: () -> Unit
                 onClick = { controller.selectTimelineFrame(frame); onDismiss(); redraw() })
         }
         DropdownMenuItem(text = { Text("Deselect all frames") }, onClick = { controller.deselectTimelineFrames(); onDismiss(); redraw() })
+        val cur = controller.animation.currentFrame
+        DropdownMenuItem(text = { Text("Box select frames $frame..$cur") }, modifier = Modifier.testTag("framesBox"),
+            onClick = { controller.boxSelectFrames(frame, cur, extend = true); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Move selected frames +1") }, modifier = Modifier.testTag("framesMoveRight"),
+            onClick = { controller.moveSelectedFrames(1); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Move selected frames -1") }, modifier = Modifier.testTag("framesMoveLeft"),
+            onClick = { controller.moveSelectedFrames(-1); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Scale selected frames x2 (around current)") }, modifier = Modifier.testTag("framesScale2"),
+            onClick = { controller.scaleSelectedFrames(2f); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Scale selected frames x0.5 (around current)") },
+            onClick = { controller.scaleSelectedFrames(0.5f); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Copy selected frames") }, modifier = Modifier.testTag("framesCopy"),
+            onClick = { controller.copySelectedFrames(); onDismiss() })
+        DropdownMenuItem(text = { Text("Paste frames at $cur (overwrite)") }, modifier = Modifier.testTag("framesPaste"),
+            onClick = { controller.pasteFrames(); onDismiss(); redraw() })
         DropdownMenuItem(text = { Text("Interpolate sequence (all in-betweens)") }, onClick = {
             val n = controller.animation.interpolateSequence(frame)
             if (n > 0) { controller.history.markEdit(); controller.document.markDirty() }; controller.render(); onDismiss(); redraw()
@@ -398,4 +413,85 @@ fun ModifierInfluenceSection(controller: EditorController, index: Int, modifier:
         Switch(use, { changed(controller.setModifierCurve(index, it, pts)) })
     }
     if (use) CurveEditor("Influence along the stroke", pts, { changed(controller.setModifierCurve(index, true, it)) }, "modifierCurve_$index")
+}
+
+/** Transform options of the header: pivot point, proportional editing (O), increment snapping. */
+@Composable
+fun TransformOptionsSection(controller: EditorController, redraw: () -> Unit) {
+    val t = controller.transformSettings
+    Text("Transform", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+    var pivotMenu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Pivot", Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { pivotMenu = true }, modifier = Modifier.testTag("pivotMenu")) { Text(ProjectGreaseSelect.PIVOT_LABELS[t.pivot]) }
+            DropdownMenu(expanded = pivotMenu, onDismissRequest = { pivotMenu = false }) {
+                ProjectGreaseSelect.PIVOT_LABELS.forEachIndexed { i, label ->
+                    DropdownMenuItem(text = { Text(label) }, modifier = Modifier.testTag("pivot_$i"),
+                        onClick = { controller.setPivot(i); pivotMenu = false; redraw() })
+                }
+            }
+        }
+    }
+    if (t.pivot == ProjectGreaseSelect.PIVOT_CURSOR)
+        TextButton(onClick = { controller.placingCursor2D = true }, modifier = Modifier.padding(horizontal = 12.dp).testTag("placeCursor")) {
+            Text("Tap canvas to place 2D cursor")
+        }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Proportional editing (O)", Modifier.weight(1f))
+        Switch(checked = t.proportional, onCheckedChange = { controller.toggleProportional(); redraw() }, modifier = Modifier.testTag("proportionalToggle"))
+    }
+    if (t.proportional) {
+        var falloffMenu by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Falloff", Modifier.weight(1f))
+            Box {
+                val idx = ProjectGreaseSelect.FALLOFF_VALUES.indexOf(t.falloff).coerceAtLeast(0)
+                TextButton(onClick = { falloffMenu = true }, modifier = Modifier.testTag("falloffMenu")) { Text(ProjectGreaseSelect.FALLOFF_LABELS[idx]) }
+                DropdownMenu(expanded = falloffMenu, onDismissRequest = { falloffMenu = false }) {
+                    ProjectGreaseSelect.FALLOFF_VALUES.forEachIndexed { i, v ->
+                        DropdownMenuItem(text = { Text(ProjectGreaseSelect.FALLOFF_LABELS[i]) },
+                            onClick = { controller.setProportionalFalloff(v); falloffMenu = false; redraw() })
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Connected only", Modifier.weight(1f))
+            Switch(checked = t.connected, onCheckedChange = { controller.setProportionalConnected(it); redraw() })
+        }
+        Text("Size ${"%.1f".format(t.size)} (pinch while transforming)", Modifier.padding(horizontal = 12.dp))
+        Slider(value = t.size.coerceIn(1f, 1000f), onValueChange = { controller.setProportionalSize(it) }, valueRange = 1f..1000f,
+            modifier = Modifier.padding(horizontal = 12.dp).testTag("proportionalSize"))
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Snap: increment (grid)", Modifier.weight(1f))
+        Switch(checked = t.snapIncrement > 0f, onCheckedChange = { controller.setSnapIncrement(if (it) controller.view.gridSize else 0f); redraw() },
+            modifier = Modifier.testTag("snapIncrement"))
+    }
+}
+
+/** Dot Dash with a segment list (DashGpencilModifierData.segments): applied to the active frame. */
+@Composable
+fun DashSegmentsSection(controller: EditorController, redraw: () -> Unit) {
+    val segments = remember { mutableStateListOf(3 to 2) }
+    var offset by remember { mutableIntStateOf(0) }
+    Text("Dash segments", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+    segments.forEachIndexed { i, (d, g) ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("#${i + 1} dash $d gap $g", Modifier.weight(1f))
+            TextButton(onClick = { segments[i] = (d + 1) to g }) { Text("D+") }
+            TextButton(onClick = { segments[i] = (d - 1).coerceAtLeast(1) to g }) { Text("D-") }
+            TextButton(onClick = { segments[i] = d to g + 1 }) { Text("G+") }
+            TextButton(onClick = { segments[i] = d to (g - 1).coerceAtLeast(0) }) { Text("G-") }
+            if (segments.size > 1) TextButton(onClick = { segments.removeAt(i) }) { Text("x") }
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { if (segments.size < 32) segments.add(1 to 1) }, modifier = Modifier.testTag("dashAddSegment")) { Text("Add segment") }
+        TextButton(onClick = { offset-- }) { Text("Offset -") }
+        Text("$offset")
+        TextButton(onClick = { offset++ }) { Text("Offset +") }
+        TextButton(onClick = { controller.setDashSegments(offset, segments.toList()); redraw() }, modifier = Modifier.testTag("dashApply")) { Text("Apply") }
+    }
 }

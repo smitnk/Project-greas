@@ -1069,6 +1069,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Switch(checked=onionOn,onCheckedChange={onionOn=it;controller.setLayerOnion(controller.selectedLayer,it);redraw()})
         }
         LayerLookSection(controller,layerKey,redraw)
+        TransformOptionsSection(controller,redraw)
+        DashSegmentsSection(controller,redraw)
         Text("Move selection to layer",Modifier.padding(horizontal=12.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
             (0 until controller.layerCount()).filter{it!=controller.selectedLayer}.forEach{index->

@@ -1787,7 +1787,10 @@ class EditorController {
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             GPNative.nativeRenderEgl(rendererHandle)
         }
+        if (transformSettings.proportional || transformSettings.pivot == ProjectGreaseSelect.PIVOT_CURSOR) overlayTick++
     }
+    /** Bumped on renders while the proportional circle or 2D cursor overlay is visible. */
+    var overlayTick by androidx.compose.runtime.mutableIntStateOf(0)
     fun selectionOverlayVisible():Boolean = mode == GreaseMode.EDIT || tools.activeTool in SELECTION_TOOLS
     fun layerCount() = native.layerCount()
 
@@ -2191,7 +2194,7 @@ class EditorController {
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun duplicateSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.duplicateStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.translate(dx,dy));val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return edit9Translate(dx,dy);if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.translate(dx,dy));val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun flipSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.flipStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     /** Median of every selected point (native stroke_center(-1)); null when nothing is selected. */
     fun selectionPivot():FloatArray? = native.strokeCenter(-1)?.takeIf { it.size >= 2 }
@@ -2350,9 +2353,9 @@ class EditorController {
     fun selectionVertexColorLevels(offset:Float, gain:Float, mode:Int=ProjectGreaseSelect.PAINT_BOTH) =
         runSelectCommand(ProjectGreaseSelect.vcolorLevels(mode, offset, gain))
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_ROTATE,snapRotation(radians),0f,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_SCALE,scaleX,scaleY,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStroke(mirrorX:Boolean,mirrorY:Boolean):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStroke(i,mirrorX,mirrorY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.mirror(mirrorX,mirrorY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun subdivideSelectedStroke(level:Int=1):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.subdivideStroke(i,level);if(ok){history.markEdit();document.markDirty();render()};return ok}
@@ -2429,6 +2432,55 @@ class EditorController {
     /** Key type of keyframe [frame] (BEZT_KEYTYPE_*) on the active layer, 0 when not a keyframe. */
     fun frameKeyType(frame:Int):Int = animation.keyTypes[frame] ?: 0
     /** Sets the key type of keyframe [frame]; the selected keyframes too when [frame] is one of them. */
+    /** Pivot, proportional editing and increment snapping (ToolSettings) for selection transforms. */
+    var transformSettings by androidx.compose.runtime.mutableStateOf(ProjectGreaseSelect.TransformSettings())
+    /** Next canvas tap places the 2D cursor (pivot "2D Cursor"). */
+    var placingCursor2D = false
+    private var snapRemX = 0f
+    private var snapRemY = 0f
+    private var snapRemRot = 0f
+    fun setPivot(pivot:Int):Boolean { if (pivot !in ProjectGreaseSelect.PIVOT_MEDIAN..ProjectGreaseSelect.PIVOT_CURSOR) return false; transformSettings = transformSettings.copy(pivot = pivot); render(); return true }
+    /** 2D cursor placement (tap with the 2D Cursor pivot). */
+    fun setCursor2D(x:Float, y:Float) { if (x.isFinite() && y.isFinite()) { transformSettings = transformSettings.copy(cursorX = x, cursorY = y); render() } }
+    fun toggleProportional():Boolean { transformSettings = transformSettings.copy(proportional = !transformSettings.proportional); render(); return transformSettings.proportional }
+    fun setProportionalConnected(on:Boolean) { transformSettings = transformSettings.copy(connected = on) }
+    fun setProportionalFalloff(falloff:Int):Boolean { if (falloff !in ProjectGreaseSelect.FALLOFF_VALUES) return false; transformSettings = transformSettings.copy(falloff = falloff); return true }
+    /** Proportional size (pinch while transforming), clamped like Blender's 0.00001..5000 range. */
+    fun setProportionalSize(size:Float) { if (size.isFinite()) { transformSettings = transformSettings.copy(size = size.coerceIn(0.00001f, 5000f)); render() } }
+    fun setSnapIncrement(increment:Float) { transformSettings = transformSettings.copy(snapIncrement = if (increment.isFinite() && increment > 0f) increment else 0f); snapRemX = 0f; snapRemY = 0f; snapRemRot = 0f }
+    /** Incremental drag deltas are accumulated so snapping moves in whole increments without losing motion. */
+    private fun edit9Translate(dx:Float, dy:Float):Boolean {
+        val inc = transformSettings.snapIncrement
+        var mx = dx; var my = dy
+        if (inc > 0f) {
+            snapRemX += dx; snapRemY += dy
+            mx = kotlin.math.round(snapRemX / inc) * inc; my = kotlin.math.round(snapRemY / inc) * inc
+            snapRemX -= mx; snapRemY -= my
+            if (mx == 0f && my == 0f) return false
+        }
+        return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_TRANSLATE, mx, my, transformSettings))
+    }
+    private fun snapRotation(radians:Float):Float {
+        if (transformSettings.snapIncrement <= 0f) return radians
+        val step = (Math.PI / 36.0).toFloat()
+        snapRemRot += radians
+        val r = kotlin.math.round(snapRemRot / step) * step
+        snapRemRot -= r
+        return r
+    }
+    /** Dope sheet (action editor) frame operators; each is one undo step. */
+    private fun runFrameCommand(c:ProjectGreaseSelect.Command?):Boolean {
+        if (c == null) return false
+        val ok = native.applyEditCommand(c.id, c.args)
+        animation.refreshKeyInfo()
+        return docChanged(ok)
+    }
+    fun boxSelectFrames(fmin:Int, fmax:Int, extend:Boolean = false) = runFrameCommand(ProjectGreaseSelect.framesSelectRange(fmin, fmax, extend))
+    fun moveSelectedFrames(offset:Int) = offset != 0 && runFrameCommand(ProjectGreaseSelect.framesMove(offset))
+    fun scaleSelectedFrames(factor:Float) = runFrameCommand(ProjectGreaseSelect.framesScale(animation.currentFrame, factor))
+    fun copySelectedFrames():Boolean { val c = ProjectGreaseSelect.framesCopy(); return native.applyEditCommand(c.id, c.args) }
+    fun pasteFrames() = runFrameCommand(ProjectGreaseSelect.framesPaste(animation.currentFrame))
+    fun setDashSegments(offset:Int, segments:List<Pair<Int,Int>>) = docChanged(ProjectGreaseSelect.dashSegments(offset, segments)?.let { native.applyEditCommand(it.id, it.args) } ?: false)
     fun setFrameKeyType(frame:Int, type:Int):Boolean {
         val targets = if (frame in animation.selectedFrames) animation.selectedFrames + frame else setOf(frame)
         var any = false

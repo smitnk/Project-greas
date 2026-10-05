@@ -1,0 +1,209 @@
+name: Bug hunt
+# Bug-hunt environment, separate from the PR checks (android-shell / emulator-tests): nightly, on
+# manual dispatch, and on pushes to the bug-hunt branch itself. Host fuzzing under ASan + UBSan,
+# the hunting APK (native ASan via wrap.sh, a glGetError check after every GLES call, StrictMode,
+# LeakCanary), and per emulator cell (API 26 / 30 / 34 x phone / tablet x GPU): every Sweep* test,
+# on-device fuzzing, the frame-time budget with a Perfetto trace, a soak with memory graphs, the
+# monkey (3 seeds), process death, screenshot goldens and a logcat scan. APK size breakdown for the
+# debug and release builds.
+
+on:
+  workflow_dispatch:
+    inputs:
+      soak_minutes:
+        description: "Soak length per cell (minutes)"
+        default: "30"
+      monkey_events:
+        description: "Monkey events per seed"
+        default: "50000"
+      gpu:
+        description: "Emulator GPU: swiftshader_indirect, or host on a runner with a GPU"
+        default: "swiftshader_indirect"
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    branches:
+      - test/bughunt-env
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOAK_MINUTES: ${{ github.event.inputs.soak_minutes || '30' }}
+  MONKEY_EVENTS: ${{ github.event.inputs.monkey_events || '50000' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android NDK 27 and the host sanitizer runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
+          if [ ! -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties" ]; then
+            for attempt in 1 2 3; do
+              yes | "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.0.12077973" && break
+              sleep 10
+            done
+          fi
+          test -f "${ANDROID_SDK_ROOT}/ndk/27.0.12077973/source.properties"
+          sudo apt-get update
+          sudo apt-get install -y clang lld libclang-rt-18-dev
+
+      - name: Import pinned Blender source and generate DNA
+        run: |
+          bash tools/import_blender_gp.sh
+          bash tools/android_blender_gp_generate_dna.sh
+
+      - name: Host fuzzing of the native edit commands (ASan + UBSan, 5 seeds)
+        run: bash tools/run_native_fuzz.sh 20000 20240501 7 1234 99 2026
+
+      - name: JVM tests (includes the importer / project-file fuzzing)
+        working-directory: android
+        run: gradle :app:testDebugUnitTest --no-daemon
+
+      - name: Build the debug APKs (arm64-v8a + x86_64)
+        working-directory: android
+        run: |
+          gradle :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+          mkdir -p ../apks/plain
+          cp app/build/outputs/apk/debug/app-debug.apk ../apks/plain/app.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ../apks/plain/app-test.apk
+
+      - name: Build the release APK (unsigned, for the size breakdown)
+        working-directory: android
+        run: |
+          # This APK is built only for the size breakdown. lintVital is skipped here: under this AGP it
+          # crashes inside androidx.lifecycle's NonNullableMutableLiveDataDetector
+          # (IncompatibleClassChangeError: KaCallableMemberCall), a lint/library incompatibility,
+          # not a finding in app code.
+          gradle :app:assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease --no-daemon
+          ls app/build/outputs/apk/release/
+
+      - name: APK size breakdown (debug and release)
+        run: |
+          python3 tools/apk_size.py debug=android/app/build/outputs/apk/debug/app-debug.apk \
+            release=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+
+      - name: Build the hunting APKs (x86_64, ASan + GL debug + StrictMode + LeakCanary)
+        working-directory: android
+        run: |
+          gradle :app:assembleDebug :app:assembleDebugAndroidTest -Ppg.bughunt=true -Ppg.abis=x86_64 --no-daemon
+          mkdir -p ../apks/asan
+          cp app/build/outputs/apk/debug/app-debug.apk ../apks/asan/app.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ../apks/asan/app-test.apk
+
+      - name: Verify the hunting APK carries wrap.sh, the ASan runtime and the GL checks
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          apk = zipfile.ZipFile("apks/asan/app.apk")
+          names = apk.namelist()
+          assert "lib/x86_64/wrap.sh" in names, "wrap.sh missing"
+          assert any(n.startswith("lib/x86_64/libclang_rt.asan") for n in names), "ASan runtime missing"
+          assert "lib/x86_64/libc++_shared.so" in names, "shared C++ runtime missing"
+          lib = apk.read("lib/x86_64/libprojectgrease_jni.so")
+          assert b"__asan_init" in lib, "native library not built with ASan"
+          assert b"PG_GL_ERROR" in lib, "native library not built with the GL error checks"
+          print("hunting APK: wrap.sh, ASan runtime, ASan-instrumented library with GL error checks")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bughunt-apks
+          path: apks/
+          retention-days: 7
+
+  hunt:
+    needs: build
+    runs-on: ubuntu-24.04
+    # GitHub caps a job at 360 min; the ASan cells (API 30/34) need most of it.
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30, 34]
+        device: [phone, tablet]
+        gpu: ["${{ github.event.inputs.gpu || 'swiftshader_indirect' }}"]
+    env:
+      CELL: api${{ matrix.api }}-${{ matrix.device }}-${{ matrix.gpu }}
+      API: ${{ matrix.api }}
+      DEVICE: ${{ matrix.device }}
+      # wrap.sh (and so ASan in an app) needs API 27+; API 26 runs the plain debug APK.
+      ASAN: ${{ matrix.api >= 27 && '1' || '0' }}
+      MONKEY_SEEDS: "20240501,7,1234"
+      MONKEY_THROTTLE: "20"
+      # ASan slows the instrumented fuzz ~3x; at 3000 iterations the API 30/34 cells ran
+      # past the 340-minute job limit (3 of the 4 ASan cells were cancelled).
+      FUZZ_ITERATIONS: ${{ matrix.api >= 27 && '1000' || '3000' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bughunt-apks
+          path: all-apks
+
+      - name: Pick the APKs for this cell
+        run: |
+          mkdir -p apks
+          if [ "$ASAN" = "1" ]; then src=all-apks/asan; else src=all-apks/plain; fi
+          cp $src/app.apk apks/app.apk; cp $src/app-test.apk apks/app-test.apk
+          # The plain APKs too: ASan cells measure the performance budgets on them (run_bughunt.py).
+          mkdir -p apks-plain; cp all-apks/plain/app.apk all-apks/plain/app-test.apk apks-plain/
+          ls -l apks
+          pip install --quiet pillow numpy
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Hunt (sweep, fuzz, perf + Perfetto, soak, monkey, process death, goldens, logcat scan)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: google_apis
+          profile: ${{ matrix.device == 'tablet' && 'pixel_c' || 'pixel_6' }}
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu ${{ matrix.gpu }} -no-snapshot -noaudio -no-boot-anim
+          script: python3 tools/run_bughunt.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bughunt-${{ env.CELL }}
+          path: out/
+          retention-days: 14
+
+  report:
+    needs: hunt
+    # Not when the run was cancelled (a newer push supersedes it): there are no cells to report.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bughunt-api*
+          path: cells
+      - name: All cells
+        run: |
+          shopt -s nullglob
+          files=(cells/*/*/bughunt_summary.txt)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no cell produced a bughunt_summary.txt (see the build / hunt jobs)"; exit 1; fi
+          for f in "${files[@]}"; do echo; cat "$f"; done

@@ -166,9 +166,11 @@ class DeviceBugfixTest {
     // ---- tests ----
     @Test fun topBarIsBelowTheStatusBar() {
         val top = rule.onNodeWithTag("editorTopBar").fetchSemanticsNode().boundsInWindow.top
-        val inset = if (Build.VERSION.SDK_INT >= 30) onUi {
-            rule.activity.window.decorView.rootWindowInsets.getInsets(WindowInsets.Type.statusBars()).top
-        } else 0
+        val inset = onUi {
+            val insets = rule.activity.window.decorView.rootWindowInsets
+            if (Build.VERSION.SDK_INT >= 30) insets.getInsets(WindowInsets.Type.statusBars()).top
+            else @Suppress("DEPRECATION") insets.systemWindowInsetTop // API 23-29 (no Type below 30)
+        }
         screenshot("01_top_bar_inset")
         assertTrue("status bar inset $inset", inset > 0)
         assertTrue("top bar at $top must start below the status bar ($inset)", top >= inset - 1)
@@ -559,8 +561,8 @@ class DeviceBugfixTest {
             assertEquals("yes", r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO))
             assertEquals((onUi { controller.document.canvasWidth } and 1.inv()).toString(),
                 r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH))
-            assertEquals("6", r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT))
-            val first = r.getFrameAtIndex(0)
+            assertEquals(6, mp4VideoSampleCount(file))
+            val first = mp4FirstFrame(r)
             assertTrue("first frame decodes", first != null && first.width > 0)
         } finally { r.release() }
     }

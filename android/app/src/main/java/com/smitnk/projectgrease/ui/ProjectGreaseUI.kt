@@ -94,7 +94,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
     fun saveCurrentProject() {
-        controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName, it) }
+        // Nothing to save (no document yet): don't record a project whose file was never written.
+        val json = controller.persistableDocumentJson() ?: return
+        projectStore.saveDocument(controller.document.projectName, json)
         projectStore.upsert(ProjectRecord(
             controller.document.projectName,
             controller.document.canvasWidth,
@@ -104,6 +106,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         ))
         projects=projectStore.load()
         controller.document.markSaved()
+    }
+
+    // The 5 s autosave alone loses the last edits when the process is killed in the background
+    // (low memory, "Don't keep activities", swipe-away): also save the moment the app stops.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, screen) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && screen == Screen.EDITOR) saveCurrentProject()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(screen) {
@@ -336,7 +349,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         onDispose{controller.onOverlayChanged=null}
     }
     fun persistProject(){
-        controller.saveDocumentJson()?.let {
+        controller.persistableDocumentJson()?.let {
             ProjectStore(context).saveDocument(controller.document.projectName,it)
             ProjectStore(context).upsert(ProjectRecord(
                 controller.document.projectName,

@@ -696,6 +696,8 @@ class EditorController {
     val sculpt=SculptController()
     val onion=OnionSkinController()
     private var rendererHandle=0L
+    /** The attached renderer, for on-device tests that drive JNI directly. */
+    fun rendererHandleForTest(): Long = rendererHandle
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
@@ -846,6 +848,8 @@ class EditorController {
         }
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
+        // Native presents BEGIN / END at once; a changed MOVE batch is drawn at the next display frame.
+        if (phase == ToolSession.PHASE_MOVE && (result and ToolSession.RESULT_CHANGED) != 0) requestFrame()
         if ((result and ToolSession.RESULT_CHANGED) != 0 && tool != ToolSession.TOOL_DRAW) {
             sessionGestureChanged = true
             document.markDirty()
@@ -1518,6 +1522,13 @@ class EditorController {
         return pages
     }
 
+    /**
+     * The document to persist: the live one, or, while the surface is detached (backgrounded app:
+     * the surface can be destroyed before ON_STOP reaches the save), the snapshot taken at detach.
+     * saveDocumentJson() alone returned null then and the stop-save wrote no file.
+     */
+    fun persistableDocumentJson():String? = saveDocumentJson() ?: detachedSnapshot
+
     fun saveDocumentJson():String? {
         if (native.handle == 0L) return null
         val originalLayer = selectedLayer
@@ -1774,7 +1785,31 @@ class EditorController {
         (argb and 255)/255f,
         ((argb ushr 24) and 255)/255f
     )
+    // While a gesture streams samples, redraw at most once per display refresh (16 ms), on the
+    // input path itself: presenting every input batch blocked the UI thread in eglSwapBuffers for
+    // a free buffer (28 ms median / 38 ms p95 per sample on 200 strokes). A batch inside the 16 ms
+    // window only applies the tool; a trailing redraw shows the last samples. (A Choreographer
+    // callback was tried first: under a stream of input it ran only 3 times in a 400-sample stroke.)
+    private var framePending = false
+    private var lastFrameNs = 0L
+    /** Durations (ms) of the frames drawn by requestFrame(), for the frame-time tests. */
+    val frameTimesMs = ArrayList<Double>()
+    private val frameHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    private val trailingFrame = Runnable { if (framePending) drawFrame() }
+    private fun drawFrame() {
+        val t0 = System.nanoTime()
+        render()
+        lastFrameNs = System.nanoTime()
+        synchronized(frameTimesMs) { if (frameTimesMs.size >= 4096) frameTimesMs.clear(); frameTimesMs += (lastFrameNs - t0) / 1e6 }
+    }
+    fun requestFrame() {
+        if (System.nanoTime() - lastFrameNs >= FRAME_INTERVAL_NS) { drawFrame(); return }
+        if (framePending) return
+        framePending = true
+        frameHandler.postDelayed(trailingFrame, FRAME_INTERVAL_NS / 1_000_000)
+    }
     fun render(){
+        if (framePending) { framePending = false; frameHandler.removeCallbacks(trailingFrame) }
         if(rendererHandle!=0L){
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
@@ -1906,6 +1941,7 @@ class EditorController {
         const val ANNOT_BEGIN = 0; const val ANNOT_ADD_POINT = 1; const val ANNOT_END = 2; const val ANNOT_CANCEL = 3
         const val ANNOT_ERASE = 4; const val ANNOT_CLEAR = 5; const val ANNOT_SET_STYLE = 6; const val ANNOT_SET_VISIBLE = 7
         const val ANNOT_COUNT = 8
+        const val FRAME_INTERVAL_NS = 16_000_000L
     }
     /** Annotate tool mode: false draws notes, true erases notes only. */
     var annotationEraser = false

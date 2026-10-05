@@ -162,3 +162,35 @@ target_link_libraries(projectgrease_jni
     ${glesv2-lib}
     ${glesv3-lib}
 )
+
+# ---- Bug-hunt build (.github/workflows/bughunt.yml) -------------------------------------------
+# PG_ASAN: AddressSanitizer on the whole native library (x86_64 emulator; the APK ships wrap.sh and
+# the ASan runtime). PG_GL_DEBUG: every GLES call in the Project Grease presenter / renderer sources
+# is followed by a glGetError() check that logs the call site and aborts (pg_gl_debug.h).
+option(PG_ASAN "AddressSanitizer build (bug hunt)" OFF)
+option(PG_GL_DEBUG "Check glGetError after every GLES call (bug hunt)" OFF)
+if(PG_ASAN)
+    target_compile_options(projectgrease_jni PRIVATE -fsanitize=address -fno-omit-frame-pointer
+        -fsanitize-address-globals-dead-stripping)
+    target_link_options(projectgrease_jni PRIVATE -fsanitize=address)
+    # ASan keeps the unused BLI_mempool_create and its BLI_mutex_init reference alive.
+    target_sources(projectgrease_jni PRIVATE "${PROJECT_GREASE_ROOT}/native/blender_gp/pg_asan_compat.c")
+endif()
+if(PG_GL_DEBUG)
+    set(PG_GL_DEBUG_SOURCES
+        "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_presentation.cpp"
+        "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gp_shader_fx.cpp"
+        "${PROJECT_GREASE_ROOT}/native/blender_gp/android_gpu_backend.cpp"
+        "${PROJECT_GREASE_ROOT}/android/app/src/main/cpp/project_grease_android_egl_renderer.cpp"
+    )
+    foreach(src IN LISTS PG_GL_DEBUG_SOURCES)
+        list(FIND PROJECT_GREASE_ALL_SOURCES "${src}" found)
+        if(found EQUAL -1)
+            message(FATAL_ERROR "PG_GL_DEBUG source is not part of the library: ${src}")
+        endif()
+    endforeach()
+    set_property(SOURCE ${PG_GL_DEBUG_SOURCES} APPEND PROPERTY COMPILE_OPTIONS
+        "-include" "${PROJECT_GREASE_ROOT}/native/blender_gp/pg_gl_debug.h")
+    target_sources(projectgrease_jni PRIVATE "${PROJECT_GREASE_ROOT}/native/blender_gp/pg_gl_debug.cpp")
+    target_compile_definitions(projectgrease_jni PRIVATE PG_GL_DEBUG=1)
+endif()

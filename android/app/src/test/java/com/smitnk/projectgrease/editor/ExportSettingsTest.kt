@@ -34,4 +34,13 @@ class ExportSettingsTest {
         assertEquals(24, ProjectSettings.fromJson("{}").fps)
         s.fps = 0; assertNotNull(s.validate())
     }
+
+    // Bug hunt (FuzzDeviceTest.projectJson, API 26): an out-of-range number in the project file
+    // threw NumberFormatException out of the loader instead of keeping the default.
+    @Test
+    fun outOfRangeNumbersKeepDefaults() {
+        val d = ProjectSettings()
+        val s = ProjectSettings.fromJson("""{"width": 22147483648, "fps": -99999999999, "height": 720}""")
+        assertEquals(d.width, s.width); assertEquals(d.fps, s.fps); assertEquals(720, s.height)
+    }
 }

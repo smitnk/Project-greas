@@ -27,6 +27,9 @@ import logcat_triage  # noqa: E402
 PKG = "com.smitnk.projectgrease"
 RUNNER = PKG + ".test/androidx.test.runner.AndroidJUnitRunner"
 SEED = os.environ.get("MONKEY_SEED", "20240501")
+# The bug-hunt environment's long tests (soak, fuzz, frame-time budget, process death) run in the
+# bug-hunt workflow only (tools/run_bughunt.py).
+BUGHUNT = PKG + ".bughunt.BugHunt"
 EVENTS = int(os.environ.get("MONKEY_EVENTS", "20000"))
 LOGCAT_FORMAT = os.environ.get("SWEEP_LOGCAT_FORMAT", "threadtime")
 IDLE_TIMEOUT = int(os.environ.get("SWEEP_IDLE_TIMEOUT", "60"))
@@ -182,8 +185,8 @@ def parse(output):
     return results
 
 
-def listing():
-    out = sh(f"adb shell am instrument -w -r -e log true -e package {PKG} {RUNNER}")
+def listing(filters=f"-e notAnnotation {BUGHUNT}"):
+    out = sh(f"adb shell am instrument -w -r -e log true -e package {PKG} {filters} {RUNNER}")
     tests = []
     for b, code in blocks(out):
         k = (b.get("class"), b.get("test"))

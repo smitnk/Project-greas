@@ -124,8 +124,8 @@ class SweepIoTest : SweepBase() {
         val r = android.media.MediaMetadataRetriever()
         try {
             r.setDataSource(file.absolutePath)
-            assertEquals("6", r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT))
-            assertTrue(r.getFrameAtIndex(0) != null)
+            assertEquals(6, mp4VideoSampleCount(file))
+            assertTrue(mp4FirstFrame(r) != null)
         } finally { r.release() }
         shot("export_mp4")
     }

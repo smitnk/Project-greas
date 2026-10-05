@@ -869,7 +869,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeToolSamples(
   const int result = project_grease_gp_tool_samples(
       renderer->gp_handle, tool, data.data(), count, phase, params, param_count);
   const auto t1 = clock::now();
-  const bool rendered = result != 0 && (result & 2 /* PG_TOOL_RESULT_CHANGED */) != 0;
+  const bool changed = result != 0 && (result & 2 /* PG_TOOL_RESULT_CHANGED */) != 0;
+  // MOVE batches only apply the tool: the frame is presented once per display refresh by the
+  // caller's frame callback (EditorController.requestFrame). Presenting here, once per input
+  // batch, made every batch wait in eglSwapBuffers for a free buffer whenever input arrived
+  // faster than the display refresh (sweep: 28 ms median / 38 ms p95 per sample on 200 strokes,
+  // with the drawing itself served from the open-stroke cache). BEGIN and END still present at
+  // once, so the gesture's first point and its committed stroke are on screen without delay.
+  const bool rendered = changed && phase != 1 /* MOVE */;
   if (rendered) {
     render_now(renderer);
   }

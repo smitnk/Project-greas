@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #if defined(__has_include)
 #if __has_include(<android/log.h>)
 #include <android/log.h>
@@ -53,6 +54,11 @@ ProjectGreaseGPHandle *project_grease_gp_create(void)
 
   handle->ready = true;
   return handle;
+}
+
+const bGPdata *project_grease_gp_document_data(const ProjectGreaseGPHandle *handle)
+{
+  return handle ? handle->backend.document_data() : nullptr;
 }
 
 void project_grease_gp_destroy(ProjectGreaseGPHandle *handle)
@@ -450,6 +456,14 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
                                          int arg_count)
 {
   if (!ensure_ready(handle)) return 0;
+  if (arg_count < 0 || (arg_count > 0 && !args)) return 0;
+  // Every command reads its arguments as floats and many cast them to int (indices, modes,
+  // counts): a non-finite or out-of-int-range value is undefined behaviour there (found by the
+  // fuzzer: inf -> INT_MIN as a select mode / stroke index). Reject them for all commands, as the
+  // edit6 dispatcher already did for its own.
+  for (int i = 0; i < arg_count; i++) {
+    if (!std::isfinite(args[i]) || std::fabs(args[i]) > 1.0e9f) return 0;
+  }
 
   switch (command) {
     case 1: // select all: args[0] = mode

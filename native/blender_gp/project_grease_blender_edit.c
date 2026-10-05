@@ -734,8 +734,17 @@ int pg_gp_modstroke_length(bGPdata *gpd, bGPDstroke *gps, const PGLengthParams *
     const float tf = first_fac; first_fac = second_fac; second_fac = tf; /* SWAP */
     const int tm = first_mode; first_mode = second_mode; second_mode = tm;
   }
-  const int first_extra_point_count = (int)ceilf(first_fac * p->point_density);
-  const int second_extra_point_count = (int)ceilf(second_fac * p->point_density);
+  /* rna_gpencil_legacy_modifier.c: point_density range 0.1 .. 1000. */
+  const float density = p->point_density < 0.1f ? 0.1f : (p->point_density > 1000.0f ? 1000.0f : p->point_density);
+  /* float math as in Blender (ceilf of a float product): 0.1f * 30 must stay 3, not 3.00000004 -> 4 */
+  const double extra_first = (double)ceilf(first_fac * density), extra_second = (double)ceilf(second_fac * density);
+  /* The extension adds these points: past the per-stroke ceiling the stroke is left as it is
+   * (fuzzer: factor 944 x density 892 asked for 842000 points per end and hung). */
+  if (!(totpoints + fmax(extra_first, 0.0) + fmax(extra_second, 0.0) <= PG_MAX_STROKE_POINTS)) {
+    return 0;
+  }
+  const int first_extra_point_count = (int)extra_first;
+  const int second_extra_point_count = (int)extra_second;
 
   changed |= pge_length_modify_stroke(gps, len * first_fac, p->overshoot_fac, (short)first_mode,
                                       p->use_curvature != 0, first_extra_point_count,
@@ -1275,6 +1284,11 @@ int pg_gp_dissolve(bGPdata *gpd, const bGPDlayer *only_layer, int type)
       continue;
     }
     gps->totpoints = keep;
+    /* Shrink the arrays to the points that are left: MEM_dupallocN (every undo snapshot, stroke
+     * duplicate) copies the whole allocation, so a 7500-point block holding 6 points was copied
+     * into each of the 64 history steps (fuzzer: GBs of memory after deleting points). */
+    gps->points = MEM_reallocN(gps->points, sizeof(bGPDspoint) * (size_t)keep);
+    if (gps->dvert != NULL) gps->dvert = MEM_reallocN(gps->dvert, sizeof(MDeformVert) * (size_t)keep);
     BKE_gpencil_stroke_sync_selection(gpd, gps);
     BKE_gpencil_stroke_geometry_update(gpd, gps);
   }
@@ -1317,6 +1331,13 @@ int pg_gp_join(bGPdata *gpd, const bGPDlayer *only_layer, int leave_gaps)
   }
   PGE_EDITABLE_STROKES_END;
   if (changed) {
+    /* BKE_gpencil_stroke_join appends through gpencil_stroke_copy_point(), which grows the array
+     * with MEM_reallocN and never writes bGPDspoint.runtime. Blender only reads runtime.pt_orig on
+     * evaluated copies; the ported select code here works on the originals and followed the garbage
+     * pointer (fuzzer: box select after a join wrote through 0xbebebebe...). Originals have no
+     * evaluated counterpart, so the back-pointers are cleared. */
+    for (int i = 0; i < target->totpoints; i++) memset(&target->points[i].runtime, 0, sizeof(target->points[i].runtime));
+    target->runtime.gps_orig = NULL;
     BKE_gpencil_stroke_geometry_update(gpd, target);
   }
   return changed;

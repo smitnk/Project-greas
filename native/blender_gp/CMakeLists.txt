@@ -85,6 +85,7 @@ set(PROJECT_GREASE_GP_ENGINE_C_SOURCES
   ${PROJECT_GREASE_GP_MINIMAL_BLENLIB_SOURCES}
   "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/gpencil_curve_legacy.c"
   "${BLENDER_SOURCE_DIR}/source/blender/editors/gpencil_legacy/gpencil_utils.c"
+  project_grease_stroke_trim.c
 )
 
 set(PROJECT_GREASE_GP_ENGINE_CXX_SOURCES

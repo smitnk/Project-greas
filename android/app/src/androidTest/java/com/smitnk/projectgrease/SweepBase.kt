@@ -137,7 +137,10 @@ abstract class SweepBase {
      * Dispatches a stroke of [n] moves straight to the surface on the main thread and returns the
      * per-event handling times in ms (input -> native session -> render -> swap: the frame time).
      */
-    protected fun timedStroke(n: Int, y: Float, x0: Float = 100f, x1: Float = 1100f): List<Double> {
+    /** Draws one stroke of [n] MOVE samples and returns the time the surface took for each. With
+     *  [intervalMs] > 0 the samples come at that pace (8 ms = a 120 Hz touch panel), as from a finger;
+     *  0 injects them back to back. */
+    protected fun timedStroke(n: Int, y: Float, x0: Float = 100f, x1: Float = 1100f, intervalMs: Long = 0): List<Double> {
         val v = surface()
         val a = screen(x0, y); val b = screen(x1, y)
         val loc = IntArray(2); onUi { v.getLocationOnScreen(loc) }
@@ -151,6 +154,7 @@ abstract class SweepBase {
             val yy = a.second + 20f * kotlin.math.sin(i * 0.05f)
             val ev = local(event(MotionEvent.ACTION_MOVE, down, x, yy))
             times += onUi { val t0 = System.nanoTime(); v.dispatchTouchEvent(ev); (System.nanoTime() - t0) / 1e6 }
+            if (intervalMs > 0) SystemClock.sleep(intervalMs)
         }
         onUi { v.dispatchTouchEvent(local(event(MotionEvent.ACTION_UP, down, b.first, b.second))) }
         rule.waitForIdle()

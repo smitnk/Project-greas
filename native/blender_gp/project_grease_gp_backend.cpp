@@ -15,6 +15,7 @@
 #include "project_grease_document_state.h"
 #include "project_grease_modifier_stack.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_stroke_trim.h"
 
 #include <algorithm>
 #include <cmath>
@@ -698,6 +699,38 @@ bool Backend::initialize()
   return true;
 }
 
+#ifdef __ANDROID__
+/* Frees an Android document (no Blender Main / ID database owns it). Strokes go through
+ * BKE_gpencil_free_stroke so their vertex-group weights (dvert[i].dw), fill triangles and edit
+ * curve are released too, and the stroke buffer of an open stroke is freed with the data (both
+ * leaked on every new project / load before: LeakSanitizer in the bug-hunt fuzzer). */
+static void android_document_free(bGPdata *gpd)
+{
+  for (bGPDlayer *layer = static_cast<bGPDlayer *>(gpd->layers.first); layer != nullptr;) {
+    bGPDlayer *next_layer = layer->next;
+    for (bGPDframe *frame = static_cast<bGPDframe *>(layer->frames.first); frame != nullptr;) {
+      bGPDframe *next_frame = frame->next;
+      for (bGPDstroke *stroke = static_cast<bGPDstroke *>(frame->strokes.first); stroke != nullptr;) {
+        bGPDstroke *next_stroke = stroke->next;
+        BKE_gpencil_free_stroke(stroke);
+        stroke = next_stroke;
+      }
+      MEM_freeN(frame);
+      frame = next_frame;
+    }
+    BKE_gpencil_free_layer_masks(layer);
+    MEM_freeN(layer);
+    layer = next_layer;
+  }
+  MEM_SAFE_FREE(gpd->runtime.sbuffer);
+  gpd->runtime.sbuffer_used = 0;
+  gpd->runtime.sbuffer_size = 0;
+  gp_materials_free(gpd);
+  BLI_freelistN(&gpd->vertex_group_names);
+  MEM_freeN(gpd);
+}
+#endif
+
 void Backend::shutdown()
 {
   if (!impl_) {
@@ -717,32 +750,7 @@ void Backend::shutdown()
     if (impl_->gpu_initialized) {
       DRW_gpencil_batch_cache_free(impl_->gpd);
     }
-    for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
-         layer != nullptr;) {
-      bGPDlayer *next_layer = layer->next;
-      for (bGPDframe *frame = static_cast<bGPDframe *>(layer->frames.first);
-           frame != nullptr;) {
-        bGPDframe *next_frame = frame->next;
-        for (bGPDstroke *stroke = static_cast<bGPDstroke *>(frame->strokes.first);
-             stroke != nullptr;) {
-          bGPDstroke *next_stroke = stroke->next;
-          MEM_SAFE_FREE(stroke->points);
-          MEM_SAFE_FREE(stroke->triangles);
-          MEM_SAFE_FREE(stroke->dvert);
-          MEM_SAFE_FREE(stroke->editcurve);
-          MEM_freeN(stroke);
-          stroke = next_stroke;
-        }
-        MEM_freeN(frame);
-        frame = next_frame;
-      }
-      BKE_gpencil_free_layer_masks(layer);
-      MEM_freeN(layer);
-      layer = next_layer;
-    }
-    gp_materials_free(impl_->gpd);
-    BLI_freelistN(&impl_->gpd->vertex_group_names);
-    MEM_freeN(impl_->gpd);
+    android_document_free(impl_->gpd);
     impl_->gpd = nullptr;
   }
 #else
@@ -817,32 +825,7 @@ bool Backend::reset_document()
       DRW_gpencil_batch_cache_free(impl_->gpd);
     }
 #ifdef __ANDROID__
-    for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
-         layer;) {
-      bGPDlayer *next_layer = layer->next;
-      for (bGPDframe *frame = static_cast<bGPDframe *>(layer->frames.first);
-           frame;) {
-        bGPDframe *next_frame = frame->next;
-        for (bGPDstroke *stroke = static_cast<bGPDstroke *>(frame->strokes.first);
-             stroke;) {
-          bGPDstroke *next_stroke = stroke->next;
-          MEM_SAFE_FREE(stroke->points);
-          MEM_SAFE_FREE(stroke->triangles);
-          MEM_SAFE_FREE(stroke->dvert);
-          MEM_SAFE_FREE(stroke->editcurve);
-          MEM_freeN(stroke);
-          stroke = next_stroke;
-        }
-        MEM_freeN(frame);
-        frame = next_frame;
-      }
-      BKE_gpencil_free_layer_masks(layer);
-      MEM_freeN(layer);
-      layer = next_layer;
-    }
-    gp_materials_free(impl_->gpd);
-    BLI_freelistN(&impl_->gpd->vertex_group_names);
-    MEM_freeN(impl_->gpd);
+    android_document_free(impl_->gpd);
 #else
     if (impl_->bmain) {
       /* The desktop proof path owns the GP ID through Main. */
@@ -1986,23 +1969,30 @@ bool Backend::dissolve_selected_points()
     if (has_selected) {
       // The Android closure intentionally does not link the full legacy
       // gpencil_geom.c implementation. Compact tagged points in-place while
-      // preserving the real Blender 3.6.23 bGPDstroke/bGPDspoint layout.
+      // preserving the real Blender 3.6.23 bGPDstroke/bGPDspoint layout. As in
+      // gpencil_dissolve_selected_points(), the vertex-group weights (dvert) are
+      // compacted with their points, and a stroke left without points is freed.
       int write_index = 0;
       for (int read_index = 0; read_index < stroke->totpoints; ++read_index) {
         bGPDspoint &point = stroke->points[read_index];
         if (point.flag & GP_SPOINT_TAG) {
+          if (stroke->dvert) {
+            BKE_defvert_clear(&stroke->dvert[read_index]);
+          }
           continue;
         }
         if (write_index != read_index) {
           std::memcpy(&stroke->points[write_index], &point, sizeof(bGPDspoint));
+          if (stroke->dvert) {
+            stroke->dvert[write_index] = stroke->dvert[read_index];
+          }
         }
         ++write_index;
       }
       if (write_index != stroke->totpoints) {
         if (write_index == 0) {
-          MEM_SAFE_FREE(stroke->points);
-          stroke->totpoints = 0;
-          stroke->flag &= ~GP_STROKE_SELECT;
+          BLI_remlink(&impl_->frame->strokes, stroke);
+          BKE_gpencil_free_stroke(stroke);
         }
         else {
           bGPDspoint *points = static_cast<bGPDspoint *>(
@@ -2017,10 +2007,18 @@ bool Backend::dissolve_selected_points()
                       sizeof(bGPDspoint) * static_cast<size_t>(write_index));
           MEM_freeN(stroke->points);
           stroke->points = points;
+          if (stroke->dvert) {
+            MDeformVert *dvert = static_cast<MDeformVert *>(
+                MEM_mallocN(sizeof(MDeformVert) * static_cast<size_t>(write_index),
+                            "Project Grease dissolve weights"));
+            std::memcpy(dvert, stroke->dvert, sizeof(MDeformVert) * static_cast<size_t>(write_index));
+            MEM_freeN(stroke->dvert);
+            stroke->dvert = dvert;
+          }
           stroke->totpoints = write_index;
+          MEM_SAFE_FREE(stroke->triangles);
+          stroke->tot_triangles = 0;
         }
-        MEM_SAFE_FREE(stroke->triangles);
-        stroke->tot_triangles = 0;
         changed = true;
       }
     }
@@ -2074,11 +2072,20 @@ bool Backend::merge_selected_points(float threshold)
       if (!merge) {
         if (write_index != read_index) {
           std::memcpy(&stroke->points[write_index], &point, sizeof(bGPDspoint));
+          // vertex-group weights stay with their point
+          if (stroke->dvert) stroke->dvert[write_index] = stroke->dvert[read_index];
         }
         ++write_index;
       }
+      else if (stroke->dvert) {
+        BKE_defvert_clear(&stroke->dvert[read_index]); // the merged-away point's weights
+      }
     }
     if (write_index != stroke->totpoints) {
+      if (stroke->dvert) {
+        stroke->dvert = static_cast<MDeformVert *>(
+            MEM_reallocN(stroke->dvert, sizeof(MDeformVert) * static_cast<size_t>(write_index)));
+      }
       bGPDspoint *points = static_cast<bGPDspoint *>(
           MEM_mallocN(sizeof(bGPDspoint) * static_cast<size_t>(write_index),
                        "Project Grease merge points"));
@@ -2150,13 +2157,29 @@ bool Backend::join_selected_strokes()
                 source->points,
                 sizeof(bGPDspoint) * static_cast<size_t>(source_points));
 
+    // Vertex-group weights follow their points, as in BKE_gpencil_stroke_join: the destination's
+    // move over, the source's are copied (it is freed below). Freeing the array alone leaked every
+    // weight list and dropped both strokes' weights.
+    MDeformVert *joined_dvert = nullptr;
+    if (destination->dvert || source->dvert) {
+      joined_dvert = static_cast<MDeformVert *>(MEM_callocN(
+          sizeof(MDeformVert) * static_cast<size_t>(destination_points + source_points),
+          "Project Grease joined stroke weights"));
+      if (destination->dvert) {
+        std::memcpy(joined_dvert, destination->dvert, sizeof(MDeformVert) * static_cast<size_t>(destination_points));
+      }
+      if (source->dvert) {
+        BKE_defvert_array_copy(joined_dvert + destination_points, source->dvert, source_points);
+      }
+    }
     MEM_freeN(destination->points);
     destination->points = joined_points;
     destination->totpoints = destination_points + source_points;
     destination->flag &= ~GP_STROKE_CYCLIC;
     MEM_SAFE_FREE(destination->triangles);
     destination->tot_triangles = 0;
-    MEM_SAFE_FREE(destination->dvert);
+    MEM_SAFE_FREE(destination->dvert); // the array only: its weight lists moved to joined_dvert
+    destination->dvert = joined_dvert;
     MEM_SAFE_FREE(destination->editcurve);
 
     BLI_remlink(&impl_->frame->strokes, source);
@@ -3059,7 +3082,7 @@ bool Backend::trim_stroke(int index) {
       impl_->last_error = "stroke needs at least four points for Legacy GP trim";
       return false;
     }
-    if (!BKE_gpencil_stroke_trim(impl_->gpd, stroke)) {
+    if (!pg_gpencil_stroke_trim(impl_->gpd, stroke)) {
       impl_->last_error = "BKE_gpencil_stroke_trim() found no intersection";
       return false;
     }

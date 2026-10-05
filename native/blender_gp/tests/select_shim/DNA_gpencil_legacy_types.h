@@ -40,6 +40,8 @@ typedef struct bGPDstroke {
   float hardeness;
   float fill_opacity_fac;
   float vert_color_fill[4];
+  void *triangles; /* bGPDtriangle * in Blender; only freed here */
+  int tot_triangles;
   void *editcurve;
   bGPDstroke_Runtime runtime;
 } bGPDstroke;

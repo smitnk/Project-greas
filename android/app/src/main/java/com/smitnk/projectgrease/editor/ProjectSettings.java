@@ -41,6 +41,9 @@ public final class ProjectSettings {
 
     private static int intOr(String json, String key, int fallback) {
         Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)").matcher(json);
-        return m.find() ? Integer.parseInt(m.group(1)) : fallback;
+        if (!m.find()) return fallback;
+        // Out-of-range numbers (a hand-edited or corrupt file) keep the default instead of throwing:
+        // the bug-hunt fuzzer crashed the loader with "width": 22147483648.
+        try { return Integer.parseInt(m.group(1)); } catch (NumberFormatException e) { return fallback; }
     }
 }

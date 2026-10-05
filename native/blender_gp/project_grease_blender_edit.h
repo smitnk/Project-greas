@@ -61,6 +61,10 @@ enum {
   PG_EDIT_CMD_MIRROR_COPY = 56,  /* args: axis_x, axis_y, pivot_x, pivot_y */
   PG_EDIT_CMD_WEIGHT_PAINT = 57, /* args: def_nr, x, y, radius, strength, target_weight */
 };
+/* Most points one edit may give a single stroke (resample, subdivide, ...). Without a ceiling a tiny
+ * spacing on a long stroke asked for billions of points and the app froze (bug-hunt fuzzer). */
+#define PG_MAX_STROKE_POINTS 20000
+
 #define PG_EDIT_CMD_FIRST 31
 #define PG_EDIT_CMD_LAST 116 /* 103..116: edit8.c (via edit7's default), 58..65: edit2.c, 66..75: edit3.c, 76..85: edit4.c, 86..89: edit5.c (routed by the bridge), 90..92: edit6.c (via edit4's default), 93..102: edit7.c (via edit6's default) */
 

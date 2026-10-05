@@ -37,7 +37,11 @@ MONKEY_EVENTS = int(os.environ.get("MONKEY_EVENTS", "50000"))
 MONKEY_THROTTLE = os.environ.get("MONKEY_THROTTLE", "20")
 OUT = os.path.join("out", CELL)
 HUNT = PKG + ".bughunt."
-SCREENS = {"phone": ("1080x2400", "420"), "tablet": ("2560x1600", "320")}
+# Each matches its AVD's native display (pixel_6, pixel_c). An override with another aspect ratio
+# (the tablet was forced to 2560x1600 on a 2560x1800 pixel_c) is the suspected cause of the API 26
+# tablet cell's strokes landing off-target or being dropped (28 ink/stroke-count failures that the
+# phone, whose override matches its AVD, never showed).
+SCREENS = {"phone": ("1080x2400", "420"), "tablet": ("2560x1800", "320")}
 
 
 def class_tests(cls):

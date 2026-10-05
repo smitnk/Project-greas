@@ -593,7 +593,7 @@ class SelectionController(private val native: NativeEditorBridge) {
 class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
 enum class EraserMode { HARD, SOFT, STROKE }
 enum class SculptBrush {
-    SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE
+    SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE, CLONE
 }
 
 /** Sculpt brush selection; the brushes themselves run natively (project_grease_tool_sculpt.c). */
@@ -609,6 +609,16 @@ class SculptController {
     fun select(value: SculptBrush) { brush = value }
 
     fun setInvert(value: Boolean) { invert = value }
+    /** ToolSettings gp_sculpt.flag auto-masking bits, gpencil_selectmode_sculpt, brush curve preset. */
+    var automask = 0
+        private set
+    var selectMask = 0
+        private set
+    var curvePreset = 0
+        private set
+    fun toggleAutomask(bit: Int) { automask = automask xor bit }
+    fun setSelectMask(mask: Int) { selectMask = mask and 7 }
+    fun setCurvePreset(preset: Int) { if (ToolSession.CURVE_PRESETS.any { it.first == preset }) curvePreset = preset }
 }
 
 class OnionSkinController {
@@ -798,7 +808,8 @@ class EditorController {
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
                 ToolSession.sculptTool(sculpt.brush), brushes.size.coerceAtLeast(0.5f),
-                brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++)
+                brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
+                selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
                 ToolSession.vertexTool(vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget)

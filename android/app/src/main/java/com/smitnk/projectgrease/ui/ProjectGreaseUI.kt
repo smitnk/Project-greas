@@ -1274,7 +1274,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             com.smitnk.projectgrease.editor.SculptBrush.PUSH to "Push",
             com.smitnk.projectgrease.editor.SculptBrush.PINCH to "Pinch",
             com.smitnk.projectgrease.editor.SculptBrush.TWIST to "Twist",
-            com.smitnk.projectgrease.editor.SculptBrush.RANDOMIZE to "Randomize"
+            com.smitnk.projectgrease.editor.SculptBrush.RANDOMIZE to "Randomize",
+            com.smitnk.projectgrease.editor.SculptBrush.CLONE to "Clone (pastes the copied strokes)"
         ).forEach { (brush,label) ->
             Button(
                 onClick={controller.sculpt.select(brush);redraw()},
@@ -1285,6 +1286,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Invert sculpt brush (thinner, weaker, inflate, twist back)",Modifier.weight(1f))
             Switch(checked=controller.sculpt.invert,onCheckedChange={controller.sculpt.setInvert(it);redraw()})
         }
+        SculptMaskingSection(controller,redraw)
         Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
         listOf(
             "Bring to front" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_TOP) },

@@ -288,6 +288,8 @@ int pg_gp_move_to_layer(bGPdata *gpd, bGPDlayer *src, int target_index)
 /* ---- 9/10. Copy / paste (GPENCIL_OT_copy / GPENCIL_OT_paste; one clipboard per process) ---- */
 static ListBase pe4_clipboard = {NULL, NULL};
 
+const ListBase *pg_gp_clipboard_strokes(void) { return &pe4_clipboard; }
+
 void pg_gp_clipboard_free(void)
 {
   for (bGPDstroke *s = pe4_clipboard.first, *n; s; s = n) { n = s->next; BKE_gpencil_free_stroke(s); }

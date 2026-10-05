@@ -27,6 +27,10 @@ typedef struct PGToolBrushParams {
   int target;         /* vertex paint: GPPAINT_MODE_STROKE/FILL/BOTH; weight paint: vertex group */
   float weight;       /* weight paint target weight (brush->weight) */
   unsigned int seed;  /* RNG seed (randomize brush) */
+  int automask;       /* sculpt: GP_SCULPT_SETT_FLAG_AUTOMASK_* */
+  int select_mask;    /* GP_SCULPT_MASK_SELECTMODE_* (sculpt) / GP_VERTEX_MASK_SELECTMODE_* (vertex paint) */
+  int curve_preset;   /* eBrushCurvePreset, 0 keeps the tool default */
+  int active_material;/* 0-based */
 } PGToolBrushParams;
 
 typedef struct PGSculptSession PGSculptSession;

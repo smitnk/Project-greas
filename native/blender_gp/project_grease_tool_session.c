@@ -161,6 +161,10 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
   bp.target = (int)param(p, n, PG_TOOL_P_TARGET, 0);
   bp.weight = param(p, n, PG_TOOL_P_WEIGHT, 1);
   bp.seed = (unsigned int)param(p, n, PG_TOOL_P_SEED, 0);
+  bp.automask = (int)param(p, n, PG_TOOL_P_AUTOMASK, 0);
+  bp.select_mask = (int)param(p, n, PG_TOOL_P_SELECT_MASK, 0);
+  bp.curve_preset = (int)param(p, n, PG_TOOL_P_CURVE_PRESET, 0);
+  bp.active_material = (int)param(p, n, PG_TOOL_P_ACTIVE_MATERIAL, 0);
   switch (tool) {
     case PG_TOOL_SCULPT:
       s->sculpt = pg_sculpt_session_begin(gpd, &bp);

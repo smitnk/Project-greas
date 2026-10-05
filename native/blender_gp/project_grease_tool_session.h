@@ -42,6 +42,10 @@ enum {
   PG_TOOL_P_TARGET,      /* vertex paint GPPAINT_MODE_*; weight paint vertex group */
   PG_TOOL_P_WEIGHT,      /* weight paint target weight */
   PG_TOOL_P_SEED,
+  PG_TOOL_P_AUTOMASK,        /* sculpt: GP_SCULPT_SETT_FLAG_AUTOMASK_* bits (ToolSettings gp_sculpt.flag) */
+  PG_TOOL_P_SELECT_MASK,     /* sculpt / vertex paint: GP_SCULPT_MASK_SELECTMODE_* / GP_VERTEX_MASK_SELECTMODE_* */
+  PG_TOOL_P_CURVE_PRESET,    /* brush falloff: eBrushCurvePreset (0 = keep the tool's default) */
+  PG_TOOL_P_ACTIVE_MATERIAL, /* 0-based active material slot (Active Material auto-masking) */
   PG_TOOL_P_COUNT
 };
 

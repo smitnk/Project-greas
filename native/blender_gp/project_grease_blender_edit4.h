@@ -34,6 +34,8 @@ int pg_gp_move_to_layer(struct bGPdata *gpd, struct bGPDlayer *src, int target_i
 int pg_gp_copy(struct bGPdata *gpd, const struct bGPDlayer *only);
 int pg_gp_paste(struct bGPdata *gpd, struct bGPDlayer *target);
 void pg_gp_clipboard_free(void);
+/* The clipboard strokes (gpencil_strokes_copypastebuf), read by the sculpt Clone brush. */
+const struct ListBase *pg_gp_clipboard_strokes(void);
 int pg_gp_edit4_dispatch(struct bGPdata *gpd, struct bGPDlayer *active_layer, int command,
                          const float *args, int arg_count);
 #ifdef __cplusplus

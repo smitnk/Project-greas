@@ -40,7 +40,11 @@ object ToolSession {
     const val P_TARGET = 8
     const val P_WEIGHT = 9
     const val P_SEED = 10
-    const val P_COUNT = 11
+    const val P_AUTOMASK = 11
+    const val P_SELECT_MASK = 12
+    const val P_CURVE_PRESET = 13
+    const val P_ACTIVE_MATERIAL = 14
+    const val P_COUNT = 15
 
     // Blender tool enums (DNA_brush_enums.h)
     const val GPSCULPT_SMOOTH = 0
@@ -51,6 +55,19 @@ object ToolSession {
     const val GPSCULPT_TWIST = 5
     const val GPSCULPT_PINCH = 6
     const val GPSCULPT_RANDOMIZE = 7
+    const val GPSCULPT_CLONE = 8
+    /** GP_SCULPT_SETT_FLAG_AUTOMASK_* (DNA_scene_types.h). */
+    const val AUTOMASK_STROKE = 1 shl 4
+    const val AUTOMASK_LAYER_STROKE = 1 shl 5
+    const val AUTOMASK_MATERIAL_STROKE = 1 shl 6
+    const val AUTOMASK_LAYER_ACTIVE = 1 shl 8
+    const val AUTOMASK_MATERIAL_ACTIVE = 1 shl 9
+    /** GP_SCULPT_MASK_SELECTMODE_POINT / STROKE / SEGMENT. */
+    const val SELECT_MASK_POINT = 1
+    const val SELECT_MASK_STROKE = 2
+    const val SELECT_MASK_SEGMENT = 4
+    /** eBrushCurvePreset (0 keeps the brush default, Smooth). */
+    val CURVE_PRESETS = listOf(0 to "Default", 1 to "Smooth", 9 to "Smoother", 2 to "Sphere", 3 to "Root", 4 to "Sharp", 5 to "Linear", 6 to "Pow4", 7 to "Inverse square", 8 to "Constant")
     const val GPVERTEX_DRAW = 0
     const val GPVERTEX_BLUR = 1
     const val GPVERTEX_AVERAGE = 2
@@ -70,6 +87,7 @@ object ToolSession {
         SculptBrush.PINCH -> GPSCULPT_PINCH
         SculptBrush.TWIST -> GPSCULPT_TWIST
         SculptBrush.RANDOMIZE -> GPSCULPT_RANDOMIZE
+        SculptBrush.CLONE -> GPSCULPT_CLONE
     }
 
     /** ProjectGreaseSelect.VPAINT_* (UI order) to GPVERTEX_TOOL_*. */
@@ -83,8 +101,11 @@ object ToolSession {
 
     fun brushParams(
         brush: Int, radius: Float, strength: Float, pxPerUnit: Float, invert: Boolean = false,
-        r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0
+        r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0,
+        automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0
     ): FloatArray = FloatArray(P_COUNT).also {
+        it[P_AUTOMASK] = automask.toFloat(); it[P_SELECT_MASK] = selectMask.toFloat()
+        it[P_CURVE_PRESET] = curvePreset.toFloat(); it[P_ACTIVE_MATERIAL] = activeMaterial.toFloat()
         it[P_BRUSH] = brush.toFloat(); it[P_RADIUS] = radius; it[P_STRENGTH] = strength
         it[P_PX_PER_UNIT] = pxPerUnit; it[P_INVERT] = if (invert) 1f else 0f
         it[P_R] = r; it[P_G] = g; it[P_B] = b; it[P_TARGET] = target.toFloat(); it[P_WEIGHT] = weight

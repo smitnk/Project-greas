@@ -545,3 +545,41 @@ fun DashSegmentsSection(controller: EditorController, redraw: () -> Unit) {
         TextButton(onClick = { controller.setDashSegments(offset, segments.toList()); redraw() }, modifier = Modifier.testTag("dashApply")) { Text("Apply") }
     }
 }
+
+/** Sculpt auto-masking, selection mask and brush falloff curve (Blender's sculpt header / brush panel). */
+@Composable
+fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
+    val sc = controller.sculpt
+    var tick by remember { mutableIntStateOf(0) }
+    key(tick) {
+        Text("Auto-masking", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            listOf(
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_STROKE to "Stroke",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_LAYER_STROKE to "Layer (stroke)",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_MATERIAL_STROKE to "Material (stroke)",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_LAYER_ACTIVE to "Active layer",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_MATERIAL_ACTIVE to "Active material"
+            ).forEach { (bit, label) ->
+                FilterChip(selected = sc.automask and bit != 0, onClick = { sc.toggleAutomask(bit); tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("automask_$bit"))
+            }
+        }
+        Text("Selection mask", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            listOf(0 to "Off", com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
+                com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_STROKE to "Strokes",
+                com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_SEGMENT to "Segments").forEach { (m, label) ->
+                FilterChip(selected = sc.selectMask == m, onClick = { sc.setSelectMask(m); tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            }
+        }
+        Text("Falloff curve", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            com.smitnk.projectgrease.editor.ToolSession.CURVE_PRESETS.forEach { (preset, label) ->
+                FilterChip(selected = sc.curvePreset == preset, onClick = { sc.setCurvePreset(preset); tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            }
+        }
+    }
+}

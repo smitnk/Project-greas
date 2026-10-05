@@ -7,8 +7,11 @@
  * Adapted (no bContext / depsgraph / RNA): the operator context struct, lock axis, do_frame,
  * apply_standard, brush_apply, init and exit. The view is the canvas plane (project_grease_tool_
  * util.c), object and layer matrices are identity, there are no evaluated copies (points are
- * linked to themselves, pg_tool_link_runtime) and no auto-masking or clone brush.
+ * linked to themselves, pg_tool_link_runtime). Auto-masking (get_automasking_strokes_list,
+ * get_nearest_stroke_to_brush) and the Clone brush (stamp mode, the edit clipboard as
+ * gpencil_strokes_copypastebuf) are ported with the same adaptations.
  */
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +37,7 @@
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
 
+#include "project_grease_blender_edit4.h"
 #include "project_grease_tool_brushes.h"
 #include "project_grease_tool_view.h"
 
@@ -59,7 +63,20 @@ typedef struct tGP_BrushEditData {
   GHash *stroke_customdata;
   float inv_mat[4][4];
   RNG *rng;
+  /* Auto-masking (ts->gp_sculpt.flag) and the active layer / material it compares against. */
+  int automask_flag;
+  int active_material;
+  struct GHash *automasking_strokes;
+  bool automasking_ready;
+  /* Clone brush custom data (tGPSB_CloneBrushData) */
+  void *customdata;
 } tGP_BrushEditData;
+
+#define SEARCH_RADIUS_PIXEL 20
+#define PG_AUTOMASK_ANY \
+  (GP_SCULPT_SETT_FLAG_AUTOMASK_STROKE | GP_SCULPT_SETT_FLAG_AUTOMASK_LAYER_STROKE | \
+   GP_SCULPT_SETT_FLAG_AUTOMASK_MATERIAL_STROKE | GP_SCULPT_SETT_FLAG_AUTOMASK_LAYER_ACTIVE | \
+   GP_SCULPT_SETT_FLAG_AUTOMASK_MATERIAL_ACTIVE)
 
 typedef bool (*GP_BrushApplyCb)(tGP_BrushEditData *gso,
                                 bGPDstroke *gps,
@@ -972,6 +989,9 @@ static bool pgt_sculpt_do_frame(tGP_BrushEditData *gso, bGPDlayer *gpl, bGPDfram
         continue;
       }
     }
+    if ((gso->automask_flag & PG_AUTOMASK_ANY) && !BLI_ghash_haskey(gso->automasking_strokes, gps)) {
+      continue;
+    }
     if ((gps->totpoints > 1) &&
         !ED_gpencil_stroke_check_collision(gsc, gps, gso->mval, radius, bound_mat))
     {
@@ -1031,6 +1051,233 @@ static bool pgt_sculpt_do_frame(tGP_BrushEditData *gso, bGPDlayer *gpl, bGPDfram
     }
   }
   return changed;
+}
+
+/* ED_gpencil_stroke_material_editable() on the canvas (bGPdata::mat[]). */
+static bool pgt_material_editable(bGPdata *gpd, const bGPDlayer *gpl, const bGPDstroke *gps)
+{
+  const MaterialGPencilStyle *gp_style = pg_tool_material_style(gpd, gps->mat_nr + 1);
+  return !((gp_style->flag & GP_MATERIAL_HIDE) ||
+           (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (gp_style->flag & GP_MATERIAL_LOCKED)));
+}
+
+/* get_nearest_stroke_to_brush(): identity layer matrices. */
+static void get_nearest_stroke_to_brush(tGP_BrushEditData *gso, int mval_i[2], bGPDlayer **r_gpl, bGPDstroke **r_gps)
+{
+  const int radius = SEARCH_RADIUS_PIXEL;
+  bGPdata *gpd = gso->gpd;
+  GP_SpaceConversion *gsc = &gso->gsc;
+  const bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+  float dist = FLT_MAX;
+  float bound_mat[4][4];
+  unit_m4(bound_mat);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || (gpl->actframe == NULL)) continue;
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        if (gps->totpoints == 0) continue;
+        if (pgt_material_editable(gpd, gpl, gps) == false) continue;
+        if (!ED_gpencil_stroke_check_collision(gsc, gps, gso->mval, radius, bound_mat)) continue;
+        bGPDspoint *pt;
+        int pc2D[2] = {0};
+        bGPDspoint npt;
+        for (int i = 0; i < gps->totpoints; i++) {
+          pt = gps->points + i;
+          gpencil_point_to_world_space(pt, bound_mat, &npt);
+          gpencil_point_to_xy(gsc, gps, &npt, &pc2D[0], &pc2D[1]);
+          float d = len_v2v2_int(mval_i, pc2D);
+          if (d < dist) {
+            dist = d;
+            *r_gpl = gpl;
+            *r_gps = gps;
+          }
+        }
+      }
+      if (!is_multiedit) break;
+    }
+  }
+}
+
+/* get_automasking_strokes_list(): materials compare by slot (the object's slots are bGPdata::mat[]). */
+static bool get_automasking_strokes_list(tGP_BrushEditData *gso)
+{
+  bGPdata *gpd = gso->gpd;
+  GP_SpaceConversion *gsc = &gso->gsc;
+  const int flag = gso->automask_flag;
+  const bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+  const bool is_masking_stroke = (flag & GP_SCULPT_SETT_FLAG_AUTOMASK_STROKE) != 0;
+  const bool is_masking_layer_stroke = (flag & GP_SCULPT_SETT_FLAG_AUTOMASK_LAYER_STROKE) != 0;
+  const bool is_masking_material_stroke = (flag & GP_SCULPT_SETT_FLAG_AUTOMASK_MATERIAL_STROKE) != 0;
+  const bool is_masking_layer_active = (flag & GP_SCULPT_SETT_FLAG_AUTOMASK_LAYER_ACTIVE) != 0;
+  const bool is_masking_material_active = (flag & GP_SCULPT_SETT_FLAG_AUTOMASK_MATERIAL_ACTIVE) != 0;
+  int mval_i[2];
+  round_v2i_v2fl(mval_i, gso->mval);
+  const int radius = SEARCH_RADIUS_PIXEL;
+  bGPDlayer *gpl_active = BKE_gpencil_layer_active_get(gpd);
+  const int mat_active = gso->active_material;
+  bGPDlayer *gpl_active_stroke = gpl_active;
+  int mat_active_stroke = mat_active;
+  if (is_masking_layer_stroke || is_masking_material_stroke) {
+    bGPDlayer *gpl_near = NULL;
+    bGPDstroke *gps_near = NULL;
+    get_nearest_stroke_to_brush(gso, mval_i, &gpl_near, &gps_near);
+    if (gps_near != NULL) {
+      if (is_masking_layer_stroke) gpl_active_stroke = gpl_near;
+      if (is_masking_material_stroke) mat_active_stroke = gps_near->mat_nr;
+    }
+  }
+  float bound_mat[4][4];
+  unit_m4(bound_mat);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || (gpl->actframe == NULL)) continue;
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        bool pick_stroke = false, pick_layer_stroke = false, pick_material_stroke = false;
+        bool pick_layer_active = false, pick_material_active = false;
+        if (gps->totpoints == 0) continue;
+        if (pgt_material_editable(gpd, gpl, gps) == false) continue;
+        if (is_masking_layer_stroke && (gpl == gpl_active_stroke)) pick_layer_stroke = true;
+        if (is_masking_layer_active && (gpl == gpl_active)) pick_layer_active = true;
+        if (is_masking_material_stroke && gps->mat_nr == mat_active_stroke) pick_material_stroke = true;
+        if (is_masking_material_active && gps->mat_nr == mat_active) pick_material_active = true;
+        if ((is_masking_stroke) && ED_gpencil_stroke_check_collision(gsc, gps, gso->mval, radius, bound_mat)) {
+          bGPDspoint *pt1, *pt2;
+          int pc1[2] = {0};
+          int pc2[2] = {0};
+          bGPDspoint npt;
+          if (gps->totpoints == 1) {
+            gpencil_point_to_world_space(gps->points, bound_mat, &npt);
+            gpencil_point_to_xy(gsc, gps, &npt, &pc1[0], &pc1[1]);
+            if (len_v2v2_int(mval_i, pc1) <= radius) pick_stroke = true;
+          }
+          else {
+            for (int i = 0; (i + 1) < gps->totpoints && !pick_stroke; i++) {
+              pt1 = gps->points + i;
+              pt2 = gps->points + i + 1;
+              gpencil_point_to_world_space(pt1, bound_mat, &npt);
+              gpencil_point_to_xy(gsc, gps, &npt, &pc1[0], &pc1[1]);
+              if (len_v2v2_int(mval_i, pc1) <= radius) { pick_stroke = true; i = gps->totpoints; }
+              gpencil_point_to_world_space(pt2, bound_mat, &npt);
+              gpencil_point_to_xy(gsc, gps, &npt, &pc2[0], &pc2[1]);
+              if (len_v2v2_int(mval_i, pc2) <= radius) { pick_stroke = true; i = gps->totpoints; }
+              if (!pick_stroke && gpencil_stroke_inside_circle(gso->mval, radius, pc1[0], pc1[1], pc2[0], pc2[1])) {
+                pick_stroke = true;
+                i = gps->totpoints;
+              }
+            }
+          }
+        }
+        if (is_masking_stroke && !pick_stroke) continue;
+        if (is_masking_layer_stroke && !pick_layer_stroke) continue;
+        if (is_masking_material_stroke && !pick_material_stroke) continue;
+        if (is_masking_layer_active && !pick_layer_active) continue;
+        if (is_masking_material_active && !pick_material_active) continue;
+        BLI_ghash_insert(gso->automasking_strokes, gps, gps);
+      }
+      if (!is_multiedit) break;
+    }
+  }
+  return true;
+}
+
+/* Clone brush (stamp mode): tGPSB_CloneBrushData and gpencil_brush_clone_init/free/add/adjust. */
+typedef struct tGPSB_CloneBrushData {
+  float buffer_midpoint[3];
+  size_t totitems;
+  bGPDstroke **new_strokes;
+} tGPSB_CloneBrushData;
+
+static void gpencil_brush_clone_init(tGP_BrushEditData *gso)
+{
+  tGPSB_CloneBrushData *data;
+  gso->customdata = data = MEM_callocN(sizeof(tGPSB_CloneBrushData), "CloneBrushData");
+  for (const bGPDstroke *gps = pg_gp_clipboard_strokes()->first; gps; gps = gps->next) {
+    const float dfac = 1.0f / ((float)gps->totpoints);
+    float mid[3] = {0.0f};
+    const bGPDspoint *pt;
+    int i;
+    for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
+      float co[3];
+      mul_v3_v3fl(co, &pt->x, dfac);
+      add_v3_v3(mid, co);
+    }
+    add_v3_v3(data->buffer_midpoint, mid);
+    data->totitems++;
+  }
+  if (data->totitems > 1) mul_v3_fl(data->buffer_midpoint, 1.0f / (float)data->totitems);
+  data->new_strokes = MEM_callocN(sizeof(bGPDstroke *) * (data->totitems + 1), "cloned strokes ptr array");
+}
+
+static void gpencil_brush_clone_free(tGP_BrushEditData *gso)
+{
+  tGPSB_CloneBrushData *data = gso->customdata;
+  if (data == NULL) return;
+  MEM_SAFE_FREE(data->new_strokes);
+  MEM_freeN(data);
+  gso->customdata = NULL;
+}
+
+/* Pastes into the active layer's current frame; the clipboard has no source layer names and the
+ * materials are the same document's slots (gpencil_copybuf_validate_colormap is the identity). */
+static bool gpencil_brush_clone_add(tGP_BrushEditData *gso)
+{
+  tGPSB_CloneBrushData *data = gso->customdata;
+  bGPdata *gpd = gso->gpd;
+  float delta[3];
+  size_t strokes_added = 0;
+  gpencil_brush_calc_midpoint(gso);
+  sub_v3_v3v3(delta, gso->dvec, data->buffer_midpoint);
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(gpd);
+  if (gpl == NULL || gpl->actframe == NULL || !BKE_gpencil_layer_is_editable(gpl)) return false;
+  bGPDframe *gpf = gpl->actframe;
+  for (const bGPDstroke *gps = pg_gp_clipboard_strokes()->first; gps; gps = gps->next) {
+    bGPDstroke *new_stroke = BKE_gpencil_stroke_duplicate((bGPDstroke *)gps, true, true);
+    new_stroke->next = new_stroke->prev = NULL;
+    BLI_addtail(&gpf->strokes, new_stroke);
+    if (new_stroke->mat_nr < 0 || new_stroke->mat_nr >= gpd->totcol) new_stroke->mat_nr = 0;
+    bGPDspoint *pt;
+    int i;
+    for (i = 0, pt = new_stroke->points; i < new_stroke->totpoints; i++, pt++) {
+      add_v3_v3(&pt->x, delta);
+    }
+    BKE_gpencil_stroke_geometry_update(gpd, new_stroke);
+    if ((data->new_strokes) && (strokes_added < data->totitems)) {
+      data->new_strokes[strokes_added] = new_stroke;
+      strokes_added++;
+    }
+  }
+  return strokes_added > 0;
+}
+
+static bool gpencil_brush_clone_adjust(tGP_BrushEditData *gso)
+{
+  tGPSB_CloneBrushData *data = gso->customdata;
+  gso->rot_eval = 0.0f;
+  gpencil_brush_grab_calc_dvec(gso);
+  for (size_t snum = 0; snum < data->totitems; snum++) {
+    bGPDstroke *gps = data->new_strokes[snum];
+    if (gps == NULL) continue;
+    bGPDspoint *pt;
+    int i;
+    for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
+      float delta[3] = {0.0f};
+      int sco[2] = {0};
+      gpencil_point_to_xy(&gso->gsc, gps, pt, &sco[0], &sco[1]);
+      const float influence = gpencil_brush_influence_calc(gso, gso->brush->size, sco);
+      mul_v3_v3fl(delta, gso->dvec, influence);
+      add_v3_v3(&pt->x, delta);
+    }
+    gps->flag |= GP_STROKE_TAG;
+  }
+  return data->totitems > 0;
+}
+
+static bool gpencil_sculpt_brush_apply_clone(tGP_BrushEditData *gso)
+{
+  if (gso->first) return gpencil_brush_clone_add(gso);
+  return gpencil_brush_clone_adjust(gso);
 }
 
 /* gpencil_sculpt_brush_apply_standard(). */
@@ -1102,8 +1349,8 @@ static void pgt_sculpt_preset(Brush *brush, int tool)
 PGSculptSession *pg_sculpt_session_begin(bGPdata *gpd, const PGToolBrushParams *params)
 {
   if (gpd == NULL || params == NULL || params->brush < GPSCULPT_TOOL_SMOOTH ||
-      params->brush > GPSCULPT_TOOL_RANDOMIZE || params->brush == GPSCULPT_TOOL_CLONE ||
-      !(params->radius > 0.0f))
+      params->brush > GPSCULPT_TOOL_CLONE || !(params->radius > 0.0f) ||
+      (params->brush == GPSCULPT_TOOL_CLONE && pg_gp_clipboard_strokes()->first == NULL))
   {
     return NULL;
   }
@@ -1119,6 +1366,16 @@ PGSculptSession *pg_sculpt_session_begin(bGPdata *gpd, const PGToolBrushParams *
     s->settings.sculpt_flag |= GP_SCULPT_FLAG_INVERT;
   }
   s->view.ts.gp_sculpt.lock_axis = GP_LOCKAXIS_VIEW;
+  /* Brush falloff curve preset (BRUSH_CURVE_*; custom curves are not available). */
+  if (params->curve_preset > BRUSH_CURVE_CUSTOM && params->curve_preset <= BRUSH_CURVE_SMOOTHER) {
+    s->brush.curve_preset = params->curve_preset;
+  }
+  gso->mask = (eGP_Sculpt_SelectMaskFlag)(params->select_mask &
+                                          (GP_SCULPT_MASK_SELECTMODE_POINT | GP_SCULPT_MASK_SELECTMODE_STROKE |
+                                           GP_SCULPT_MASK_SELECTMODE_SEGMENT));
+  gso->automask_flag = params->automask & PG_AUTOMASK_ANY;
+  gso->active_material = params->active_material;
+  if (gso->automask_flag) gso->automasking_strokes = BLI_ghash_ptr_new(__func__);
 
   gso->scene = &s->view.scene;
   gso->object = &s->view.ob;
@@ -1135,6 +1392,7 @@ PGSculptSession *pg_sculpt_session_begin(bGPdata *gpd, const PGToolBrushParams *
   gso->rng = BLI_rng_new(params->seed);
   unit_m4(gso->inv_mat);
   pg_tool_link_runtime(gpd, true);
+  if (params->brush == GPSCULPT_TOOL_CLONE) gpencil_brush_clone_init(gso);
   return s;
 }
 
@@ -1167,7 +1425,11 @@ int pg_sculpt_session_sample(PGSculptSession *s, float x, float y, float pressur
   gso->brush_rect.xmax = mouse[0] + radius;
   gso->brush_rect.ymax = mouse[1] + radius;
 
-  const bool changed = pgt_sculpt_apply_standard(gso);
+  if (!gso->automasking_ready && gso->automask_flag) {
+    gso->automasking_ready = get_automasking_strokes_list(gso);
+  }
+  const bool changed = (brush->gpencil_sculpt_tool == GPSCULPT_TOOL_CLONE) ? gpencil_sculpt_brush_apply_clone(gso) :
+                                                                         pgt_sculpt_apply_standard(gso);
   if (changed) {
     gso->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
     BKE_gpencil_batch_cache_dirty_tag(gso->gpd);
@@ -1191,6 +1453,12 @@ void pg_sculpt_session_end(PGSculptSession *s)
   }
   if (gso->rng != NULL) {
     BLI_rng_free(gso->rng);
+  }
+  if (gso->automasking_strokes != NULL) {
+    BLI_ghash_free(gso->automasking_strokes, NULL, NULL);
+  }
+  if (gso->customdata != NULL) {
+    gpencil_brush_clone_free(gso);
   }
   pg_tool_link_runtime(gso->gpd, false);
   pgt_sculpt_update_geometry(gso->gpd);

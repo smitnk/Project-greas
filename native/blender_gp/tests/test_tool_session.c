@@ -16,6 +16,8 @@
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 
+#include "DNA_scene_types.h"
+#include "project_grease_blender_edit4.h"
 #include "project_grease_draw_input.h"
 #include "project_grease_tool_session.h"
 
@@ -368,6 +370,76 @@ static void test_draw_guide_and_curve(PGToolSession *ts)
   CHECK(off_line, "no guide: the wavy input is kept");
 }
 
+/* Clone (gpencil_brush_clone_add / adjust): the clipboard is pasted centred on the brush, then
+ * dragged by the brush influence; without a clipboard the session does not start. */
+static void test_clone(PGToolSession *ts)
+{
+  pg_gp_clipboard_free();
+  Doc d = doc();
+  bGPDstroke *s = stroke(&d, 5, 0, 0, 10, 0); /* x 0..40, y 0: midpoint (20, 0) */
+  const float tap[1][2] = {{100, 100}};
+  CHECK(gesture(ts, d.gpd, PG_TOOL_SCULPT, brush(GPSCULPT_TOOL_CLONE, 20, 1.0f), tap, 1) == 0, "clone without clipboard");
+  s->flag |= GP_STROKE_SELECT;
+  pg_gp_copy(d.gpd, NULL);
+  CHECK(pg_gp_clipboard_strokes()->first != NULL, "copy filled the clipboard");
+  gesture(ts, d.gpd, PG_TOOL_SCULPT, brush(GPSCULPT_TOOL_CLONE, 20, 1.0f), tap, 1);
+  CHECK(BLI_listbase_count(&d.gpf->strokes) == 2, "one clone added");
+  const bGPDstroke *c = d.gpf->strokes.last;
+  CHECK(c && c->totpoints == 5 && fabsf(c->points[2].x - 100.0f) < 1.0f && fabsf(c->points[2].y - 100.0f) < 1.0f,
+        "clone centred under the brush (%g %g)", c ? c->points[2].x : 0, c ? c->points[2].y : 0);
+  /* stamp mode: dragging moves the clone (the centre point gets full influence) */
+  const float drag[3][2] = {{200, 200}, {200, 200}, {210, 200}};
+  gesture(ts, d.gpd, PG_TOOL_SCULPT, brush(GPSCULPT_TOOL_CLONE, 20, 1.0f), drag, 3);
+  CHECK(BLI_listbase_count(&d.gpf->strokes) == 3, "second gesture adds one clone");
+  const bGPDstroke *c2 = d.gpf->strokes.last;
+  CHECK(c2->points[2].x > 200.0f, "clone dragged with the brush (%g)", c2->points[2].x);
+  pg_gp_clipboard_free();
+  free_doc(&d);
+}
+
+/* Auto-masking (get_automasking_strokes_list): with Stroke masking only the stroke under the
+ * brush at the start is sculpted, even when the drag reaches another one. Selection mask: only
+ * selected points move. Curve preset: Constant gives every point inside the radius full effect. */
+static void test_automask_and_select_mask(PGToolSession *ts)
+{
+  Doc d = doc();
+  bGPDstroke *a = stroke(&d, 11, 0, 100, 10, 0);
+  bGPDstroke *b = stroke(&d, 11, 0, 130, 10, 0);
+  float path[8][2];
+  for (int i = 0; i < 8; i++) { path[i][0] = 50; path[i][1] = 100.0f + 4.0f * i; } /* 100 .. 128 */
+  const float *p = brush(GPSCULPT_TOOL_THICKNESS, 12, 1.0f);
+  params[PG_TOOL_P_AUTOMASK] = GP_SCULPT_SETT_FLAG_AUTOMASK_STROKE;
+  gesture(ts, d.gpd, PG_TOOL_SCULPT, p, (const float (*)[2])path, 8);
+  CHECK(a->points[5].pressure > 1.0f, "stroke under the start not sculpted");
+  CHECK(b->points[5].pressure == 1.0f, "auto-masked stroke changed (%g)", b->points[5].pressure);
+  /* without masking the same drag reaches the second stroke */
+  gesture(ts, d.gpd, PG_TOOL_SCULPT, brush(GPSCULPT_TOOL_THICKNESS, 12, 1.0f), (const float (*)[2])path, 8);
+  CHECK(b->points[5].pressure > 1.0f, "unmasked drag did not reach the second stroke");
+  free_doc(&d);
+
+  Doc e = doc();
+  bGPDstroke *s = stroke(&e, 11, 0, 100, 10, 0);
+  s->points[5].flag |= GP_SPOINT_SELECT;
+  s->flag |= GP_STROKE_SELECT;
+  const float tap[2][2] = {{50, 100}, {51, 100}};
+  p = brush(GPSCULPT_TOOL_THICKNESS, 30, 1.0f);
+  params[PG_TOOL_P_SELECT_MASK] = GP_SCULPT_MASK_SELECTMODE_POINT;
+  gesture(ts, e.gpd, PG_TOOL_SCULPT, p, tap, 2);
+  CHECK(s->points[5].pressure > 1.0f && s->points[4].pressure == 1.0f && s->points[6].pressure == 1.0f,
+        "selection mask: only the selected point (%g %g %g)", s->points[4].pressure, s->points[5].pressure, s->points[6].pressure);
+  free_doc(&e);
+
+  Doc f = doc();
+  bGPDstroke *t = stroke(&f, 11, 0, 100, 10, 0);
+  p = brush(GPSCULPT_TOOL_STRENGTH, 25, 1.0f);
+  params[PG_TOOL_P_INVERT] = 1;
+  params[PG_TOOL_P_CURVE_PRESET] = BRUSH_CURVE_CONSTANT;
+  gesture(ts, f.gpd, PG_TOOL_SCULPT, p, (const float (*)[2])tap, 1);
+  CHECK(t->points[5].strength < 1.0f && fabsf(t->points[3].strength - t->points[5].strength) < 1e-4f,
+        "constant curve: equal effect at 0 and 20 (%g %g)", t->points[5].strength, t->points[3].strength);
+  free_doc(&f);
+}
+
 int main(void)
 {
   BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
@@ -377,6 +449,8 @@ int main(void)
   test_thickness_strength_formulas(ts);
   test_grab(ts);
   test_other_sculpt(ts);
+  test_clone(ts);
+  test_automask_and_select_mask(ts);
   test_vertex_paint(ts);
   test_weight_paint(ts);
   test_draw(ts);

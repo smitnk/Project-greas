@@ -161,6 +161,8 @@ jobs:
           mkdir -p apks
           if [ "$ASAN" = "1" ]; then src=all-apks/asan; else src=all-apks/plain; fi
           cp $src/app.apk apks/app.apk; cp $src/app-test.apk apks/app-test.apk
+          # The plain APKs too: ASan cells measure the performance budgets on them (run_bughunt.py).
+          mkdir -p apks-plain; cp all-apks/plain/app.apk all-apks/plain/app-test.apk apks-plain/
           ls -l apks
           pip install --quiet pillow numpy
 

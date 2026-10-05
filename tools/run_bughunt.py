@@ -5,10 +5,11 @@ Per cell (API level x device x GPU): configure the screen, install the hunting A
 checks + StrictMode where the API level allows wrap.sh, the plain debug APK otherwise), then
   1. every Sweep* test (same driver as the PR sweep: crashed classes are re-run test by test),
   2. the on-device fuzzers (edit commands, project JSON, SVG import, image trace),
-  3. the frame-time budget with a Perfetto trace (API 28+),
-  4. the soak (SOAK_MINUTES) with LeakCanary's fail-on-leak listener and memory sampling,
-  5. the monkey: MONKEY_SEEDS x MONKEY_EVENTS events,
-  6. process death: draw, background, `am kill`, relaunch, the drawing must be there,
+  3. the soak (SOAK_MINUTES) with LeakCanary's fail-on-leak listener and memory sampling,
+  4. the monkey: MONKEY_SEEDS x MONKEY_EVENTS events,
+  5. process death: draw, background, `am kill`, relaunch, the drawing must be there,
+  6. the frame-time and playback budgets with a Perfetto trace (API 28+); ASan cells reinstall
+     the plain APKs (apks-plain/) for this, since ASan timings say nothing about the real app,
 then compare the screenshots with the cell's goldens and scan logcat for crashes, ANRs, ASan
 reports, GL errors (PG_GL_ERROR), StrictMode violations and leaks. Everything goes to out/<cell>/
 and a summary to the job log; the exit code is non-zero when anything failed.
@@ -104,8 +105,42 @@ def main():
             classes.append(c)
     for cls in classes:
         results.update(run_class(cls))
-    # 2-4. the hunts
+    # 2-3. the hunts
     results.update(run_class(HUNT + "FuzzDeviceTest", f"-e fuzzIterations {FUZZ_ITERATIONS}"))
+    # LeakCanary's listener ships in the bug-hunt test APK only (the API 26 cell runs the plain one).
+    leak = " -e listener leakcanary.FailTestOnLeakRunListener" if ASAN else ""
+    soak = run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}{leak}")
+    results.update(soak)
+    if leak and any(code == -99 for code, _ in soak.values()):
+        # The listener run died before reporting: keep that failure, and still get the soak's
+        # memory numbers from a run without the listener.
+        summary.append("soak: the LeakCanary-listener run crashed; re-running the soak without it")
+        rerun = run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}")
+        results.update({(c, t + "[no-leak-listener]"): r for (c, t), r in rerun.items()})
+
+    # 4. monkey
+    for seed in MONKEY_SEEDS:
+        line, bad = monkey(seed)
+        summary.append(line)
+        if bad:
+            failed.append(line)
+
+    # 5. process death: draw + background, kill, relaunch
+    results.update(run_class(HUNT + "ProcessDeathSetupTest"))
+    sh(f"adb shell am kill {PKG}")
+    sh(f"adb shell am force-stop {PKG}")
+    results.update(run_class(HUNT + "ProcessDeathVerifyTest"))
+
+    # 6. performance budgets. An ASan build is several times slower, so the ASan cells measure
+    # frame time and playback on the plain APKs (apks-plain/), reinstalled after the hunts; the
+    # frame-time figure from the ASan sweep is dropped.
+    frame_test = ("com.smitnk.projectgrease.SweepRobustnessTest", "frameTime200Strokes")
+    if ASAN:
+        results.pop(frame_test, None)
+        sh("adb install -r -g apks-plain/app.apk", check=True)
+        sh("adb install -r -g apks-plain/app-test.apk", check=True)
+        summary.append("perf: frame time and playback measured on the plain (non-ASan) APKs")
+        results.update(run_class(frame_test[0] + "#" + frame_test[1]))
     perfetto = None
     if API >= 28:
         cfg = ('buffers { size_kb: 65536 } data_sources { config { name: "linux.ftrace" ftrace_config { '
@@ -121,29 +156,6 @@ def main():
         sh("adb shell pkill -INT perfetto")
         time.sleep(3)
         sh(f"adb pull /data/misc/perfetto-traces/perf.pftrace {OUT}/perf_{CELL}.pftrace")
-    # LeakCanary's listener ships in the bug-hunt test APK only (the API 26 cell runs the plain one).
-    leak = " -e listener leakcanary.FailTestOnLeakRunListener" if ASAN else ""
-    soak = run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}{leak}")
-    results.update(soak)
-    if leak and any(code == -99 for code, _ in soak.values()):
-        # The listener run died before reporting: keep that failure, and still get the soak's
-        # memory numbers from a run without the listener.
-        summary.append("soak: the LeakCanary-listener run crashed; re-running the soak without it")
-        rerun = run_class(HUNT + "SoakTest", f"-e soakMinutes {SOAK_MINUTES}")
-        results.update({(c, t + "[no-leak-listener]"): r for (c, t), r in rerun.items()})
-
-    # 5. monkey
-    for seed in MONKEY_SEEDS:
-        line, bad = monkey(seed)
-        summary.append(line)
-        if bad:
-            failed.append(line)
-
-    # 6. process death: draw + background, kill, relaunch
-    results.update(run_class(HUNT + "ProcessDeathSetupTest"))
-    sh(f"adb shell am kill {PKG}")
-    sh(f"adb shell am force-stop {PKG}")
-    results.update(run_class(HUNT + "ProcessDeathVerifyTest"))
 
     os.makedirs(os.path.join(OUT, "screenshots"), exist_ok=True)
     sh(f"adb pull /data/local/tmp/pg_screenshots/. {OUT}/screenshots/")

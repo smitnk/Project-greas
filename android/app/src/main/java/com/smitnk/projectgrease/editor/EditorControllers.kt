@@ -328,37 +328,40 @@ class AnimationController(private val native: NativeEditorBridge, private val re
      * one after gets an in-between (step 1), each eased with the current easing; existing frames in the
      * gap are replaced as Blender does. Returns the number of frames created (one undo step).
      */
-    fun interpolateSequence(frame:Int = currentFrame):Int {
+    /** GPENCIL_OT_interpolate_sequence options: flip (0 none, 1 always, 2 auto), step, smoothing,
+     *  only selected (Edit mode), exclude breakdowns. */
+    var interpolateFlip = ProjectGreaseSelect.INTERP_FLIP_AUTO
+    var interpolateStep = 1
+    var interpolateSmoothFactor = 0f
+    var interpolateSmoothSteps = 1
+    var interpolateOnlySelected = false
+    var interpolateExcludeBreakdowns = false
+    /** Blender interpolates between the keys before and after the current frame; on a key the gap
+     *  after it is filled (the frame just after the key is used as the current frame). */
+    private fun interpolationFrame(frame:Int):Int = if (frame in native.frameNumbers()) frame + 1 else frame
+    private fun runInterpolation(frame:Int, single:Boolean):Int {
         if (native.handle == 0L) return 0
         ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
-        val keys = native.frameNumbers().sorted()
-        val previous = keys.lastOrNull { it <= frame } ?: return 0
-        val next = keys.firstOrNull { it > previous } ?: return 0
-        // gpencil_interpolate_seq_exec(): in-betweens of (prev, next) with the keys of that gap removed
-        for (k in keys) if (k in (previous + 1) until next) native.deleteFrame(k)
-        var made = 0
-        val span = (next - previous).toFloat()
-        for (f in previous + 1 until next) {
-            if (native.interpolateFrame(previous, next, f, (f - previous) / span, easingType, easingMode)) made++
-        }
-        currentFrame = frame.coerceIn(1, maxOf(1, next))
-        native.selectFrameOrHold(currentFrame)
+        val before = native.frameNumbers().toSet()
+        val c = ProjectGreaseSelect.interpolate(frame, interpolateStep, interpolateFlip, interpolateOnlySelected,
+            interpolateExcludeBreakdowns, easingType, easingMode, interpolateSmoothFactor, interpolateSmoothSteps, single)
+        if (!native.applyEditCommand(c.id, c.args)) return 0
+        val made = native.frameNumbers().count { it !in before }.coerceAtLeast(if (single) 1 else 0)
         frameCount = native.frameCount().coerceAtLeast(1)
         timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         return made
     }
+    fun interpolateSequence(frame:Int = currentFrame):Int {
+        val made = runInterpolation(interpolationFrame(frame), single = false)
+        currentFrame = frame.coerceAtLeast(1)
+        native.selectFrameOrHold(currentFrame)
+        return made
+    }
     fun interpolateAt(frame:Int):Boolean {
-        ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
-        if (native.handle == 0L) return false
-        val keys = native.frameNumbers().sorted()
-        val previous = keys.lastOrNull { it < frame } ?: return false
-        val next = keys.firstOrNull { it > frame } ?: return false
-        val span = (next - previous).coerceAtLeast(1)
-        val factor = (frame - previous).toFloat() / span.toFloat()
-        if (!native.interpolateFrame(previous,next,frame,factor,easingType,easingMode)) return false
-        currentFrame=frame
-        frameCount=native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
+        if (frame in native.frameNumbers()) return false
+        if (runInterpolation(frame, single = true) <= 0) return false
+        currentFrame = frame
+        native.selectFrameOrHold(currentFrame)
         return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {

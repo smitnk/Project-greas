@@ -16,6 +16,7 @@
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 #include "MEM_guardedalloc.h"
+#include "project_grease_blender_interp.h"
 #include "project_grease_modifier_stack.h"
 
 static int failures = 0;
@@ -569,8 +570,57 @@ static void test_build_blender()
   MEM_freeN(gpd);
 }
 
+/* Interpolation (gpencil_interpolate.c): pairing by position, unpaired strokes skipped, flip modes,
+ * point counts matched, sequence in-betweens are breakdown keys. */
+static void no_cache(bGPdata *) {}
+static void test_interpolate_blender()
+{
+  BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *f1 = BKE_gpencil_frame_addnew(gpl, 1);
+  bGPDframe *f5 = BKE_gpencil_frame_addnew(gpl, 5);
+  gpl->actframe = f1;
+  line_stroke(f1, 4);                 /* x 0..30 left to right */
+  bGPDstroke *b = line_stroke(f5, 4); /* same, drawn right to left and moved down 40 */
+  for (int i = 0; i < 4; i++) { b->points[i].x = 30.0f - 10.0f * i; b->points[i].y = 40.0f; }
+  line_stroke(f5, 6);                 /* unpaired: no partner on frame 1 */
+  PGInterpSettings st;
+  memset(&st, 0, sizeof(st));
+  st.step = 1; st.flipmode = PG_INTERP_FLIPAUTO; st.smooth_steps = 1; st.single = 0; st.factor = -1;
+  CHECK(pg_interp_need_flip(static_cast<bGPDstroke *>(f1->strokes.first), b) == 1);
+  CHECK(pg_gp_interpolate_run(gpd, gpl, 2, &st) == 3); /* frames 2, 3, 4, one stroke each */
+  bGPDframe *f3 = BKE_gpencil_layer_frame_find(gpl, 3);
+  CHECK(f3 && f3->key_type == BEZT_KEYTYPE_BREAKDOWN && BLI_listbase_count(&f3->strokes) == 1);
+  const bGPDstroke *m = static_cast<const bGPDstroke *>(f3->strokes.first);
+  /* auto flip: the start follows the start, so x stays 0 at the first point and y is half way */
+  CHECK(near(m->points[0].x, 0.0f) && near(m->points[0].y, 20.0f) && near(m->points[3].x, 30.0f));
+  /* no flip: the first point travels to the other end */
+  /* drop the in-betweens */
+  for (int fn = 2; fn <= 4; fn++) {
+    bGPDframe *x = BKE_gpencil_layer_frame_find(gpl, fn);
+    if (x) BKE_gpencil_layer_frame_delete(gpl, x);
+  }
+  st.flipmode = PG_INTERP_NOFLIP; st.single = 1; st.factor = 0.5f;
+  CHECK(pg_gp_interpolate_run(gpd, gpl, 3, &st) == 1);
+  f3 = BKE_gpencil_layer_frame_find(gpl, 3);
+  m = static_cast<const bGPDstroke *>(f3->strokes.first);
+  CHECK(near(m->points[0].x, 15.0f) && near(m->points[3].x, 15.0f));
+  /* different point counts are resampled to the larger count */
+  bGPDframe *f9 = BKE_gpencil_frame_addnew(gpl, 9);
+  line_stroke(f9, 8);
+  st.single = 1; st.factor = 0.5f; st.flipmode = PG_INTERP_NOFLIP;
+  gpl->actframe = f5; /* Blender takes the active frame as the previous key when it is before cfra */
+  CHECK(pg_gp_interpolate_run(gpd, gpl, 7, &st) == 1); /* the second stroke of frame 5 has no partner: skipped */
+  bGPDframe *f7 = BKE_gpencil_layer_frame_find(gpl, 7);
+  CHECK(f7 && static_cast<const bGPDstroke *>(f7->strokes.first)->totpoints == 8);
+  BKE_gpencil_free_layers(&gpd->layers);
+  MEM_freeN(gpd);
+}
+
 int main()
 {
+  test_interpolate_blender();
   test_build_blender();
   test_type_info();
   test_batch21();

@@ -583,3 +583,32 @@ fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
         }
     }
 }
+
+/** GPENCIL_OT_interpolate_sequence options: flip, step, smoothing, only selected, exclude breakdowns. */
+@Composable
+fun InterpolationOptionsSection(anim: com.smitnk.projectgrease.editor.AnimationController) {
+    var tick by remember { mutableIntStateOf(0) }
+    key(tick) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            ProjectGreaseSelect.INTERP_FLIP_LABELS.forEachIndexed { mode, label ->
+                FilterChip(selected = anim.interpolateFlip == mode, onClick = { anim.interpolateFlip = mode; tick++ },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("interpFlip_$mode"))
+            }
+            FilterChip(selected = anim.interpolateOnlySelected, onClick = { anim.interpolateOnlySelected = !anim.interpolateOnlySelected; tick++ },
+                label = { Text("Only selected", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            FilterChip(selected = anim.interpolateExcludeBreakdowns, onClick = { anim.interpolateExcludeBreakdowns = !anim.interpolateExcludeBreakdowns; tick++ },
+                label = { Text("Exclude breakdowns", fontSize = 10.sp) })
+        }
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Step ${anim.interpolateStep}", Modifier.weight(1f))
+            TextButton(onClick = { anim.interpolateStep = (anim.interpolateStep - 1).coerceAtLeast(1); tick++ }) { Text("-") }
+            TextButton(onClick = { anim.interpolateStep = (anim.interpolateStep + 1).coerceAtMost(100); tick++ }) { Text("+") }
+        }
+        Text("Smooth ${"%.2f".format(anim.interpolateSmoothFactor)} x ${anim.interpolateSmoothSteps}", Modifier.padding(horizontal = 16.dp))
+        Slider(anim.interpolateSmoothFactor, { anim.interpolateSmoothFactor = it; tick++ }, valueRange = 0f..2f, modifier = Modifier.padding(horizontal = 16.dp))
+        Row(Modifier.padding(horizontal = 16.dp)) {
+            (1..3).forEach { n -> FilterChip(selected = anim.interpolateSmoothSteps == n, onClick = { anim.interpolateSmoothSteps = n; tick++ },
+                label = { Text("$n steps", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp)) }
+        }
+    }
+}

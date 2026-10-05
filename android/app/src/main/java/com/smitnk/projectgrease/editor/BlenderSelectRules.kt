@@ -475,6 +475,17 @@ object ProjectGreaseSelect {
     const val CMD_DASH_SEGMENTS = 123
     const val CMD_MATERIAL_GRADIENT = 124
     const val CMD_MATERIAL_OPTIONS = 125
+    /** pg_gp_interp_dispatch (project_grease_blender_interp.h). */
+    const val CMD_INTERPOLATE = 126
+    const val INTERP_NOFLIP = 0
+    const val INTERP_FLIP = 1
+    const val INTERP_FLIP_AUTO = 2
+    val INTERP_FLIP_LABELS = listOf("No flip", "Flip", "Auto flip")
+    fun interpolate(frame: Int, step: Int, flip: Int, onlySelected: Boolean, excludeBreakdowns: Boolean, easingType: Int,
+                    easingMode: Int, smoothFactor: Float, smoothSteps: Int, single: Boolean, allLayers: Boolean = false) =
+        Command(CMD_INTERPOLATE, floatArrayOf(frame.toFloat(), step.coerceAtLeast(1).toFloat(), flip.coerceIn(0, 2).toFloat(),
+            if (onlySelected) 1f else 0f, if (excludeBreakdowns) 1f else 0f, if (allLayers) 1f else 0f, easingType.toFloat(),
+            easingMode.toFloat(), smoothFactor.coerceIn(0f, 2f), smoothSteps.coerceIn(1, 3).toFloat(), if (single) 1f else 0f))
     val GRADIENT_TYPE_LABELS = listOf("Linear", "Radial")
     /** [g] = [type, mix r, g, b, a, mix factor, angle, scale x, y, offset x, y, flip] (MaterialRecord.gradient). */
     fun materialGradient(slot: Int, enabled: Boolean, g: FloatArray): Command? {

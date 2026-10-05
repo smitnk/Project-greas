@@ -51,9 +51,17 @@ enum {
   PG_EDIT9_CMD_FRAMES_COPY = 121,        /* [all layers] (no document change) */
   PG_EDIT9_CMD_FRAMES_PASTE = 122,       /* at frame (into the active layer, overwrite) */
   PG_EDIT9_CMD_DASH_SEGMENTS = 123,      /* offset, n, dash0, gap0, ... (selected strokes, active layer) */
+  PG_EDIT9_CMD_MATERIAL_GRADIENT = 124,  /* slot, enabled, type (0 linear / 1 radial), mix r, g, b, a, mix_factor,
+                                            angle, scale x, y, offset x, y, flip */
+  PG_EDIT9_CMD_MATERIAL_OPTIONS = 125,   /* slot, stroke holdout, fill holdout, self overlap */
 };
 #define PG_EDIT9_CMD_FIRST 117
-#define PG_EDIT9_CMD_LAST 123
+#define PG_EDIT9_CMD_LAST 125
+/* MaterialGPencilStyle gradient fill (GP_MATERIAL_FILL_STYLE_GRADIENT, rna_material.c ranges). */
+int pg_gp_material_gradient_set(struct bGPdata *gpd, int slot, int enabled, int type, const float mix_rgba[4],
+                                float mix_factor, float angle, const float scale[2], const float offset[2], int flip);
+/* Holdout (GP_MATERIAL_IS_STROKE/FILL_HOLDOUT) and Self Overlap (GP_MATERIAL_DISABLE_STENCIL). */
+int pg_gp_material_options_set(struct bGPdata *gpd, int slot, int stroke_holdout, int fill_holdout, int self_overlap);
 int pg_gp_edit9_dispatch(struct bGPdata *gpd, struct bGPDlayer *active_layer, int command,
                          const float *args, int arg_count);
 #ifdef __cplusplus

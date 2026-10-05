@@ -648,6 +648,86 @@ static void test_material_textures()
   CHECK(project_grease_android_present_set_material_texture(0, 1, nullptr, 0, 0) == 1);
 }
 
+/* Gradient fill (gpencil_frag.glsl): linear runs fill_rgba -> mix_rgba along the fill uv x;
+ * radial from the centre; the stroke itself is hidden so only the fill is measured. */
+static void test_gradient_fill()
+{
+  Doc d = make_doc();
+  MaterialGPencilStyle *st = d.gpd->mat[0]->gp_style;
+  st->flag &= ~GP_MATERIAL_STROKE_SHOW;
+  st->flag |= GP_MATERIAL_FILL_SHOW;
+  st->fill_style = GP_MATERIAL_FILL_STYLE_GRADIENT;
+  st->gradient_type = GP_MATERIAL_GRADIENT_LINEAR;
+  const float red[4] = {1, 0, 0, 1}, blue[4] = {0, 0, 1, 1};
+  memcpy(st->fill_rgba, red, sizeof(red));
+  memcpy(st->mix_rgba, blue, sizeof(blue));
+  st->mix_factor = 0.0f;
+  st->texture_scale[0] = st->texture_scale[1] = 1.0f;
+  st->texture_angle = 0.0f;
+  st->texture_offset[0] = st->texture_offset[1] = 0.0f;
+  bGPDlayer *l = add_layer(d, "A");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  bGPDstroke *sq = BKE_gpencil_stroke_add(f, 0, 4, 2, false);
+  const float xy[4][2] = {{40, 40}, {160, 40}, {160, 120}, {40, 120}};
+  for (int i = 0; i < 4; i++) { sq->points[i].x = xy[i][0]; sq->points[i].y = xy[i][1]; sq->points[i].pressure = 1; sq->points[i].strength = 1; }
+  sq->flag |= GP_STROKE_CYCLIC;
+  BKE_gpencil_stroke_geometry_update(d.gpd, sq);
+  present(d);
+  const Rgba a = pixel_at_canvas(50, 80), b = pixel_at_canvas(150, 80), mid = pixel_at_canvas(100, 80);
+  /* one end is red, the other blue, the middle a mix: the direction follows the fill uv */
+  CHECK((a.r > 180 && a.b < 80 && b.b > 180 && b.r < 80) || (b.r > 180 && b.b < 80 && a.b > 180 && a.r < 80));
+  CHECK(mid.r > 60 && mid.b > 60);
+  /* flip swaps the two colours */
+  st->flag |= GP_MATERIAL_FLIP_FILL;
+  present(d);
+  const Rgba fa = pixel_at_canvas(50, 80);
+  CHECK((a.r > 180) == (fa.b > 180));
+  st->flag &= ~GP_MATERIAL_FLIP_FILL;
+  /* mix_factor 1: the fill colour only (fill_texture_mix = 0) */
+  st->mix_factor = 1.0f;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(50, 80), 255, 0, 0, 8) && near_rgb(pixel_at_canvas(150, 80), 255, 0, 0, 8));
+  /* radial: centre is fill_rgba, the corners towards mix_rgba */
+  st->mix_factor = 0.0f;
+  st->gradient_type = GP_MATERIAL_GRADIENT_RADIAL;
+  present(d);
+  const Rgba c = pixel_at_canvas(100, 80), e = pixel_at_canvas(44, 44);
+  CHECK(c.r > 180 && c.b < 80 && e.b > c.b + 60);
+}
+
+/* Holdout (GP_MATERIAL_IS_STROKE_HOLDOUT): a blue holdout bar over a black bar on a lower layer cuts
+ * down to the paper. Self overlap (GP_MATERIAL_DISABLE_STENCIL): a half-strength crossing darkens. */
+static void test_holdout_and_overlap()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 0);
+  bGPDlayer *a = add_layer(d, "A");
+  add_bar(a, 20, 180, 60, 30);
+  bGPDlayer *b = add_layer(d, "B");
+  add_bar(b, 80, 120, 60, 20, 1.0f, 1);
+  d.gpd->mat[1]->gp_style->flag |= GP_MATERIAL_IS_STROKE_HOLDOUT;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 245, 245, 245, 6)); /* paper, not blue, not black */
+  CHECK(near_rgb(pixel_at_canvas(40, 60), 0, 0, 0, 3));        /* rest of the black bar */
+  d.gpd->mat[1]->gp_style->flag &= ~GP_MATERIAL_IS_STROKE_HOLDOUT;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255, 6));
+
+  Doc o = make_doc();
+  set_color(o, 0, 0, 0);
+  bGPDlayer *l = add_layer(o, "A");
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  const float xy[4][2] = {{20, 30}, {180, 90}, {20, 90}, {180, 30}};
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 4, 12, false);
+  for (int i = 0; i < 4; i++) {
+    s->points[i].x = xy[i][0]; s->points[i].y = xy[i][1]; s->points[i].pressure = 1.0f; s->points[i].strength = 0.5f;
+  }
+  o.gpd->mat[0]->gp_style->flag |= GP_MATERIAL_DISABLE_STENCIL;
+  present(o);
+  const Rgba cross = pixel_at_canvas(100, 60), single = pixel_at_canvas(60, 45);
+  CHECK(cross.r + 20 < single.r); /* blended twice where the stroke crosses itself */
+}
+
 static PGFxEntry fxe(int type, std::initializer_list<std::pair<int, float>> set = {}) {
   PGFxEntry e;
   pg_fx_entry_init(&e, type);
@@ -1122,6 +1202,8 @@ int main()
   test_weight_view();
   test_strength_full();
   test_self_overlap();
+  test_gradient_fill();
+  test_holdout_and_overlap();
   test_cyclic_square();
   test_weight_view_smooth();
   test_weight_view_masked();

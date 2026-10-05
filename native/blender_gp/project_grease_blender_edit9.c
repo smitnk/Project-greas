@@ -6,9 +6,13 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 #include "DNA_gpencil_legacy_types.h"
+#include "DNA_material_types.h"
 #include "MEM_guardedalloc.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
@@ -291,6 +295,42 @@ int pg_gp_dash_segments(bGPdata *gpd, const bGPDlayer *only, const int *dash, co
 /* ---- command dispatch (routed by the bridge, ids PG_EDIT9_CMD_FIRST..LAST) ------------- */
 static float pe9_snap(float v, float inc) { return inc > 0.0f ? roundf(v / inc) * inc : v; }
 
+static MaterialGPencilStyle *pe9_style(bGPdata *gpd, int slot)
+{
+  if (gpd == NULL || gpd->mat == NULL || slot < 0 || slot >= (int)gpd->totcol || gpd->mat[slot] == NULL) return NULL;
+  return gpd->mat[slot]->gp_style;
+}
+
+int pg_gp_material_gradient_set(bGPdata *gpd, int slot, int enabled, int type, const float mix_rgba[4],
+                                float mix_factor, float angle, const float scale[2], const float offset[2], int flip)
+{
+  MaterialGPencilStyle *st = pe9_style(gpd, slot);
+  if (st == NULL || type < GP_MATERIAL_GRADIENT_LINEAR || type > GP_MATERIAL_GRADIENT_RADIAL) return 0;
+  st->fill_style = enabled ? GP_MATERIAL_FILL_STYLE_GRADIENT : GP_MATERIAL_FILL_STYLE_SOLID;
+  st->gradient_type = type;
+  for (int c = 0; c < 4; c++) st->mix_rgba[c] = mix_rgba[c] < 0.0f ? 0.0f : (mix_rgba[c] > 1.0f ? 1.0f : mix_rgba[c]);
+  st->mix_factor = mix_factor < 0.0f ? 0.0f : (mix_factor > 1.0f ? 1.0f : mix_factor);
+  /* rna: texture_angle -2pi..2pi, texture_scale 0.01..100, texture_offset -100..100 */
+  st->texture_angle = angle < (float)(-2.0 * M_PI) ? (float)(-2.0 * M_PI) : (angle > (float)(2.0 * M_PI) ? (float)(2.0 * M_PI) : angle);
+  for (int k = 0; k < 2; k++) {
+    st->texture_scale[k] = scale[k] < 0.01f ? 0.01f : (scale[k] > 100.0f ? 100.0f : scale[k]);
+    st->texture_offset[k] = offset[k] < -100.0f ? -100.0f : (offset[k] > 100.0f ? 100.0f : offset[k]);
+  }
+  if (flip) st->flag |= GP_MATERIAL_FLIP_FILL; else st->flag &= ~GP_MATERIAL_FLIP_FILL;
+  return 1;
+}
+
+int pg_gp_material_options_set(bGPdata *gpd, int slot, int stroke_holdout, int fill_holdout, int self_overlap)
+{
+  MaterialGPencilStyle *st = pe9_style(gpd, slot);
+  if (st == NULL) return 0;
+  const int before = st->flag;
+  if (stroke_holdout) st->flag |= GP_MATERIAL_IS_STROKE_HOLDOUT; else st->flag &= ~GP_MATERIAL_IS_STROKE_HOLDOUT;
+  if (fill_holdout) st->flag |= GP_MATERIAL_IS_FILL_HOLDOUT; else st->flag &= ~GP_MATERIAL_IS_FILL_HOLDOUT;
+  if (self_overlap) st->flag |= GP_MATERIAL_DISABLE_STENCIL; else st->flag &= ~GP_MATERIAL_DISABLE_STENCIL;
+  return st->flag != before;
+}
+
 int pg_gp_edit9_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, const float *args, int arg_count)
 {
   if (gpd == NULL || arg_count < 0 || (arg_count > 0 && args == NULL)) return 0;
@@ -334,6 +374,15 @@ int pg_gp_edit9_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
       NEED(1);
       changed = pg_gp_frames_paste(gpd, active_layer, I(0));
       break;
+    case PG_EDIT9_CMD_MATERIAL_GRADIENT: {
+      NEED(14);
+      const float mix[4] = {args[3], args[4], args[5], args[6]};
+      const float sc[2] = {args[9], args[10]}, of[2] = {args[11], args[12]};
+      return pg_gp_material_gradient_set(gpd, I(0), args[1] != 0.0f, I(2), mix, args[7], args[8], sc, of, args[13] != 0.0f);
+    }
+    case PG_EDIT9_CMD_MATERIAL_OPTIONS:
+      NEED(4);
+      return pg_gp_material_options_set(gpd, I(0), args[1] != 0.0f, args[2] != 0.0f, args[3] != 0.0f);
     case PG_EDIT9_CMD_DASH_SEGMENTS: {
       NEED(2);
       const int n = I(1);

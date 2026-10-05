@@ -1400,6 +1400,28 @@ static void test_edit7(void)
 
 static int frames_of(bGPDlayer *l, int *out) { int n = 0; for (bGPDframe *f = l->frames.first; f; f = f->next) out[n++] = f->framenum; return n; }
 
+static void test_edit9_materials(void)
+{
+  bGPdata *gpd = make_gpd();
+  const float a[14] = {0, 1, 1, 0, 0, 1, 1, 0.25f, 0.5f, 2, 0.001f, 0.1f, 200, 1};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, a, 14) == 1, "gradient set");
+  MaterialGPencilStyle *st = gpd->mat[0]->gp_style;
+  CHECK(st->fill_style == GP_MATERIAL_FILL_STYLE_GRADIENT && st->gradient_type == GP_MATERIAL_GRADIENT_RADIAL &&
+        NEAR(st->mix_rgba[2], 1.0f) && NEAR(st->mix_factor, 0.25f) && NEAR(st->texture_angle, 0.5f) &&
+        NEAR(st->texture_scale[1], 0.01f) && NEAR(st->texture_offset[1], 100.0f) && (st->flag & GP_MATERIAL_FLIP_FILL),
+        "gradient fields clamped to the rna ranges");
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, a, 13) == 0, "short gradient args rejected");
+  const float bad[14] = {5, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, bad, 14) == 0, "bad slot rejected");
+  const float o[4] = {0, 1, 0, 1};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_OPTIONS, o, 4) == 1 &&
+        (st->flag & GP_MATERIAL_IS_STROKE_HOLDOUT) && !(st->flag & GP_MATERIAL_IS_FILL_HOLDOUT) &&
+        (st->flag & GP_MATERIAL_DISABLE_STENCIL), "holdout and self overlap flags");
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_OPTIONS, o, 4) == 0, "unchanged options report no change");
+  const float off[14] = {0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, off, 14) == 1 && st->fill_style == GP_MATERIAL_FILL_STYLE_SOLID &&
+        !(st->flag & GP_MATERIAL_FLIP_FILL), "gradient off");
+}
 static void test_edit9(void)
 {
   CHECK(NEAR(pg_prop_falloff(PG_PROP_SMOOTH, 5, 10), 0.5f) && NEAR(pg_prop_falloff(PG_PROP_LIN, 2.5f, 10), 0.75f) &&
@@ -1517,6 +1539,7 @@ int main(void)
   test_edit6();
   test_edit7();
   test_edit9();
+  test_edit9_materials();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

@@ -914,7 +914,7 @@ int pg_mod_eval_frame(bGPdata *gpd, bGPDlayer *gpl, bGPDframe *gpf, const PGModE
     n++;
   }
 
-  PGModContext ctx = {gpd, gpl, r_eval, cfra};
+  PGModContext ctx = {gpd, gpl, r_eval, cfra, gpf};
   for (int i = 0; i < count && entries != NULL; i++) {
     if (entries[i].enabled && pg_mod_valid_type(entries[i].type)) {
       pg_mod_run_on_frame(&ctx, &entries[i]);
@@ -948,7 +948,7 @@ int pg_mod_apply(bGPdata *gpd, bGPDlayer *gpl, const PGModEntry *entry, int cfra
   }
   int any = 0;
   for (bGPDframe *gpf = gpl->frames.first; gpf != NULL; gpf = gpf->next) {
-    PGModContext ctx = {gpd, gpl, gpf, cfra};
+    PGModContext ctx = {gpd, gpl, gpf, cfra, gpf};
     const int changed = pg_mod_run_on_frame(&ctx, entry);
     if (changed) {
       for (bGPDstroke *gps = gpf->strokes.first; gps != NULL; gps = gps->next) {

@@ -119,7 +119,11 @@ enum { /* NOISE: mode is GP_NOISE_RANDOM_STEP (0) / GP_NOISE_RANDOM_KEYFRAME (1)
 enum { /* BUILD (MOD_gpencil_legacy_build.c): mode 0 sequential / 1 concurrent, transition 0 grow /
         * 1 shrink, start delay and length in frames counted from the keyframe (pg_build_visible) */
   PG_P_BUILD_MODE = 0, PG_P_BUILD_TRANSITION = 1, PG_P_BUILD_START = 2, PG_P_BUILD_LENGTH = 3,
-  PG_P_BUILD_COUNT = 4 };
+  /* pg_build_generate (project_grease_blender_build.c): mode 2 additive, transition 2 vanish,
+   * time alignment (concurrent), fade (GP_BUILD_USE_FADING) factor and strengths */
+  PG_P_BUILD_TIME_ALIGN = 4, PG_P_BUILD_USE_FADE = 5, PG_P_BUILD_FADE_FAC = 6,
+  PG_P_BUILD_FADE_THICKNESS = 7, PG_P_BUILD_FADE_OPACITY = 8,
+  PG_P_BUILD_COUNT = 9 };
 enum { /* TIME (MOD_gpencil_legacy_time.c): the layer shows frame pg_time_offset_frame() */
   PG_P_TIME_MODE = 0, PG_P_TIME_OFFSET = 1, PG_P_TIME_SCALE = 2, PG_P_TIME_USE_RANGE = 3,
   PG_P_TIME_SFRA = 4, PG_P_TIME_EFRA = 5, PG_P_TIME_LOOP = 6, PG_P_TIME_COUNT = 7 };
@@ -175,6 +179,7 @@ typedef struct PGModContext {
   struct bGPDlayer *gpl; /* the layer in gpd->layers (used by Offset's layer mode) */
   struct bGPDframe *gpf; /* frame whose ->strokes contains the stroke being deformed */
   int cfra;              /* current frame number (Noise) */
+  const struct bGPDframe *orig; /* the layer frame gpf was copied from (prev/next keys), or NULL */
 } PGModContext;
 
 /* Type information */

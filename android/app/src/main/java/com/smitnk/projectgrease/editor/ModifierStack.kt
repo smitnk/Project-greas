@@ -104,7 +104,7 @@ object ModifierSpecs {
 
     /** The type's own parameters: PG_P_*_COUNT in project_grease_modifier_stack.h. */
     fun ownParamCount(type: Int) = when (type) {
-        ModifierType.BUILD -> 4
+        ModifierType.BUILD -> 9
         ModifierType.TIME -> 7
         ModifierType.HOOK -> 9
         ModifierType.LATTICE -> 7 + ModifierType.LATTICE_MAX * ModifierType.LATTICE_MAX * 2
@@ -180,8 +180,10 @@ object ModifierSpecs {
             n(7, "Step", 1f, 30f), b(8, "Randomize"), e(9, "Mode", "Steps", "Keyframes")
         )
         ModifierType.BUILD -> listOf(
-            e(0, "Mode", "Sequential", "Concurrent"), e(1, "Transition", "Grow", "Shrink"),
-            f(2, "Delay (frames)", 0f, 250f), f(3, "Length (frames)", 1f, 500f)
+            e(0, "Mode", "Sequential", "Concurrent", "Additive"), e(1, "Transition", "Grow", "Shrink", "Vanish"),
+            f(2, "Delay (frames)", 0f, 250f), f(3, "Length (frames)", 1f, 500f),
+            e(4, "Time alignment", "Start", "End"), b(5, "Fade"), f(6, "Fade factor", 0f, 1f),
+            f(7, "Fade thickness strength", 0f, 1f), f(8, "Fade opacity strength", 0f, 1f)
         )
         ModifierType.TIME -> listOf(
             e(0, "Mode", "Normal", "Reverse", "Fixed frame", "Ping pong"), n(1, "Frame offset", -250f, 250f),

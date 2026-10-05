@@ -431,13 +431,15 @@ static void test_batch21()
     b.params[PG_P_BUILD_LENGTH] = 10;
     auto none = eval(d, &b, 1, 1);
     CHECK(none.empty());
-    auto half = eval(d, &b, 1, 6);
+    /* Blender ends the build at the next key (frame 5) when it comes before start + length */
+    auto half = eval(d, &b, 1, 3);
     size_t pts = 0; for (auto &s : half) pts += s.size();
-    CHECK(pts == 8); /* ceil(0.5 * 16) sequential */
+    CHECK(pts == 9); /* last_visible round(0.5 * 16) = 8 covers stroke 0 (indices 0..8), stroke 1 starts at 9 */
     CHECK(same(eval(d, &b, 1, 11), snapshot(d.f1)));
     b.params[PG_P_BUILD_MODE] = 1; /* concurrent: both strokes grow */
-    auto conc = eval(d, &b, 1, 6);
-    CHECK(conc.size() == 2 && conc[0].size() == 5 && conc[1].size() == 4);
+    auto conc = eval(d, &b, 1, 3);
+    /* start alignment: round(0.5 * 9) = 5 and round(0.5 * 9 / 7 * 7) = 5 */
+    CHECK(conc.size() == 2 && conc[0].size() == 5 && conc[1].size() == 5);
     free_doc(d);
   }
   /* Vertex weight proximity / angle write the target group on the copies only */
@@ -516,8 +518,60 @@ static void test_batch21()
   CHECK(p[PG_P_CURVE_BASE] == 0 && p[PG_P_FILTER_BASE] == 0 && pg_mod_own_param_count(PG_MOD_HOOK) == PG_P_HOOK_COUNT);
 }
 
+/* Build ported from MOD_gpencil_legacy_build.c: Additive keeps the previous key's strokes, Fade. */
+static bGPDstroke *line_stroke(bGPDframe *f, int n)
+{
+  bGPDstroke *gps = BKE_gpencil_stroke_add(f, 0, n, 10, false);
+  for (int i = 0; i < n; i++) {
+    gps->points[i].x = 10.0f * i; gps->points[i].y = 0.0f; gps->points[i].z = 0.0f;
+    gps->points[i].pressure = 1.0f; gps->points[i].strength = 1.0f;
+  }
+  return gps;
+}
+static void test_build_blender()
+{
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *f1 = BKE_gpencil_frame_addnew(gpl, 1);
+  bGPDframe *f11 = BKE_gpencil_frame_addnew(gpl, 11);
+  line_stroke(f1, 4);
+  for (int k = 0; k < 3; k++) line_stroke(f11, 4);
+  PGModEntry b = entry(PG_MOD_BUILD);
+  b.params[PG_P_BUILD_LENGTH] = 10;
+  auto run = [&](int cfra) { bGPDframe ev; pg_mod_eval_frame(gpd, gpl, f11, &b, 1, cfra, &ev); auto r = snapshot(&ev); pg_mod_eval_free(&ev); return r; };
+  /* sequential at fac 0.5: 12 points, last_visible 6 -> 4 + 2 points, third stroke cleared */
+  auto seq = run(16);
+  CHECK(seq.size() == 2 && seq[0].size() == 4 && seq[1].size() == 2);
+  /* additive: the first stroke (already on frame 1) stays, the 2 new ones build over 8 points */
+  b.params[PG_P_BUILD_MODE] = 2;
+  auto add = run(16);
+  CHECK(add.size() == 2 && add[0].size() == 4 && add[1].size() == 4);
+  auto add0 = run(11);
+  CHECK(add0.size() == 1); /* fac 0: only the previous key's stroke */
+  /* vanish removes from the start */
+  b.params[PG_P_BUILD_MODE] = 0; b.params[PG_P_BUILD_TRANSITION] = 2;
+  auto van = run(16);
+  /* Blender keeps end_idx - first_visible points (7 - 6 = 1) of the partly hidden stroke */
+  CHECK(van.size() == 2 && van[0].size() == 1 && van[1].size() == 4 && near(van[0][0].v[0], 30.0f));
+  /* fade: one 10 point stroke at fac 0.5, fade_fac 0.5 -> 8 visible, opacity ramps 1 .. 0.2 over 3..7 */
+  bGPDframe *f21 = BKE_gpencil_frame_addnew(gpl, 21);
+  line_stroke(f21, 10);
+  PGModEntry fd = entry(PG_MOD_BUILD);
+  fd.params[PG_P_BUILD_LENGTH] = 10;
+  fd.params[PG_P_BUILD_USE_FADE] = 1; fd.params[PG_P_BUILD_FADE_FAC] = 0.5f; fd.params[PG_P_BUILD_FADE_OPACITY] = 1.0f;
+  bGPDframe ev;
+  pg_mod_eval_frame(gpd, gpl, f21, &fd, 1, 26, &ev);
+  const bGPDstroke *s = static_cast<const bGPDstroke *>(ev.strokes.first);
+  CHECK(s && s->totpoints == 8 && near(s->points[0].strength, 1.0f) && near(s->points[3].strength, 1.0f) &&
+        near(s->points[7].strength, 0.2f, 1e-4f) && near(s->points[5].strength, 0.6f, 1e-4f));
+  pg_mod_eval_free(&ev);
+  BKE_gpencil_free_layers(&gpd->layers);
+  MEM_freeN(gpd);
+}
+
 int main()
 {
+  test_build_blender();
   test_type_info();
   test_batch21();
   test_originals_untouched_and_changed();

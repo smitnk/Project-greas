@@ -129,7 +129,8 @@ jobs:
   hunt:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 340
+    # GitHub caps a job at 360 min; the ASan cells (API 30/34) need most of it.
+    timeout-minutes: 355
     strategy:
       fail-fast: false
       matrix:
@@ -144,7 +145,9 @@ jobs:
       ASAN: ${{ matrix.api >= 27 && '1' || '0' }}
       MONKEY_SEEDS: "20240501,7,1234"
       MONKEY_THROTTLE: "20"
-      FUZZ_ITERATIONS: "3000"
+      # ASan slows the instrumented fuzz ~3x; at 3000 iterations the API 30/34 cells ran
+      # past the 340-minute job limit (3 of the 4 ASan cells were cancelled).
+      FUZZ_ITERATIONS: ${{ matrix.api >= 27 && '1000' || '3000' }}
     steps:
       - uses: actions/checkout@v4
 

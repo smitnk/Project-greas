@@ -79,7 +79,7 @@ static void free_doc(Doc &d)
 }
 
 struct Pt {
-  float v[11];
+  float v[13]; /* ..., thickness, uv_fac, uv_rot */
 };
 static std::vector<std::vector<Pt>> snapshot(const bGPDframe *gpf)
 {
@@ -89,7 +89,7 @@ static std::vector<std::vector<Pt>> snapshot(const bGPDframe *gpf)
     for (int i = 0; i < gps->totpoints; i++) {
       const bGPDspoint *p = &gps->points[i];
       Pt q = {{p->x, p->y, p->z, p->pressure, p->strength, p->time, p->vert_color[0],
-               p->vert_color[1], p->vert_color[2], p->vert_color[3], (float)gps->thickness}};
+               p->vert_color[1], p->vert_color[2], p->vert_color[3], (float)gps->thickness, p->uv_fac, p->uv_rot}};
       s.push_back(q);
     }
     out.push_back(s);
@@ -155,13 +155,15 @@ static PGModEntry tuned(int type)
                       p[PG_P_HOOK_STRENGTH] = 1.0f; break;
     case PG_MOD_LATTICE: p[PG_P_LATTICE_X0] = 0; p[PG_P_LATTICE_Y0] = 0; p[PG_P_LATTICE_X1] = 200;
                          p[PG_P_LATTICE_Y1] = 200; p[PG_P_LATTICE_OFFSETS + 8] = 15; break; /* centre node of 3x3 */
+    case PG_MOD_TEXTURE: p[PG_P_TEXTURE_UV_SCALE] = 2.0f; p[PG_P_TEXTURE_ALIGN_ROT] = 0.3f; break;
   }
   return e;
 }
 /* Types whose effect is not a change of the evaluated points at cfra 1 (checked on their own). */
 static bool point_changing(int t)
 {
-  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_PROX && t != PG_MOD_WEIGHT_ANGLE;
+  /* Texture Mapping only changes uv data (test_texture_modifier) */
+  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_PROX && t != PG_MOD_WEIGHT_ANGLE && t != PG_MOD_TEXTURE;
 }
 
 static void test_type_info()
@@ -618,8 +620,35 @@ static void test_interpolate_blender()
   MEM_freeN(gpd);
 }
 
+/* Texture Mapping (deformStroke): fit stroke divides uv_fac by the length, then scale, offset,
+ * alignment rotation; fill mode moves the stroke's fill uv transform. */
+static void test_texture_modifier()
+{
+  Doc d = make_pair_doc(1); /* one 2-point stroke, length hypot(60, 60) */
+  PGModEntry t = entry(PG_MOD_TEXTURE);
+  t.params[PG_P_TEXTURE_MODE] = 2;
+  t.params[PG_P_TEXTURE_FIT] = 0; /* GP_TEX_FIT_STROKE */
+  t.params[PG_P_TEXTURE_UV_SCALE] = 2.0f;
+  t.params[PG_P_TEXTURE_UV_OFFSET] = 0.25f;
+  t.params[PG_P_TEXTURE_ALIGN_ROT] = 0.5f;
+  t.params[PG_P_TEXTURE_FILL_ROT] = 0.3f;
+  t.params[PG_P_TEXTURE_FILL_OFFSET_X] = 0.1f;
+  t.params[PG_P_TEXTURE_FILL_SCALE] = 3.0f;
+  bGPDframe ev;
+  pg_mod_eval_frame(d.gpd, d.gpl, d.f1, &t, 1, 1, &ev);
+  const bGPDstroke *s = static_cast<const bGPDstroke *>(ev.strokes.first);
+  /* geometry update sets uv_fac to the running length: 0 and 84.85 */
+  const float len = hypotf(60.0f, 60.0f);
+  CHECK(s && near(s->points[0].uv_fac, 0.25f) && near(s->points[1].uv_fac, len / len * 2.0f + 0.25f, 1e-3f) &&
+        near(s->points[1].uv_rot, 0.5f) && near(s->uv_rotation, 0.3f) && near(s->uv_translation[0], 0.1f) &&
+        near(s->uv_scale, 3.0f));
+  pg_mod_eval_free(&ev);
+  free_doc(d);
+}
+
 int main()
 {
+  test_texture_modifier();
   test_interpolate_blender();
   test_build_blender();
   test_type_info();

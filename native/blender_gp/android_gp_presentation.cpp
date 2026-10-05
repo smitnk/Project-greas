@@ -490,7 +490,11 @@ void append_textured_fill(std::vector<UVVertex>&out,const bGPDstroke*s,const Mat
   const float ca=std::cos(st->texture_angle),sa=std::sin(st->texture_angle);
   for(int i=0;i<s->tot_triangles;i++)for(int k=0;k<3;k++){
     const bGPDspoint&p=s->points[s->triangles[i].verts[k]];
-    const float u0=(p.x-mn[0])/size-0.5f,v0=(p.y-mn[1])/size-0.5f;
+    float u0=(p.x-mn[0])/size-0.5f+s->uv_translation[0],v0=(p.y-mn[1])/size-0.5f+s->uv_translation[1];
+    // the stroke's own fill uv transform (Texture Mapping modifier / gpencil_calc_stroke_fill_uv)
+    if(s->uv_rotation!=0.0f){const float rs=std::sin(s->uv_rotation),rc=std::cos(s->uv_rotation);
+      const float x=u0*rc-v0*rs,y=u0*rs+v0*rc;u0=x;v0=y;}
+    if(s->uv_scale!=0.0f&&s->uv_scale!=1.0f){u0/=s->uv_scale;v0/=s->uv_scale;}
     const float u1=(ca*u0-sa*v0)*st->texture_scale[0],v1=(sa*u0+ca*v0)*st->texture_scale[1];
     const Vertex n=ndc(p.x,p.y,w,h);
     out.push_back({n.x,n.y,u1+0.5f+st->texture_offset[0],v1+0.5f+st->texture_offset[1]});

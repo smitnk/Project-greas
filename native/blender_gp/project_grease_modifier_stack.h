@@ -70,7 +70,8 @@ enum {
   PG_MOD_MIRROR = 20,
   PG_MOD_ARRAY = 21,
   PG_MOD_MULTIPLY = 22,
-  PG_MOD_TYPE_LAST = 22,
+  PG_MOD_TEXTURE = 23, /* Texture Mapping (MOD_gpencil_legacy_texture.c) */
+  PG_MOD_TYPE_LAST = 23,
 };
 
 /* Every entry stores PG_MOD_MAX_PARAMS floats: the type's own parameters from index 0 (PG_P_*_COUNT
@@ -157,6 +158,10 @@ enum { /* ARRAY (count, constant offset) */
   PG_P_ARRAY_COUNT_N = 0, PG_P_ARRAY_OX = 1, PG_P_ARRAY_OY = 2, PG_P_ARRAY_COUNT = 3 };
 enum { /* MULTIPLY (duplications, distance) */
   PG_P_MULTIPLY_DUPLICATIONS = 0, PG_P_MULTIPLY_DISTANCE = 1, PG_P_MULTIPLY_COUNT = 2 };
+enum { /* TEXTURE: mode STROKE 0 / FILL 1 / STROKE_AND_FILL 2, fit GP_TEX_FIT_STROKE 0 / GP_TEX_CONSTANT_LENGTH 1 */
+  PG_P_TEXTURE_MODE = 0, PG_P_TEXTURE_FIT = 1, PG_P_TEXTURE_UV_OFFSET = 2, PG_P_TEXTURE_UV_SCALE = 3,
+  PG_P_TEXTURE_ALIGN_ROT = 4, PG_P_TEXTURE_FILL_ROT = 5, PG_P_TEXTURE_FILL_OFFSET_X = 6,
+  PG_P_TEXTURE_FILL_OFFSET_Y = 7, PG_P_TEXTURE_FILL_SCALE = 8, PG_P_TEXTURE_COUNT = 9 };
 
 /* Custom curve (use_custom_curve / curve_intensity): point i of n gets factor curve(i / (n - 1)). */
 #define PG_P_CURVE_BASE 96

@@ -112,6 +112,11 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_MULTIPLY_DUPLICATIONS] = 3.0f;
       p[PG_P_MULTIPLY_DISTANCE] = 10.0f;
       break;
+    case PG_MOD_TEXTURE: /* uv_scale 1, fill_scale 1, fit GP_TEX_CONSTANT_LENGTH, mode STROKE */
+      p[PG_P_TEXTURE_UV_SCALE] = 1.0f;
+      p[PG_P_TEXTURE_FILL_SCALE] = 1.0f;
+      p[PG_P_TEXTURE_FIT] = GP_TEX_CONSTANT_LENGTH;
+      break;
     default:
       break;
   }
@@ -205,6 +210,17 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
     case PG_MOD_MULTIPLY:
       p[PG_P_MULTIPLY_DUPLICATIONS] = m2_int(p[PG_P_MULTIPLY_DUPLICATIONS], 1, 100);
       p[PG_P_MULTIPLY_DISTANCE] = m2_clamp(p[PG_P_MULTIPLY_DISTANCE], -10000.0f, 10000.0f);
+      break;
+    case PG_MOD_TEXTURE: /* rna_gpencil_legacy_modifier.c ranges */
+      p[PG_P_TEXTURE_MODE] = m2_int(p[PG_P_TEXTURE_MODE], 0, 2);
+      p[PG_P_TEXTURE_FIT] = m2_int(p[PG_P_TEXTURE_FIT], 0, 1);
+      p[PG_P_TEXTURE_UV_OFFSET] = m2_clamp(p[PG_P_TEXTURE_UV_OFFSET], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_UV_SCALE] = m2_clamp(p[PG_P_TEXTURE_UV_SCALE], 0.0f, FLT_MAX);
+      p[PG_P_TEXTURE_ALIGN_ROT] = m2_clamp(p[PG_P_TEXTURE_ALIGN_ROT], (float)(-M_PI_2), (float)M_PI_2); /* +-90 degrees */
+      p[PG_P_TEXTURE_FILL_ROT] = m2_clamp(p[PG_P_TEXTURE_FILL_ROT], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_FILL_OFFSET_X] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_X], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_FILL_OFFSET_Y] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_Y], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_FILL_SCALE] = m2_clamp(p[PG_P_TEXTURE_FILL_SCALE], 0.01f, 100.0f);
       break;
     default:
       break;
@@ -945,6 +961,37 @@ static int m2_weight_modifier(const PGModContext *ctx, const PGModEntry *e, bGPD
 }
 
 /* ---------------------------------------------------------------------------------------- */
+/* Texture Mapping (MOD_gpencil_legacy_texture.c deformStroke; the vertex group filter is the
+ * entry's influence filter block)                                                          */
+
+static int m2_texture(const PGModContext *ctx, const float *p, bGPDstroke *gps)
+{
+  const int mode = (int)p[PG_P_TEXTURE_MODE];
+  if (ELEM(mode, 1, 2)) { /* FILL, STROKE_AND_FILL */
+    gps->uv_rotation += p[PG_P_TEXTURE_FILL_ROT];
+    gps->uv_translation[0] += p[PG_P_TEXTURE_FILL_OFFSET_X];
+    gps->uv_translation[1] += p[PG_P_TEXTURE_FILL_OFFSET_Y];
+    gps->uv_scale *= p[PG_P_TEXTURE_FILL_SCALE];
+    BKE_gpencil_stroke_geometry_update(ctx->gpd, gps);
+  }
+  if (ELEM(mode, 0, 2)) { /* STROKE, STROKE_AND_FILL */
+    float totlen = 1.0f;
+    if ((int)p[PG_P_TEXTURE_FIT] == GP_TEX_FIT_STROKE) {
+      totlen = 0.0f;
+      for (int i = 1; i < gps->totpoints; i++) totlen += len_v3v3(&gps->points[i - 1].x, &gps->points[i].x);
+    }
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      pt->uv_fac /= totlen;
+      pt->uv_fac *= p[PG_P_TEXTURE_UV_SCALE];
+      pt->uv_fac += p[PG_P_TEXTURE_UV_OFFSET];
+      pt->uv_rot += p[PG_P_TEXTURE_ALIGN_ROT];
+    }
+  }
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------------------- */
 /* Dispatch                                                                                  */
 
 int pg_mod2_is_frame_level(int type)
@@ -996,6 +1043,8 @@ int pg_mod2_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstro
     case PG_MOD_WEIGHT_PROX:
     case PG_MOD_WEIGHT_ANGLE:
       return m2_weight_modifier(ctx, e, gps);
+    case PG_MOD_TEXTURE:
+      return m2_texture(ctx, p, gps);
     default:
       return 0;
   }

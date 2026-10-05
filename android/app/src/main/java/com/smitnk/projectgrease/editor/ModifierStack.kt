@@ -32,7 +32,8 @@ object ModifierType {
     const val MIRROR = 20
     const val ARRAY = 21
     const val MULTIPLY = 22
-    const val LAST = 22
+    const val TEXTURE = 23
+    const val LAST = 23
     const val MAX_PARAMS = 120
     const val MAX_STACK = 32
     /** PG_P_CURVE_BASE / PG_P_FILTER_BASE: the custom curve and influence filter blocks of every entry. */
@@ -67,6 +68,7 @@ object ModifierType {
         MIRROR -> "Mirror"
         ARRAY -> "Array"
         MULTIPLY -> "Multiple Strokes"
+        TEXTURE -> "Texture Mapping"
         else -> "Modifier"
     }
 
@@ -123,6 +125,7 @@ object ModifierSpecs {
         ModifierType.LENGTH -> 9
         ModifierType.SMOOTH -> 7
         ModifierType.SIMPLIFY -> 6
+        ModifierType.TEXTURE -> 9
         ModifierType.SUBDIV -> 2
         ModifierType.OFFSET -> 23
         ModifierType.NOISE -> 10
@@ -178,6 +181,12 @@ object ModifierSpecs {
             f(0, "Position", 0f, 1f), f(1, "Strength", 0f, 1f), f(2, "Thickness", 0f, 1f), f(3, "UV", 0f, 1f),
             f(4, "Noise scale", 0f, 1f), f(5, "Noise offset", 0f, 20f), n(6, "Seed", 0f, 1000f),
             n(7, "Step", 1f, 30f), b(8, "Randomize"), e(9, "Mode", "Steps", "Keyframes")
+        )
+        ModifierType.TEXTURE -> listOf(
+            e(0, "Mode", "Stroke", "Fill", "Stroke and Fill"), e(1, "Fit method", "Fit stroke", "Constant length"),
+            f(2, "UV offset", -10f, 10f), f(3, "UV scale", 0f, 10f), f(4, "Alignment rotation", -1.5707964f, 1.5707964f),
+            f(5, "Fill rotation", -3.1415927f, 3.1415927f), f(6, "Fill offset X", -10f, 10f), f(7, "Fill offset Y", -10f, 10f),
+            f(8, "Fill scale", 0.01f, 100f)
         )
         ModifierType.BUILD -> listOf(
             e(0, "Mode", "Sequential", "Concurrent", "Additive"), e(1, "Transition", "Grow", "Shrink", "Vanish"),

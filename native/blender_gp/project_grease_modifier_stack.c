@@ -64,6 +64,7 @@ int pg_mod_own_param_count(int type)
     case PG_MOD_MIRROR: return PG_P_MIRROR_COUNT;
     case PG_MOD_ARRAY: return PG_P_ARRAY_COUNT;
     case PG_MOD_MULTIPLY: return PG_P_MULTIPLY_COUNT;
+    case PG_MOD_TEXTURE: return PG_P_TEXTURE_COUNT;
     case PG_MOD_THICKNESS: return PG_P_THICK_COUNT;
     case PG_MOD_OPACITY: return PG_P_OPACITY_COUNT;
     case PG_MOD_TINT: return PG_P_TINT_COUNT;
@@ -104,6 +105,7 @@ const char *pg_mod_name(int type)
     case PG_MOD_MIRROR: return "Mirror";
     case PG_MOD_ARRAY: return "Array";
     case PG_MOD_MULTIPLY: return "MultipleStrokes";
+    case PG_MOD_TEXTURE: return "TextureMapping";
     default: return "";
   }
 }
@@ -920,10 +922,25 @@ int pg_mod_eval_frame(bGPdata *gpd, bGPDlayer *gpl, bGPDframe *gpf, const PGModE
       pg_mod_run_on_frame(&ctx, &entries[i]);
     }
   }
-  /* Recompute triangulation and bounding data of the evaluated copies. */
+  /* Recompute triangulation and bounding data of the evaluated copies. Texture Mapping sets
+   * uv_fac / uv_rot after its own geometry update (MOD_gpencil_legacy_texture.c), and Blender does
+   * not recompute them afterwards, so they survive this pass. */
+  int keep_uv = 0;
+  for (int i = 0; i < count && entries != NULL; i++) {
+    if (entries[i].enabled && entries[i].type == PG_MOD_TEXTURE) keep_uv = 1;
+  }
   n = 0;
   for (bGPDstroke *gps = r_eval->strokes.first; gps != NULL; gps = gps->next) {
+    float *uv = NULL;
+    if (keep_uv && gps->totpoints > 0) {
+      uv = MEM_malloc_arrayN((size_t)gps->totpoints * 2, sizeof(float), "pg_keep_uv");
+      for (int i = 0; i < gps->totpoints; i++) { uv[2 * i] = gps->points[i].uv_fac; uv[2 * i + 1] = gps->points[i].uv_rot; }
+    }
     BKE_gpencil_stroke_geometry_update(gpd, gps);
+    if (uv) {
+      for (int i = 0; i < gps->totpoints; i++) { gps->points[i].uv_fac = uv[2 * i]; gps->points[i].uv_rot = uv[2 * i + 1]; }
+      MEM_freeN(uv);
+    }
     n++;
   }
   return n;

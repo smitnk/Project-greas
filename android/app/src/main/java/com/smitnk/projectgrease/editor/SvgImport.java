@@ -9,9 +9,9 @@ import java.util.regex.Pattern;
 /**
  * SVG import for Project Grease (behaviour of Blender's io "Import SVG" for Grease Pencil, which
  * turns every SVG shape into a stroke, flattening curves).
- * Supported: path (M L H V C S Q T Z, relative and absolute), polyline, polygon, line, rect,
+ * Supported: path (M L H V C S Q T A Z, relative and absolute; arcs exact), polyline, polygon, line, rect,
  * circle, ellipse; stroke / fill colors (#rgb, #rrggbb, rgb()), stroke-width. Not supported:
- * transforms, arcs (A is drawn as a straight line to its end point), gradients, CSS stylesheets.
+ * gradients, CSS stylesheets. Transforms (element and nested <g>) and elliptical arcs are supported.
  */
 public final class SvgImport {
     public static final class Stroke {
@@ -26,17 +26,17 @@ public final class SvgImport {
     public static final int CIRCLE_SEGMENTS = 32;
 
     private static final Pattern ELEMENT = Pattern.compile("<(path|polyline|polygon|line|rect|circle|ellipse)\\b([^>]*)>", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ATTR = Pattern.compile("([a-zA-Z_:][a-zA-Z0-9_:.-]*)\\s*=\\s*\"([^\"]*)\"");
+    private static final Pattern ATTR = Pattern.compile("([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*\"([^\"]*)\"");
     private static final Pattern NUMBER = Pattern.compile("[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?");
 
     private SvgImport() {}
 
     public static List<Stroke> parse(String svg) {
         List<Stroke> out = new ArrayList<>();
-        Matcher m = ELEMENT.matcher(svg);
-        while (m.find()) {
-            String tag = m.group(1).toLowerCase(Locale.ROOT);
-            java.util.Map<String, String> a = attrs(m.group(2));
+        Matcher m0 = ELEMENT.matcher(svg);
+        while (m0.find()) {
+            String tag = m0.group(1).toLowerCase(Locale.ROOT);
+            java.util.Map<String, String> a = attrs(m0.group(2));
             List<Stroke> made = new ArrayList<>();
             switch (tag) {
                 case "path": made.addAll(path(a.getOrDefault("d", ""))); break;
@@ -79,6 +79,12 @@ public final class SvgImport {
                 }
                 default: break;
             }
+            double[] m = mul(groupTransform(svg, m_start(m0)), transform(a.get("transform")));
+            for (Stroke st : made) for (float[] q : st.points) {
+                float qx = q[0], qy = q[1];
+                q[0] = (float) (m[0] * qx + m[2] * qy + m[4]);
+                q[1] = (float) (m[1] * qx + m[3] * qy + m[5]);
+            }
             String style = a.getOrDefault("style", "");
             String stroke = styleOr(style, "stroke", a.get("stroke"));
             String fill = styleOr(style, "fill", a.get("fill"));
@@ -97,6 +103,22 @@ public final class SvgImport {
             }
         }
         return out;
+    }
+
+    private static int m_start(Matcher m) { return m.start(); }
+
+    /** Composed transform of the <g> elements that are open at `pos` (nested groups supported). */
+    static double[] groupTransform(String svg, int pos) {
+        Matcher g = Pattern.compile("<g\\b([^>]*)>|</g\\s*>", Pattern.CASE_INSENSITIVE).matcher(svg.substring(0, pos));
+        java.util.ArrayDeque<double[]> stack = new java.util.ArrayDeque<>();
+        while (g.find()) {
+            if (g.group().startsWith("</")) { if (!stack.isEmpty()) stack.pop(); }
+            else stack.push(transform(attrs(g.group(1)).get("transform")));
+        }
+        double[] m = {1, 0, 0, 1, 0, 0};
+        java.util.Iterator<double[]> it = stack.descendingIterator(); // outermost first
+        while (it.hasNext()) m = mul(m, it.next());
+        return m;
     }
 
     private static java.util.Map<String, String> attrs(String text) {
@@ -191,7 +213,12 @@ public final class SvgImport {
                 case 'L': x = ox + v[0]; y = oy + v[1]; pt(cur, x, y); break;
                 case 'H': x = (rel ? x : 0) + v[0]; pt(cur, x, y); break;
                 case 'V': y = (rel ? y : 0) + v[0]; pt(cur, x, y); break;
-                case 'A': x = ox + v[5]; y = oy + v[6]; pt(cur, x, y); break;
+                case 'A': {
+                    float ex = ox + v[5], ey = oy + v[6];
+                    arc(cur, x, y, Math.abs(v[0]), Math.abs(v[1]), v[2], v[3] != 0, v[4] != 0, ex, ey);
+                    x = ex; y = ey;
+                    break;
+                }
                 case 'C': case 'S': {
                     float c1x, c1y;
                     if (c == 'C') { c1x = ox + v[0]; c1y = oy + v[1]; }
@@ -230,6 +257,64 @@ public final class SvgImport {
             prev = cmd;
         }
         return out;
+    }
+
+    /** SVG 1.1 implementation notes F.6.5: endpoint to centre parameterization, then sampled. */
+    static void arc(Stroke cur, float x1, float y1, float rx, float ry, float phiDeg, boolean large, boolean sweep, float x2, float y2) {
+        if (rx == 0 || ry == 0 || (x1 == x2 && y1 == y2)) { pt(cur, x2, y2); return; }
+        double phi = Math.toRadians(phiDeg), c = Math.cos(phi), s = Math.sin(phi);
+        double dx = (x1 - x2) / 2.0, dy = (y1 - y2) / 2.0;
+        double x1p = c * dx + s * dy, y1p = -s * dx + c * dy;
+        double lam = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+        if (lam > 1) { double k = Math.sqrt(lam); rx *= k; ry *= k; }
+        double num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+        double den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+        double co = Math.sqrt(Math.max(0, num / den)) * (large == sweep ? -1 : 1);
+        double cxp = co * rx * y1p / ry, cyp = -co * ry * x1p / rx;
+        double cx = c * cxp - s * cyp + (x1 + x2) / 2.0, cy = s * cxp + c * cyp + (y1 + y2) / 2.0;
+        double t1 = Math.atan2((y1p - cyp) / ry, (x1p - cxp) / rx);
+        double t2 = Math.atan2((-y1p - cyp) / ry, (-x1p - cxp) / rx);
+        double dt = t2 - t1;
+        if (sweep && dt < 0) dt += 2 * Math.PI;
+        if (!sweep && dt > 0) dt -= 2 * Math.PI;
+        int n = Math.max(2, (int) Math.ceil(Math.abs(dt) / (2 * Math.PI) * CIRCLE_SEGMENTS));
+        for (int i = 1; i <= n; i++) {
+            double t = t1 + dt * i / n;
+            double ex = rx * Math.cos(t), ey = ry * Math.sin(t);
+            if (i == n) { pt(cur, x2, y2); break; }
+            pt(cur, (float) (c * ex - s * ey + cx), (float) (s * ex + c * ey + cy));
+        }
+    }
+
+    /** transform="..." (matrix, translate, scale, rotate, skewX, skewY), applied right to left. */
+    static double[] transform(String text) {
+        double[] m = {1, 0, 0, 1, 0, 0};
+        if (text == null) return m;
+        Matcher t = Pattern.compile("(matrix|translate|scale|rotate|skewX|skewY)\\s*\\(([^)]*)\\)").matcher(text);
+        while (t.find()) {
+            float[] a = numbers(t.group(2));
+            double[] k;
+            switch (t.group(1)) {
+                case "matrix": k = a.length >= 6 ? new double[]{a[0], a[1], a[2], a[3], a[4], a[5]} : new double[]{1, 0, 0, 1, 0, 0}; break;
+                case "translate": k = new double[]{1, 0, 0, 1, a.length > 0 ? a[0] : 0, a.length > 1 ? a[1] : 0}; break;
+                case "scale": { double sx = a.length > 0 ? a[0] : 1, sy = a.length > 1 ? a[1] : sx; k = new double[]{sx, 0, 0, sy, 0, 0}; break; }
+                case "rotate": {
+                    double r = Math.toRadians(a.length > 0 ? a[0] : 0), c = Math.cos(r), s = Math.sin(r);
+                    k = new double[]{c, s, -s, c, 0, 0};
+                    if (a.length >= 3) k = mul(mul(new double[]{1, 0, 0, 1, a[1], a[2]}, k), new double[]{1, 0, 0, 1, -a[1], -a[2]});
+                    break;
+                }
+                case "skewX": k = new double[]{1, 0, Math.tan(Math.toRadians(a.length > 0 ? a[0] : 0)), 1, 0, 0}; break;
+                default: k = new double[]{1, Math.tan(Math.toRadians(a.length > 0 ? a[0] : 0)), 0, 1, 0, 0}; break;
+            }
+            m = mul(m, k);
+        }
+        return m;
+    }
+
+    static double[] mul(double[] a, double[] b) {
+        return new double[]{a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3],
+                            a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]};
     }
 
     private static void pt(Stroke cur, float x, float y) {

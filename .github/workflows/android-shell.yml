@@ -3,6 +3,11 @@ name: Project Grease Android Shell
 
 on:
   workflow_dispatch:
+    inputs:
+      run_emulator:
+        description: "Run the emulator device tests, sweep and monkey (off unless asked)"
+        type: boolean
+        default: false
   pull_request:
     branches:
       - "feature/project-grease-ui-real-integration"
@@ -315,6 +320,8 @@ jobs:
   # Device-bugfix checks on an x86_64 emulator: the debug APK (arm64-v8a + x86_64) and the
   # instrumented test APK from the job above; real touches, native state and screenshots.
   emulator-tests:
+    # Manual only: Actions > Project Grease Android Shell > Run workflow > run_emulator.
+    if: github.event_name == 'workflow_dispatch' && inputs.run_emulator == true
     needs: android-shell
     runs-on: ubuntu-24.04
     timeout-minutes: 120

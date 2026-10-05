@@ -646,8 +646,29 @@ static void test_texture_modifier()
   free_doc(d);
 }
 
+/* Length random (applyLength): rand_start_fac / rand_end_fac add a per-stroke offset in [0, 2) *
+ * factor; the same seed gives the same result, another seed a different one. */
+static void test_length_random()
+{
+  Doc d = make_doc();
+  PGModEntry e = entry(PG_MOD_LENGTH);
+  e.params[PG_P_LENGTH_START] = 0.0f; e.params[PG_P_LENGTH_END] = 0.0f;
+  auto base = eval(d, &e, 1, 1);
+  e.params[PG_P_LENGTH_RAND_START] = 0.3f; e.params[PG_P_LENGTH_RAND_END] = 0.3f; e.params[PG_P_LENGTH_SEED] = 5;
+  auto r1 = eval(d, &e, 1, 1), r2 = eval(d, &e, 1, 1);
+  CHECK(same(r1, r2));      /* deterministic */
+  CHECK(!same(r1, base));   /* the random offsets lengthen the strokes */
+  e.params[PG_P_LENGTH_SEED] = 9;
+  CHECK(!same(eval(d, &e, 1, 1), r1));
+  /* GP_LENGTH_USE_RANDOM: changes every `step` frames */
+  e.params[PG_P_LENGTH_USE_RANDOM] = 1; e.params[PG_P_LENGTH_STEP] = 4;
+  CHECK(same(eval(d, &e, 1, 1), eval(d, &e, 1, 2)) && !same(eval(d, &e, 1, 1), eval(d, &e, 1, 4)));
+  free_doc(d);
+}
+
 int main()
 {
+  test_length_random();
   test_texture_modifier();
   test_interpolate_blender();
   test_build_blender();

@@ -142,6 +142,7 @@ void pg_mod_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_LENGTH_OVERSHOOT] = 0.1f;
       p[PG_P_LENGTH_USE_CURVATURE] = 1.0f;
       p[PG_P_LENGTH_POINT_DENSITY] = 30.0f;
+      p[PG_P_LENGTH_STEP] = 4.0f; /* rand step */
       p[PG_P_LENGTH_MAX_ANGLE] = 170.0f * (float)M_PI / 180.0f;
       break;
     case PG_MOD_SMOOTH: /* factor 1, step 1, smooth location */
@@ -243,6 +244,12 @@ void pg_mod_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_LENGTH_SEGMENT_INFLUENCE] = pgm_clamp(p[PG_P_LENGTH_SEGMENT_INFLUENCE], -2.0f, 3.0f);
       p[PG_P_LENGTH_MAX_ANGLE] = pgm_clamp(p[PG_P_LENGTH_MAX_ANGLE], 0.0f, (float)M_PI);
       p[PG_P_LENGTH_INVERT_CURVATURE] = pgm_flag(p[PG_P_LENGTH_INVERT_CURVATURE]);
+      p[PG_P_LENGTH_RAND_START] = pgm_clamp(p[PG_P_LENGTH_RAND_START], -10.0f, 10.0f);
+      p[PG_P_LENGTH_RAND_END] = pgm_clamp(p[PG_P_LENGTH_RAND_END], -10.0f, 10.0f);
+      p[PG_P_LENGTH_RAND_OFFSET] = pgm_clamp(p[PG_P_LENGTH_RAND_OFFSET], -100000.0f, 100000.0f);
+      p[PG_P_LENGTH_SEED] = pgm_int(p[PG_P_LENGTH_SEED], 0.0f, 1000000.0f);
+      p[PG_P_LENGTH_STEP] = pgm_int(p[PG_P_LENGTH_STEP], 1.0f, 100.0f);
+      p[PG_P_LENGTH_USE_RANDOM] = pgm_flag(p[PG_P_LENGTH_USE_RANDOM]);
       break;
     case PG_MOD_SMOOTH:
       p[PG_P_SMOOTH_FACTOR] = pgm_clamp(p[PG_P_SMOOTH_FACTOR], 0.0f, 2.0f);
@@ -352,6 +359,36 @@ static float *noise_table(int len, int offset, int seed)
 BLI_INLINE float table_sample(float *table, float x)
 {
   return interpf(table[(int)ceilf(x)], table[(int)floor(x)], fractf(x));
+}
+
+/* MOD_gpencil_legacy_length.c applyLength(): the random start / end offsets (rand[] from the halton
+ * sequence of the stroke index and the noise table), added to start_fac / end_fac. */
+static void pg_length_random_facs(const PGModContext *ctx, const float *p, bGPDstroke *gps, float *first_fac, float *second_fac)
+{
+  const float rand_start_fac = p[PG_P_LENGTH_RAND_START], rand_end_fac = p[PG_P_LENGTH_RAND_END];
+  if (!(rand_start_fac != 0.0 || rand_end_fac != 0.0)) return;
+  float rand[2] = {0.0f, 0.0f};
+  int seed = (int)p[PG_P_LENGTH_SEED];
+  seed += BLI_hash_string(PG_MOD_OBJECT_NAME);        /* ADAPTED: ob->id.name + 2 */
+  seed += BLI_hash_string(pg_mod_name(PG_MOD_LENGTH)); /* ADAPTED: md->name */
+  if (p[PG_P_LENGTH_USE_RANDOM] != 0.0f) {
+    seed += ctx->cfra / (int)p[PG_P_LENGTH_STEP];
+  }
+  float rand_offset = BLI_hash_int_01(seed);
+  int rnd_index = BLI_findindex(&ctx->gpf->strokes, gps);
+  const uint primes[2] = {2, 3};
+  double offset[2] = {0.0f, 0.0f};
+  double r[2];
+  float *noise_table_length = noise_table(4, (int)floor(p[PG_P_LENGTH_RAND_OFFSET]), seed + 2);
+  BLI_halton_2d(primes, offset, rnd_index, r);
+  for (int j = 0; j < 2; j++) {
+    float noise = table_sample(noise_table_length, j * 2 + fractf(p[PG_P_LENGTH_RAND_OFFSET]));
+    rand[j] = fmodf(r[j] + rand_offset, 1.0f);
+    rand[j] = fabs(fmodf(sin(rand[j] * 12.9898f + j * 78.233f) * 43758.5453f, 1.0f) + noise);
+  }
+  MEM_SAFE_FREE(noise_table_length);
+  *first_fac = *first_fac + rand[0] * rand_start_fac;
+  *second_fac = *second_fac + rand[1] * rand_end_fac;
 }
 /* END VERBATIM */
 
@@ -821,6 +858,7 @@ int pg_mod_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstrok
       lp.segment_influence = p[PG_P_LENGTH_SEGMENT_INFLUENCE];
       lp.max_angle = p[PG_P_LENGTH_MAX_ANGLE];
       lp.invert_curvature = p[PG_P_LENGTH_INVERT_CURVATURE] != 0.0f;
+      pg_length_random_facs(ctx, p, gps, &lp.start_fac, &lp.end_fac);
       return pg_gp_modstroke_length(ctx->gpd, gps, &lp);
     }
     case PG_MOD_SMOOTH:

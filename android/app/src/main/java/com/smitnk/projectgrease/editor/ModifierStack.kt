@@ -122,7 +122,7 @@ object ModifierSpecs {
         ModifierType.OPACITY -> 4
         ModifierType.TINT -> 5
         ModifierType.COLOR -> 4
-        ModifierType.LENGTH -> 9
+        ModifierType.LENGTH -> 15
         ModifierType.SMOOTH -> 7
         ModifierType.SIMPLIFY -> 6
         ModifierType.TEXTURE -> 9
@@ -154,7 +154,9 @@ object ModifierSpecs {
         ModifierType.LENGTH -> listOf(
             e(0, "Mode", "Relative", "Absolute"), f(1, "Start", -1f, 1f), f(2, "End", -1f, 1f),
             f(3, "Random overshoot", 0f, 1f), b(4, "Use curvature"), f(5, "Point density", 0.1f, 100f),
-            f(6, "Segment influence", -2f, 3f), f(7, "Max angle", 0f, 3.1415927f, DEG), b(8, "Invert curvature")
+            f(6, "Segment influence", -2f, 3f), f(7, "Max angle", 0f, 3.1415927f, DEG), b(8, "Invert curvature"),
+            f(9, "Random start", -1f, 1f), f(10, "Random end", -1f, 1f), f(11, "Random offset", -10f, 10f),
+            n(12, "Seed", 0f, 1000f), n(13, "Step", 1f, 100f), b(14, "Randomize every step")
         )
         ModifierType.SMOOTH -> listOf(
             f(0, "Factor", 0f, 2f), n(1, "Repeat", 1f, 30f), b(2, "Position"), b(3, "Strength"),

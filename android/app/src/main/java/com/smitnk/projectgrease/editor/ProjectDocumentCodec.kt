@@ -133,6 +133,8 @@ class ParsedDocument(
     val frameEnd: Int = 0,
     val vertexGroups: List<String> = emptyList(),
     val activeVertexGroup: Int = -1,
+    /** Scene markers and preview range ("markers" / "previewRange"); empty for older files. */
+    val timeline: TimelineState = TimelineState(),
     /** null when the file has no "layers" key at all. */
     val layers: List<ParsedLayer>?
 )
@@ -151,7 +153,8 @@ object ProjectDocumentCodec {
     const val VERSION = 6
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
-    fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0): String {
+    fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0,
+               timeline: TimelineState = TimelineState()): String {
         val root = JSONObject()
         root.put("version", VERSION)
         root.put("width", width)
@@ -159,6 +162,10 @@ object ProjectDocumentCodec {
         root.put("fps", fps)
         root.put("frame", frame)
         if (frameEnd > 0) root.put("frameEnd", frameEnd)
+        TimelineRules.toJson(timeline).let { (markers, preview) ->
+            markers?.let { root.put("markers", it) }
+            preview?.let { root.put("previewRange", it) }
+        }
 
         val materials = JSONArray()
         for (i in 0 until native.materialCount()) {
@@ -238,6 +245,7 @@ object ProjectDocumentCodec {
                 (0 until a.length()).map { a.optString(it, "").ifEmpty { "Group" } }
             } ?: emptyList(),
             activeVertexGroup = root.optInt("activeVertexGroup", -1),
+            timeline = TimelineRules.fromJson(root.optJSONArray("markers"), root.optJSONObject("previewRange")),
             layers = layers
         )
     }

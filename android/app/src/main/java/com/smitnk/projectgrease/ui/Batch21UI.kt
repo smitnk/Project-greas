@@ -194,11 +194,17 @@ fun keyTypeColor(type: Int) = when (type) {
 @Composable
 fun KeyframeMenu(controller: EditorController, frame: Int, onDismiss: () -> Unit, redraw: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        if (frame in controller.animation.keyframes) {
+        val isKey = frame in controller.animation.keyframes
+        val selectedKeys = controller.animation.selectedFrames.count { it in controller.animation.keyframes }
+        // All five BEZT_KEYTYPE_* types; on a selected key (or a hold cell) they apply to every selected key.
+        if (isKey || selectedKeys > 0) {
+            val scope = if (!isKey || frame in controller.animation.selectedFrames) " ($selectedKeys selected)" else ""
             ProjectGreaseSelect.KEY_TYPE_LABELS.forEachIndexed { type, label ->
-                DropdownMenuItem(text = { Text("Key type: $label") }, onClick = { controller.setFrameKeyType(frame, type); onDismiss(); redraw() },
+                DropdownMenuItem(text = { Text("Key type: $label$scope") }, onClick = { controller.setFrameKeyType(frame, type); onDismiss(); redraw() },
                     modifier = Modifier.testTag("keyType_$type"))
             }
+        }
+        if (isKey) {
             DropdownMenuItem(text = { Text(if (frame in controller.animation.selectedFrames) "Deselect frame" else "Select frame (multiframe)") },
                 onClick = { controller.selectTimelineFrame(frame); onDismiss(); redraw() })
         }

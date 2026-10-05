@@ -536,4 +536,15 @@ class ProjectDocumentRoundTripTest {
         assertEquals(0, old.layers[0].frames.first { it.number == 4 }.keyType)
         assertEquals(0, old.layers[0].record.blendMode)
     }
+
+    @Test
+    fun markersAndPreviewRangeSurviveARoundTripAndOldFilesHaveNone() {
+        val timeline = TimelineState(listOf(TimeMarker(4, "F_04"), TimeMarker(12, "Impact", true)), TimelineRules.setPreviewRange(3, 20))
+        val raw = ProjectDocumentCodec.encode(sampleDocument(), 1920, 1080, 24, 1, 48, timeline)
+        assertEquals(timeline, ProjectDocumentCodec.parse(raw)!!.timeline)
+        assertSameDocument(sampleDocument(), load(raw))
+        val old = save(sampleDocument())
+        assertFalse(old.contains("\"markers\""))
+        assertEquals(TimelineState(), ProjectDocumentCodec.parse(old)!!.timeline)
+    }
 }

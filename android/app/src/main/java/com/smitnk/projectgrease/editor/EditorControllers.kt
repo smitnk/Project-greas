@@ -250,12 +250,11 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             if (!playing || native.handle == 0L) return
             val end = endFrame()
             timelineEnd = end
-            var next = currentFrame + 1
-            if (next > end) {
-                if (loop) next = 1 else {
-                    playing = false
-                    return
-                }
+            // screen_animation_step: wraps within the preview range when it is on (PRVRANGEON).
+            val next = TimelineRules.nextPlaybackFrame(currentFrame, timeline.preview, end, loop)
+            if (next == null) {
+                playing = false
+                return
             }
             if (native.selectFrameOrHold(next)) {
                 currentFrame = next
@@ -389,6 +388,23 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if(playing) handler.post(tick)
     }
     fun toggleLoop(){loop=!loop}
+
+    /** Scene markers and preview range; part of every undo step and saved in the project file. */
+    var timeline by androidx.compose.runtime.mutableStateOf(TimelineState()); private set
+    fun restoreTimeline(state: TimelineState) { timeline = state }
+    /** Scrubbing snaps to the nearest keyframe instead of the nearest frame when on (UI option). */
+    var scrubSnapToKeys by androidx.compose.runtime.mutableStateOf(false)
+    /** ANIM_OT_change_frame: [position] is a fractional frame; it is rounded (or key-snapped) first. */
+    fun scrubTo(position: Float): Boolean {
+        val frame = TimelineRules.scrubFrame(position, 1, maxOf(timelineEnd, endFrame()), keyframes, scrubSnapToKeys)
+        return frame == currentFrame || setFrame(frame)
+    }
+    /** Applies a marker / preview-range rule result; false (nothing changed) when the rule refused. */
+    fun applyTimeline(state: TimelineState?): Boolean {
+        if (state == null || state == timeline) return false
+        timeline = state
+        return true
+    }
     fun stop(){playing=false;handler.removeCallbacks(tick)}
 }
 
@@ -693,8 +709,9 @@ class EditorController {
     val reference=ReferenceScene()
     val document=DocumentController()
     val history=HistoryController(native).also { h ->
-        h.captureExtras = { captureTextures() }
-        h.restoreExtras = { restoreTextures(it) }
+        // Kotlin-side state of an undo step: material textures plus the timeline (markers, preview range).
+        h.captureExtras = { Pair(captureTextures(), animation.timeline) }
+        h.restoreExtras = { e -> (e as? Pair<*, *>)?.let { restoreTextures(it.first); (it.second as? TimelineState)?.let(animation::restoreTimeline) } }
     }
     val animation=AnimationController(native) { render() }
     val materials=MaterialController()
@@ -765,6 +782,7 @@ class EditorController {
             reapplyOnion()
             selectedLayer=0
             animation.setSceneEnd(0)
+            animation.restoreTimeline(TimelineState())
             animation.initialize()
             history.reset()
             document.markDirty()
@@ -1542,7 +1560,8 @@ class EditorController {
         val originalFrame = animation.currentFrame
         val json = ProjectDocumentCodec.encode(
             NativeDocumentAdapter(native),
-            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd
+            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd,
+            animation.timeline
         )
         if (native.layerCount() > 0) {
             native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
@@ -1568,6 +1587,7 @@ class EditorController {
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
         animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
         animation.setSceneEnd(parsed.frameEnd)
+        animation.restoreTimeline(parsed.timeline)
         if (!ProjectDocumentCodec.restore(parsed, NativeDocumentAdapter(native), brushes.size)) return false
         val rawJson = runCatching { org.json.JSONObject(raw) }.getOrNull()
         // "settings": older files use defaults with the file's canvas size, fps and end frame
@@ -1910,6 +1930,7 @@ class EditorController {
         animation.setFps(template.fps)
         animation.initialize()
         animation.setSceneEnd(template.endFrame)
+        animation.restoreTimeline(TimelineState())
         materials.select(0)
         template.materials.firstOrNull()?.let { materials.setColor(it.stroke) }
         pushMaterialColor()
@@ -2509,13 +2530,44 @@ class EditorController {
     fun copySelectedFrames():Boolean { val c = ProjectGreaseSelect.framesCopy(); return native.applyEditCommand(c.id, c.args) }
     fun pasteFrames() = runFrameCommand(ProjectGreaseSelect.framesPaste(animation.currentFrame))
     fun setDashSegments(offset:Int, segments:List<Pair<Int,Int>>) = docChanged(ProjectGreaseSelect.dashSegments(offset, segments)?.let { native.applyEditCommand(it.id, it.args) } ?: false)
+    /**
+     * ACTION_OT_keyframe_type: applies to the selected keyframes when [frame] is one of them or is not a
+     * keyframe itself (long press on a hold cell with a selection); otherwise just to [frame].
+     */
     fun setFrameKeyType(frame:Int, type:Int):Boolean {
-        val targets = if (frame in animation.selectedFrames) animation.selectedFrames + frame else setOf(frame)
+        val selected = animation.selectedFrames.filter { it in animation.keyframes }.toSet()
+        val isKey = frame in animation.keyframes
+        val targets = when {
+            frame in selected -> selected
+            !isKey -> selected
+            else -> setOf(frame)
+        }
+        if (targets.isEmpty()) return false
         var any = false
         for (f in targets) ProjectGreaseSelect.frameKeyType(f, type)?.let { any = native.applyEditCommand(it.id, it.args) || any }
         animation.refreshKeyInfo()
         return docChanged(any)
     }
+    // ---- scene markers and preview range (TimelineRules); each change is one undo step ----
+    private fun timelineChanged(state:TimelineState?):Boolean {
+        if (!animation.applyTimeline(state)) return false
+        history.markEdit(); document.markDirty(); return true
+    }
+    private fun markerEdit(rule:(List<TimeMarker>) -> List<TimeMarker>?):Boolean =
+        timelineChanged(rule(animation.timeline.markers)?.let { animation.timeline.copy(markers = it) })
+    /** MARKER_OT_add at the current frame (named "F_<frame>", selected alone); refused when one is there. */
+    fun addMarker(frame:Int = animation.currentFrame) = markerEdit { TimelineRules.addMarker(it, frame) }
+    fun renameMarker(name:String) = markerEdit { TimelineRules.renameMarker(it, name) }
+    fun moveSelectedMarkers(offset:Int) = markerEdit { TimelineRules.moveMarkers(it, offset) }
+    fun deleteSelectedMarkers() = markerEdit { TimelineRules.deleteMarkers(it) }
+    /** Marker selection is not an undo step in this app (frame selection is not either). */
+    fun selectMarker(frame:Int, extend:Boolean = false):Boolean =
+        animation.applyTimeline(animation.timeline.copy(markers = TimelineRules.selectMarker(animation.timeline.markers, frame, extend)))
+    fun setPreviewRange(start:Int, end:Int) = timelineChanged(animation.timeline.copy(preview = TimelineRules.setPreviewRange(start, end)))
+    fun clearPreviewRange() = timelineChanged(animation.timeline.copy(preview = PreviewRange()))
+    /** Timeline drag: moves the current frame to the whole frame under [position] (no undo step, like Blender). */
+    fun scrubTo(position:Float):Boolean { val ok = animation.scrubTo(position); if (ok) render(); return ok }
+
     /** Timeline frame selection (GP_FRAME_SELECT): replace, toggle or extend; drives multiframe editing. */
     fun selectTimelineFrame(frame:Int, mode:Int = ProjectGreaseSelect.FRAME_SELECT_TOGGLE):Boolean {
         val c = ProjectGreaseSelect.frameSelect(frame, mode)

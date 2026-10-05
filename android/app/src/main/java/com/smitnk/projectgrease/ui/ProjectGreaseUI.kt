@@ -747,6 +747,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @OptIn(ExperimentalLayoutApi::class)
 @NonSkippableComposable
 @Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
+    var markersOpen by remember{mutableStateOf(false)}
+    var previewOpen by remember{mutableStateOf(false)}
     Surface(tonalElevation=4.dp){
         Column(Modifier.fillMaxWidth()){
             // Wrapping rows (no side-scroll strip): every timeline action stays reachable on narrow screens.
@@ -776,20 +778,37 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     modifier=Modifier.testTag("interpolateSequence")){Text("Interpolate sequence")}
                 FilterChip(selected=controller.multiframeEditing,onClick={controller.setMultiframeEditing(!controller.multiframeEditing);redraw()},
                     label={Text("Multiframe")},modifier=Modifier.testTag("multiframe"))
+                // Scene markers (MARKER_OT_*), preview range (ANIM_OT_previewrange_*), scrub snapping.
+                TextButton(onClick={if(controller.addMarker())redraw()},modifier=Modifier.testTag("markerAdd")){Text("Add marker")}
+                TextButton(onClick={markersOpen=true},modifier=Modifier.testTag("markers")){Text("Markers ("+controller.animation.timeline.markers.size+")")}
+                val preview=controller.animation.timeline.preview
+                TextButton(onClick={previewOpen=true},modifier=Modifier.testTag("previewRange")){
+                    Text(if(preview.enabled)"Preview "+preview.start+"–"+preview.end else "Preview range")
+                }
+                FilterChip(selected=controller.animation.scrubSnapToKeys,onClick={controller.animation.scrubSnapToKeys=!controller.animation.scrubSnapToKeys},
+                    label={Text("Snap to keys")},modifier=Modifier.testTag("scrubSnapKeys"))
             }
+            if(markersOpen)MarkersDialog(controller,{markersOpen=false},redraw)
+            if(previewOpen)PreviewRangeDialog(controller,{previewOpen=false},redraw)
+            val listState=androidx.compose.foundation.lazy.rememberLazyListState()
+            Box(Modifier.padding(horizontal=5.dp)){TimelineScrubStrip(controller,listState,52.dp,redraw)}
             // Lazy: only the visible frame cells are composed. The scene end can be up to 100000
             // frames; composing a cell for each one on every recomposition froze the main thread
             // (monkey ANR in Timeline).
             val keyframes=remember(controller.animation.keyframes){controller.animation.keyframes.toSet()}
             var menuFrame by remember{mutableIntStateOf(-1)}
             val frameTotal=controller.animation.timelineEnd.coerceAtLeast(1)
-            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp)){
+            val markerByFrame=controller.animation.timeline.markers.associateBy{it.frame}
+            val previewRange=controller.animation.timeline.preview
+            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp),state=listState){
                 items(frameTotal,key={it+1}){index->
                     val frame=index+1
                     val key=frame in keyframes
                     val type=controller.animation.keyTypes[frame]?:0
                     val selectedKey=frame in controller.animation.selectedFrames
-                    Box{
+                    val marker=markerByFrame[frame]
+                    val inPreview=previewRange.enabled&&frame in previewRange.start..previewRange.end
+                    Box(if(inPreview)Modifier.background(PreviewRangeColor) else Modifier){
                         // tap: go to the frame; long press: key type / frame selection menu
                         Surface(
                             Modifier.width(52.dp).height(54.dp).padding(2.dp).testTag("frame_$frame")
@@ -802,6 +821,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                             if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
                                 Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
                             } else Text("HOLD",fontSize=8.sp)
+                            if(marker!=null)Text(marker.name,fontSize=7.sp,maxLines=1,
+                                color=if(marker.selected)MarkerSelectedColor else Color.Unspecified,
+                                modifier=Modifier.testTag("markerLabel_$frame"))
                         }}
                         if(menuFrame==frame)KeyframeMenu(controller,frame,{menuFrame=-1},redraw)
                     }

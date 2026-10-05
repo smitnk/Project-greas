@@ -35,7 +35,7 @@ class Parity1Test : SweepBase() {
             controller.setProportionalSize(300f)
             if (!controller.transformSettings.proportional) controller.toggleProportional()
         }
-        undoable("proportional move") { onUi { controller.translateSelectedStroke(0f, 100f) } }
+        undoable("proportional move") { controller.translateSelectedStroke(0f, 100f) }
         val after = firstStrokePoints()
         assertEquals(before.size, after.size)
         val dy = after.indices.map { after[it][1] - before[it][1] }
@@ -62,19 +62,19 @@ class Parity1Test : SweepBase() {
         onUi { controller.setMode(GreaseMode.EDIT); controller.setSelectMode(S.MODE_STROKE); controller.selectAll() }
         val c0 = centers()
         onUi { controller.setPivot(S.PIVOT_INDIVIDUAL) }
-        undoable("scale individual") { onUi { controller.scaleSelectedStrokeAround(2f, 2f, 600f, 300f) } }
+        undoable("scale individual") { controller.scaleSelectedStrokeAround(2f, 2f, 600f, 300f) }
         val c1 = centers()
         for (i in c0.indices) {
             assertEquals("individual keeps centre x", c0[i].first, c1[i].first, 2.0)
             assertEquals("individual keeps centre y", c0[i].second, c1[i].second, 2.0)
         }
         onUi { controller.setPivot(S.PIVOT_MEDIAN) }
-        undoable("scale median") { onUi { controller.scaleSelectedStrokeAround(0.5f, 0.5f, 600f, 300f) } }
+        undoable("scale median") { controller.scaleSelectedStrokeAround(0.5f, 0.5f, 600f, 300f) }
         val c2 = centers()
         assertTrue("median moves the centres together", abs(c2[0].first - c2[1].first) < abs(c1[0].first - c1[1].first) - 50)
         onUi { controller.setPivot(S.PIVOT_CURSOR); controller.setCursor2D(600f, 300f) }
         val p0 = firstStrokePoints()[0]
-        undoable("rotate about cursor") { onUi { controller.rotateSelectedStrokeAround(Math.PI.toFloat(), 0f, 0f) } }
+        undoable("rotate about cursor") { controller.rotateSelectedStrokeAround(Math.PI.toFloat(), 0f, 0f) }
         val p1 = firstStrokePoints()[0]
         assertEquals("half turn about the cursor x", 1200.0 - p0[0], p1[0], 2.0)
         assertEquals("half turn about the cursor y", 600.0 - p0[1], p1[1], 2.0)
@@ -88,11 +88,11 @@ class Parity1Test : SweepBase() {
         onUi { controller.createFrame(5); controller.selectFrame(5) }
         line(500f)
         assertTrue("box select frames", onUi { controller.boxSelectFrames(5, 5) })
-        undoable("move frames") { onUi { controller.moveSelectedFrames(2) } }
+        undoable("move frames") { controller.moveSelectedFrames(2) }
         val keys = frameNumbers()
         assertTrue("frame 5 moved to 7: $keys", 7 in keys && 5 !in keys)
         onUi { controller.deselectTimelineFrames(); controller.boxSelectFrames(1, 1); controller.copySelectedFrames(); controller.animation.setFrame(10) }
-        undoable("paste frames") { onUi { controller.pasteFrames() } }
+        undoable("paste frames") { controller.pasteFrames() }
         assertTrue("pasted at 10: ${frameNumbers()}", 10 in frameNumbers())
         onUi { controller.selectFrame(10); controller.render() }
         assertInk(shot("parity_frames_paste"), 600f, 300f, "pasted frame content")
@@ -107,7 +107,7 @@ class Parity1Test : SweepBase() {
         }
         val solid = shot("parity_gradient_before")
         val g = floatArrayOf(0f, 0f, 0f, 1f, 1f, 0f, 0f, 1f, 1f, 0f, 0f, 0f) // linear to blue, mix 0
-        undoable("gradient fill") { onUi { controller.setMaterialGradient(0, g) } }
+        undoable("gradient fill") { controller.setMaterialGradient(0, g) }
         val bmp = shot("parity_gradient")
         val l = pixel(bmp, 360f, 350f); val r = pixel(bmp, 840f, 350f)
         assertTrue("gradient ends differ: ${Integer.toHexString(l)} ${Integer.toHexString(r)} (solid ${Integer.toHexString(pixel(solid, 360f, 350f))})",
@@ -139,13 +139,13 @@ class Parity1Test : SweepBase() {
             assertTrue(controller.addModifier(ModifierType.BUILD))
             val i = controller.modifiers().size - 1
             controller.setModifierParam(i, 0, 2f) // GP_BUILD_MODE_ADDITIVE
-            controller.setModifierParam(i, 3, 10f) // length
+            controller.setModifierParam(i, 3, 2f) // length: done by frame 13
             controller.animation.setFrame(11); controller.render()
         }
         val start = shot("parity_build_start")
         assertInk(start, 600f, 250f, "stroke of the previous key")
         assertFalse("new stroke hidden at the key", inkNear(start, 600f, 450f, 2))
-        onUi { controller.animation.setFrame(30); controller.render() }
+        onUi { controller.animation.setFrame(14); controller.render() }
         assertInk(shot("parity_build_end"), 600f, 450f, "new stroke after the build")
     }
 }

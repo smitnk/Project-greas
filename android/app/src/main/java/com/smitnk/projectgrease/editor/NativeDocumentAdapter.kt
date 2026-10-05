@@ -76,7 +76,11 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             mode = extra?.getOrNull(0)?.toInt() ?: 0,
             alignment = extra?.getOrNull(1)?.toInt() ?: 0,
             rotation = extra?.getOrNull(2) ?: 0f,
-            passIndex = extra?.getOrNull(5)?.toInt() ?: 0
+            passIndex = extra?.getOrNull(5)?.toInt() ?: 0,
+            gradient = extra?.takeIf { it.size >= 22 && it[6] != 0f }?.let { e -> FloatArray(12) { k -> e[7 + k] } },
+            strokeHoldout = extra != null && extra.size >= 22 && extra[19] != 0f,
+            fillHoldout = extra != null && extra.size >= 22 && extra[20] != 0f,
+            selfOverlap = extra != null && extra.size >= 22 && extra[21] != 0f
         )
     }
 
@@ -193,6 +197,9 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         ProjectGreaseSelect.materialFlags(index, record.locked, !record.visible).let { native.applyEditCommand(it.id, it.args) }
         ProjectGreaseSelect.materialMode(index, record.mode, record.alignment, record.rotation)?.let { native.applyEditCommand(it.id, it.args) }
         ProjectGreaseSelect.materialPass(index, record.passIndex).let { native.applyEditCommand(it.id, it.args) }
+        record.gradient?.let { g -> ProjectGreaseSelect.materialGradient(index, true, g)?.let { native.applyEditCommand(it.id, it.args) } }
+        ProjectGreaseSelect.materialOptions(index, record.strokeHoldout, record.fillHoldout, record.selfOverlap)
+            .let { native.applyEditCommand(it.id, it.args) }
         return true
     }
 }

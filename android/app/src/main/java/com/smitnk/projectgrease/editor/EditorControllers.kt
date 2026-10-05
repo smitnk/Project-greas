@@ -2518,6 +2518,13 @@ class EditorController {
         docChanged(ProjectGreaseSelect.layerPass(layer, pass).let { native.applyEditCommand(it.id, it.args) })
 
     // ---- materials: name, order, lock / hide / solo, line type, pass ----
+    /** Gradient fill (GP_MATERIAL_FILL_STYLE_GRADIENT); null turns it back to a solid fill. */
+    fun setMaterialGradient(slot:Int, gradient:FloatArray?):Boolean {
+        val g = gradient ?: (materialRecord(slot)?.gradient ?: return false)
+        return docChanged(ProjectGreaseSelect.materialGradient(slot, gradient != null, g)?.let { native.applyEditCommand(it.id, it.args) } ?: false)
+    }
+    fun setMaterialOptions(slot:Int, strokeHoldout:Boolean, fillHoldout:Boolean, selfOverlap:Boolean) =
+        docChanged(ProjectGreaseSelect.materialOptions(slot, strokeHoldout, fillHoldout, selfOverlap).let { native.applyEditCommand(it.id, it.args) })
     fun materialRecord(slot:Int = materials.activeMaterial):MaterialRecord? = NativeDocumentAdapter(native).materialRecord(slot)
     fun materialName(slot:Int):String = native.materialName(slot)?.takeIf { it.isNotBlank() } ?: "Material ${slot + 1}"
     fun renameMaterial(slot:Int, name:String):Boolean {

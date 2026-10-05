@@ -317,6 +317,15 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
                 Slider(rot, { rot = it }, onValueChangeFinished = { changed(controller.setMaterialLineType(rec.mode, rec.alignment, rot, slot)) },
                     valueRange = -3.1415927f..3.1415927f)
             }
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = rec.strokeHoldout, onClick = { changed(controller.setMaterialOptions(slot, !rec.strokeHoldout, rec.fillHoldout, rec.selfOverlap)) },
+                    label = { Text("Stroke holdout", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("strokeHoldout_$slot"))
+                FilterChip(selected = rec.fillHoldout, onClick = { changed(controller.setMaterialOptions(slot, rec.strokeHoldout, !rec.fillHoldout, rec.selfOverlap)) },
+                    label = { Text("Fill holdout", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+                FilterChip(selected = rec.selfOverlap, onClick = { changed(controller.setMaterialOptions(slot, rec.strokeHoldout, rec.fillHoldout, !rec.selfOverlap)) },
+                    label = { Text("Self overlap", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("selfOverlap_$slot"))
+            }
+            MaterialGradientRow(controller, slot, rec, tick, changed)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Pass index " + rec.passIndex, fontSize = 11.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { changed(controller.setMaterialPass((rec.passIndex - 1).coerceAtLeast(0), slot)) }) { Text("-") }
@@ -324,6 +333,47 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
             }
         }
     }
+}
+
+/** Fill style Gradient: type, mix colour, mix factor, angle, scale, offset, flip (material fill panel). */
+@Composable
+private fun MaterialGradientRow(controller: EditorController, slot: Int, rec: com.smitnk.projectgrease.editor.MaterialRecord, tick: Int,
+                                changed: (Boolean) -> Unit) {
+    val g = rec.gradient
+    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        Text("Fill gradient", fontSize = 10.sp, modifier = Modifier.padding(end = 4.dp))
+        FilterChip(selected = g == null, onClick = { changed(controller.setMaterialGradient(slot, null)) },
+            label = { Text("Off", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+        ProjectGreaseSelect.GRADIENT_TYPE_LABELS.forEachIndexed { type, label ->
+            FilterChip(selected = g != null && g[0].toInt() == type, onClick = {
+                val base = g ?: floatArrayOf(0f, 1f, 1f, 1f, 1f, 0f, 0f, 1f, 1f, 0f, 0f, 0f)
+                changed(controller.setMaterialGradient(slot, base.copyOf().also { it[0] = type.toFloat() }))
+            }, label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("gradient_${slot}_$type"))
+        }
+        if (g != null) FilterChip(selected = g[11] != 0f, onClick = { changed(controller.setMaterialGradient(slot, g.copyOf().also { it[11] = if (g[11] != 0f) 0f else 1f })) },
+            label = { Text("Flip", fontSize = 10.sp) })
+    }
+    if (g == null) return
+    @Composable
+    fun slider(label: String, index: Int, range: ClosedFloatingPointRange<Float>) {
+        var v by remember(slot, tick, index) { mutableFloatStateOf(g[index]) }
+        Text("$label ${"%.2f".format(v)}", fontSize = 11.sp)
+        Slider(v, { v = it }, onValueChangeFinished = { changed(controller.setMaterialGradient(slot, g.copyOf().also { it[index] = v })) }, valueRange = range)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Mix colour", fontSize = 11.sp, modifier = Modifier.padding(end = 6.dp))
+        listOf(Color.White, Color.Black, Color.Red, Color.Blue, Color.Yellow).forEach { c ->
+            Box(Modifier.padding(2.dp).size(20.dp).background(c, CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable {
+                changed(controller.setMaterialGradient(slot, g.copyOf().also { it[1] = c.red; it[2] = c.green; it[3] = c.blue; it[4] = 1f }))
+            })
+        }
+    }
+    slider("Mix factor", 5, 0f..1f)
+    slider("Angle", 6, -3.1415927f..3.1415927f)
+    slider("Scale X", 7, 0.01f..10f)
+    slider("Scale Y", 8, 0.01f..10f)
+    slider("Offset X", 9, -1f..1f)
+    slider("Offset Y", 10, -1f..1f)
 }
 
 /** Onion skin keyframe-type filter and loop. */

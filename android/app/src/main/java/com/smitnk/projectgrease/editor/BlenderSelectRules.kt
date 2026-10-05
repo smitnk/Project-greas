@@ -473,6 +473,16 @@ object ProjectGreaseSelect {
     const val CMD_FRAMES_COPY = 121
     const val CMD_FRAMES_PASTE = 122
     const val CMD_DASH_SEGMENTS = 123
+    const val CMD_MATERIAL_GRADIENT = 124
+    const val CMD_MATERIAL_OPTIONS = 125
+    val GRADIENT_TYPE_LABELS = listOf("Linear", "Radial")
+    /** [g] = [type, mix r, g, b, a, mix factor, angle, scale x, y, offset x, y, flip] (MaterialRecord.gradient). */
+    fun materialGradient(slot: Int, enabled: Boolean, g: FloatArray): Command? {
+        if (g.size < 12 || g.any { !it.isFinite() } || g[0].toInt() !in 0..1) return null
+        return Command(CMD_MATERIAL_GRADIENT, floatArrayOf(slot.toFloat(), if (enabled) 1f else 0f) + g)
+    }
+    fun materialOptions(slot: Int, strokeHoldout: Boolean, fillHoldout: Boolean, selfOverlap: Boolean) =
+        Command(CMD_MATERIAL_OPTIONS, floatArrayOf(slot.toFloat(), if (strokeHoldout) 1f else 0f, if (fillHoldout) 1f else 0f, if (selfOverlap) 1f else 0f))
     const val XFORM_TRANSLATE = 0
     const val XFORM_ROTATE = 1
     const val XFORM_SCALE = 2

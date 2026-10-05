@@ -94,7 +94,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
     fun saveCurrentProject() {
-        controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName, it) }
+        // Nothing to save (no document yet): don't record a project whose file was never written.
+        val json = controller.persistableDocumentJson() ?: return
+        projectStore.saveDocument(controller.document.projectName, json)
         projectStore.upsert(ProjectRecord(
             controller.document.projectName,
             controller.document.canvasWidth,
@@ -347,7 +349,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         onDispose{controller.onOverlayChanged=null}
     }
     fun persistProject(){
-        controller.saveDocumentJson()?.let {
+        controller.persistableDocumentJson()?.let {
             ProjectStore(context).saveDocument(controller.document.projectName,it)
             ProjectStore(context).upsert(ProjectRecord(
                 controller.document.projectName,

@@ -14724,7 +14724,7 @@
       "file_type": "code",
       "norm_label": "advancedsheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1263"
+      "source_location": "L1265"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_annotationbar",
@@ -14736,7 +14736,7 @@
       "file_type": "code",
       "norm_label": "annotationbar()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L512"
+      "source_location": "L514"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_capabilityrow",
@@ -14748,7 +14748,7 @@
       "file_type": "code",
       "norm_label": "capabilityrow()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1395"
+      "source_location": "L1397"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_curvehandlesoverlay",
@@ -14760,7 +14760,7 @@
       "file_type": "code",
       "norm_label": "curvehandlesoverlay()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L187"
+      "source_location": "L189"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_drawingguidesoverlay",
@@ -14772,7 +14772,7 @@
       "file_type": "code",
       "norm_label": "drawingguidesoverlay()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L235"
+      "source_location": "L237"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_editor",
@@ -14784,7 +14784,7 @@
       "file_type": "code",
       "norm_label": "editor()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L335"
+      "source_location": "L337"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_fillbar",
@@ -14796,7 +14796,7 @@
       "file_type": "code",
       "norm_label": "fillbar()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L537"
+      "source_location": "L539"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_fpsdialog",
@@ -14808,7 +14808,7 @@
       "file_type": "code",
       "norm_label": "fpsdialog()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L829"
+      "source_location": "L831"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_home",
@@ -14820,7 +14820,7 @@
       "file_type": "code",
       "norm_label": "home()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L260"
+      "source_location": "L262"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_lassopathoverlay",
@@ -14832,7 +14832,7 @@
       "file_type": "code",
       "norm_label": "lassopathoverlay()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L217"
+      "source_location": "L219"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
@@ -14844,7 +14844,7 @@
       "file_type": "code",
       "norm_label": "layereffectssection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L966"
+      "source_location": "L968"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layermasksection",
@@ -14856,7 +14856,7 @@
       "file_type": "code",
       "norm_label": "layermasksection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L925"
+      "source_location": "L927"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layerssheet",
@@ -14868,7 +14868,7 @@
       "file_type": "code",
       "norm_label": "layerssheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1035"
+      "source_location": "L1037"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_materialssheet",
@@ -14880,7 +14880,7 @@
       "file_type": "code",
       "norm_label": "materialssheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1105"
+      "source_location": "L1107"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_modebrushbar",
@@ -14892,7 +14892,7 @@
       "file_type": "code",
       "norm_label": "modebrushbar()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L562"
+      "source_location": "L564"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_modifierstacksection",
@@ -14904,7 +14904,7 @@
       "file_type": "code",
       "norm_label": "modifierstacksection()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1204"
+      "source_location": "L1206"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_moresheet",
@@ -14916,7 +14916,7 @@
       "file_type": "code",
       "norm_label": "moresheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1370"
+      "source_location": "L1372"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_newproject",
@@ -14928,7 +14928,7 @@
       "file_type": "code",
       "norm_label": "newproject()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L318"
+      "source_location": "L320"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_onionsheet",
@@ -14940,7 +14940,7 @@
       "file_type": "code",
       "norm_label": "onionsheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1164"
+      "source_location": "L1166"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_projectgreaseapp",
@@ -14964,7 +14964,7 @@
       "file_type": "code",
       "norm_label": "projectsheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L857"
+      "source_location": "L859"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_properties",
@@ -14976,7 +14976,7 @@
       "file_type": "code",
       "norm_label": "properties()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L731"
+      "source_location": "L733"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_settings",
@@ -14988,7 +14988,7 @@
       "file_type": "code",
       "norm_label": "settings()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1401"
+      "source_location": "L1403"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_timeline",
@@ -15000,7 +15000,7 @@
       "file_type": "code",
       "norm_label": "timeline()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L755"
+      "source_location": "L757"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_toolrail",
@@ -15012,7 +15012,7 @@
       "file_type": "code",
       "norm_label": "toolrail()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L704"
+      "source_location": "L706"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_toolssheet",
@@ -15024,7 +15024,7 @@
       "file_type": "code",
       "norm_label": "toolssheet()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L895"
+      "source_location": "L897"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_weightpaintbar",
@@ -15036,7 +15036,7 @@
       "file_type": "code",
       "norm_label": "weightpaintbar()",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L442"
+      "source_location": "L444"
     },
     {
       "id": "android_app_src_main_java_com_smitnk_projectgrease_editor_toolsession_toolsamplebatch_from",
@@ -20460,7 +20460,7 @@
       "file_type": "code",
       "norm_label": "class_tests()",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L47"
+      "source_location": "L48"
     },
     {
       "id": "tools_run_bughunt_main",
@@ -20472,7 +20472,7 @@
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L83"
+      "source_location": "L84"
     },
     {
       "id": "tools_run_bughunt_monkey",
@@ -20484,7 +20484,7 @@
       "file_type": "code",
       "norm_label": "monkey()",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L70"
+      "source_location": "L71"
     },
     {
       "id": "tools_run_bughunt_run_class",
@@ -20496,7 +20496,7 @@
       "file_type": "code",
       "norm_label": "run_class()",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L57"
+      "source_location": "L58"
     },
     {
       "id": "tools_run_emulator_sweep_anr_dialog_visible",
@@ -67088,7 +67088,7 @@
       "source_location": "L2"
     },
     {
-      "id": "tools_run_bughunt_rationale_58",
+      "id": "tools_run_bughunt_rationale_59",
       "label": "Runs one test class; tests a crash left without a result are run one by one.",
       "_origin": "ast",
       "community": 278,
@@ -67096,7 +67096,7 @@
       "file_type": "rationale",
       "norm_label": "runs one test class; tests a crash left without a result are run one by one.",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L58"
+      "source_location": "L59"
     },
     {
       "id": "tools_run_emulator_sweep_rationale_106",
@@ -84908,6 +84908,18 @@
       "type": "external"
     },
     {
+      "id": "project_grease_stroke_trim",
+      "label": "project_grease_stroke_trim",
+      "_origin": "semantic",
+      "community": 67,
+      "community_name": "math",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "project_grease_stroke_trim",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "stdbool",
       "label": "stdbool",
       "_origin": "semantic",
@@ -85816,17 +85828,6 @@
       "external": true,
       "file_type": "concept",
       "norm_label": "third_party_blender_source_blender_blenlib_intern_math_matrix",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "project_grease_stroke_trim",
-      "label": "project_grease_stroke_trim",
-      "community": 67,
-      "community_name": "math",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "project_grease_stroke_trim",
       "source_file": "",
       "type": "external"
     }
@@ -88625,7 +88626,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1263",
+      "source_location": "L1265",
       "weight": 1.0
     },
     {
@@ -88637,7 +88638,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1263",
+      "source_location": "L1265",
       "weight": 1.0
     },
     {
@@ -88649,7 +88650,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1263",
+      "source_location": "L1265",
       "weight": 1.0
     },
     {
@@ -88661,7 +88662,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L512",
+      "source_location": "L514",
       "weight": 1.0
     },
     {
@@ -88673,7 +88674,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L512",
+      "source_location": "L514",
       "weight": 1.0
     },
     {
@@ -88685,7 +88686,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1395",
+      "source_location": "L1397",
       "weight": 1.0
     },
     {
@@ -88697,7 +88698,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L187",
+      "source_location": "L189",
       "weight": 1.0
     },
     {
@@ -88709,7 +88710,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L235",
+      "source_location": "L237",
       "weight": 1.0
     },
     {
@@ -88721,7 +88722,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L235",
+      "source_location": "L237",
       "weight": 1.0
     },
     {
@@ -88733,7 +88734,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L335",
+      "source_location": "L337",
       "weight": 1.0
     },
     {
@@ -88745,7 +88746,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L537",
+      "source_location": "L539",
       "weight": 1.0
     },
     {
@@ -88757,7 +88758,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L537",
+      "source_location": "L539",
       "weight": 1.0
     },
     {
@@ -88769,7 +88770,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L829",
+      "source_location": "L831",
       "weight": 1.0
     },
     {
@@ -88781,7 +88782,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L829",
+      "source_location": "L831",
       "weight": 1.0
     },
     {
@@ -88793,7 +88794,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L829",
+      "source_location": "L831",
       "weight": 1.0
     },
     {
@@ -88805,7 +88806,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L260",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -88817,7 +88818,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L217",
+      "source_location": "L219",
       "weight": 1.0
     },
     {
@@ -88829,7 +88830,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L966",
+      "source_location": "L968",
       "weight": 1.0
     },
     {
@@ -88841,7 +88842,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L966",
+      "source_location": "L968",
       "weight": 1.0
     },
     {
@@ -88853,7 +88854,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L925",
+      "source_location": "L927",
       "weight": 1.0
     },
     {
@@ -88865,7 +88866,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L925",
+      "source_location": "L927",
       "weight": 1.0
     },
     {
@@ -88877,7 +88878,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L925",
+      "source_location": "L927",
       "weight": 1.0
     },
     {
@@ -88889,7 +88890,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1035",
+      "source_location": "L1037",
       "weight": 1.0
     },
     {
@@ -88901,7 +88902,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1035",
+      "source_location": "L1037",
       "weight": 1.0
     },
     {
@@ -88913,7 +88914,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1105",
+      "source_location": "L1107",
       "weight": 1.0
     },
     {
@@ -88925,7 +88926,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1105",
+      "source_location": "L1107",
       "weight": 1.0
     },
     {
@@ -88937,7 +88938,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1105",
+      "source_location": "L1107",
       "weight": 1.0
     },
     {
@@ -88949,7 +88950,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L562",
+      "source_location": "L564",
       "weight": 1.0
     },
     {
@@ -88961,7 +88962,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L562",
+      "source_location": "L564",
       "weight": 1.0
     },
     {
@@ -88973,7 +88974,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1204",
+      "source_location": "L1206",
       "weight": 1.0
     },
     {
@@ -88985,7 +88986,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1204",
+      "source_location": "L1206",
       "weight": 1.0
     },
     {
@@ -88997,7 +88998,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1370",
+      "source_location": "L1372",
       "weight": 1.0
     },
     {
@@ -89009,7 +89010,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1370",
+      "source_location": "L1372",
       "weight": 1.0
     },
     {
@@ -89021,7 +89022,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1370",
+      "source_location": "L1372",
       "weight": 1.0
     },
     {
@@ -89033,7 +89034,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L318",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -89045,7 +89046,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1164",
+      "source_location": "L1166",
       "weight": 1.0
     },
     {
@@ -89057,7 +89058,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1164",
+      "source_location": "L1166",
       "weight": 1.0
     },
     {
@@ -89069,7 +89070,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1164",
+      "source_location": "L1166",
       "weight": 1.0
     },
     {
@@ -89093,7 +89094,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L857",
+      "source_location": "L859",
       "weight": 1.0
     },
     {
@@ -89105,7 +89106,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L857",
+      "source_location": "L859",
       "weight": 1.0
     },
     {
@@ -89117,7 +89118,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L731",
+      "source_location": "L733",
       "weight": 1.0
     },
     {
@@ -89129,7 +89130,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L731",
+      "source_location": "L733",
       "weight": 1.0
     },
     {
@@ -89141,7 +89142,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1401",
+      "source_location": "L1403",
       "weight": 1.0
     },
     {
@@ -89153,7 +89154,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L755",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -89165,7 +89166,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L755",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -89177,7 +89178,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L755",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -89189,7 +89190,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L704",
+      "source_location": "L706",
       "weight": 1.0
     },
     {
@@ -89201,7 +89202,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L704",
+      "source_location": "L706",
       "weight": 1.0
     },
     {
@@ -89213,7 +89214,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L895",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
@@ -89225,7 +89226,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L895",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
@@ -89237,7 +89238,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L895",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
@@ -89249,7 +89250,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L442",
+      "source_location": "L444",
       "weight": 1.0
     },
     {
@@ -89261,7 +89262,7 @@
       "confidence_score": 1.0,
       "context": "attribute",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L442",
+      "source_location": "L444",
       "weight": 1.0
     },
     {
@@ -101237,7 +101238,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1348",
+      "source_location": "L1350",
       "weight": 1.0
     },
     {
@@ -101249,7 +101250,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1396",
+      "source_location": "L1398",
       "weight": 1.0
     },
     {
@@ -101261,7 +101262,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L373",
+      "source_location": "L375",
       "weight": 1.0
     },
     {
@@ -101273,7 +101274,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L374",
+      "source_location": "L376",
       "weight": 1.0
     },
     {
@@ -101285,7 +101286,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L376",
+      "source_location": "L378",
       "weight": 1.0
     },
     {
@@ -101297,7 +101298,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L410",
+      "source_location": "L412",
       "weight": 1.0
     },
     {
@@ -101309,7 +101310,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L412",
+      "source_location": "L414",
       "weight": 1.0
     },
     {
@@ -101321,7 +101322,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L423",
+      "source_location": "L425",
       "weight": 1.0
     },
     {
@@ -101333,7 +101334,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L425",
+      "source_location": "L427",
       "weight": 1.0
     },
     {
@@ -101345,7 +101346,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L427",
+      "source_location": "L429",
       "weight": 1.0
     },
     {
@@ -101357,7 +101358,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L429",
+      "source_location": "L431",
       "weight": 1.0
     },
     {
@@ -101369,7 +101370,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L430",
+      "source_location": "L432",
       "weight": 1.0
     },
     {
@@ -101381,7 +101382,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L431",
+      "source_location": "L433",
       "weight": 1.0
     },
     {
@@ -101393,7 +101394,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L432",
+      "source_location": "L434",
       "weight": 1.0
     },
     {
@@ -101405,7 +101406,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L433",
+      "source_location": "L435",
       "weight": 1.0
     },
     {
@@ -101417,7 +101418,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L434",
+      "source_location": "L436",
       "weight": 1.0
     },
     {
@@ -101429,43 +101430,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L435",
-      "weight": 1.0
-    },
-    {
-      "source": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
-      "target": "android_app_src_main_java_com_smitnk_projectgrease_editor_shaderfx_fxspecs_note",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1020",
-      "weight": 1.0
-    },
-    {
-      "source": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
-      "target": "android_app_src_main_java_com_smitnk_projectgrease_editor_shaderfx_fxtype_name",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L980",
-      "weight": 1.0
-    },
-    {
-      "source": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
-      "target": "android_app_src_main_java_com_smitnk_projectgrease_editor_shaderfx_fxtarget_label",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L994",
+      "source_location": "L437",
       "weight": 1.0
     },
     {
@@ -101477,7 +101442,43 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L998",
+      "source_location": "L1000",
+      "weight": 1.0
+    },
+    {
+      "source": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
+      "target": "android_app_src_main_java_com_smitnk_projectgrease_editor_shaderfx_fxspecs_note",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
+      "source_location": "L1022",
+      "weight": 1.0
+    },
+    {
+      "source": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
+      "target": "android_app_src_main_java_com_smitnk_projectgrease_editor_shaderfx_fxtype_name",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
+      "source_location": "L982",
+      "weight": 1.0
+    },
+    {
+      "source": "android_app_src_main_java_com_smitnk_projectgrease_ui_projectgreaseui_layereffectssection",
+      "target": "android_app_src_main_java_com_smitnk_projectgrease_editor_shaderfx_fxtarget_label",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
+      "source_location": "L996",
       "weight": 1.0
     },
     {
@@ -101489,7 +101490,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1089",
+      "source_location": "L1091",
       "weight": 1.0
     },
     {
@@ -101501,7 +101502,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1090",
+      "source_location": "L1092",
       "weight": 1.0
     },
     {
@@ -101513,7 +101514,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L577",
+      "source_location": "L579",
       "weight": 1.0
     },
     {
@@ -101525,7 +101526,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L637",
+      "source_location": "L639",
       "weight": 1.0
     },
     {
@@ -101537,7 +101538,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L639",
+      "source_location": "L641",
       "weight": 1.0
     },
     {
@@ -101549,7 +101550,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L661",
+      "source_location": "L663",
       "weight": 1.0
     },
     {
@@ -101561,7 +101562,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1218",
+      "source_location": "L1220",
       "weight": 1.0
     },
     {
@@ -101573,7 +101574,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1229",
+      "source_location": "L1231",
       "weight": 1.0
     },
     {
@@ -101585,7 +101586,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L139",
+      "source_location": "L141",
       "weight": 1.0
     },
     {
@@ -101597,7 +101598,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L147",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -101609,7 +101610,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L172",
+      "source_location": "L174",
       "weight": 1.0
     },
     {
@@ -101621,7 +101622,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L173",
+      "source_location": "L175",
       "weight": 1.0
     },
     {
@@ -101645,7 +101646,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L878",
+      "source_location": "L880",
       "weight": 1.0
     },
     {
@@ -101657,7 +101658,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L717",
+      "source_location": "L719",
       "weight": 1.0
     },
     {
@@ -101669,7 +101670,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L900",
+      "source_location": "L902",
       "weight": 1.0
     },
     {
@@ -133181,7 +133182,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L50",
+      "source_location": "L51",
       "weight": 1.0
     },
     {
@@ -133193,7 +133194,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L102",
+      "source_location": "L103",
       "weight": 1.0
     },
     {
@@ -133205,7 +133206,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L106",
+      "source_location": "L107",
       "weight": 1.0
     },
     {
@@ -133217,7 +133218,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L137",
+      "source_location": "L123",
       "weight": 1.0
     },
     {
@@ -133229,7 +133230,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L59",
+      "source_location": "L60",
       "weight": 1.0
     },
     {
@@ -133241,7 +133242,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L60",
+      "source_location": "L61",
       "weight": 1.0
     },
     {
@@ -133253,7 +133254,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L60",
+      "source_location": "L61",
       "weight": 1.0
     },
     {
@@ -141353,7 +141354,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L260",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -163368,7 +163369,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L19",
+      "source_location": "L20",
       "weight": 1.0
     },
     {
@@ -163380,7 +163381,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L20",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -163392,7 +163393,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L21",
+      "source_location": "L22",
       "weight": 1.0
     },
     {
@@ -163404,7 +163405,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L22",
+      "source_location": "L23",
       "weight": 1.0
     },
     {
@@ -163416,7 +163417,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L23",
+      "source_location": "L24",
       "weight": 1.0
     },
     {
@@ -163428,7 +163429,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L26",
+      "source_location": "L27",
       "weight": 1.0
     },
     {
@@ -166932,7 +166933,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1263",
+      "source_location": "L1265",
       "weight": 1.0
     },
     {
@@ -166944,7 +166945,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L512",
+      "source_location": "L514",
       "weight": 1.0
     },
     {
@@ -166956,7 +166957,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1395",
+      "source_location": "L1397",
       "weight": 1.0
     },
     {
@@ -166968,7 +166969,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L187",
+      "source_location": "L189",
       "weight": 1.0
     },
     {
@@ -166980,7 +166981,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L235",
+      "source_location": "L237",
       "weight": 1.0
     },
     {
@@ -166992,7 +166993,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L335",
+      "source_location": "L337",
       "weight": 1.0
     },
     {
@@ -167004,7 +167005,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L335",
+      "source_location": "L337",
       "weight": 1.0
     },
     {
@@ -167016,7 +167017,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L537",
+      "source_location": "L539",
       "weight": 1.0
     },
     {
@@ -167028,7 +167029,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L829",
+      "source_location": "L831",
       "weight": 1.0
     },
     {
@@ -167040,7 +167041,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L217",
+      "source_location": "L219",
       "weight": 1.0
     },
     {
@@ -167052,7 +167053,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L966",
+      "source_location": "L968",
       "weight": 1.0
     },
     {
@@ -167064,7 +167065,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L925",
+      "source_location": "L927",
       "weight": 1.0
     },
     {
@@ -167076,7 +167077,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1035",
+      "source_location": "L1037",
       "weight": 1.0
     },
     {
@@ -167088,7 +167089,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1105",
+      "source_location": "L1107",
       "weight": 1.0
     },
     {
@@ -167100,7 +167101,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L562",
+      "source_location": "L564",
       "weight": 1.0
     },
     {
@@ -167112,7 +167113,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1204",
+      "source_location": "L1206",
       "weight": 1.0
     },
     {
@@ -167124,7 +167125,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1370",
+      "source_location": "L1372",
       "weight": 1.0
     },
     {
@@ -167136,7 +167137,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L318",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -167148,7 +167149,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L318",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -167160,7 +167161,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1164",
+      "source_location": "L1166",
       "weight": 1.0
     },
     {
@@ -167184,7 +167185,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L857",
+      "source_location": "L859",
       "weight": 1.0
     },
     {
@@ -167196,7 +167197,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L857",
+      "source_location": "L859",
       "weight": 1.0
     },
     {
@@ -167208,7 +167209,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L731",
+      "source_location": "L733",
       "weight": 1.0
     },
     {
@@ -167220,7 +167221,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1401",
+      "source_location": "L1403",
       "weight": 1.0
     },
     {
@@ -167232,7 +167233,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1401",
+      "source_location": "L1403",
       "weight": 1.0
     },
     {
@@ -167244,7 +167245,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L755",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -167256,7 +167257,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L704",
+      "source_location": "L706",
       "weight": 1.0
     },
     {
@@ -167268,7 +167269,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L895",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
@@ -167280,7 +167281,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L442",
+      "source_location": "L444",
       "weight": 1.0
     },
     {
@@ -200370,7 +200371,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1035",
+      "source_location": "L1037",
       "weight": 1.0
     },
     {
@@ -200381,7 +200382,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1105",
+      "source_location": "L1107",
       "weight": 1.0
     },
     {
@@ -200392,7 +200393,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1164",
+      "source_location": "L1166",
       "weight": 1.0
     },
     {
@@ -200403,7 +200404,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1204",
+      "source_location": "L1206",
       "weight": 1.0
     },
     {
@@ -200414,7 +200415,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1263",
+      "source_location": "L1265",
       "weight": 1.0
     },
     {
@@ -200425,7 +200426,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1370",
+      "source_location": "L1372",
       "weight": 1.0
     },
     {
@@ -200436,7 +200437,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1395",
+      "source_location": "L1397",
       "weight": 1.0
     },
     {
@@ -200447,7 +200448,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1401",
+      "source_location": "L1403",
       "weight": 1.0
     },
     {
@@ -200458,7 +200459,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L187",
+      "source_location": "L189",
       "weight": 1.0
     },
     {
@@ -200469,7 +200470,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L217",
+      "source_location": "L219",
       "weight": 1.0
     },
     {
@@ -200480,7 +200481,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L235",
+      "source_location": "L237",
       "weight": 1.0
     },
     {
@@ -200491,7 +200492,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L260",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -200502,7 +200503,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L318",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -200513,7 +200514,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L335",
+      "source_location": "L337",
       "weight": 1.0
     },
     {
@@ -200524,7 +200525,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L442",
+      "source_location": "L444",
       "weight": 1.0
     },
     {
@@ -200557,7 +200558,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L512",
+      "source_location": "L514",
       "weight": 1.0
     },
     {
@@ -200568,7 +200569,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L537",
+      "source_location": "L539",
       "weight": 1.0
     },
     {
@@ -200579,7 +200580,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L562",
+      "source_location": "L564",
       "weight": 1.0
     },
     {
@@ -200590,7 +200591,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L704",
+      "source_location": "L706",
       "weight": 1.0
     },
     {
@@ -200601,7 +200602,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L731",
+      "source_location": "L733",
       "weight": 1.0
     },
     {
@@ -200612,7 +200613,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L755",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -200634,7 +200635,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L829",
+      "source_location": "L831",
       "weight": 1.0
     },
     {
@@ -200656,7 +200657,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L857",
+      "source_location": "L859",
       "weight": 1.0
     },
     {
@@ -200667,7 +200668,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L895",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
@@ -200678,7 +200679,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L925",
+      "source_location": "L927",
       "weight": 1.0
     },
     {
@@ -200689,7 +200690,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L966",
+      "source_location": "L968",
       "weight": 1.0
     },
     {
@@ -240575,7 +240576,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L47",
+      "source_location": "L48",
       "weight": 1.0
     },
     {
@@ -240586,7 +240587,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L57",
+      "source_location": "L58",
       "weight": 1.0
     },
     {
@@ -240597,7 +240598,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L70",
+      "source_location": "L71",
       "weight": 1.0
     },
     {
@@ -240608,7 +240609,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L83",
+      "source_location": "L84",
       "weight": 1.0
     },
     {
@@ -256298,14 +256299,14 @@
       "weight": 1.0
     },
     {
-      "source": "tools_run_bughunt_rationale_58",
+      "source": "tools_run_bughunt_rationale_59",
       "target": "tools_run_bughunt_run_class",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L58",
+      "source_location": "L59",
       "weight": 1.0
     },
     {
@@ -263196,7 +263197,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L118",
+      "source_location": "L120",
       "weight": 1.0
     },
     {
@@ -263208,7 +263209,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L119",
+      "source_location": "L121",
       "weight": 1.0
     },
     {
@@ -263220,7 +263221,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L122",
+      "source_location": "L124",
       "weight": 1.0
     },
     {
@@ -263232,7 +263233,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L123",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -263244,7 +263245,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/androidTest/java/com/smitnk/projectgrease/SweepRobustnessTest.kt",
-      "source_location": "L130",
+      "source_location": "L132",
       "weight": 1.0
     },
     {
@@ -264024,7 +264025,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1275",
+      "source_location": "L1277",
       "weight": 1.0
     },
     {
@@ -264036,7 +264037,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1276",
+      "source_location": "L1278",
       "weight": 1.0
     },
     {
@@ -264048,7 +264049,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L201",
+      "source_location": "L203",
       "weight": 1.0
     },
     {
@@ -264060,7 +264061,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L344",
+      "source_location": "L346",
       "weight": 1.0
     },
     {
@@ -264072,7 +264073,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L375",
+      "source_location": "L377",
       "weight": 1.0
     },
     {
@@ -264084,7 +264085,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L377",
+      "source_location": "L379",
       "weight": 1.0
     },
     {
@@ -264096,7 +264097,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L378",
+      "source_location": "L380",
       "weight": 1.0
     },
     {
@@ -264108,7 +264109,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L379",
+      "source_location": "L381",
       "weight": 1.0
     },
     {
@@ -264120,7 +264121,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L436",
+      "source_location": "L438",
       "weight": 1.0
     },
     {
@@ -264132,7 +264133,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1082",
+      "source_location": "L1084",
       "weight": 1.0
     },
     {
@@ -264144,7 +264145,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1140",
+      "source_location": "L1142",
       "weight": 1.0
     },
     {
@@ -264156,7 +264157,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1158",
+      "source_location": "L1160",
       "weight": 1.0
     },
     {
@@ -264168,7 +264169,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1159",
+      "source_location": "L1161",
       "weight": 1.0
     },
     {
@@ -264180,7 +264181,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L660",
+      "source_location": "L662",
       "weight": 1.0
     },
     {
@@ -264192,7 +264193,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L1196",
+      "source_location": "L1198",
       "weight": 1.0
     },
     {
@@ -264204,7 +264205,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L137",
+      "source_location": "L139",
       "weight": 1.0
     },
     {
@@ -264228,7 +264229,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L860",
+      "source_location": "L862",
       "weight": 1.0
     },
     {
@@ -264240,7 +264241,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L862",
+      "source_location": "L864",
       "weight": 1.0
     },
     {
@@ -264252,7 +264253,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L863",
+      "source_location": "L865",
       "weight": 1.0
     },
     {
@@ -264264,7 +264265,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L865",
+      "source_location": "L867",
       "weight": 1.0
     },
     {
@@ -264276,7 +264277,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L890",
+      "source_location": "L892",
       "weight": 1.0
     },
     {
@@ -264288,7 +264289,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L810",
+      "source_location": "L812",
       "weight": 1.0
     },
     {
@@ -264300,7 +264301,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L811",
+      "source_location": "L813",
       "weight": 1.0
     },
     {
@@ -264312,7 +264313,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "android/app/src/main/java/com/smitnk/projectgrease/ui/ProjectGreaseUI.kt",
-      "source_location": "L814",
+      "source_location": "L816",
       "weight": 1.0
     },
     {
@@ -277416,7 +277417,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L48",
+      "source_location": "L49",
       "weight": 1.0
     },
     {
@@ -277428,7 +277429,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L88",
+      "source_location": "L89",
       "weight": 1.0
     },
     {
@@ -277440,7 +277441,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "tools/run_bughunt.py",
-      "source_location": "L71",
+      "source_location": "L72",
       "weight": 1.0
     },
     {
@@ -279176,5 +279177,5 @@
       "source_file": "tools/android_gp_source_manifest.txt"
     }
   ],
-  "built_at_commit": "9c4976eed0daeb24f3496e6f664ef94c59ef210b"
+  "built_at_commit": "53624a62ca62d974245da7207e4ba9a82d9c9b2e"
 }

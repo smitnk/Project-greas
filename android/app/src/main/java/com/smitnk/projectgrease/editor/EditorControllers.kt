@@ -1522,6 +1522,13 @@ class EditorController {
         return pages
     }
 
+    /**
+     * The document to persist: the live one, or, while the surface is detached (backgrounded app:
+     * the surface can be destroyed before ON_STOP reaches the save), the snapshot taken at detach.
+     * saveDocumentJson() alone returned null then and the stop-save wrote no file.
+     */
+    fun persistableDocumentJson():String? = saveDocumentJson() ?: detachedSnapshot
+
     fun saveDocumentJson():String? {
         if (native.handle == 0L) return null
         val originalLayer = selectedLayer

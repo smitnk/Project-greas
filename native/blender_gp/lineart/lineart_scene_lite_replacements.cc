@@ -1131,8 +1131,16 @@ static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
   BLI_spin_init(&ld->lock_cuts);
   BLI_spin_init(&ld->render_data_pool.lock_mem);
 
-  /* One thread: see lineart_lite_runtime.cc. */
-  ld->thread_count = 1;
+  /* BKE_render_num_threads(): Blender uses one loader / intersection / occlusion "thread" slot per
+   * CPU. The slots matter for the result order: lineart_geometry_load_assign_thread() gives each
+   * object to the least loaded slot and pushes it at the head of that slot's list, and the slots
+   * fill triangle_buffer_pointers (and thus the intersection and chaining order) slot by slot.
+   * With a single slot every object lands in one LIFO list and loads in reverse scene order, which
+   * starts closed intersection loops at a different vertex than Blender does on a multi-core
+   * machine. 4 slots (the CPU count of the CI reference runner) reproduce Blender there; the
+   * slots still run one after another in push order (lineart_lite_runtime.cc), so the output is
+   * deterministic. */
+  ld->thread_count = 4;
 
   return ld;
 }

@@ -351,6 +351,12 @@ int pg_gp_extrude(bGPdata *gpd, const bGPDlayer *only_layer)
       if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
         for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
           if ((gps->flag & GP_STROKE_SELECT) && gps->points != NULL && gps->totpoints > 0) {
+            /* ED_gpencil_stroke_can_use (gpencil_edit.c:1298): hidden / locked materials are skipped */
+            if (gpd->mat != NULL && gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol && gpd->mat[gps->mat_nr] &&
+                gpd->mat[gps->mat_nr]->gp_style &&
+                ((gpd->mat[gps->mat_nr]->gp_style->flag & GP_MATERIAL_HIDE) ||
+                 (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (gpd->mat[gps->mat_nr]->gp_style->flag & GP_MATERIAL_LOCKED))))
+              continue;
             pe2_add_move_points(gpd, gpf, gps);
             changed = 1;
           }

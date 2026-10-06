@@ -24,7 +24,7 @@ object TimelineRules {
     const val MAX_MARKER_NAME = 63
 
     /** ed_marker_add_exec: SNPRINTF(marker->name, "F_%02d", frame). */
-    fun defaultMarkerName(frame: Int): String = "F_%02d".format(frame)
+    fun defaultMarkerName(frame: Int): String = String.format(java.util.Locale.ROOT, "F_%02d", frame)
 
     /**
      * MARKER_OT_add at [frame]: refused (null) when a marker already sits there; otherwise every

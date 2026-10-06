@@ -30,6 +30,7 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_modifier_stack2.c"
   "$ROOT/native/blender_gp/project_grease_blender_build.c"
   "$ROOT/native/blender_gp/project_grease_blender_interp.c"
+  "$ROOT/native/blender_gp/project_grease_blender_edit10.c"
   "$ROOT/native/blender_gp/project_grease_blender_mod2.c"
   "$ROOT/native/blender_gp/project_grease_curvemap.c"
   "$ROOT/native/blender_gp/project_grease_shader_fx.c"

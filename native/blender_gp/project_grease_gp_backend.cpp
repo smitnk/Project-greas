@@ -1970,68 +1970,12 @@ bool Backend::dissolve_selected_points()
     impl_->last_error = "no active frame";
     return false;
   }
-
-  bool changed = false;
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       stroke != nullptr;) {
-    bGPDstroke *next = stroke->next;
-    bool has_selected = false;
-    for (int i = 0; i < stroke->totpoints; ++i) {
-      if (stroke->points[i].flag & GP_SPOINT_SELECT) {
-        stroke->points[i].flag |= GP_SPOINT_TAG;
-        has_selected = true;
-      }
-    }
-
-    if (has_selected) {
-      // The Android closure intentionally does not link the full legacy
-      // gpencil_geom.c implementation. Compact tagged points in-place while
-      // preserving the real Blender 3.6.23 bGPDstroke/bGPDspoint layout.
-      int write_index = 0;
-      for (int read_index = 0; read_index < stroke->totpoints; ++read_index) {
-        bGPDspoint &point = stroke->points[read_index];
-        if (point.flag & GP_SPOINT_TAG) {
-          continue;
-        }
-        if (write_index != read_index) {
-          std::memcpy(&stroke->points[write_index], &point, sizeof(bGPDspoint));
-        }
-        ++write_index;
-      }
-      if (write_index != stroke->totpoints) {
-        if (write_index == 0) {
-          MEM_SAFE_FREE(stroke->points);
-          stroke->totpoints = 0;
-          stroke->flag &= ~GP_STROKE_SELECT;
-        }
-        else {
-          bGPDspoint *points = static_cast<bGPDspoint *>(
-              MEM_mallocN(sizeof(bGPDspoint) * static_cast<size_t>(write_index),
-                           "Project Grease dissolve points"));
-          if (!points) {
-            impl_->last_error = "dissolve point allocation failed";
-            return false;
-          }
-          std::memcpy(points,
-                      stroke->points,
-                      sizeof(bGPDspoint) * static_cast<size_t>(write_index));
-          MEM_freeN(stroke->points);
-          stroke->points = points;
-          stroke->totpoints = write_index;
-        }
-        MEM_SAFE_FREE(stroke->triangles);
-        stroke->tot_triangles = 0;
-        changed = true;
-      }
-    }
-    stroke = next;
-  }
-
-  if (!changed) {
-    impl_->last_error = "no selected points to dissolve";
+  // GPENCIL_OT_dissolve(type=POINTS): the port in project_grease_blender_edit.c (weights kept
+  // aligned, emptied strokes freed, selection cleared as in Blender).
+  if (!pg_gp_dissolve(impl_->gpd, impl_->layer, PG_DISSOLVE_POINTS)) {
+    impl_->last_error = "no selected strokes to dissolve";
     return false;
   }
-
   impl_->stroke = nullptr;
   BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);

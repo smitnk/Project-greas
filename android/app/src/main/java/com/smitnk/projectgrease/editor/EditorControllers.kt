@@ -2246,6 +2246,7 @@ class EditorController {
     fun toggleSelectionCaps(type:Int=ProjectGreaseSelect.CAPS_TOGGLE_BOTH) = runSelectCommand(ProjectGreaseSelect.caps(type))
     fun setSelectionStartPoint() = runSelectCommand(ProjectGreaseSelect.startSet())
     fun separateSelectionToLayer() = runSelectCommand(ProjectGreaseSelect.separateToLayer())
+    fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runSelectCommand(ProjectGreaseSelect.separate(mode))
     fun moveSelectionToLayer(index:Int) = runSelectCommand(ProjectGreaseSelect.moveToLayer(index))
     /** Copy does not change the document; call native directly so no undo step is recorded. */
     fun copySelection():Boolean = native.handle != 0L &&

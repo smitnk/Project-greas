@@ -19,6 +19,7 @@
 #include "project_grease_blender_edit8.h"
 #include "project_grease_blender_edit9.h"
 #include "project_grease_blender_interp.h"
+#include "project_grease_blender_edit10.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_tool_session.h"
 #include "project_grease_annotations.h"
@@ -497,6 +498,13 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
         const int changed = pg_gp_interp_dispatch(handle->backend.document_data(), handle->backend.active_layer_data(), args, arg_count);
         if (changed) handle->backend.sync_active_frame();
         return changed;
+      }
+      if (command >= PG_EDIT10_CMD_FIRST && command <= PG_EDIT10_CMD_LAST) {
+        return pg_gp_edit10_dispatch(handle->backend.document_data(),
+                                     handle->backend.active_layer_data(),
+                                     command,
+                                     args,
+                                     arg_count);
       }
       if (command >= PG_EDIT9_CMD_FIRST && command <= PG_EDIT9_CMD_LAST) {
         const int changed = pg_gp_edit9_dispatch(handle->backend.document_data(),

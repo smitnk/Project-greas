@@ -13,6 +13,7 @@
 #include "BLI_utildefines.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
+#include "MEM_guardedalloc.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
 
@@ -264,16 +265,100 @@ static int pe4_move_selected(bGPdata *gpd, bGPDlayer *src, bGPDlayer *dst)
   return moved;
 }
 
-/* ---- 7. Separate to a new layer (GPENCIL_OT_stroke_separate, mode LAYER) ---- */
+/* ---- 7. Separate (port of gpencil_stroke_separate_exec, modes POINT and STROKE) ----
+ * This app has one object, so the destination datablock is replaced by new layers in the same
+ * bGPdata: one per source layer with selected strokes (BKE_gpencil_layer_addnew with the source
+ * name, settings and masks copied), and per frame a destination frame with the same number.
+ * Material slots are shared, so mat_nr is kept. `only` scopes to the active layer as elsewhere. */
+int pg_gp_stroke_separate(bGPdata *gpd, const bGPDlayer *only, int mode)
+{
+  if (gpd == NULL || (mode != PG_SEPARATE_POINT && mode != PG_SEPARATE_STROKE)) return 0;
+  const bool is_multiedit = (gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
+  /* editable layers, collected first: new layers are appended to the same list */
+  int nl = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) nl++;
+  if (nl == 0) return 0;
+  bGPDlayer **layers = MEM_callocN(sizeof(bGPDlayer *) * (size_t)nl, "pg_separate_layers");
+  int n = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if ((only != NULL && gpl != only) || !BKE_gpencil_layer_is_editable(gpl)) continue;
+    layers[n++] = gpl;
+  }
+  /* Cancel if nothing selected (ED_gpencil_layer_has_selected_stroke). */
+  bool has_selected = false;
+  for (int k = 0; k < n && !has_selected; k++) {
+    bGPDlayer *gpl = layers[k];
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf && !has_selected; gpf = gpf->next) {
+      if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
+        LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+          if (gps->flag & GP_STROKE_SELECT) { has_selected = true; break; }
+        }
+      }
+      if (!is_multiedit) break;
+    }
+  }
+  if (!has_selected) { MEM_freeN(layers); return 0; }
+
+  for (int k = 0; k < n; k++) {
+    bGPDlayer *gpl = layers[k];
+    bGPDlayer *gpl_dst = NULL;
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
+        bGPDframe *gpf_dst = NULL;
+        bGPDstroke *gpsn;
+        for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gpsn) {
+          gpsn = gps->next;
+          if (!pe4_editable(gpd, gpl, gps)) continue;
+          if (!(gps->flag & GP_STROKE_SELECT)) continue;
+          if (gpl_dst == NULL) {
+            gpl_dst = BKE_gpencil_layer_addnew(gpd, gpl->info, false, false);
+            BKE_gpencil_layer_copy_settings(gpl, gpl_dst);
+            BKE_gpencil_layer_mask_copy(gpl, gpl_dst);
+          }
+          if (gpf_dst == NULL) {
+            gpf_dst = BKE_gpencil_layer_frame_get(gpl_dst, gpf->framenum, GP_GETFRAME_ADD_NEW);
+          }
+          if (mode == PG_SEPARATE_POINT) {
+            bool all_points_selected = true;
+            for (int i = 0; i < gps->totpoints; i++) {
+              if ((gps->points[i].flag & GP_SPOINT_SELECT) == 0) { all_points_selected = false; break; }
+            }
+            if (all_points_selected) {
+              gps->flag &= ~GP_STROKE_SELECT;
+              BKE_gpencil_stroke_select_index_reset(gps);
+              BLI_remlink(&gpf->strokes, gps);
+              gps->prev = gps->next = NULL;
+              BLI_addtail(&gpf_dst->strokes, gps);
+              continue;
+            }
+            bGPDstroke *gps_dst = BKE_gpencil_stroke_duplicate(gps, true, true);
+            BLI_addtail(&gpf_dst->strokes, gps_dst);
+            for (int i = 0; i < gps_dst->totpoints; i++) gps_dst->points[i].flag ^= GP_SPOINT_SELECT;
+            BKE_gpencil_stroke_delete_tagged_points(gpd, gpf_dst, gps_dst, NULL, GP_SPOINT_SELECT, false, false, 0);
+            BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, gps, gps->next, GP_SPOINT_SELECT, false, false, 0);
+          }
+          else {
+            gps->flag &= ~GP_STROKE_SELECT;
+            BKE_gpencil_stroke_select_index_reset(gps);
+            BLI_remlink(&gpf->strokes, gps);
+            gps->prev = gps->next = NULL;
+            BLI_addtail(&gpf_dst->strokes, gps);
+          }
+        }
+      }
+      if (!is_multiedit) break;
+    }
+  }
+  MEM_freeN(layers);
+  return 1; /* OPERATOR_FINISHED once something was selected */
+}
+
 int pg_gp_separate_to_layer(bGPdata *gpd, bGPDlayer *src)
 {
-  if (gpd == NULL || src == NULL || !BKE_gpencil_layer_is_editable(src) || src->actframe == NULL) return 0;
-  bool any = false;
-  LISTBASE_FOREACH (bGPDstroke *, gps, &src->actframe->strokes) any |= pe4_sel(gps);
-  if (!any) return 0;
-  bGPDlayer *dst = BKE_gpencil_layer_addnew(gpd, "Separated", false, false);
-  if (dst == NULL) return 0;
-  return pe4_move_selected(gpd, src, dst);
+  if (gpd == NULL || src == NULL) return 0;
+  return pg_gp_stroke_separate(gpd, src, PG_SEPARATE_STROKE);
 }
 
 /* ---- 8. Move to layer (GPENCIL_OT_move_to_layer) ---- */

@@ -29,6 +29,9 @@ int pg_gp_array(struct bGPdata *gpd, const struct bGPDlayer *only, int count, fl
 int pg_gp_merge_distance(struct bGPdata *gpd, const struct bGPDlayer *only, float threshold, int use_unselected);
 int pg_gp_caps_set(struct bGPdata *gpd, const struct bGPDlayer *only, int type);
 int pg_gp_start_set(struct bGPdata *gpd, const struct bGPDlayer *only);
+/* GPENCIL_OT_stroke_separate modes POINT / STROKE (into new layers of the same datablock) */
+enum { PG_SEPARATE_POINT = 0, PG_SEPARATE_STROKE = 1 };
+int pg_gp_stroke_separate(struct bGPdata *gpd, const struct bGPDlayer *only, int mode);
 int pg_gp_separate_to_layer(struct bGPdata *gpd, struct bGPDlayer *src);
 int pg_gp_move_to_layer(struct bGPdata *gpd, struct bGPDlayer *src, int target_index);
 int pg_gp_copy(struct bGPdata *gpd, const struct bGPDlayer *only);

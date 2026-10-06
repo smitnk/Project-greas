@@ -56,4 +56,8 @@ g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/te
 # Batch 21 document-state commands (edit8) against the real DNA.
 g++ "${XF[@]}" -Wall "${INC[@]}" "$ROOT/native/blender_gp/tests/test_edit8.cc" "${OBJS[@]}" \
   -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_edit8"
+# Blender ports of extrude / duplicate / dissolve / split / arrange / separate against the real DNA.
+g++ "${XF[@]}" -Wall "${INC[@]}" "$ROOT/native/blender_gp/tests/test_edit10.cc" "${OBJS[@]}" \
+  -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_edit10"
+"$OUT/test_edit10"
 "$OUT/test_edit8"

@@ -247,6 +247,23 @@ bGPDlayer *BKE_gpencil_layer_addnew(bGPdata *gpd, const char *name, bool setacti
   return l;
 }
 
+void BKE_gpencil_layer_copy_settings(const bGPDlayer *src, bGPDlayer *dst)
+{
+  dst->opacity = src->opacity;
+  dst->flag = src->flag;
+}
+void BKE_gpencil_layer_mask_copy(const bGPDlayer *src, bGPDlayer *dst) { (void)src; (void)dst; }
+bGPDframe *BKE_gpencil_layer_frame_get(bGPDlayer *gpl, int cframe, int addnew)
+{
+  LISTBASE_FOREACH (bGPDframe *, f, &gpl->frames) {
+    if (f->framenum == cframe) { gpl->actframe = f; return f; }
+  }
+  if (addnew != GP_GETFRAME_ADD_NEW) return NULL;
+  bGPDframe *f = BKE_gpencil_frame_addnew(gpl, cframe);
+  gpl->actframe = f;
+  return f;
+}
+
 void BLI_addtail(ListBase *lb, void *vlink)
 {
   Link *link = vlink;
@@ -747,8 +764,8 @@ static void test_structure_operators(void)
   bGPDstroke *b = add_stroke(f, 3, 0, 0, 50, 10, 0);
   select_points(gpd, a, (1u << 1) | (1u << 2));
   CHECK(pg_gp_duplicate(gpd, NULL) == 1, "duplicate");
-  CHECK(stroke_count(f) == 3 && a->next != b, "copy inserted right after the original");
-  bGPDstroke *copy = a->next;
+  CHECK(stroke_count(f) == 3 && a->next == b && f->strokes.last != b, "copy appended at the frame end (BLI_movelisttolist)");
+  bGPDstroke *copy = f->strokes.last;
   CHECK(copy->totpoints == 2 && NEAR(copy->points[0].x, 10) && NEAR(copy->points[1].x, 20), "copy holds only the selected points");
   CHECK(sel_mask(copy) == 3 && (copy->flag & GP_STROKE_SELECT), "the copy is selected");
   CHECK(sel_mask(a) == 0 && !(a->flag & GP_STROKE_SELECT) && a->totpoints == 5, "original kept and deselected");
@@ -786,10 +803,10 @@ static void test_structure_operators(void)
   select_points(g3, s, (1u << 2) | (1u << 3));
   CHECK(pg_gp_split(g3, NULL) == 1 && stroke_count(f3) == 2, "split creates a stroke");
   CHECK(s->totpoints == 2 && NEAR(s->points[1].x, 10), "original keeps the unselected points");
-  CHECK(s->next->totpoints == 2 && NEAR(s->next->points[0].x, 20) && sel_mask(s->next) == 3, "new stroke has the selected points, selected");
+  CHECK(s->next->totpoints == 2 && NEAR(s->next->points[0].x, 20), "new stroke has the selected points (reselection needs the real BKE tag; see test_edit10)");
   select_points(g3, s, 3);
   select_points(g3, s->next, 0);
-  CHECK(pg_gp_split(g3, NULL) == 0, "a fully selected stroke is not split");
+  CHECK(pg_gp_split(g3, NULL) == 1, "a fully selected stroke is still processed, as in Blender");
 
   /* join */
   bGPdata *g4 = make_gpd();
@@ -822,7 +839,7 @@ static void test_dissolve_keeps_weights_aligned(void)
   select_points(gpd, d, (1u << 1) | (1u << 2));
   const int frees_before = pg_test_mem_free_count;
   CHECK(pg_gp_dissolve(gpd, NULL, PG_DISSOLVE_POINTS) == 1 && d->totpoints == 2, "weighted stroke is dissolved, not skipped");
-  CHECK(pg_test_mem_free_count - frees_before == 2, "the weights of both removed points are freed (no leak)");
+  CHECK(pg_test_mem_free_count - frees_before == 4, "the old weights are all freed; kept points get copies (no leak)");
   CHECK(NEAR(d->dvert[0].dw->weight, 0.0f) && NEAR(d->dvert[1].dw->weight, 0.3f), "weights stay with their points");
   for (int i = 0; i < 2; i++) free(d->dvert[i].dw);
   free(d->dvert);
@@ -1048,7 +1065,7 @@ static void test_edit2_operators(void)
         "new end points are selected at the old end positions; old ends deselected");
   CHECK(geometry_updates == 1 && a->totpoints == 2, "only the changed stroke updated; unselected stroke untouched");
   b->flag |= GP_STROKE_CYCLIC;
-  CHECK(pg_gp_extrude(gpd, NULL) == 0, "closed strokes have no ends to extrude");
+  CHECK(pg_gp_extrude(gpd, NULL) == 1, "Blender extrudes the ends of cyclic strokes too");
 
   const float sv[5] = {1, 0, 0, 0.05f, 1};
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT2_CMD_SELECT_VCOLOR, sv, 4) == 0, "select vcolor needs 5 args");

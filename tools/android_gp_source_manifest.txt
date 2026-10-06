@@ -59,6 +59,7 @@ C|native/blender_gp/project_grease_modifier_stack.c
 C|native/blender_gp/project_grease_modifier_stack2.c
 C|native/blender_gp/project_grease_blender_build.c
 C|native/blender_gp/project_grease_blender_interp.c
+C|native/blender_gp/project_grease_blender_edit10.c
 C|native/blender_gp/project_grease_blender_mod2.c
 C|native/blender_gp/project_grease_curvemap.c
 C|native/blender_gp/project_grease_shader_fx.c

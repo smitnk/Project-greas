@@ -374,6 +374,10 @@ object ProjectGreaseSelect {
     const val CMD_MOVE_TO_LAYER = 83
     const val CMD_COPY = 84
     const val CMD_PASTE = 85
+    /** GPENCIL_OT_stroke_separate (modes POINT / STROKE) into new layers; edit10 id 135. */
+    const val CMD_SEPARATE = 135
+    const val SEPARATE_POINT = 0
+    const val SEPARATE_STROKE = 1
     const val CAPS_TOGGLE_BOTH = 0
     const val CAPS_TOGGLE_START = 1
     const val CAPS_TOGGLE_END = 2
@@ -391,6 +395,8 @@ object ProjectGreaseSelect {
         if (type in CAPS_TOGGLE_BOTH..CAPS_DEFAULT) Command(CMD_CAPS, floatArrayOf(type.toFloat())) else null
     fun startSet() = Command(CMD_START_SET, FloatArray(0))
     fun separateToLayer() = Command(CMD_SEPARATE_LAYER, FloatArray(0))
+    fun separate(mode: Int): Command? =
+        if (mode == SEPARATE_POINT || mode == SEPARATE_STROKE) Command(CMD_SEPARATE, floatArrayOf(mode.toFloat())) else null
     fun moveToLayer(index: Int): Command? = if (index >= 0) Command(CMD_MOVE_TO_LAYER, floatArrayOf(index.toFloat())) else null
     fun copy() = Command(CMD_COPY, FloatArray(0))
     fun paste() = Command(CMD_PASTE, FloatArray(0))

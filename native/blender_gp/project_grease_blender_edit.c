@@ -987,74 +987,153 @@ static void pge_insert_after(ListBase *lb, Link *prev, Link *link)
   prev->next = link;
 }
 
-/* GPENCIL_OT_stroke_arrange: later strokes draw on top, so "top" is the list tail. */
+/* list helpers with BLI_insertlinkbefore / BLI_findindex / BLI_listbase_link_move semantics */
+static void pge_insert_before(ListBase *lb, Link *next, Link *link)
+{
+  if (next == NULL) {
+    pge_insert_after(lb, (Link *)lb->last, link);
+    return;
+  }
+  pge_insert_after(lb, next->prev, link);
+}
+
+static int pge_findindex(const ListBase *lb, const void *vlink)
+{
+  int index = 0;
+  for (const Link *link = lb->first; link; link = link->next, index++) {
+    if (link == vlink) return index;
+  }
+  return -1;
+}
+
+static bool pge_link_move(ListBase *lb, Link *link, int step)
+{
+  int count = 0;
+  for (Link *l = lb->first; l; l = l->next) count++;
+  const int index = pge_findindex(lb, link);
+  if (step == 0 || index < 0 || index + step < 0 || index + step >= count) return false;
+  Link *hook = link;
+  const bool is_up = step > 0;
+  if (is_up) for (int i = 0; i < step; i++) hook = hook->next;
+  else for (int i = 0; i > step; i--) hook = hook->prev;
+  BLI_remlink(lb, link);
+  if (is_up) pge_insert_after(lb, hook, link);
+  else pge_insert_before(lb, hook, link);
+  return true;
+}
+
+/* Port of gpencil_stroke_arrange_exec() (gpencil_data.c). TOP/UP/DOWN/BOTTOM map to
+ * GP_STROKE_MOVE_TOP/UP/DOWN/BOTTOM; the list tail draws on top. `only_layer` is the operator's
+ * active layer (this app scopes edits to it). */
 int pg_gp_stroke_arrange(bGPdata *gpd, const bGPDlayer *only_layer, int direction)
 {
   if (gpd == NULL || direction < PG_ARRANGE_TOP || direction > PG_ARRANGE_BOTTOM) {
     return 0;
   }
-  int changed = 0;
+  /* sanity checks: ELEM(NULL, gpd, gpl_act, gpl_act->actframe) */
+  if (only_layer != NULL && only_layer->actframe == NULL) {
+    return 0;
+  }
   const bool is_multiedit = (gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
+  /* As in Blender, the target is not reset between frames or layers. */
+  bGPDstroke *gps_target = NULL;
+  int changed = 0;
   LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
     if (!pge_layer_in_scope(gpl, only_layer) || !BKE_gpencil_layer_is_editable(gpl)) {
       continue;
     }
-    for (bGPDframe *gpf = is_multiedit ? gpl->frames.first : gpl->actframe; gpf; gpf = gpf->next) {
-      if (!((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && is_multiedit))) {
-        continue;
-      }
-      ListBase *lb = &gpf->strokes;
-      if (direction == PG_ARRANGE_TOP || direction == PG_ARRANGE_BOTTOM) {
-        /* collect selected strokes in order, then move them as a block keeping their order */
-        ListBase moved = {NULL, NULL};
-        for (bGPDstroke *gps = lb->first, *next; gps; gps = next) {
-          next = gps->next;
-          if (pge_stroke_selected(gps) && pge_stroke_material_editable(gpd, gpl, gps)) {
-            BLI_remlink(lb, gps);
-            pge_insert_after(&moved, moved.last, (Link *)gps);
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
+        int cap = 0;
+        LISTBASE_FOREACH (bGPDstroke *, s, &gpf->strokes) cap++;
+        bGPDstroke **selected = cap ? MEM_callocN(sizeof(bGPDstroke *) * (size_t)cap, "pg_arrange") : NULL;
+        int tot = 0;
+        /* verify if any selected stroke is in the extreme of the stack and select to move */
+        for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
+          if (gps->flag & GP_STROKE_SELECT) {
+            if (pge_stroke_material_editable(gpd, gpl, gps) == false) {
+              continue;
+            }
+            bool gpf_lock = false;
+            if (ELEM(direction, PG_ARRANGE_TOP, PG_ARRANGE_UP)) {
+              if (gps == gpf->strokes.last) {
+                gpf_lock = true;
+                gps_target = gps;
+              }
+            }
+            if (ELEM(direction, PG_ARRANGE_BOTTOM, PG_ARRANGE_DOWN)) {
+              if (gps == gpf->strokes.first) {
+                gpf_lock = true;
+                gps_target = gps;
+              }
+            }
+            if (!gpf_lock && selected != NULL) {
+              selected[tot++] = gps;
+            }
           }
         }
-        if (moved.first == NULL) {
-          continue;
+
+        const int target_index = (gps_target) ? pge_findindex(&gpf->strokes, gps_target) : -1;
+        int prev_index = target_index;
+        /* Blender would link a target left over from another frame into this list (corrupting
+         * both lists); such a stale target is treated as absent for front/back here. */
+        bGPDstroke *list_target = (target_index >= 0) ? gps_target : NULL;
+        switch (direction) {
+          case PG_ARRANGE_TOP: /* Bring to Front */
+            for (int k = 0; k < tot; k++) {
+              bGPDstroke *gps = selected[k];
+              BLI_remlink(&gpf->strokes, gps);
+              if (list_target) pge_insert_before(&gpf->strokes, (Link *)list_target, (Link *)gps);
+              else pge_insert_after(&gpf->strokes, (Link *)gpf->strokes.last, (Link *)gps);
+              changed = 1;
+            }
+            break;
+          case PG_ARRANGE_UP: /* Bring Forward */
+            for (int k = tot - 1; k >= 0; k--) {
+              bGPDstroke *gps = selected[k];
+              if (gps_target) {
+                int gps_index = pge_findindex(&gpf->strokes, gps);
+                if (gps_index + 1 >= prev_index) {
+                  prev_index = gps_index;
+                  continue;
+                }
+                prev_index = gps_index;
+              }
+              pge_link_move(&gpf->strokes, (Link *)gps, 1);
+              changed = 1;
+            }
+            break;
+          case PG_ARRANGE_DOWN: /* Send Backward */
+            for (int k = 0; k < tot; k++) {
+              bGPDstroke *gps = selected[k];
+              if (gps_target) {
+                int gps_index = pge_findindex(&gpf->strokes, gps);
+                if (gps_index - 1 <= prev_index) {
+                  prev_index = gps_index;
+                  continue;
+                }
+                prev_index = gps_index;
+              }
+              pge_link_move(&gpf->strokes, (Link *)gps, -1);
+              changed = 1;
+            }
+            break;
+          case PG_ARRANGE_BOTTOM: /* Send to Back */
+            for (int k = tot - 1; k >= 0; k--) {
+              bGPDstroke *gps = selected[k];
+              BLI_remlink(&gpf->strokes, gps);
+              if (list_target) pge_insert_after(&gpf->strokes, (Link *)list_target, (Link *)gps);
+              else pge_insert_after(&gpf->strokes, NULL, (Link *)gps); /* BLI_addhead */
+              changed = 1;
+            }
+            break;
         }
-        Link *anchor = (direction == PG_ARRANGE_TOP) ? (Link *)lb->last : NULL;
-        for (Link *link = moved.first, *next; link; link = next) {
-          next = link->next;
-          pge_insert_after(lb, anchor, link);
-          anchor = link;
-        }
-        changed = 1;
+        if (selected != NULL) MEM_freeN(selected);
       }
-      else if (direction == PG_ARRANGE_UP) {
-        /* from the end: a selected stroke swaps with an unselected next one */
-        for (bGPDstroke *gps = lb->last, *prev; gps; gps = prev) {
-          prev = gps->prev;
-          bGPDstroke *next = gps->next;
-          if (pge_stroke_selected(gps) && pge_stroke_material_editable(gpd, gpl, gps) && next &&
-              !pge_stroke_selected(next))
-          {
-            BLI_remlink(lb, gps);
-            pge_insert_after(lb, (Link *)next, (Link *)gps);
-            changed = 1;
-          }
-        }
+      if (!is_multiedit) {
+        break;
       }
-      else { /* PG_ARRANGE_DOWN: from the start, swap with an unselected previous one */
-        for (bGPDstroke *gps = lb->first, *next; gps; gps = next) {
-          next = gps->next;
-          bGPDstroke *prev = gps->prev;
-          if (pge_stroke_selected(gps) && pge_stroke_material_editable(gpd, gpl, gps) && prev &&
-              !pge_stroke_selected(prev))
-          {
-            BLI_remlink(lb, gps);
-            pge_insert_after(lb, (Link *)prev->prev, (Link *)gps);
-            changed = 1;
-          }
-        }
-      }
-    }
-    if (!is_multiedit && only_layer != NULL) {
-      continue;
     }
   }
   return changed;
@@ -1182,54 +1261,192 @@ int pg_gp_snap_to_grid(bGPdata *gpd, const bGPDlayer *only_layer, float grid)
 /* ---------------------------------------------------------------------------------------- */
 /* Point/stroke structure operators (behaviour of the named 3.6.23 operators, using BKE).    */
 
-static bool pge_any_point_selected(const bGPDstroke *gps)
+/* MEM_dupallocN() of a vertex's weight array */
+static MDeformWeight *pge_dw_dup(const MDeformVert *dv)
 {
+  if (dv->dw == NULL || dv->totweight <= 0) return NULL;
+  MDeformWeight *dw = MEM_callocN(sizeof(MDeformWeight) * (size_t)dv->totweight, "pg_dw_dup");
+  memcpy(dw, dv->dw, sizeof(MDeformWeight) * (size_t)dv->totweight);
+  return dw;
+}
+
+/* gpencil_duplicate_points() (gpencil_edit.c): copies of the selected point runs of `gps`. */
+static void pge_duplicate_points(bGPdata *gpd, bGPDstroke *gps, ListBase *new_strokes, const bGPDlayer *gpl)
+{
+  int start_idx = -1;
   for (int i = 0; i < gps->totpoints; i++) {
-    if (gps->points[i].flag & GP_SPOINT_SELECT) return true;
+    const bGPDspoint *pt = &gps->points[i];
+    if (start_idx == -1) {
+      if (pt->flag & GP_SPOINT_SELECT) {
+        start_idx = i;
+      }
+    }
+    if ((start_idx != -1) || (start_idx == gps->totpoints - 1)) {
+      size_t len = 0;
+      if ((pt->flag & GP_SPOINT_SELECT) == 0) {
+        len = (size_t)(i - start_idx);
+      }
+      else if (i == gps->totpoints - 1) {
+        len = (size_t)(i - start_idx + 1);
+      }
+      if (len) {
+        /* make a copy first of the entire stroke (to get the flags too) */
+        bGPDstroke *gpsd = BKE_gpencil_stroke_duplicate(gps, false, true);
+        (void)gpl; /* runtime.tmp_layerinfo is only read by paste */
+        gpsd->points = MEM_callocN(sizeof(bGPDspoint) * len, "gps stroke points copy");
+        memcpy(gpsd->points, gps->points + start_idx, sizeof(bGPDspoint) * len);
+        gpsd->totpoints = (int)len;
+        gpsd->dvert = NULL;
+        if (gps->dvert != NULL) {
+          gpsd->dvert = MEM_callocN(sizeof(MDeformVert) * len, "gps stroke weights copy");
+          memcpy(gpsd->dvert, gps->dvert + start_idx, sizeof(MDeformVert) * len);
+          /* Copy weights. Blender 3.6 writes the copies into the SOURCE dvert with mismatched
+           * indices (dvert_dst = &gps->dvert[e], dvert_src = &gps->dvert[j]), corrupting the
+           * original's weights; here the duplicate gets its own copies and the source is kept. */
+          for (int j = 0; j < gpsd->totpoints; j++) {
+            gpsd->dvert[j].dw = pge_dw_dup(&gps->dvert[start_idx + j]);
+          }
+        }
+        BKE_gpencil_stroke_geometry_update(gpd, gpsd);
+        gpsd->next = gpsd->prev = NULL;
+        BLI_addtail(new_strokes, gpsd);
+        start_idx = -1;
+      }
+    }
   }
-  return false;
 }
 
-/* Copy `gps`, keep only its selected points (each selected run becomes its own stroke through
- * BKE_gpencil_stroke_delete_tagged_points), insert after `gps`, and return the first copy. */
-static bGPDstroke *pge_copy_selected_runs(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps)
-{
-  bGPDstroke *dup = BKE_gpencil_stroke_duplicate(gps, true, true);
-  if (dup == NULL) {
-    return NULL;
-  }
-  pge_insert_after(&gpf->strokes, (Link *)gps, (Link *)dup);
-  for (int i = 0; i < dup->totpoints; i++) {
-    if (dup->points[i].flag & GP_SPOINT_SELECT) dup->points[i].flag &= ~GP_SPOINT_TAG;
-    else dup->points[i].flag |= GP_SPOINT_TAG;
-  }
-  bGPDstroke *next = dup->next;
-  bool any_tag = false;
-  for (int i = 0; i < dup->totpoints; i++) any_tag |= (dup->points[i].flag & GP_SPOINT_TAG) != 0;
-  if (any_tag) {
-    BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, dup, next, GP_SPOINT_TAG, false, false, 0);
-  }
-  /* copies (now between gps and next) end up selected */
-  bGPDstroke *first = gps->next != next ? gps->next : NULL;
-  for (bGPDstroke *c = first; c && c != next; c = c->next) {
-    c->flag |= GP_STROKE_SELECT;
-    for (int i = 0; i < c->totpoints; i++) c->points[i].flag |= GP_SPOINT_SELECT;
-    BKE_gpencil_stroke_geometry_update(gpd, c);
-  }
-  return first;
-}
-
+/* Port of gpencil_duplicate_exec(): active frame only (no multi-frame), strokes appended to the
+ * frame end, originals deselected. */
 int pg_gp_duplicate(bGPdata *gpd, const bGPDlayer *only_layer)
 {
   if (gpd == NULL) return 0;
   int changed = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!pge_layer_in_scope(gpl, only_layer) || !BKE_gpencil_layer_is_editable(gpl)) continue;
+    ListBase new_strokes = {NULL, NULL};
+    bGPDframe *gpf = gpl->actframe;
+    if (gpf == NULL) continue;
+    for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
+      if (gps->flag & GP_STROKE_SELECT) {
+        if (gps->totpoints == 1) {
+          bGPDstroke *gpsd = BKE_gpencil_stroke_duplicate(gps, true, true);
+          BKE_gpencil_stroke_geometry_update(gpd, gpsd);
+          gpsd->next = gpsd->prev = NULL;
+          BLI_addtail(&new_strokes, gpsd);
+        }
+        else {
+          pge_duplicate_points(gpd, gps, &new_strokes, gpl);
+        }
+        for (int i = 0; i < gps->totpoints; i++) gps->points[i].flag &= ~GP_SPOINT_SELECT;
+        gps->flag &= ~GP_STROKE_SELECT;
+        BKE_gpencil_stroke_select_index_reset(gps);
+        changed = 1;
+      }
+    }
+    /* BLI_movelisttolist() */
+    for (bGPDstroke *s = new_strokes.first, *n; s; s = n) {
+      n = s->next;
+      BLI_addtail(&gpf->strokes, s);
+    }
+  }
+  return changed;
+}
+
+/* Port of gpencil_dissolve_selected_stroke_points(). */
+int pg_gp_dissolve(bGPdata *gpd, const bGPDlayer *only_layer, int type)
+{
+  if (gpd == NULL || type < PG_DISSOLVE_POINTS || type > PG_DISSOLVE_UNSELECT) return 0;
+  int changed = 0;
+  int first = 0;
+  int last = 0;
   PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!pge_stroke_selected(gps) || gps->points == NULL || !pge_any_point_selected(gps)) continue;
-    if (pge_copy_selected_runs(gpd, gpf, gps) != NULL) {
-      /* deselect the original, select the duplicate */
-      for (int i = 0; i < gps->totpoints; i++) gps->points[i].flag &= ~GP_SPOINT_SELECT;
-      gps->flag &= ~GP_STROKE_SELECT;
-      BKE_gpencil_stroke_select_index_reset(gps);
+    if (gps->flag & GP_STROKE_SELECT) {
+      int i;
+      int tot = gps->totpoints;
+      switch (type) {
+        case PG_DISSOLVE_POINTS:
+          for (i = 0; i < gps->totpoints; i++) {
+            if (gps->points[i].flag & GP_SPOINT_SELECT) tot--;
+          }
+          break;
+        case PG_DISSOLVE_BETWEEN:
+          first = -1;
+          last = 0;
+          for (i = 0; i < gps->totpoints; i++) {
+            if (gps->points[i].flag & GP_SPOINT_SELECT) {
+              if (first < 0) first = i;
+              last = i;
+            }
+          }
+          /* Blender reads points[-1] when nothing is selected (undefined behaviour); with no
+           * selected point there is no range, so nothing is removed. */
+          if (first < 0) first = last = 0;
+          for (i = first; i < last; i++) {
+            if ((gps->points[i].flag & GP_SPOINT_SELECT) == 0) tot--;
+          }
+          break;
+        default:
+          for (i = 0; i < gps->totpoints; i++) {
+            if ((gps->points[i].flag & GP_SPOINT_SELECT) == 0) tot--;
+          }
+          break;
+      }
+
+      if (tot <= 0) {
+        BLI_remlink(&gpf->strokes, gps);
+        BKE_gpencil_free_stroke(gps);
+      }
+      else {
+        bGPDspoint *new_points = MEM_callocN(sizeof(bGPDspoint) * (size_t)tot, "new gp stroke points copy");
+        MDeformVert *new_dvert = NULL;
+        if (gps->dvert != NULL) {
+          new_dvert = MEM_callocN(sizeof(MDeformVert) * (size_t)tot, "new gp stroke weights copy");
+        }
+        int n = 0;
+#define PGE_KEEP(idx) \
+  do { \
+    new_points[n] = gps->points[idx]; \
+    if (gps->dvert != NULL) { \
+      new_dvert[n] = gps->dvert[idx]; \
+      new_dvert[n].dw = pge_dw_dup(&gps->dvert[idx]); \
+    } \
+    n++; \
+  } while (0)
+        switch (type) {
+          case PG_DISSOLVE_POINTS:
+            for (i = 0; i < gps->totpoints; i++) {
+              if ((gps->points[i].flag & GP_SPOINT_SELECT) == 0) PGE_KEEP(i);
+            }
+            break;
+          case PG_DISSOLVE_BETWEEN:
+            for (i = 0; i < first; i++) PGE_KEEP(i);
+            for (i = first; i < last; i++) {
+              if (gps->points[i].flag & GP_SPOINT_SELECT) PGE_KEEP(i);
+            }
+            for (i = last; i < gps->totpoints; i++) PGE_KEEP(i);
+            break;
+          default:
+            for (i = 0; i < gps->totpoints; i++) {
+              if (gps->points[i].flag & GP_SPOINT_SELECT) PGE_KEEP(i);
+            }
+            break;
+        }
+#undef PGE_KEEP
+        if (gps->points) MEM_freeN(gps->points);
+        if (gps->dvert) {
+          for (i = 0; i < gps->totpoints; i++) MEM_SAFE_FREE(gps->dvert[i].dw); /* BKE_gpencil_free_stroke_weights */
+          MEM_freeN(gps->dvert);
+        }
+        gps->points = new_points;
+        gps->dvert = new_dvert;
+        gps->totpoints = tot;
+        BKE_gpencil_stroke_geometry_update(gpd, gps);
+        /* deselect the stroke, since none of its selected points will still be selected */
+        gps->flag &= ~GP_STROKE_SELECT;
+        BKE_gpencil_stroke_select_index_reset(gps);
+        for (i = 0; i < gps->totpoints; i++) gps->points[i].flag &= ~GP_SPOINT_SELECT;
+      }
       changed = 1;
     }
   }
@@ -1237,66 +1454,44 @@ int pg_gp_duplicate(bGPdata *gpd, const bGPDlayer *only_layer)
   return changed;
 }
 
-int pg_gp_dissolve(bGPdata *gpd, const bGPDlayer *only_layer, int type)
-{
-  if (gpd == NULL || type < PG_DISSOLVE_POINTS || type > PG_DISSOLVE_UNSELECT) return 0;
-  int changed = 0;
-  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!pge_stroke_selected(gps) || gps->points == NULL) continue;
-    int first = -1, last = -1;
-    for (int i = 0; i < gps->totpoints; i++) {
-      if (gps->points[i].flag & GP_SPOINT_SELECT) { if (first < 0) first = i; last = i; }
-    }
-    if (first < 0) continue;
-    int keep = 0;
-    for (int i = 0; i < gps->totpoints; i++) {
-      const bool sel = (gps->points[i].flag & GP_SPOINT_SELECT) != 0;
-      bool remove;
-      switch (type) {
-        case PG_DISSOLVE_POINTS: remove = sel; break;
-        case PG_DISSOLVE_BETWEEN: remove = !sel && i > first && i < last; break;
-        default: remove = !sel; break;
-      }
-      if (!remove) {
-        /* vertex weights move with their point */
-        if (gps->dvert != NULL) gps->dvert[keep] = gps->dvert[i];
-        gps->points[keep++] = gps->points[i];
-      }
-      else if (gps->dvert != NULL) {
-        MEM_SAFE_FREE(gps->dvert[i].dw); /* weights of a removed point */
-      }
-    }
-    if (keep == gps->totpoints) continue;
-    changed = 1;
-    if (keep <= 0) {
-      /* nothing left: delete the stroke */
-      BLI_remlink(&gpf->strokes, gps);
-      BKE_gpencil_free_stroke(gps);
-      continue;
-    }
-    gps->totpoints = keep;
-    BKE_gpencil_stroke_sync_selection(gpd, gps);
-    BKE_gpencil_stroke_geometry_update(gpd, gps);
-  }
-  PGE_EDITABLE_STROKES_END;
-  return changed;
-}
-
+/* Port of gpencil_stroke_split_exec(). */
 int pg_gp_split(bGPdata *gpd, const bGPDlayer *only_layer)
 {
   if (gpd == NULL) return 0;
   int changed = 0;
-  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!pge_stroke_selected(gps) || gps->points == NULL || !pge_any_point_selected(gps)) continue;
-    bool all = true;
-    for (int i = 0; i < gps->totpoints; i++) all &= (gps->points[i].flag & GP_SPOINT_SELECT) != 0;
-    if (all) continue; /* nothing to split off */
-    if (pge_copy_selected_runs(gpd, gpf, gps) == NULL) continue;
-    /* remove the selected points from the original (it may split into several strokes) */
-    BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, gps, gps->next, GP_SPOINT_SELECT, false, false, 0);
-    changed = 1;
+  const bool is_multiedit = (gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!pge_layer_in_scope(gpl, only_layer) || !BKE_gpencil_layer_is_editable(gpl)) continue;
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
+        bGPDstroke *gpsn;
+        for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gpsn) {
+          gpsn = gps->next;
+          if (pge_stroke_material_editable(gpd, gpl, gps) == false) continue;
+          if (gps->flag & GP_STROKE_SELECT) {
+            bGPDstroke *gps_dst = BKE_gpencil_stroke_duplicate(gps, true, true);
+            BLI_addtail(&gpf->strokes, gps_dst);
+            for (int i = 0; i < gps_dst->totpoints; i++) gps_dst->points[i].flag ^= GP_SPOINT_SELECT;
+            BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, gps_dst, NULL, GP_SPOINT_SELECT, true, false, 0);
+            BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, gps, gps->next, GP_SPOINT_SELECT, false, false, 0);
+            changed = 1;
+          }
+        }
+        /* select again tagged points */
+        LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+          for (int i2 = 0; i2 < gps->totpoints; i2++) {
+            bGPDspoint *ptn = &gps->points[i2];
+            if (ptn->flag & GP_SPOINT_TAG) {
+              ptn->flag |= GP_SPOINT_SELECT;
+              ptn->flag &= ~GP_SPOINT_TAG;
+            }
+          }
+        }
+      }
+      if (!is_multiedit) break;
+    }
   }
-  PGE_EDITABLE_STROKES_END;
   return changed;
 }
 

@@ -42,6 +42,10 @@ enum {
   PG_TOOL_P_TARGET,      /* vertex paint GPPAINT_MODE_*; weight paint vertex group */
   PG_TOOL_P_WEIGHT,      /* weight paint target weight */
   PG_TOOL_P_SEED,
+  PG_TOOL_P_AUTOMASK,        /* sculpt: GP_SCULPT_SETT_FLAG_AUTOMASK_* bits (ToolSettings gp_sculpt.flag) */
+  PG_TOOL_P_SELECT_MASK,     /* sculpt / vertex paint: GP_SCULPT_MASK_SELECTMODE_* / GP_VERTEX_MASK_SELECTMODE_* */
+  PG_TOOL_P_CURVE_PRESET,    /* brush falloff: eBrushCurvePreset (0 = keep the tool's default) */
+  PG_TOOL_P_ACTIVE_MATERIAL, /* 0-based active material slot (Active Material auto-masking) */
   PG_TOOL_P_COUNT
 };
 
@@ -78,7 +82,11 @@ enum {
   PG_DRAW_P_PRESSURE_CURVE_XY,
   PG_DRAW_P_STRENGTH_CURVE_N = PG_DRAW_P_PRESSURE_CURVE_XY + 16,
   PG_DRAW_P_STRENGTH_CURVE_XY,
-  PG_DRAW_P_COUNT = PG_DRAW_P_STRENGTH_CURVE_XY + 16
+  /* region pixels per canvas unit (view zoom): gpencil_paint.c compares mval distances in pixels */
+  PG_DRAW_P_PX_PER_UNIT = PG_DRAW_P_STRENGTH_CURVE_XY + 16,
+  /* jitter BLI_rng seed + 1; 0 = seed like gpencil_paint_initstroke() (time ^ pointer) */
+  PG_DRAW_P_SEED,
+  PG_DRAW_P_COUNT
 };
 
 /* Where Draw puts its points: the backend's stroke buffer (sbuffer). Return 0 on failure. */

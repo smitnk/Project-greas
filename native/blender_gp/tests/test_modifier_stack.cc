@@ -16,6 +16,7 @@
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 #include "MEM_guardedalloc.h"
+#include "project_grease_blender_interp.h"
 #include "project_grease_modifier_stack.h"
 
 static int failures = 0;
@@ -78,7 +79,7 @@ static void free_doc(Doc &d)
 }
 
 struct Pt {
-  float v[11];
+  float v[13]; /* ..., thickness, uv_fac, uv_rot */
 };
 static std::vector<std::vector<Pt>> snapshot(const bGPDframe *gpf)
 {
@@ -88,7 +89,7 @@ static std::vector<std::vector<Pt>> snapshot(const bGPDframe *gpf)
     for (int i = 0; i < gps->totpoints; i++) {
       const bGPDspoint *p = &gps->points[i];
       Pt q = {{p->x, p->y, p->z, p->pressure, p->strength, p->time, p->vert_color[0],
-               p->vert_color[1], p->vert_color[2], p->vert_color[3], (float)gps->thickness}};
+               p->vert_color[1], p->vert_color[2], p->vert_color[3], (float)gps->thickness, p->uv_fac, p->uv_rot}};
       s.push_back(q);
     }
     out.push_back(s);
@@ -154,13 +155,15 @@ static PGModEntry tuned(int type)
                       p[PG_P_HOOK_STRENGTH] = 1.0f; break;
     case PG_MOD_LATTICE: p[PG_P_LATTICE_X0] = 0; p[PG_P_LATTICE_Y0] = 0; p[PG_P_LATTICE_X1] = 200;
                          p[PG_P_LATTICE_Y1] = 200; p[PG_P_LATTICE_OFFSETS + 8] = 15; break; /* centre node of 3x3 */
+    case PG_MOD_TEXTURE: p[PG_P_TEXTURE_UV_SCALE] = 2.0f; p[PG_P_TEXTURE_ALIGN_ROT] = 0.3f; break;
   }
   return e;
 }
 /* Types whose effect is not a change of the evaluated points at cfra 1 (checked on their own). */
 static bool point_changing(int t)
 {
-  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_PROX && t != PG_MOD_WEIGHT_ANGLE;
+  /* Texture Mapping only changes uv data (test_texture_modifier) */
+  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_PROX && t != PG_MOD_WEIGHT_ANGLE && t != PG_MOD_TEXTURE;
 }
 
 static void test_type_info()
@@ -431,13 +434,15 @@ static void test_batch21()
     b.params[PG_P_BUILD_LENGTH] = 10;
     auto none = eval(d, &b, 1, 1);
     CHECK(none.empty());
-    auto half = eval(d, &b, 1, 6);
+    /* Blender ends the build at the next key (frame 5) when it comes before start + length */
+    auto half = eval(d, &b, 1, 3);
     size_t pts = 0; for (auto &s : half) pts += s.size();
-    CHECK(pts == 8); /* ceil(0.5 * 16) sequential */
+    CHECK(pts == 9); /* last_visible round(0.5 * 16) = 8 covers stroke 0 (indices 0..8), stroke 1 starts at 9 */
     CHECK(same(eval(d, &b, 1, 11), snapshot(d.f1)));
     b.params[PG_P_BUILD_MODE] = 1; /* concurrent: both strokes grow */
-    auto conc = eval(d, &b, 1, 6);
-    CHECK(conc.size() == 2 && conc[0].size() == 5 && conc[1].size() == 4);
+    auto conc = eval(d, &b, 1, 3);
+    /* start alignment: round(0.5 * 9) = 5 and round(0.5 * 9 / 7 * 7) = 5 */
+    CHECK(conc.size() == 2 && conc[0].size() == 5 && conc[1].size() == 5);
     free_doc(d);
   }
   /* Vertex weight proximity / angle write the target group on the copies only */
@@ -516,8 +521,157 @@ static void test_batch21()
   CHECK(p[PG_P_CURVE_BASE] == 0 && p[PG_P_FILTER_BASE] == 0 && pg_mod_own_param_count(PG_MOD_HOOK) == PG_P_HOOK_COUNT);
 }
 
+/* Build ported from MOD_gpencil_legacy_build.c: Additive keeps the previous key's strokes, Fade. */
+static bGPDstroke *line_stroke(bGPDframe *f, int n)
+{
+  bGPDstroke *gps = BKE_gpencil_stroke_add(f, 0, n, 10, false);
+  for (int i = 0; i < n; i++) {
+    gps->points[i].x = 10.0f * i; gps->points[i].y = 0.0f; gps->points[i].z = 0.0f;
+    gps->points[i].pressure = 1.0f; gps->points[i].strength = 1.0f;
+  }
+  return gps;
+}
+static void test_build_blender()
+{
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *f1 = BKE_gpencil_frame_addnew(gpl, 1);
+  bGPDframe *f11 = BKE_gpencil_frame_addnew(gpl, 11);
+  line_stroke(f1, 4);
+  for (int k = 0; k < 3; k++) line_stroke(f11, 4);
+  PGModEntry b = entry(PG_MOD_BUILD);
+  b.params[PG_P_BUILD_LENGTH] = 10;
+  auto run = [&](int cfra) { bGPDframe ev; pg_mod_eval_frame(gpd, gpl, f11, &b, 1, cfra, &ev); auto r = snapshot(&ev); pg_mod_eval_free(&ev); return r; };
+  /* sequential at fac 0.5: 12 points, last_visible 6 -> 4 + 2 points, third stroke cleared */
+  auto seq = run(16);
+  CHECK(seq.size() == 2 && seq[0].size() == 4 && seq[1].size() == 2);
+  /* additive: the first stroke (already on frame 1) stays, the 2 new ones build over 8 points */
+  b.params[PG_P_BUILD_MODE] = 2;
+  auto add = run(16);
+  CHECK(add.size() == 2 && add[0].size() == 4 && add[1].size() == 4);
+  auto add0 = run(11);
+  CHECK(add0.size() == 1); /* fac 0: only the previous key's stroke */
+  /* vanish removes from the start */
+  b.params[PG_P_BUILD_MODE] = 0; b.params[PG_P_BUILD_TRANSITION] = 2;
+  auto van = run(16);
+  /* Blender keeps end_idx - first_visible points (7 - 6 = 1) of the partly hidden stroke */
+  CHECK(van.size() == 2 && van[0].size() == 1 && van[1].size() == 4 && near(van[0][0].v[0], 30.0f));
+  /* fade: one 10 point stroke at fac 0.5, fade_fac 0.5 -> 8 visible, opacity ramps 1 .. 0.2 over 3..7 */
+  bGPDframe *f21 = BKE_gpencil_frame_addnew(gpl, 21);
+  line_stroke(f21, 10);
+  PGModEntry fd = entry(PG_MOD_BUILD);
+  fd.params[PG_P_BUILD_LENGTH] = 10;
+  fd.params[PG_P_BUILD_USE_FADE] = 1; fd.params[PG_P_BUILD_FADE_FAC] = 0.5f; fd.params[PG_P_BUILD_FADE_OPACITY] = 1.0f;
+  bGPDframe ev;
+  pg_mod_eval_frame(gpd, gpl, f21, &fd, 1, 26, &ev);
+  const bGPDstroke *s = static_cast<const bGPDstroke *>(ev.strokes.first);
+  CHECK(s && s->totpoints == 8 && near(s->points[0].strength, 1.0f) && near(s->points[3].strength, 1.0f) &&
+        near(s->points[7].strength, 0.2f, 1e-4f) && near(s->points[5].strength, 0.6f, 1e-4f));
+  pg_mod_eval_free(&ev);
+  BKE_gpencil_free_layers(&gpd->layers);
+  MEM_freeN(gpd);
+}
+
+/* Interpolation (gpencil_interpolate.c): pairing by position, unpaired strokes skipped, flip modes,
+ * point counts matched, sequence in-betweens are breakdown keys. */
+static void no_cache(bGPdata *) {}
+static void test_interpolate_blender()
+{
+  BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *f1 = BKE_gpencil_frame_addnew(gpl, 1);
+  bGPDframe *f5 = BKE_gpencil_frame_addnew(gpl, 5);
+  gpl->actframe = f1;
+  line_stroke(f1, 4);                 /* x 0..30 left to right */
+  bGPDstroke *b = line_stroke(f5, 4); /* same, drawn right to left and moved down 40 */
+  for (int i = 0; i < 4; i++) { b->points[i].x = 30.0f - 10.0f * i; b->points[i].y = 40.0f; }
+  line_stroke(f5, 6);                 /* unpaired: no partner on frame 1 */
+  PGInterpSettings st;
+  memset(&st, 0, sizeof(st));
+  st.step = 1; st.flipmode = PG_INTERP_FLIPAUTO; st.smooth_steps = 1; st.single = 0; st.factor = -1;
+  CHECK(pg_interp_need_flip(static_cast<bGPDstroke *>(f1->strokes.first), b) == 1);
+  CHECK(pg_gp_interpolate_run(gpd, gpl, 2, &st) == 3); /* frames 2, 3, 4, one stroke each */
+  bGPDframe *f3 = BKE_gpencil_layer_frame_find(gpl, 3);
+  CHECK(f3 && f3->key_type == BEZT_KEYTYPE_BREAKDOWN && BLI_listbase_count(&f3->strokes) == 1);
+  const bGPDstroke *m = static_cast<const bGPDstroke *>(f3->strokes.first);
+  /* auto flip: the start follows the start, so x stays 0 at the first point and y is half way */
+  CHECK(near(m->points[0].x, 0.0f) && near(m->points[0].y, 20.0f) && near(m->points[3].x, 30.0f));
+  /* no flip: the first point travels to the other end */
+  /* drop the in-betweens */
+  for (int fn = 2; fn <= 4; fn++) {
+    bGPDframe *x = BKE_gpencil_layer_frame_find(gpl, fn);
+    if (x) BKE_gpencil_layer_frame_delete(gpl, x);
+  }
+  st.flipmode = PG_INTERP_NOFLIP; st.single = 1; st.factor = 0.5f;
+  CHECK(pg_gp_interpolate_run(gpd, gpl, 3, &st) == 1);
+  f3 = BKE_gpencil_layer_frame_find(gpl, 3);
+  m = static_cast<const bGPDstroke *>(f3->strokes.first);
+  CHECK(near(m->points[0].x, 15.0f) && near(m->points[3].x, 15.0f));
+  /* different point counts are resampled to the larger count */
+  bGPDframe *f9 = BKE_gpencil_frame_addnew(gpl, 9);
+  line_stroke(f9, 8);
+  st.single = 1; st.factor = 0.5f; st.flipmode = PG_INTERP_NOFLIP;
+  gpl->actframe = f5; /* Blender takes the active frame as the previous key when it is before cfra */
+  CHECK(pg_gp_interpolate_run(gpd, gpl, 7, &st) == 1); /* the second stroke of frame 5 has no partner: skipped */
+  bGPDframe *f7 = BKE_gpencil_layer_frame_find(gpl, 7);
+  CHECK(f7 && static_cast<const bGPDstroke *>(f7->strokes.first)->totpoints == 8);
+  BKE_gpencil_free_layers(&gpd->layers);
+  MEM_freeN(gpd);
+}
+
+/* Texture Mapping (deformStroke): fit stroke divides uv_fac by the length, then scale, offset,
+ * alignment rotation; fill mode moves the stroke's fill uv transform. */
+static void test_texture_modifier()
+{
+  Doc d = make_pair_doc(1); /* one 2-point stroke, length hypot(60, 60) */
+  PGModEntry t = entry(PG_MOD_TEXTURE);
+  t.params[PG_P_TEXTURE_MODE] = 2;
+  t.params[PG_P_TEXTURE_FIT] = 0; /* GP_TEX_FIT_STROKE */
+  t.params[PG_P_TEXTURE_UV_SCALE] = 2.0f;
+  t.params[PG_P_TEXTURE_UV_OFFSET] = 0.25f;
+  t.params[PG_P_TEXTURE_ALIGN_ROT] = 0.5f;
+  t.params[PG_P_TEXTURE_FILL_ROT] = 0.3f;
+  t.params[PG_P_TEXTURE_FILL_OFFSET_X] = 0.1f;
+  t.params[PG_P_TEXTURE_FILL_SCALE] = 3.0f;
+  bGPDframe ev;
+  pg_mod_eval_frame(d.gpd, d.gpl, d.f1, &t, 1, 1, &ev);
+  const bGPDstroke *s = static_cast<const bGPDstroke *>(ev.strokes.first);
+  /* geometry update sets uv_fac to the running length: 0 and 84.85 */
+  const float len = hypotf(60.0f, 60.0f);
+  CHECK(s && near(s->points[0].uv_fac, 0.25f) && near(s->points[1].uv_fac, len / len * 2.0f + 0.25f, 1e-3f) &&
+        near(s->points[1].uv_rot, 0.5f) && near(s->uv_rotation, 0.3f) && near(s->uv_translation[0], 0.1f) &&
+        near(s->uv_scale, 3.0f));
+  pg_mod_eval_free(&ev);
+  free_doc(d);
+}
+
+/* Length random (applyLength): rand_start_fac / rand_end_fac add a per-stroke offset in [0, 2) *
+ * factor; the same seed gives the same result, another seed a different one. */
+static void test_length_random()
+{
+  Doc d = make_doc();
+  PGModEntry e = entry(PG_MOD_LENGTH);
+  e.params[PG_P_LENGTH_START] = 0.0f; e.params[PG_P_LENGTH_END] = 0.0f;
+  auto base = eval(d, &e, 1, 1);
+  e.params[PG_P_LENGTH_RAND_START] = 0.3f; e.params[PG_P_LENGTH_RAND_END] = 0.3f; e.params[PG_P_LENGTH_SEED] = 5;
+  auto r1 = eval(d, &e, 1, 1), r2 = eval(d, &e, 1, 1);
+  CHECK(same(r1, r2));      /* deterministic */
+  CHECK(!same(r1, base));   /* the random offsets lengthen the strokes */
+  e.params[PG_P_LENGTH_SEED] = 9;
+  CHECK(!same(eval(d, &e, 1, 1), r1));
+  /* GP_LENGTH_USE_RANDOM: changes every `step` frames */
+  e.params[PG_P_LENGTH_USE_RANDOM] = 1; e.params[PG_P_LENGTH_STEP] = 4;
+  CHECK(same(eval(d, &e, 1, 1), eval(d, &e, 1, 2)) && !same(eval(d, &e, 1, 1), eval(d, &e, 1, 4)));
+  free_doc(d);
+}
+
 int main()
 {
+  test_length_random();
+  test_texture_modifier();
+  test_interpolate_blender();
+  test_build_blender();
   test_type_info();
   test_batch21();
   test_originals_untouched_and_changed();

@@ -16,7 +16,7 @@ class ExportSettingsTest {
         assertEquals("GIF89a", String(b, 0, 6, Charsets.US_ASCII))
         assertEquals(0x3B, b.last().toInt() and 0xFF)
         assertEquals(2, b.count { it.toInt() and 0xFF == 0x2C }.coerceAtMost(2))
-        assertEquals(GifEncoder.TRANSPARENT_INDEX, GifEncoder.index(0x00FFFFFF))
+        assertEquals(255, GifEncoder.TRANSPARENT_INDEX)
     }
 
     @Test

@@ -51,7 +51,13 @@ class MaterialRecord(
     val mode: Int = 0,
     val alignment: Int = 0,
     val rotation: Float = 0f,
-    val passIndex: Int = 0
+    val passIndex: Int = 0,
+    /** Gradient fill: [type, mix r, g, b, a, mix factor, angle, scale x, y, offset x, y, flip], null when off. */
+    val gradient: FloatArray? = null,
+    /** Stroke holdout, fill holdout, self overlap (GP_MATERIAL_IS_*_HOLDOUT, GP_MATERIAL_DISABLE_STENCIL). */
+    val strokeHoldout: Boolean = false,
+    val fillHoldout: Boolean = false,
+    val selfOverlap: Boolean = false
 )
 
 /** What the save/load code needs from the native document; the real one is [NativeDocumentAdapter]. */
@@ -127,6 +133,8 @@ class ParsedDocument(
     val frameEnd: Int = 0,
     val vertexGroups: List<String> = emptyList(),
     val activeVertexGroup: Int = -1,
+    /** Scene markers and preview range ("markers" / "previewRange"); empty for older files. */
+    val timeline: TimelineState = TimelineState(),
     /** null when the file has no "layers" key at all. */
     val layers: List<ParsedLayer>?
 )
@@ -145,7 +153,8 @@ object ProjectDocumentCodec {
     const val VERSION = 6
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
-    fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0): String {
+    fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0,
+               timeline: TimelineState = TimelineState()): String {
         val root = JSONObject()
         root.put("version", VERSION)
         root.put("width", width)
@@ -153,6 +162,10 @@ object ProjectDocumentCodec {
         root.put("fps", fps)
         root.put("frame", frame)
         if (frameEnd > 0) root.put("frameEnd", frameEnd)
+        TimelineRules.toJson(timeline).let { (markers, preview) ->
+            markers?.let { root.put("markers", it) }
+            preview?.let { root.put("previewRange", it) }
+        }
 
         val materials = JSONArray()
         for (i in 0 until native.materialCount()) {
@@ -232,6 +245,7 @@ object ProjectDocumentCodec {
                 (0 until a.length()).map { a.optString(it, "").ifEmpty { "Group" } }
             } ?: emptyList(),
             activeVertexGroup = root.optInt("activeVertexGroup", -1),
+            timeline = TimelineRules.fromJson(root.optJSONArray("markers"), root.optJSONObject("previewRange")),
             layers = layers
         )
     }
@@ -365,7 +379,11 @@ object ProjectDocumentCodec {
         mode = json.optInt("mode", 0).coerceIn(0, 2),
         alignment = json.optInt("alignment", 0).coerceIn(0, 2),
         rotation = json.optDouble("rotation", 0.0).toFloat().takeIf { it.isFinite() } ?: 0f,
-        passIndex = json.optInt("pass", 0)
+        passIndex = json.optInt("pass", 0),
+        gradient = json.optJSONArray("gradient")?.let { g -> floats(g, 12).takeIf { a -> a.all { it.isFinite() } } },
+        strokeHoldout = json.optBoolean("strokeHoldout", false),
+        fillHoldout = json.optBoolean("fillHoldout", false),
+        selfOverlap = json.optBoolean("selfOverlap", false)
     )
 
     private fun strokeJson(stroke: StrokeRecord): JSONObject {
@@ -406,6 +424,10 @@ object ProjectDocumentCodec {
             if (material.alignment != 0) put("alignment", material.alignment)
             if (material.rotation != 0f) put("rotation", num(material.rotation))
             if (material.passIndex != 0) put("pass", material.passIndex)
+            material.gradient?.let { put("gradient", floatsJson(it)) }
+            if (material.strokeHoldout) put("strokeHoldout", true)
+            if (material.fillHoldout) put("fillHoldout", true)
+            if (material.selfOverlap) put("selfOverlap", true)
         }
 
     private fun floatsJson(values: FloatArray) = JSONArray().apply { for (v in values) put(num(v)) }

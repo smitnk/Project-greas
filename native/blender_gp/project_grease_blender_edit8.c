@@ -294,6 +294,18 @@ int pg_gp_doc_query(const bGPdata *gpd, const bGPDlayer *active, int what, const
       PUT((st->flag & GP_MATERIAL_LOCKED) ? 1 : 0);
       PUT((st->flag & GP_MATERIAL_HIDE) ? 1 : 0);
       PUT(st->index);
+      /* 6..21: gradient fill and material options (pg_gp_material_gradient_set / options_set) */
+      PUT(st->fill_style == GP_MATERIAL_FILL_STYLE_GRADIENT ? 1 : 0);
+      PUT(st->gradient_type);
+      for (int c = 0; c < 4; c++) PUT(st->mix_rgba[c]);
+      PUT(st->mix_factor);
+      PUT(st->texture_angle);
+      PUT(st->texture_scale[0]); PUT(st->texture_scale[1]);
+      PUT(st->texture_offset[0]); PUT(st->texture_offset[1]);
+      PUT((st->flag & GP_MATERIAL_FLIP_FILL) ? 1 : 0);
+      PUT((st->flag & GP_MATERIAL_IS_STROKE_HOLDOUT) ? 1 : 0);
+      PUT((st->flag & GP_MATERIAL_IS_FILL_HOLDOUT) ? 1 : 0);
+      PUT((st->flag & GP_MATERIAL_DISABLE_STENCIL) ? 1 : 0);
       break;
     }
     case PG_DOC_Q_SELECTED_STROKES: {

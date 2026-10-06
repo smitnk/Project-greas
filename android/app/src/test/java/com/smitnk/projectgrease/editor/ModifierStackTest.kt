@@ -78,7 +78,8 @@ class ModifierStackTest {
             ModifierType.NOISE to "NOISE", ModifierType.BUILD to "BUILD", ModifierType.TIME to "TIME",
             ModifierType.HOOK to "HOOK", ModifierType.ENVELOPE to "ENVELOPE", ModifierType.WEIGHT_PROXIMITY to "WPROX",
             ModifierType.WEIGHT_ANGLE to "WANGLE", ModifierType.DASH to "DASH", ModifierType.OUTLINE to "OUTLINE",
-            ModifierType.MIRROR to "MIRROR", ModifierType.ARRAY to "ARRAY", ModifierType.MULTIPLY to "MULTIPLY"
+            ModifierType.MIRROR to "MIRROR", ModifierType.ARRAY to "ARRAY", ModifierType.MULTIPLY to "MULTIPLY",
+            ModifierType.TEXTURE to "TEXTURE"
         )
         assertEquals(ModifierType.all.size, byType.size + 1) // + Lattice, whose count is an expression
         for ((type, key) in byType) {

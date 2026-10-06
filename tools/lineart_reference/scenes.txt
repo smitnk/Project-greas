@@ -10,3 +10,43 @@ occluder_front  occluder_front.obj persp 50 6 0.07 0.05 12 0  0    1920 1080 1
 intersect       intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0
 sphere_smooth   sphere.obj     persp 50 6  0.5  0.3  8  0   0    1920 1080 0
 wire            wire.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 0
+# Line Art options: optional key=value tokens after level_end, applied the same way by
+# blender_reference.py and test_lineart_reference.c (scenes with options compare strokes only):
+#   types=a+b+...   line types: contour crease material edge_mark intersection loose light_contour shadow
+#   crease=DEG      crease threshold          level=N / levels=S:E   single level / range
+#   usage:OBJ=U     object line art usage     coll:OBJ=C  move OBJ into a new collection C
+#   collusage:C=U   collection usage          collmask:C=BITS  collection intersection mask
+#   matmask:M=BITS  material mask bits        matocc:M=N  material occlusion
+#   maskswitch=N    1 material mask, 2 match, 4 intersection match
+#   maskbits=BITS   modifier material mask    isectmask=BITS  modifier intersection mask
+#   chain=T  smooth=T  loosechain=1  geomchain=1   chaining options
+#   light=sun|point:YAW:PITCH:DIST   light_contour_object placed on the camera orbit
+#   shadowsel=N  silhouette=N  source=object:NAME|collection:NAME  invertcoll=1
+usage_exclude   intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0 usage:B=EXCLUDE
+usage_occlusion occluder.obj   persp 50 6  0.3  0.35 12 0   0    1920 1080 0 usage:Plane=OCCLUSION_ONLY
+usage_no_isect  intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 1 usage:B=NO_INTERSECTION
+usage_isect_only intersect.obj persp 50 6  0.8  0.45 12 0   0    1920 1080 1 usage:B=INTERSECTION_ONLY
+coll_exclude    intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0 coll:B=Hidden collusage:Hidden=EXCLUDE
+coll_occlusion  occluder.obj   persp 50 6  0.3  0.35 12 0   0    1920 1080 0 coll:Plane=Occ collusage:Occ=OCCLUSION_ONLY
+isect_mask      intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 1 types=intersection coll:B=M collmask:M=1 isectmask=1
+isect_mask_out  intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 1 types=intersection coll:B=M collmask:M=1 isectmask=2
+crease_small    cube.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 0 crease=30
+crease_large    sphere.obj     persp 50 6  0.5  0.3  8  0   0    1920 1080 0 crease=175
+material_lines  materials.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0 types=contour+crease+material+loose
+material_mask   materials.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 1 matmask:Red=1 maskswitch=1 maskbits=1
+material_match  materials.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 1 matmask:Red=3 maskswitch=3 maskbits=3
+material_occ0   materials.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 1 matocc:Blue=0
+level_single    cube.obj       persp 50 6  0.8  0.45 12 0   0    1920 1080 1 level=1
+level_range     occluder.obj   persp 50 6  0.3  0.35 12 0   0    1920 1080 2 levels=1:2
+chain_gap       wire_gap.obj   persp 50 6  0.8  0.45 12 0   0    1920 1080 0 chain=0.01 loosechain=1
+chain_gap_off   wire_gap.obj   persp 50 6  0.8  0.45 12 0   0    1920 1080 0 chain=0.01
+chain_geometry  wire_gap.obj   persp 50 6  0.8  0.45 12 0   0    1920 1080 0 chain=0.01 loosechain=1 geomchain=1
+chain_smooth    sphere.obj     persp 50 6  0.5  0.3  8  0   0    1920 1080 0 smooth=0.5
+shadow_sun      shadow.obj     persp 50 6  0.8  0.45 12 0   0    1920 1080 0 types=contour+crease+loose+intersection+light_contour+shadow light=sun:0.4:1.2:12
+shadow_point    shadow.obj     persp 50 6  0.8  0.45 12 0   0    1920 1080 0 types=contour+crease+loose+intersection+light_contour+shadow light=point:0.4:1.2:12
+shadow_lit      shadow.obj     persp 50 6  0.8  0.45 12 0   0    1920 1080 0 types=contour+crease+light_contour+shadow light=sun:0.4:1.2:12 shadowsel=1
+shadow_shaded   shadow.obj     persp 50 6  0.8  0.45 12 0   0    1920 1080 0 types=contour+crease+light_contour+shadow light=sun:0.4:1.2:12 shadowsel=2
+shadow_enclosed shadow.obj     persp 50 6  0.8  0.45 12 0   0    1920 1080 0 types=contour+crease+light_contour+shadow light=sun:0.4:1.2:12 shadowsel=3
+silhouette      occluder.obj   persp 50 6  0.3  0.35 12 0   0    1920 1080 0 silhouette=1
+source_object   intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0 source=object:A
+source_coll_inv intersect.obj  persp 50 6  0.8  0.45 12 0   0    1920 1080 0 coll:B=G source=collection:G invertcoll=1

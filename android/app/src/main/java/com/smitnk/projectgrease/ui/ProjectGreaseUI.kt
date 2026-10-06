@@ -538,13 +538,19 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             FilterChip(selected=controller.fillBoundary==value,onClick={controller.setFillOptions(boundary=value);redraw()},
                 label={Text(label,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
         }
-        Text("Leak "+controller.fillLeak+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(64.dp))
-        Slider(controller.fillLeak.toFloat(),{controller.setFillOptions(leak=it.toInt());redraw()},valueRange=1f..20f,modifier=Modifier.width(120.dp))
+        // Leak 0 = Blender's own leak size, ceil(3 x Precision).
+        Text(if(controller.fillLeak==0)"Leak auto" else "Leak "+controller.fillLeak+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(64.dp))
+        Slider(controller.fillLeak.toFloat(),{controller.setFillOptions(leak=it.toInt());redraw()},valueRange=0f..20f,modifier=Modifier.width(120.dp))
+        // Precision (fill_factor): resolution of the fill image.
+        Text("Precision "+"%.2f".format(controller.fillPrecision),fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(84.dp))
+        Slider(controller.fillPrecision,{controller.setFillPrecision(value=it);redraw()},valueRange=0.05f..8f,modifier=Modifier.width(120.dp))
         Text("Dilate "+controller.fillDilate+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
         Slider(controller.fillDilate.toFloat(),{controller.setFillOptions(dilate=Math.round(it));redraw()},valueRange=-10f..10f,modifier=Modifier.width(120.dp))
         // Extend Lines (fill_extend_fac): open stroke ends are prolonged in the fill boundary.
         Text("Extend "+"%.2f".format(controller.fillExtend),fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
-        Slider(controller.fillExtend,{controller.setFillExtend(it);redraw()},valueRange=0f..1f,modifier=Modifier.width(120.dp))
+        Slider(controller.fillExtend,{controller.setFillExtend(it);redraw()},valueRange=0f..10f,modifier=Modifier.width(120.dp))
+        FilterChip(selected=controller.fillCollide,onClick={controller.setFillPrecision(collide=!controller.fillCollide);redraw()},
+            label={Text("Collide",fontSize=10.sp)},modifier=Modifier.padding(start=3.dp))
     }
 }
 
@@ -597,7 +603,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                         com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_BLUR to "Blur",
                         com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_AVERAGE to "Average",
                         com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_SMEAR to "Smear",
-                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_REPLACE to "Replace"
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_REPLACE to "Replace",
+                        com.smitnk.projectgrease.editor.ProjectGreaseSelect.VPAINT_TINT to "Tint"
                     ).forEach { (brush,label) ->
                         FilterChip(
                             selected=controller.vertexPaintBrush == brush,
@@ -625,6 +632,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             if (controller.mode == GreaseMode.WEIGHT_PAINT) {
                 WeightPaintBar(controller,redraw)
             }
+            if (controller.mode == GreaseMode.VERTEX_PAINT || controller.mode == GreaseMode.WEIGHT_PAINT) PaintOptionsBar(controller,redraw)
+            if (controller.mode == GreaseMode.DRAW || controller.mode == GreaseMode.VERTEX_PAINT) VertexPaletteBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ANNOTATE) AnnotationBar(controller,redraw)
             if (controller.mode == GreaseMode.EDIT) {
                 Row(
@@ -744,6 +753,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @OptIn(ExperimentalLayoutApi::class)
 @NonSkippableComposable
 @Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
+    var markersOpen by remember{mutableStateOf(false)}
+    var previewOpen by remember{mutableStateOf(false)}
     Surface(tonalElevation=4.dp){
         Column(Modifier.fillMaxWidth()){
             // Wrapping rows (no side-scroll strip): every timeline action stays reachable on narrow screens.
@@ -773,20 +784,37 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     modifier=Modifier.testTag("interpolateSequence")){Text("Interpolate sequence")}
                 FilterChip(selected=controller.multiframeEditing,onClick={controller.setMultiframeEditing(!controller.multiframeEditing);redraw()},
                     label={Text("Multiframe")},modifier=Modifier.testTag("multiframe"))
+                // Scene markers (MARKER_OT_*), preview range (ANIM_OT_previewrange_*), scrub snapping.
+                TextButton(onClick={if(controller.addMarker())redraw()},modifier=Modifier.testTag("markerAdd")){Text("Add marker")}
+                TextButton(onClick={markersOpen=true},modifier=Modifier.testTag("markers")){Text("Markers ("+controller.animation.timeline.markers.size+")")}
+                val preview=controller.animation.timeline.preview
+                TextButton(onClick={previewOpen=true},modifier=Modifier.testTag("previewRange")){
+                    Text(if(preview.enabled)"Preview "+preview.start+"–"+preview.end else "Preview range")
+                }
+                FilterChip(selected=controller.animation.scrubSnapToKeys,onClick={controller.animation.scrubSnapToKeys=!controller.animation.scrubSnapToKeys},
+                    label={Text("Snap to keys")},modifier=Modifier.testTag("scrubSnapKeys"))
             }
+            if(markersOpen)MarkersDialog(controller,{markersOpen=false},redraw)
+            if(previewOpen)PreviewRangeDialog(controller,{previewOpen=false},redraw)
+            val listState=androidx.compose.foundation.lazy.rememberLazyListState()
+            Box(Modifier.padding(horizontal=5.dp)){TimelineScrubStrip(controller,listState,52.dp,redraw)}
             // Lazy: only the visible frame cells are composed. The scene end can be up to 100000
             // frames; composing a cell for each one on every recomposition froze the main thread
             // (monkey ANR in Timeline).
             val keyframes=remember(controller.animation.keyframes){controller.animation.keyframes.toSet()}
             var menuFrame by remember{mutableIntStateOf(-1)}
             val frameTotal=controller.animation.timelineEnd.coerceAtLeast(1)
-            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp)){
+            val markerByFrame=controller.animation.timeline.markers.associateBy{it.frame}
+            val previewRange=controller.animation.timeline.preview
+            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp),state=listState){
                 items(frameTotal,key={it+1}){index->
                     val frame=index+1
                     val key=frame in keyframes
                     val type=controller.animation.keyTypes[frame]?:0
                     val selectedKey=frame in controller.animation.selectedFrames
-                    Box{
+                    val marker=markerByFrame[frame]
+                    val inPreview=previewRange.enabled&&frame in previewRange.start..previewRange.end
+                    Box(if(inPreview)Modifier.background(PreviewRangeColor) else Modifier){
                         // tap: go to the frame; long press: key type / frame selection menu
                         Surface(
                             Modifier.width(52.dp).height(54.dp).padding(2.dp).testTag("frame_$frame")
@@ -799,6 +827,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                             if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
                                 Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
                             } else Text("HOLD",fontSize=8.sp)
+                            if(marker!=null)Text(marker.name,fontSize=7.sp,maxLines=1,
+                                color=if(marker.selected)MarkerSelectedColor else Color.Unspecified,
+                                modifier=Modifier.testTag("markerLabel_$frame"))
                         }}
                         if(menuFrame==frame)KeyframeMenu(controller,frame,{menuFrame=-1},redraw)
                     }
@@ -1069,6 +1100,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Switch(checked=onionOn,onCheckedChange={onionOn=it;controller.setLayerOnion(controller.selectedLayer,it);redraw()})
         }
         LayerLookSection(controller,layerKey,redraw)
+        TransformOptionsSection(controller,redraw)
+        DashSegmentsSection(controller,redraw)
         Text("Move selection to layer",Modifier.padding(horizontal=12.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
             (0 until controller.layerCount()).filter{it!=controller.selectedLayer}.forEach{index->
@@ -1272,7 +1305,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             com.smitnk.projectgrease.editor.SculptBrush.PUSH to "Push",
             com.smitnk.projectgrease.editor.SculptBrush.PINCH to "Pinch",
             com.smitnk.projectgrease.editor.SculptBrush.TWIST to "Twist",
-            com.smitnk.projectgrease.editor.SculptBrush.RANDOMIZE to "Randomize"
+            com.smitnk.projectgrease.editor.SculptBrush.RANDOMIZE to "Randomize",
+            com.smitnk.projectgrease.editor.SculptBrush.CLONE to "Clone (pastes the copied strokes)"
         ).forEach { (brush,label) ->
             Button(
                 onClick={controller.sculpt.select(brush);redraw()},
@@ -1283,6 +1317,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Invert sculpt brush (thinner, weaker, inflate, twist back)",Modifier.weight(1f))
             Switch(checked=controller.sculpt.invert,onCheckedChange={controller.sculpt.setInvert(it);redraw()})
         }
+        SculptMaskingSection(controller,redraw)
         Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
         listOf(
             "Bring to front" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_TOP) },
@@ -1490,6 +1525,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text("Period " + "%.2f".format(per),Modifier.padding(horizontal=16.dp))
                 Slider(per,{per=it;controller.animation.setElastic(amp,per)},valueRange=0f..2f,modifier=Modifier.padding(horizontal=16.dp))
             }
+            InterpolationOptionsSection(controller.animation)
             Button(onClick={controller.interpolateFrameAt(controller.animation.currentFrame)},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Create in-between frame")}
             Button(onClick={controller.interpolateSequence()},enabled=controller.animation.frameNumbers().size>=2,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Interpolate sequence (all in-betweens)")}
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)

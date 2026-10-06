@@ -117,9 +117,31 @@ static void test_camera(void)
   CHECK(same, "scaled camera projects the same");
 }
 
+/* Line Art option data: collections, materials, object line art settings, vertex groups. */
+static void test_lineart_data(void)
+{
+  PGSceneLite *s = pg_lite_scene_create();
+  const char *obj = "o A\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\nusemtl M\nf 1 3 2\n";
+  CHECK(pg_lite_load_obj(s, obj, (int)strlen(obj)) == 1, "object");
+  PGObjectLite *ob = &s->objects[0];
+  CHECK(ob->mesh.tri_material[0] == -1 && ob->mesh.tri_material[1] == 0, "no material before usemtl");
+  CHECK(s->totmaterial == 1 && s->materials[0].mat_occlusion == 1 && pg_lite_find_material(s, "M") == 0, "material defaults");
+  CHECK(pg_lite_material_ensure(s, "M") == 0 && pg_lite_material_ensure(s, "N") == 1, "material ensure");
+  CHECK(ob->collection == -1 && ob->line_art_usage == PG_LITE_USAGE_INHERIT && fabsf(ob->line_art_crease_threshold - 2.4434609f) < 1e-6f, "object line art defaults");
+  CHECK(pg_lite_find_object(s, "A") == 0 && pg_lite_find_object(s, "B") == -1, "find object");
+  const int c0 = pg_lite_add_collection(s, "C0", -1);
+  const int c1 = pg_lite_add_collection(s, "C1", c0);
+  CHECK(c0 == 0 && c1 == 1 && s->collections[1].parent == 0 && pg_lite_add_collection(s, "X", 7) == -1, "collections");
+  CHECK(pg_lite_object_add_vertex_group(ob, "g") == 0 && ob->vgroups.totgroup == 1 && ob->vgroups.weights[2] == 0.0f, "vertex group");
+  pg_lite_scene_clear(s);
+  CHECK(s->totcollection == 0 && s->totmaterial == 0, "clear drops collections and materials");
+  pg_lite_scene_free(s);
+}
+
 int main(void)
 {
   test_obj();
+  test_lineart_data();
   test_camera();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;

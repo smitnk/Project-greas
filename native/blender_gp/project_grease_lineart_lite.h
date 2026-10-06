@@ -5,7 +5,9 @@
  * and occlusion, run on the meshes and camera of a PGSceneLite. The result is every feature edge
  * cut into segments with their occlusion level, in Line Art frame-buffer coordinates (-1..1).
  * pg_lineart_compute_strokes() continues through Blender's chaining (lineart_chain.c) and the
- * filtering of lineart_gpencil_generate() to strokes. Shadow / light contour are not supported.
+ * filtering of lineart_gpencil_generate() to strokes: source (scene / object / collection),
+ * occlusion level range, material and intersection masks, shadow / light contour (with the
+ * scene's PGLightLite as light_contour_object, lineart_shadow.c), silhouette and vertex groups.
  */
 #pragma once
 
@@ -29,6 +31,26 @@ typedef struct PGLineartSettings {
   float angle_splitting_threshold; /* radians, default 0 (no split) */
   float stroke_depth_offset;       /* default 0.05 (towards the camera) */
   int stroke_types;        /* edge types turned into strokes (default: all enabled types) */
+
+  /* Occlusion range: use_multiple_levels ? level_start..level_end : level_start only (as
+   * generate_strokes_actual / BKE_gpencil_get_lineart_modifier_limits). Default 0. */
+  int use_multiple_levels;
+  /* Source (eLineartGpencilModifierSource): LRT_SOURCE_SCENE (default) / OBJECT / COLLECTION, with
+   * source_index the object or collection index in the PGSceneLite. */
+  int source_type;
+  int source_index;
+  int modifier_flags;      /* LRT_GPENCIL_INVERT_COLLECTION / LRT_GPENCIL_INVERT_SILHOUETTE_FILTER */
+  int mask_switches;       /* LRT_GPENCIL_MATERIAL_MASK_ENABLE / _MATCH, LRT_GPENCIL_INTERSECTION_MATCH */
+  int material_mask_bits;  /* 8 bits */
+  int intersection_mask;   /* 8 bits */
+  int shadow_selection;    /* LRT_SHADOW_FILTER_* */
+  int silhouette_selection; /* LRT_SILHOUETTE_FILTER_* */
+  /* Light "camera" of the shadow stage (defaults 0.1 / 200 / 200). */
+  float shadow_camera_near, shadow_camera_far, shadow_camera_size;
+  /* Vertex groups: groups of the source mesh whose names start with source_vertex_group are
+   * transferred (max of the weights, 1 - w with LRT_GPENCIL_INVERT_SOURCE_VGROUP) into one output
+   * weight per stroke point (PGLineartStrokes::weights). Empty = no transfer. */
+  char source_vertex_group[64];
 } PGLineartSettings;
 
 void pg_lineart_settings_default(PGLineartSettings *settings);
@@ -65,6 +87,7 @@ typedef struct PGLineartStrokes {
   int stroke_count;
   float *world; /* x, y, z per point */
   float *image; /* x, y per point (-1..1) */
+  float *weights; /* per point vertex group weight (0 when no source_vertex_group) */
   int point_count;
 } PGLineartStrokes;
 

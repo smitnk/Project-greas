@@ -194,15 +194,36 @@ fun keyTypeColor(type: Int) = when (type) {
 @Composable
 fun KeyframeMenu(controller: EditorController, frame: Int, onDismiss: () -> Unit, redraw: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        if (frame in controller.animation.keyframes) {
+        val isKey = frame in controller.animation.keyframes
+        val selectedKeys = controller.animation.selectedFrames.count { it in controller.animation.keyframes }
+        // All five BEZT_KEYTYPE_* types; on a selected key (or a hold cell) they apply to every selected key.
+        if (isKey || selectedKeys > 0) {
+            val scope = if (!isKey || frame in controller.animation.selectedFrames) " ($selectedKeys selected)" else ""
             ProjectGreaseSelect.KEY_TYPE_LABELS.forEachIndexed { type, label ->
-                DropdownMenuItem(text = { Text("Key type: $label") }, onClick = { controller.setFrameKeyType(frame, type); onDismiss(); redraw() },
+                DropdownMenuItem(text = { Text("Key type: $label$scope") }, onClick = { controller.setFrameKeyType(frame, type); onDismiss(); redraw() },
                     modifier = Modifier.testTag("keyType_$type"))
             }
+        }
+        if (isKey) {
             DropdownMenuItem(text = { Text(if (frame in controller.animation.selectedFrames) "Deselect frame" else "Select frame (multiframe)") },
                 onClick = { controller.selectTimelineFrame(frame); onDismiss(); redraw() })
         }
         DropdownMenuItem(text = { Text("Deselect all frames") }, onClick = { controller.deselectTimelineFrames(); onDismiss(); redraw() })
+        val cur = controller.animation.currentFrame
+        DropdownMenuItem(text = { Text("Box select frames $frame..$cur") }, modifier = Modifier.testTag("framesBox"),
+            onClick = { controller.boxSelectFrames(frame, cur, extend = true); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Move selected frames +1") }, modifier = Modifier.testTag("framesMoveRight"),
+            onClick = { controller.moveSelectedFrames(1); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Move selected frames -1") }, modifier = Modifier.testTag("framesMoveLeft"),
+            onClick = { controller.moveSelectedFrames(-1); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Scale selected frames x2 (around current)") }, modifier = Modifier.testTag("framesScale2"),
+            onClick = { controller.scaleSelectedFrames(2f); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Scale selected frames x0.5 (around current)") },
+            onClick = { controller.scaleSelectedFrames(0.5f); onDismiss(); redraw() })
+        DropdownMenuItem(text = { Text("Copy selected frames") }, modifier = Modifier.testTag("framesCopy"),
+            onClick = { controller.copySelectedFrames(); onDismiss() })
+        DropdownMenuItem(text = { Text("Paste frames at $cur (overwrite)") }, modifier = Modifier.testTag("framesPaste"),
+            onClick = { controller.pasteFrames(); onDismiss(); redraw() })
         DropdownMenuItem(text = { Text("Interpolate sequence (all in-betweens)") }, onClick = {
             val n = controller.animation.interpolateSequence(frame)
             if (n > 0) { controller.history.markEdit(); controller.document.markDirty() }; controller.render(); onDismiss(); redraw()
@@ -302,6 +323,15 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
                 Slider(rot, { rot = it }, onValueChangeFinished = { changed(controller.setMaterialLineType(rec.mode, rec.alignment, rot, slot)) },
                     valueRange = -3.1415927f..3.1415927f)
             }
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = rec.strokeHoldout, onClick = { changed(controller.setMaterialOptions(slot, !rec.strokeHoldout, rec.fillHoldout, rec.selfOverlap)) },
+                    label = { Text("Stroke holdout", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("strokeHoldout_$slot"))
+                FilterChip(selected = rec.fillHoldout, onClick = { changed(controller.setMaterialOptions(slot, rec.strokeHoldout, !rec.fillHoldout, rec.selfOverlap)) },
+                    label = { Text("Fill holdout", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+                FilterChip(selected = rec.selfOverlap, onClick = { changed(controller.setMaterialOptions(slot, rec.strokeHoldout, rec.fillHoldout, !rec.selfOverlap)) },
+                    label = { Text("Self overlap", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("selfOverlap_$slot"))
+            }
+            MaterialGradientRow(controller, slot, rec, tick, changed)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Pass index " + rec.passIndex, fontSize = 11.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { changed(controller.setMaterialPass((rec.passIndex - 1).coerceAtLeast(0), slot)) }) { Text("-") }
@@ -309,6 +339,47 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
             }
         }
     }
+}
+
+/** Fill style Gradient: type, mix colour, mix factor, angle, scale, offset, flip (material fill panel). */
+@Composable
+private fun MaterialGradientRow(controller: EditorController, slot: Int, rec: com.smitnk.projectgrease.editor.MaterialRecord, tick: Int,
+                                changed: (Boolean) -> Unit) {
+    val g = rec.gradient
+    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        Text("Fill gradient", fontSize = 10.sp, modifier = Modifier.padding(end = 4.dp))
+        FilterChip(selected = g == null, onClick = { changed(controller.setMaterialGradient(slot, null)) },
+            label = { Text("Off", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+        ProjectGreaseSelect.GRADIENT_TYPE_LABELS.forEachIndexed { type, label ->
+            FilterChip(selected = g != null && g[0].toInt() == type, onClick = {
+                val base = g ?: floatArrayOf(0f, 1f, 1f, 1f, 1f, 0f, 0f, 1f, 1f, 0f, 0f, 0f)
+                changed(controller.setMaterialGradient(slot, base.copyOf().also { it[0] = type.toFloat() }))
+            }, label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("gradient_${slot}_$type"))
+        }
+        if (g != null) FilterChip(selected = g[11] != 0f, onClick = { changed(controller.setMaterialGradient(slot, g.copyOf().also { it[11] = if (g[11] != 0f) 0f else 1f })) },
+            label = { Text("Flip", fontSize = 10.sp) })
+    }
+    if (g == null) return
+    @Composable
+    fun slider(label: String, index: Int, range: ClosedFloatingPointRange<Float>) {
+        var v by remember(slot, tick, index) { mutableFloatStateOf(g[index]) }
+        Text("$label ${"%.2f".format(v)}", fontSize = 11.sp)
+        Slider(v, { v = it }, onValueChangeFinished = { changed(controller.setMaterialGradient(slot, g.copyOf().also { it[index] = v })) }, valueRange = range)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Mix colour", fontSize = 11.sp, modifier = Modifier.padding(end = 6.dp))
+        listOf(Color.White, Color.Black, Color.Red, Color.Blue, Color.Yellow).forEach { c ->
+            Box(Modifier.padding(2.dp).size(20.dp).background(c, CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable {
+                changed(controller.setMaterialGradient(slot, g.copyOf().also { it[1] = c.red; it[2] = c.green; it[3] = c.blue; it[4] = 1f }))
+            })
+        }
+    }
+    slider("Mix factor", 5, 0f..1f)
+    slider("Angle", 6, -3.1415927f..3.1415927f)
+    slider("Scale X", 7, 0.01f..10f)
+    slider("Scale Y", 8, 0.01f..10f)
+    slider("Offset X", 9, -1f..1f)
+    slider("Offset Y", 10, -1f..1f)
 }
 
 /** Onion skin keyframe-type filter and loop. */
@@ -398,4 +469,195 @@ fun ModifierInfluenceSection(controller: EditorController, index: Int, modifier:
         Switch(use, { changed(controller.setModifierCurve(index, it, pts)) })
     }
     if (use) CurveEditor("Influence along the stroke", pts, { changed(controller.setModifierCurve(index, true, it)) }, "modifierCurve_$index")
+}
+
+/** Transform options of the header: pivot point, proportional editing (O), increment snapping. */
+@Composable
+fun TransformOptionsSection(controller: EditorController, redraw: () -> Unit) {
+    val t = controller.transformSettings
+    Text("Transform", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+    var pivotMenu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Pivot", Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { pivotMenu = true }, modifier = Modifier.testTag("pivotMenu")) { Text(ProjectGreaseSelect.PIVOT_LABELS[t.pivot]) }
+            DropdownMenu(expanded = pivotMenu, onDismissRequest = { pivotMenu = false }) {
+                ProjectGreaseSelect.PIVOT_LABELS.forEachIndexed { i, label ->
+                    DropdownMenuItem(text = { Text(label) }, modifier = Modifier.testTag("pivot_$i"),
+                        onClick = { controller.setPivot(i); pivotMenu = false; redraw() })
+                }
+            }
+        }
+    }
+    if (t.pivot == ProjectGreaseSelect.PIVOT_CURSOR)
+        TextButton(onClick = { controller.placingCursor2D = true }, modifier = Modifier.padding(horizontal = 12.dp).testTag("placeCursor")) {
+            Text("Tap canvas to place 2D cursor")
+        }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Proportional editing (O)", Modifier.weight(1f))
+        Switch(checked = t.proportional, onCheckedChange = { controller.toggleProportional(); redraw() }, modifier = Modifier.testTag("proportionalToggle"))
+    }
+    if (t.proportional) {
+        var falloffMenu by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Falloff", Modifier.weight(1f))
+            Box {
+                val idx = ProjectGreaseSelect.FALLOFF_VALUES.indexOf(t.falloff).coerceAtLeast(0)
+                TextButton(onClick = { falloffMenu = true }, modifier = Modifier.testTag("falloffMenu")) { Text(ProjectGreaseSelect.FALLOFF_LABELS[idx]) }
+                DropdownMenu(expanded = falloffMenu, onDismissRequest = { falloffMenu = false }) {
+                    ProjectGreaseSelect.FALLOFF_VALUES.forEachIndexed { i, v ->
+                        DropdownMenuItem(text = { Text(ProjectGreaseSelect.FALLOFF_LABELS[i]) },
+                            onClick = { controller.setProportionalFalloff(v); falloffMenu = false; redraw() })
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Connected only", Modifier.weight(1f))
+            Switch(checked = t.connected, onCheckedChange = { controller.setProportionalConnected(it); redraw() })
+        }
+        Text("Size ${"%.1f".format(t.size)} (pinch while transforming)", Modifier.padding(horizontal = 12.dp))
+        Slider(value = t.size.coerceIn(1f, 1000f), onValueChange = { controller.setProportionalSize(it) }, valueRange = 1f..1000f,
+            modifier = Modifier.padding(horizontal = 12.dp).testTag("proportionalSize"))
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Snap: increment (grid)", Modifier.weight(1f))
+        Switch(checked = t.snapIncrement > 0f, onCheckedChange = { controller.setSnapIncrement(if (it) controller.view.gridSize else 0f); redraw() },
+            modifier = Modifier.testTag("snapIncrement"))
+    }
+}
+
+/** Dot Dash with a segment list (DashGpencilModifierData.segments): applied to the active frame. */
+@Composable
+fun DashSegmentsSection(controller: EditorController, redraw: () -> Unit) {
+    val segments = remember { mutableStateListOf(3 to 2) }
+    var offset by remember { mutableIntStateOf(0) }
+    Text("Dash segments", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+    segments.forEachIndexed { i, (d, g) ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("#${i + 1} dash $d gap $g", Modifier.weight(1f))
+            TextButton(onClick = { segments[i] = (d + 1) to g }) { Text("D+") }
+            TextButton(onClick = { segments[i] = (d - 1).coerceAtLeast(1) to g }) { Text("D-") }
+            TextButton(onClick = { segments[i] = d to g + 1 }) { Text("G+") }
+            TextButton(onClick = { segments[i] = d to (g - 1).coerceAtLeast(0) }) { Text("G-") }
+            if (segments.size > 1) TextButton(onClick = { segments.removeAt(i) }) { Text("x") }
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { if (segments.size < 32) segments.add(1 to 1) }, modifier = Modifier.testTag("dashAddSegment")) { Text("Add segment") }
+        TextButton(onClick = { offset-- }) { Text("Offset -") }
+        Text("$offset")
+        TextButton(onClick = { offset++ }) { Text("Offset +") }
+        TextButton(onClick = { controller.setDashSegments(offset, segments.toList()); redraw() }, modifier = Modifier.testTag("dashApply")) { Text("Apply") }
+    }
+}
+
+/** Sculpt auto-masking, selection mask and brush falloff curve (Blender's sculpt header / brush panel). */
+@Composable
+fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
+    val sc = controller.sculpt
+    var tick by remember { mutableIntStateOf(0) }
+    key(tick) {
+        Text("Auto-masking", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            listOf(
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_STROKE to "Stroke",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_LAYER_STROKE to "Layer (stroke)",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_MATERIAL_STROKE to "Material (stroke)",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_LAYER_ACTIVE to "Active layer",
+                com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_MATERIAL_ACTIVE to "Active material"
+            ).forEach { (bit, label) ->
+                FilterChip(selected = sc.automask and bit != 0, onClick = { sc.toggleAutomask(bit); tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("automask_$bit"))
+            }
+        }
+        Text("Selection mask", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            listOf(0 to "Off", com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
+                com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_STROKE to "Strokes",
+                com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_SEGMENT to "Segments").forEach { (m, label) ->
+                FilterChip(selected = sc.selectMask == m, onClick = { sc.setSelectMask(m); tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            }
+        }
+        Text("Falloff curve", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            com.smitnk.projectgrease.editor.ToolSession.CURVE_PRESETS.forEach { (preset, label) ->
+                FilterChip(selected = sc.curvePreset == preset, onClick = { sc.setCurvePreset(preset); tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            }
+        }
+    }
+}
+
+/** GPENCIL_OT_interpolate_sequence options: flip, step, smoothing, only selected, exclude breakdowns. */
+@Composable
+fun InterpolationOptionsSection(anim: com.smitnk.projectgrease.editor.AnimationController) {
+    var tick by remember { mutableIntStateOf(0) }
+    key(tick) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            ProjectGreaseSelect.INTERP_FLIP_LABELS.forEachIndexed { mode, label ->
+                FilterChip(selected = anim.interpolateFlip == mode, onClick = { anim.interpolateFlip = mode; tick++ },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("interpFlip_$mode"))
+            }
+            FilterChip(selected = anim.interpolateOnlySelected, onClick = { anim.interpolateOnlySelected = !anim.interpolateOnlySelected; tick++ },
+                label = { Text("Only selected", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            FilterChip(selected = anim.interpolateExcludeBreakdowns, onClick = { anim.interpolateExcludeBreakdowns = !anim.interpolateExcludeBreakdowns; tick++ },
+                label = { Text("Exclude breakdowns", fontSize = 10.sp) })
+        }
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Step ${anim.interpolateStep}", Modifier.weight(1f))
+            TextButton(onClick = { anim.interpolateStep = (anim.interpolateStep - 1).coerceAtLeast(1); tick++ }) { Text("-") }
+            TextButton(onClick = { anim.interpolateStep = (anim.interpolateStep + 1).coerceAtMost(100); tick++ }) { Text("+") }
+        }
+        Text("Smooth ${"%.2f".format(anim.interpolateSmoothFactor)} x ${anim.interpolateSmoothSteps}", Modifier.padding(horizontal = 16.dp))
+        Slider(anim.interpolateSmoothFactor, { anim.interpolateSmoothFactor = it; tick++ }, valueRange = 0f..2f, modifier = Modifier.padding(horizontal = 16.dp))
+        Row(Modifier.padding(horizontal = 16.dp)) {
+            (1..3).forEach { n -> FilterChip(selected = anim.interpolateSmoothSteps == n, onClick = { anim.interpolateSmoothSteps = n; tick++ },
+                label = { Text("$n steps", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp)) }
+        }
+    }
+}
+
+/** Vertex paint selection mask (points / strokes / segments) and the paint brushes' falloff curve. */
+@Composable
+fun PaintOptionsBar(controller: EditorController, redraw: () -> Unit) {
+    var tick by remember { mutableIntStateOf(0) }
+    key(tick) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.VERTEX_PAINT) {
+                Text("Mask", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
+                listOf(0 to "Off", com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
+                    com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_STROKE to "Strokes",
+                    com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_SEGMENT to "Segments").forEach { (m, label) ->
+                    FilterChip(selected = controller.vertexSelectMask == m, onClick = { controller.vertexSelectMask = m; tick++; redraw() },
+                        label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("vpaintMask_$m"))
+                }
+            }
+            Text("Falloff", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 6.dp))
+            com.smitnk.projectgrease.editor.ToolSession.CURVE_PRESETS.forEach { (preset, label) ->
+                FilterChip(selected = controller.paintCurvePreset == preset, onClick = { controller.paintCurvePreset = preset; tick++; redraw() },
+                    label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
+            }
+        }
+    }
+}
+
+/** Draw-mode Tint tool toggle and the vertex colour palette (Paint.palette swatches). */
+@Composable
+fun VertexPaletteBar(controller: EditorController, redraw: () -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.DRAW) {
+            FilterChip(selected = controller.drawTint, onClick = { controller.drawTint = !controller.drawTint; redraw() },
+                label = { Text("Tint", fontSize = 10.sp) }, modifier = Modifier.padding(end = 6.dp).testTag("drawTint"))
+        }
+        Text("Palette", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
+        controller.vertexPalette.forEachIndexed { i, argb ->
+            Box(Modifier.padding(2.dp).size(22.dp).background(Color(argb), CircleShape)
+                .border(if (argb == controller.materials.colorArgb) 2.dp else 1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                .pointerInput(i) { detectTapGestures(onTap = { controller.usePaletteColor(i); redraw() }, onLongPress = { controller.removePaletteColor(i); redraw() }) }
+                .testTag("palette_$i"))
+        }
+        TextButton(onClick = { controller.addPaletteColor(); redraw() }, modifier = Modifier.testTag("paletteAdd")) { Text("+ colour", fontSize = 10.sp) }
+    }
 }

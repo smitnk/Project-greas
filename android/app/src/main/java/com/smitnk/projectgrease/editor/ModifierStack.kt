@@ -32,7 +32,8 @@ object ModifierType {
     const val MIRROR = 20
     const val ARRAY = 21
     const val MULTIPLY = 22
-    const val LAST = 22
+    const val TEXTURE = 23
+    const val LAST = 23
     const val MAX_PARAMS = 120
     const val MAX_STACK = 32
     /** PG_P_CURVE_BASE / PG_P_FILTER_BASE: the custom curve and influence filter blocks of every entry. */
@@ -67,6 +68,7 @@ object ModifierType {
         MIRROR -> "Mirror"
         ARRAY -> "Array"
         MULTIPLY -> "Multiple Strokes"
+        TEXTURE -> "Texture Mapping"
         else -> "Modifier"
     }
 
@@ -104,7 +106,7 @@ object ModifierSpecs {
 
     /** The type's own parameters: PG_P_*_COUNT in project_grease_modifier_stack.h. */
     fun ownParamCount(type: Int) = when (type) {
-        ModifierType.BUILD -> 4
+        ModifierType.BUILD -> 9
         ModifierType.TIME -> 7
         ModifierType.HOOK -> 9
         ModifierType.LATTICE -> 7 + ModifierType.LATTICE_MAX * ModifierType.LATTICE_MAX * 2
@@ -120,9 +122,10 @@ object ModifierSpecs {
         ModifierType.OPACITY -> 4
         ModifierType.TINT -> 5
         ModifierType.COLOR -> 4
-        ModifierType.LENGTH -> 9
+        ModifierType.LENGTH -> 15
         ModifierType.SMOOTH -> 7
         ModifierType.SIMPLIFY -> 6
+        ModifierType.TEXTURE -> 9
         ModifierType.SUBDIV -> 2
         ModifierType.OFFSET -> 23
         ModifierType.NOISE -> 10
@@ -151,7 +154,9 @@ object ModifierSpecs {
         ModifierType.LENGTH -> listOf(
             e(0, "Mode", "Relative", "Absolute"), f(1, "Start", -1f, 1f), f(2, "End", -1f, 1f),
             f(3, "Random overshoot", 0f, 1f), b(4, "Use curvature"), f(5, "Point density", 0.1f, 100f),
-            f(6, "Segment influence", -2f, 3f), f(7, "Max angle", 0f, 3.1415927f, DEG), b(8, "Invert curvature")
+            f(6, "Segment influence", -2f, 3f), f(7, "Max angle", 0f, 3.1415927f, DEG), b(8, "Invert curvature"),
+            f(9, "Random start", -1f, 1f), f(10, "Random end", -1f, 1f), f(11, "Random offset", -10f, 10f),
+            n(12, "Seed", 0f, 1000f), n(13, "Step", 1f, 100f), b(14, "Randomize every step")
         )
         ModifierType.SMOOTH -> listOf(
             f(0, "Factor", 0f, 2f), n(1, "Repeat", 1f, 30f), b(2, "Position"), b(3, "Strength"),
@@ -179,9 +184,17 @@ object ModifierSpecs {
             f(4, "Noise scale", 0f, 1f), f(5, "Noise offset", 0f, 20f), n(6, "Seed", 0f, 1000f),
             n(7, "Step", 1f, 30f), b(8, "Randomize"), e(9, "Mode", "Steps", "Keyframes")
         )
+        ModifierType.TEXTURE -> listOf(
+            e(0, "Mode", "Stroke", "Fill", "Stroke and Fill"), e(1, "Fit method", "Fit stroke", "Constant length"),
+            f(2, "UV offset", -10f, 10f), f(3, "UV scale", 0f, 10f), f(4, "Alignment rotation", -1.5707964f, 1.5707964f),
+            f(5, "Fill rotation", -3.1415927f, 3.1415927f), f(6, "Fill offset X", -10f, 10f), f(7, "Fill offset Y", -10f, 10f),
+            f(8, "Fill scale", 0.01f, 100f)
+        )
         ModifierType.BUILD -> listOf(
-            e(0, "Mode", "Sequential", "Concurrent"), e(1, "Transition", "Grow", "Shrink"),
-            f(2, "Delay (frames)", 0f, 250f), f(3, "Length (frames)", 1f, 500f)
+            e(0, "Mode", "Sequential", "Concurrent", "Additive"), e(1, "Transition", "Grow", "Shrink", "Vanish"),
+            f(2, "Delay (frames)", 0f, 250f), f(3, "Length (frames)", 1f, 500f),
+            e(4, "Time alignment", "Start", "End"), b(5, "Fade"), f(6, "Fade factor", 0f, 1f),
+            f(7, "Fade thickness strength", 0f, 1f), f(8, "Fade opacity strength", 0f, 1f)
         )
         ModifierType.TIME -> listOf(
             e(0, "Mode", "Normal", "Reverse", "Fixed frame", "Ping pong"), n(1, "Frame offset", -250f, 250f),

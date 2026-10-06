@@ -270,6 +270,8 @@ object ProjectGreaseSelect {
     const val VPAINT_AVERAGE = 2
     const val VPAINT_SMEAR = 3
     const val VPAINT_REPLACE = 4
+    /** GPAINT_TOOL_TINT / GPVERTEX_TOOL_TINT (the Draw-mode Tint tool; native session only). */
+    const val VPAINT_TINT = 5
 
     fun vertexPaint(brush: Int, x: Float, y: Float, radius: Float, strength: Float,
                     r: Float, g: Float, b: Float, target: Int, dx: Float = 0f, dy: Float = 0f): Command? {
@@ -372,6 +374,10 @@ object ProjectGreaseSelect {
     const val CMD_MOVE_TO_LAYER = 83
     const val CMD_COPY = 84
     const val CMD_PASTE = 85
+    /** GPENCIL_OT_stroke_separate (modes POINT / STROKE) into new layers; edit10 id 135. */
+    const val CMD_SEPARATE = 135
+    const val SEPARATE_POINT = 0
+    const val SEPARATE_STROKE = 1
     const val CAPS_TOGGLE_BOTH = 0
     const val CAPS_TOGGLE_START = 1
     const val CAPS_TOGGLE_END = 2
@@ -389,6 +395,8 @@ object ProjectGreaseSelect {
         if (type in CAPS_TOGGLE_BOTH..CAPS_DEFAULT) Command(CMD_CAPS, floatArrayOf(type.toFloat())) else null
     fun startSet() = Command(CMD_START_SET, FloatArray(0))
     fun separateToLayer() = Command(CMD_SEPARATE_LAYER, FloatArray(0))
+    fun separate(mode: Int): Command? =
+        if (mode == SEPARATE_POINT || mode == SEPARATE_STROKE) Command(CMD_SEPARATE, floatArrayOf(mode.toFloat())) else null
     fun moveToLayer(index: Int): Command? = if (index >= 0) Command(CMD_MOVE_TO_LAYER, floatArrayOf(index.toFloat())) else null
     fun copy() = Command(CMD_COPY, FloatArray(0))
     fun paste() = Command(CMD_PASTE, FloatArray(0))
@@ -464,6 +472,83 @@ object ProjectGreaseSelect {
     fun onionFilter(keyType: Int, loop: Boolean): Command? =
         if (keyType in -1..KEY_MOVEHOLD) Command(CMD_ONION_FILTER, floatArrayOf(keyType.toFloat(), if (loop) 1f else 0f)) else null
     fun easingParams(amplitude: Float, period: Float) = Command(CMD_EASING_PARAMS, floatArrayOf(amplitude, period))
+
+    /** edit9 (project_grease_blender_edit9.h): proportional transform, pivots, dope-sheet frame ops, dash segments. */
+    const val CMD_TRANSFORM = 117
+    const val CMD_FRAMES_SELECT_RANGE = 118
+    const val CMD_FRAMES_MOVE = 119
+    const val CMD_FRAMES_SCALE = 120
+    const val CMD_FRAMES_COPY = 121
+    const val CMD_FRAMES_PASTE = 122
+    const val CMD_DASH_SEGMENTS = 123
+    const val CMD_MATERIAL_GRADIENT = 124
+    const val CMD_MATERIAL_OPTIONS = 125
+    /** pg_gp_interp_dispatch (project_grease_blender_interp.h). */
+    const val CMD_INTERPOLATE = 126
+    const val INTERP_NOFLIP = 0
+    const val INTERP_FLIP = 1
+    const val INTERP_FLIP_AUTO = 2
+    val INTERP_FLIP_LABELS = listOf("No flip", "Flip", "Auto flip")
+    fun interpolate(frame: Int, step: Int, flip: Int, onlySelected: Boolean, excludeBreakdowns: Boolean, easingType: Int,
+                    easingMode: Int, smoothFactor: Float, smoothSteps: Int, single: Boolean, allLayers: Boolean = false) =
+        Command(CMD_INTERPOLATE, floatArrayOf(frame.toFloat(), step.coerceAtLeast(1).toFloat(), flip.coerceIn(0, 2).toFloat(),
+            if (onlySelected) 1f else 0f, if (excludeBreakdowns) 1f else 0f, if (allLayers) 1f else 0f, easingType.toFloat(),
+            easingMode.toFloat(), smoothFactor.coerceIn(0f, 2f), smoothSteps.coerceIn(1, 3).toFloat(), if (single) 1f else 0f))
+    val GRADIENT_TYPE_LABELS = listOf("Linear", "Radial")
+    /** [g] = [type, mix r, g, b, a, mix factor, angle, scale x, y, offset x, y, flip] (MaterialRecord.gradient). */
+    fun materialGradient(slot: Int, enabled: Boolean, g: FloatArray): Command? {
+        if (g.size < 12 || g.any { !it.isFinite() } || g[0].toInt() !in 0..1) return null
+        return Command(CMD_MATERIAL_GRADIENT, floatArrayOf(slot.toFloat(), if (enabled) 1f else 0f) + g)
+    }
+    fun materialOptions(slot: Int, strokeHoldout: Boolean, fillHoldout: Boolean, selfOverlap: Boolean) =
+        Command(CMD_MATERIAL_OPTIONS, floatArrayOf(slot.toFloat(), if (strokeHoldout) 1f else 0f, if (fillHoldout) 1f else 0f, if (selfOverlap) 1f else 0f))
+    const val XFORM_TRANSLATE = 0
+    const val XFORM_ROTATE = 1
+    const val XFORM_SCALE = 2
+    /** Pivot point (V3D_AROUND_*) order of PG_PIVOT_*. */
+    const val PIVOT_MEDIAN = 0
+    const val PIVOT_BOUNDS = 1
+    const val PIVOT_INDIVIDUAL = 2
+    const val PIVOT_CURSOR = 3
+    val PIVOT_LABELS = listOf("Median Point", "Bounding Box Center", "Individual Origins", "2D Cursor")
+    /** Proportional falloff (PROP_*), RANDOM (6) is not offered. */
+    val FALLOFF_VALUES = intArrayOf(0, 1, 2, 3, 4, 5, 7)
+    val FALLOFF_LABELS = listOf("Smooth", "Sphere", "Root", "Sharp", "Linear", "Constant", "Inverse Square")
+
+    data class TransformSettings(
+        val pivot: Int = PIVOT_MEDIAN,
+        val cursorX: Float = 0f,
+        val cursorY: Float = 0f,
+        val proportional: Boolean = false,
+        val connected: Boolean = false,
+        val falloff: Int = 0,
+        val size: Float = 100f,
+        val snapIncrement: Float = 0f,
+    ) {
+        /** True when the plain (non-edit9) transform path would give a different result. */
+        val needsEdit9: Boolean get() = proportional || pivot != PIVOT_MEDIAN || snapIncrement > 0f
+    }
+
+    fun transform(type: Int, a: Float, b: Float, s: TransformSettings): Command? {
+        if (type !in XFORM_TRANSLATE..XFORM_SCALE || s.pivot !in PIVOT_MEDIAN..PIVOT_CURSOR || !a.isFinite() || !b.isFinite()) return null
+        return Command(CMD_TRANSFORM, floatArrayOf(type.toFloat(), a, b, s.pivot.toFloat(), s.cursorX, s.cursorY,
+            if (s.proportional) 1f else 0f, if (s.connected) 1f else 0f, s.falloff.toFloat(), s.size, 0f))
+    }
+    fun framesSelectRange(fmin: Int, fmax: Int, extend: Boolean = false, allLayers: Boolean = false) =
+        Command(CMD_FRAMES_SELECT_RANGE, floatArrayOf(minOf(fmin, fmax).toFloat(), maxOf(fmin, fmax).toFloat(), if (extend) 1f else 0f, if (allLayers) 1f else 0f))
+    fun framesMove(offset: Int, allLayers: Boolean = false) = Command(CMD_FRAMES_MOVE, floatArrayOf(offset.toFloat(), if (allLayers) 1f else 0f))
+    fun framesScale(center: Int, factor: Float, allLayers: Boolean = false): Command? =
+        if (factor.isFinite() && factor > 0f) Command(CMD_FRAMES_SCALE, floatArrayOf(center.toFloat(), factor, if (allLayers) 1f else 0f)) else null
+    fun framesCopy(allLayers: Boolean = false) = Command(CMD_FRAMES_COPY, floatArrayOf(if (allLayers) 1f else 0f))
+    fun framesPaste(frame: Int) = Command(CMD_FRAMES_PASTE, floatArrayOf(frame.toFloat()))
+    /** Multi-segment dash (DashGpencilModifierSegment list): pairs of dash/gap point counts. */
+    fun dashSegments(offset: Int, segments: List<Pair<Int, Int>>): Command? {
+        if (segments.isEmpty() || segments.size > 32 || segments.any { it.first < 1 || it.second < 0 }) return null
+        val a = FloatArray(2 + 2 * segments.size)
+        a[0] = offset.toFloat(); a[1] = segments.size.toFloat()
+        segments.forEachIndexed { k, (d, g) -> a[2 + 2 * k] = d.toFloat(); a[3 + 2 * k] = g.toFloat() }
+        return Command(CMD_DASH_SEGMENTS, a)
+    }
 
     /** Blender bGPdata.onion_mode values (GP_ONION_MODE_*). */
     const val ONION_MODE_ABSOLUTE = 0

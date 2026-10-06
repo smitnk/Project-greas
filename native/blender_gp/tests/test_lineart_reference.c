@@ -151,7 +151,34 @@ static double stroke_distance(const float *a, const float *b, int n)
     if (df > fwd) fwd = df;
     if (dr > rev) rev = dr;
   }
-  return sqrt(fwd < rev ? fwd : rev);
+  double best = fwd < rev ? fwd : rev;
+  /* A closed loop (first point == last point in both strokes) has no defined start: Blender starts
+   * the chain at the first pending edge, whose order depends on how its loader threads are scheduled
+   * (lineart_geometry_load_assign_thread), so the same loop can start at any of its vertices. Try
+   * every rotation of the loop, forward and reversed; open strokes keep the strict comparison. */
+  if (n > 2) {
+    double ea = 0, eb = 0;
+    for (int k = 0; k < 3; k++) {
+      ea += (a[k] - a[(n - 1) * 3 + k]) * (a[k] - a[(n - 1) * 3 + k]);
+      eb += (b[k] - b[(n - 1) * 3 + k]) * (b[k] - b[(n - 1) * 3 + k]);
+    }
+    if (ea < 1e-12 && eb < 1e-12) {
+      const int m = n - 1; /* distinct loop vertices */
+      for (int r = 0; r < m; r++) {
+        for (int dir = 0; dir < 2; dir++) {
+          double worst = 0;
+          for (int i = 0; i < m; i++) {
+            const int j = dir == 0 ? (i + r) % m : ((r - i) % m + m) % m;
+            double d = 0;
+            for (int k = 0; k < 3; k++) d += (a[i * 3 + k] - b[j * 3 + k]) * (a[i * 3 + k] - b[j * 3 + k]);
+            if (d > worst) worst = d;
+          }
+          if (worst < best) best = worst;
+        }
+      }
+    }
+  }
+  return sqrt(best);
 }
 
 #define STROKE_TOLERANCE 1e-3 /* world units */
@@ -206,7 +233,126 @@ static int compare_strokes(const char *ref_dir, const char *name, const PGSceneL
   return ok ? 0 : 1;
 }
 
-static int compare_scene(const char *ref_dir, char **f)
+/* ---- Line Art options of scenes.txt (mirrors apply_options() in blender_reference.py) -------- */
+static int name_value(const char *const *names, const int *values, int n, const char *name)
+{
+  for (int i = 0; i < n; i++) if (strcmp(names[i], name) == 0) return values[i];
+  printf("FAIL: unknown value %s\n", name);
+  return -1;
+}
+
+static int object_usage(const char *v)
+{
+  static const char *const names[] = {"INHERIT", "INCLUDE", "OCCLUSION_ONLY", "EXCLUDE", "INTERSECTION_ONLY", "NO_INTERSECTION", "FORCE_INTERSECTION"};
+  static const int values[] = {PG_LITE_USAGE_INHERIT, PG_LITE_USAGE_INCLUDE, PG_LITE_USAGE_OCCLUSION_ONLY, PG_LITE_USAGE_EXCLUDE,
+                               PG_LITE_USAGE_INTERSECTION_ONLY, PG_LITE_USAGE_NO_INTERSECTION, PG_LITE_USAGE_FORCE_INTERSECTION};
+  return name_value(names, values, 7, v);
+}
+
+static int collection_usage(const char *v)
+{
+  static const char *const names[] = {"INCLUDE", "OCCLUSION_ONLY", "EXCLUDE", "INTERSECTION_ONLY", "NO_INTERSECTION", "FORCE_INTERSECTION"};
+  static const int values[] = {PG_LITE_COLLECTION_INCLUDE, PG_LITE_COLLECTION_OCCLUSION_ONLY, PG_LITE_COLLECTION_EXCLUDE,
+                               PG_LITE_COLLECTION_INTERSECTION_ONLY, PG_LITE_COLLECTION_NO_INTERSECTION, PG_LITE_COLLECTION_FORCE_INTERSECTION};
+  return name_value(names, values, 6, v);
+}
+
+static int line_types(const char *v)
+{
+  static const char *const names[] = {"edge_mark", "contour", "crease", "material", "intersection", "loose", "light_contour", "shadow"};
+  static const int values[] = {1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 8};
+  char buf[256];
+  snprintf(buf, sizeof(buf), "%s", v);
+  int types = 0;
+  for (char *save = NULL, *t = strtok_r(buf, "+", &save); t; t = strtok_r(NULL, "+", &save)) types |= name_value(names, values, 8, t);
+  return types;
+}
+
+static int find_collection(const PGSceneLite *s, const char *name)
+{
+  for (int i = 0; i < s->totcollection; i++) if (strcmp(s->collections[i].name, name) == 0) return i;
+  return -1;
+}
+
+/* Returns 0 when the option is not understood. */
+static int apply_option(PGSceneLite *s, PGLineartSettings *st, const char *opt)
+{
+  char key[128];
+  const char *eq = strchr(opt, '=');
+  if (!eq || eq - opt >= (int)sizeof(key)) return 0;
+  memcpy(key, opt, (size_t)(eq - opt));
+  key[eq - opt] = '\0';
+  const char *v = eq + 1;
+  if (strcmp(key, "types") == 0) st->edge_types = line_types(v);
+  else if (strcmp(key, "crease") == 0) st->crease_threshold = (float)(atof(v) * M_PI / 180.0);
+  else if (strcmp(key, "level") == 0) { st->use_multiple_levels = 0; st->level_start = atoi(v); }
+  else if (strcmp(key, "levels") == 0) { st->use_multiple_levels = 1; sscanf(v, "%d:%d", &st->level_start, &st->level_end); }
+  else if (strncmp(key, "usage:", 6) == 0) {
+    const int o = pg_lite_find_object(s, key + 6);
+    if (o < 0) return 0;
+    s->objects[o].line_art_usage = object_usage(v);
+  }
+  else if (strncmp(key, "coll:", 5) == 0) {
+    const int o = pg_lite_find_object(s, key + 5);
+    int c = find_collection(s, v);
+    if (c < 0) c = pg_lite_add_collection(s, v, -1);
+    if (o < 0 || c < 0) return 0;
+    s->objects[o].collection = c;
+  }
+  else if (strncmp(key, "collusage:", 10) == 0) {
+    const int c = find_collection(s, key + 10);
+    if (c < 0) return 0;
+    s->collections[c].lineart_usage = collection_usage(v);
+  }
+  else if (strncmp(key, "collmask:", 9) == 0) {
+    const int c = find_collection(s, key + 9);
+    if (c < 0) return 0;
+    s->collections[c].lineart_flags |= PG_LITE_COLLECTION_USE_INTERSECTION_MASK;
+    s->collections[c].lineart_intersection_mask = atoi(v);
+  }
+  else if (strncmp(key, "matmask:", 8) == 0) {
+    const int m = pg_lite_find_material(s, key + 8);
+    if (m < 0) return 0;
+    s->materials[m].lineart_flags |= PG_LITE_MATERIAL_MASK_ENABLED;
+    s->materials[m].material_mask_bits = atoi(v);
+  }
+  else if (strncmp(key, "matocc:", 7) == 0) {
+    const int m = pg_lite_find_material(s, key + 7);
+    if (m < 0) return 0;
+    s->materials[m].mat_occlusion = atoi(v);
+  }
+  else if (strcmp(key, "maskswitch") == 0) st->mask_switches = atoi(v);
+  else if (strcmp(key, "maskbits") == 0) st->material_mask_bits = atoi(v);
+  else if (strcmp(key, "isectmask") == 0) st->intersection_mask = atoi(v);
+  else if (strcmp(key, "chain") == 0) st->chaining_image_threshold = (float)atof(v);
+  else if (strcmp(key, "smooth") == 0) st->chain_smooth_tolerance = (float)atof(v);
+  else if (strcmp(key, "loosechain") == 0) { if (atoi(v)) st->calculation_flags |= 1 << 12; else st->calculation_flags &= ~(1 << 12); }
+  else if (strcmp(key, "geomchain") == 0) { if (atoi(v)) st->calculation_flags |= 1 << 13; else st->calculation_flags &= ~(1 << 13); }
+  else if (strcmp(key, "light") == 0) {
+    char kind[16];
+    float yaw, pitch, dist;
+    if (sscanf(v, "%15[^:]:%f:%f:%f", kind, &yaw, &pitch, &dist) != 4) return 0;
+    PGCameraLite tmp;
+    pg_lite_camera_default(&tmp);
+    const float target[3] = {0, 0, 0};
+    pg_lite_camera_orbit(&tmp, target, yaw, pitch, dist);
+    memcpy(s->light.matrix_world, tmp.matrix_world, sizeof(tmp.matrix_world));
+    s->light.present = 1;
+    s->light.type = strcmp(kind, "sun") == 0 ? PG_LITE_LIGHT_SUN : PG_LITE_LIGHT_POINT;
+  }
+  else if (strcmp(key, "shadowsel") == 0) st->shadow_selection = atoi(v);
+  else if (strcmp(key, "silhouette") == 0) st->silhouette_selection = atoi(v);
+  else if (strcmp(key, "source") == 0) {
+    if (strncmp(v, "object:", 7) == 0) { st->source_type = 1; st->source_index = pg_lite_find_object(s, v + 7); }
+    else if (strncmp(v, "collection:", 11) == 0) { st->source_type = 0; st->source_index = find_collection(s, v + 11); }
+    else return 0;
+  }
+  else if (strcmp(key, "invertcoll") == 0) { if (atoi(v)) st->modifier_flags |= 1 << 6; }
+  else return 0;
+  return 1;
+}
+
+static int compare_scene(const char *ref_dir, char **f, int nopt)
 {
   /* name obj camera lens ortho_scale yaw pitch distance shift_x shift_y width height level_end */
   char path[1024];
@@ -232,6 +378,20 @@ static int compare_scene(const char *ref_dir, char **f)
   pg_lineart_settings_default(&st);
   st.overscan = 0.0f;
   st.level_end = atoi(f[12]);
+  st.use_multiple_levels = 1;
+  for (int i = 0; i < nopt; i++) {
+    if (!apply_option(scene, &st, f[13 + i])) {
+      printf("FAIL: reference scene %s: bad option %s\n", f[0], f[13 + i]);
+      pg_lite_scene_free(scene);
+      return 1;
+    }
+  }
+  if (nopt > 0) {
+    /* Options act on the strokes (masks, sources, shadow selection...): compare those only. */
+    const int failed = compare_strokes(ref_dir, f[0], scene, &st);
+    pg_lite_scene_free(scene);
+    return failed;
+  }
 
   PGLineartSegment *seg = NULL;
   const int n = pg_lineart_compute(scene, &st, &seg);
@@ -336,12 +496,12 @@ int pg_lineart_reference_compare(const char *ref_dir)
   int failures = 0, scenes = 0;
   while (fgets(line, sizeof(line), m)) {
     if (line[0] == '#' || line[0] == '\n') continue;
-    char *f[13];
+    char *f[32];
     int k = 0;
-    for (char *tok = strtok(line, " \t\r\n"); tok && k < 13; tok = strtok(NULL, " \t\r\n")) f[k++] = tok;
-    if (k != 13) continue;
+    for (char *tok = strtok(line, " \t\r\n"); tok && k < 32; tok = strtok(NULL, " \t\r\n")) f[k++] = tok;
+    if (k < 13) continue;
     scenes++;
-    failures += compare_scene(ref_dir, f);
+    failures += compare_scene(ref_dir, f, k - 13);
   }
   fclose(m);
   if (scenes == 0) { printf("FAIL: no reference scenes\n"); failures++; }

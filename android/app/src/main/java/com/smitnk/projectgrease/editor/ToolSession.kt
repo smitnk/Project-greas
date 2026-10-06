@@ -40,7 +40,11 @@ object ToolSession {
     const val P_TARGET = 8
     const val P_WEIGHT = 9
     const val P_SEED = 10
-    const val P_COUNT = 11
+    const val P_AUTOMASK = 11
+    const val P_SELECT_MASK = 12
+    const val P_CURVE_PRESET = 13
+    const val P_ACTIVE_MATERIAL = 14
+    const val P_COUNT = 15
 
     // Blender tool enums (DNA_brush_enums.h)
     const val GPSCULPT_SMOOTH = 0
@@ -51,11 +55,25 @@ object ToolSession {
     const val GPSCULPT_TWIST = 5
     const val GPSCULPT_PINCH = 6
     const val GPSCULPT_RANDOMIZE = 7
+    const val GPSCULPT_CLONE = 8
+    /** GP_SCULPT_SETT_FLAG_AUTOMASK_* (DNA_scene_types.h). */
+    const val AUTOMASK_STROKE = 1 shl 4
+    const val AUTOMASK_LAYER_STROKE = 1 shl 5
+    const val AUTOMASK_MATERIAL_STROKE = 1 shl 6
+    const val AUTOMASK_LAYER_ACTIVE = 1 shl 8
+    const val AUTOMASK_MATERIAL_ACTIVE = 1 shl 9
+    /** GP_SCULPT_MASK_SELECTMODE_POINT / STROKE / SEGMENT. */
+    const val SELECT_MASK_POINT = 1
+    const val SELECT_MASK_STROKE = 2
+    const val SELECT_MASK_SEGMENT = 4
+    /** eBrushCurvePreset (0 keeps the brush default, Smooth). */
+    val CURVE_PRESETS = listOf(0 to "Default", 1 to "Smooth", 9 to "Smoother", 2 to "Sphere", 3 to "Root", 4 to "Sharp", 5 to "Linear", 6 to "Pow4", 7 to "Inverse square", 8 to "Constant")
     const val GPVERTEX_DRAW = 0
     const val GPVERTEX_BLUR = 1
     const val GPVERTEX_AVERAGE = 2
     const val GPVERTEX_SMEAR = 4
     const val GPVERTEX_REPLACE = 5
+    const val GPVERTEX_TINT = 3
     const val GPWEIGHT_DRAW = 0
     const val GPWEIGHT_BLUR = 1
     const val GPWEIGHT_AVERAGE = 2
@@ -70,6 +88,7 @@ object ToolSession {
         SculptBrush.PINCH -> GPSCULPT_PINCH
         SculptBrush.TWIST -> GPSCULPT_TWIST
         SculptBrush.RANDOMIZE -> GPSCULPT_RANDOMIZE
+        SculptBrush.CLONE -> GPSCULPT_CLONE
     }
 
     /** ProjectGreaseSelect.VPAINT_* (UI order) to GPVERTEX_TOOL_*. */
@@ -78,13 +97,17 @@ object ToolSession {
         ProjectGreaseSelect.VPAINT_AVERAGE -> GPVERTEX_AVERAGE
         ProjectGreaseSelect.VPAINT_SMEAR -> GPVERTEX_SMEAR
         ProjectGreaseSelect.VPAINT_REPLACE -> GPVERTEX_REPLACE
+        ProjectGreaseSelect.VPAINT_TINT -> GPVERTEX_TINT
         else -> GPVERTEX_DRAW
     }
 
     fun brushParams(
         brush: Int, radius: Float, strength: Float, pxPerUnit: Float, invert: Boolean = false,
-        r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0
+        r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0,
+        automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0
     ): FloatArray = FloatArray(P_COUNT).also {
+        it[P_AUTOMASK] = automask.toFloat(); it[P_SELECT_MASK] = selectMask.toFloat()
+        it[P_CURVE_PRESET] = curvePreset.toFloat(); it[P_ACTIVE_MATERIAL] = activeMaterial.toFloat()
         it[P_BRUSH] = brush.toFloat(); it[P_RADIUS] = radius; it[P_STRENGTH] = strength
         it[P_PX_PER_UNIT] = pxPerUnit; it[P_INVERT] = if (invert) 1f else 0f
         it[P_R] = r; it[P_G] = g; it[P_B] = b; it[P_TARGET] = target.toFloat(); it[P_WEIGHT] = weight
@@ -96,14 +119,18 @@ object ToolSession {
     data class DrawSettings(
         val material: Int, val thickness: Float, val strength: Float = 1f, val usePressure: Boolean = true,
         val useStrengthPressure: Boolean = false, val pressureCurve: Float = 1f, val strengthCurve: Float = 1f,
-        val activeSmooth: Float = 0f, val inputSamples: Int = 0, val lazy: Boolean = false, val lazyRadius: Float = 0f,
+        val activeSmooth: Float = 0.35f, val inputSamples: Int = 0, val lazy: Boolean = false, val lazyRadius: Float = 0f,
         val lazyFactor: Float = 0f, val disableStabilizer: Boolean = false, val manhattan: Int = 1,
         val euclidean: Float = 1f, val jitter: Float = 0f, val angleFactor: Float = 0f, val angle: Float = 0f,
         val fakePoints: Boolean = true,
         val guideType: Int = -1, val guideX: Float = 0f, val guideY: Float = 0f, val guideAngle: Float = 0f,
         val guideSpacing: Float = 0f,
         val pressureCurvePoints: List<Pair<Float, Float>> = emptyList(),
-        val strengthCurvePoints: List<Pair<Float, Float>> = emptyList()
+        val strengthCurvePoints: List<Pair<Float, Float>> = emptyList(),
+        /** region pixels per canvas unit: gpencil_paint.c filters / stabilizer compare pixels */
+        val pxPerUnit: Float = 1f,
+        /** jitter BLI_rng seed; null = seeded like gpencil_paint_initstroke() */
+        val seed: Long? = null
     ) {
         fun toParams(): FloatArray {
             val out = FloatArray(DRAW_P_COUNT)
@@ -120,14 +147,18 @@ object ToolSession {
             }
             curve(DRAW_P_PRESSURE_CURVE_N, pressureCurvePoints)
             curve(DRAW_P_STRENGTH_CURVE_N, strengthCurvePoints)
+            out[DRAW_P_PX_PER_UNIT] = pxPerUnit
+            out[DRAW_P_SEED] = seed?.let { (it and 0xFFFFFFFFL).toFloat() + 1f } ?: 0f
             return out
         }
         private fun flag(v: Boolean) = if (v) 1f else 0f
     }
-    /** PG_DRAW_P_PRESSURE_CURVE_N / PG_DRAW_P_STRENGTH_CURVE_N / PG_DRAW_P_COUNT (project_grease_tool_session.h). */
+    /** PG_DRAW_P_PRESSURE_CURVE_N / PG_DRAW_P_STRENGTH_CURVE_N / PG_DRAW_P_PX_PER_UNIT / PG_DRAW_P_SEED / PG_DRAW_P_COUNT (project_grease_tool_session.h). */
     const val DRAW_P_PRESSURE_CURVE_N = 24
     const val DRAW_P_STRENGTH_CURVE_N = 41
-    const val DRAW_P_COUNT = 58
+    const val DRAW_P_PX_PER_UNIT = 58
+    const val DRAW_P_SEED = 59
+    const val DRAW_P_COUNT = 60
     const val CURVE_MAX_POINTS = 8
 
     /** samples (count * STRIDE floats) followed by the BEGIN parameters. */

@@ -11,6 +11,7 @@ import kotlin.math.hypot
 import kotlin.math.min
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
 import com.smitnk.projectgrease.editor.EditorController
 
@@ -19,8 +20,9 @@ fun ProjectGreaseEglViewport(
     modifier: Modifier = Modifier,
     controller: EditorController
 ) {
+  androidx.compose.foundation.layout.Box(modifier) {
     AndroidView(
-        modifier = modifier,
+        modifier = Modifier.matchParentSize(),
         factory = { context ->
             val view = ProjectGreaseDrawingSurfaceView(context, controller)
             view.holder.addCallback(object : SurfaceHolder.Callback {
@@ -65,6 +67,37 @@ fun ProjectGreaseEglViewport(
             view
         }
     )
+    TransformOverlay(controller, Modifier.matchParentSize())
+  }
+}
+
+/** Proportional-editing radius circle (Blender draws it while transforming) and the 2D cursor. */
+@Composable
+private fun TransformOverlay(controller: EditorController, modifier: Modifier) {
+    val settings = controller.transformSettings
+    if (!settings.proportional && settings.pivot != com.smitnk.projectgrease.editor.ProjectGreaseSelect.PIVOT_CURSOR) return
+    androidx.compose.foundation.Canvas(modifier.testTag("transformOverlay")) {
+        controller.overlayTick
+        val doc = controller.document
+        fun toView(x: Float, y: Float) = com.smitnk.projectgrease.editor.CanvasMapping.toView(
+            x, y, size.width, size.height, doc.canvasWidth, doc.canvasHeight, controller.view.zoom, controller.view.panX, controller.view.panY)
+        val ppu = com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(size.width, size.height, doc.canvasWidth, doc.canvasHeight, controller.view.zoom)
+        if (settings.proportional) {
+            val c = controller.selectionPivot()
+            if (c != null) {
+                val (vx, vy) = toView(c[0], c[1])
+                drawCircle(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), settings.size * ppu,
+                    androidx.compose.ui.geometry.Offset(vx, vy), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f))
+            }
+        }
+        if (settings.pivot == com.smitnk.projectgrease.editor.ProjectGreaseSelect.PIVOT_CURSOR) {
+            val (cx, cy) = toView(settings.cursorX, settings.cursorY)
+            val o = androidx.compose.ui.geometry.Offset(cx, cy)
+            drawCircle(androidx.compose.ui.graphics.Color.Red, 12f, o, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
+            drawLine(androidx.compose.ui.graphics.Color.Black, o.copy(x = cx - 20f), o.copy(x = cx + 20f), 2f)
+            drawLine(androidx.compose.ui.graphics.Color.Black, o.copy(y = cy - 20f), o.copy(y = cy + 20f), 2f)
+        }
+    }
 }
 
 internal class ProjectGreaseDrawingSurfaceView(
@@ -102,6 +135,9 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var pinchOpen = false
     private var pinchStartDistance = 0f
     private var pinchStartZoom = 1f
+    /** Pinch during a proportional transform changes the proportional size (Blender: wheel / PageUp). */
+    private var propPinch = false
+    private var pinchStartPropSize = 1f
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -115,6 +151,11 @@ internal class ProjectGreaseDrawingSurfaceView(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val start = canvasPoint(event.x, event.y)
+                if (controller.placingCursor2D) {
+                    controller.setCursor2D(start.first, start.second)
+                    controller.placingCursor2D = false
+                    return true
+                }
                 activePointerId = event.getPointerId(0)
                 // Draw, Sculpt, Vertex Paint and Weight Paint run in the native tool session: one call
                 // per input batch with every sample; native applies the tool and renders.
@@ -237,6 +278,12 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount >= 2 && (moveOpen || rotateOpen || scaleOpen) && controller.transformSettings.proportional) {
+                    propPinch = true
+                    pinchStartDistance = pointerDistance(event).coerceAtLeast(1f)
+                    pinchStartPropSize = controller.transformSettings.size
+                    return true
+                }
                 if (event.pointerCount >= 2) {
                     endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
                     if (strokeOpen) {
@@ -251,6 +298,11 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (propPinch && event.pointerCount >= 2) {
+                    val distance = pointerDistance(event)
+                    if (distance > 0f) controller.setProportionalSize(pinchStartPropSize * (distance / pinchStartDistance))
+                    return true
+                }
                 if (pinchOpen && event.pointerCount >= 2) {
                     val distance = pointerDistance(event)
                     if (pinchStartDistance > 0f && distance > 0f) {
@@ -351,6 +403,10 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
+                if (propPinch) {
+                    propPinch = false
+                    if (event.getPointerId(event.actionIndex) != activePointerId) return true
+                }
                 if (pinchOpen) {
                     pinchOpen = false
                     pinchStartDistance = 0f
@@ -492,6 +548,7 @@ internal class ProjectGreaseDrawingSurfaceView(
     }
 
     private fun resetGestureState() {
+        propPinch = false
         controller.history.endBatch()
         moveOpen = false
         rotateOpen = false

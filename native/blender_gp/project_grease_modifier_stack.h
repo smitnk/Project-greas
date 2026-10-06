@@ -70,7 +70,8 @@ enum {
   PG_MOD_MIRROR = 20,
   PG_MOD_ARRAY = 21,
   PG_MOD_MULTIPLY = 22,
-  PG_MOD_TYPE_LAST = 22,
+  PG_MOD_TEXTURE = 23, /* Texture Mapping (MOD_gpencil_legacy_texture.c) */
+  PG_MOD_TYPE_LAST = 23,
 };
 
 /* Every entry stores PG_MOD_MAX_PARAMS floats: the type's own parameters from index 0 (PG_P_*_COUNT
@@ -97,7 +98,10 @@ enum { /* COLOR: modify_color is PG_MODIFY_COLOR_*, hsv are the hue/saturation/v
 enum { /* LENGTH: same layout as PGLengthParams */
   PG_P_LENGTH_MODE = 0, PG_P_LENGTH_START = 1, PG_P_LENGTH_END = 2, PG_P_LENGTH_OVERSHOOT = 3,
   PG_P_LENGTH_USE_CURVATURE = 4, PG_P_LENGTH_POINT_DENSITY = 5, PG_P_LENGTH_SEGMENT_INFLUENCE = 6,
-  PG_P_LENGTH_MAX_ANGLE = 7, PG_P_LENGTH_INVERT_CURVATURE = 8, PG_P_LENGTH_COUNT = 9 };
+  PG_P_LENGTH_MAX_ANGLE = 7, PG_P_LENGTH_INVERT_CURVATURE = 8,
+  /* random start / end (rand_start_fac, rand_end_fac, rand_offset, seed, step, GP_LENGTH_USE_RANDOM) */
+  PG_P_LENGTH_RAND_START = 9, PG_P_LENGTH_RAND_END = 10, PG_P_LENGTH_RAND_OFFSET = 11,
+  PG_P_LENGTH_SEED = 12, PG_P_LENGTH_STEP = 13, PG_P_LENGTH_USE_RANDOM = 14, PG_P_LENGTH_COUNT = 15 };
 enum { /* SMOOTH */
   PG_P_SMOOTH_FACTOR = 0, PG_P_SMOOTH_STEP = 1, PG_P_SMOOTH_LOCATION = 2, PG_P_SMOOTH_STRENGTH = 3,
   PG_P_SMOOTH_THICKNESS = 4, PG_P_SMOOTH_UV = 5, PG_P_SMOOTH_KEEP_SHAPE = 6, PG_P_SMOOTH_COUNT = 7 };
@@ -119,7 +123,11 @@ enum { /* NOISE: mode is GP_NOISE_RANDOM_STEP (0) / GP_NOISE_RANDOM_KEYFRAME (1)
 enum { /* BUILD (MOD_gpencil_legacy_build.c): mode 0 sequential / 1 concurrent, transition 0 grow /
         * 1 shrink, start delay and length in frames counted from the keyframe (pg_build_visible) */
   PG_P_BUILD_MODE = 0, PG_P_BUILD_TRANSITION = 1, PG_P_BUILD_START = 2, PG_P_BUILD_LENGTH = 3,
-  PG_P_BUILD_COUNT = 4 };
+  /* pg_build_generate (project_grease_blender_build.c): mode 2 additive, transition 2 vanish,
+   * time alignment (concurrent), fade (GP_BUILD_USE_FADING) factor and strengths */
+  PG_P_BUILD_TIME_ALIGN = 4, PG_P_BUILD_USE_FADE = 5, PG_P_BUILD_FADE_FAC = 6,
+  PG_P_BUILD_FADE_THICKNESS = 7, PG_P_BUILD_FADE_OPACITY = 8,
+  PG_P_BUILD_COUNT = 9 };
 enum { /* TIME (MOD_gpencil_legacy_time.c): the layer shows frame pg_time_offset_frame() */
   PG_P_TIME_MODE = 0, PG_P_TIME_OFFSET = 1, PG_P_TIME_SCALE = 2, PG_P_TIME_USE_RANGE = 3,
   PG_P_TIME_SFRA = 4, PG_P_TIME_EFRA = 5, PG_P_TIME_LOOP = 6, PG_P_TIME_COUNT = 7 };
@@ -153,6 +161,10 @@ enum { /* ARRAY (count, constant offset) */
   PG_P_ARRAY_COUNT_N = 0, PG_P_ARRAY_OX = 1, PG_P_ARRAY_OY = 2, PG_P_ARRAY_COUNT = 3 };
 enum { /* MULTIPLY (duplications, distance) */
   PG_P_MULTIPLY_DUPLICATIONS = 0, PG_P_MULTIPLY_DISTANCE = 1, PG_P_MULTIPLY_COUNT = 2 };
+enum { /* TEXTURE: mode STROKE 0 / FILL 1 / STROKE_AND_FILL 2, fit GP_TEX_FIT_STROKE 0 / GP_TEX_CONSTANT_LENGTH 1 */
+  PG_P_TEXTURE_MODE = 0, PG_P_TEXTURE_FIT = 1, PG_P_TEXTURE_UV_OFFSET = 2, PG_P_TEXTURE_UV_SCALE = 3,
+  PG_P_TEXTURE_ALIGN_ROT = 4, PG_P_TEXTURE_FILL_ROT = 5, PG_P_TEXTURE_FILL_OFFSET_X = 6,
+  PG_P_TEXTURE_FILL_OFFSET_Y = 7, PG_P_TEXTURE_FILL_SCALE = 8, PG_P_TEXTURE_COUNT = 9 };
 
 /* Custom curve (use_custom_curve / curve_intensity): point i of n gets factor curve(i / (n - 1)). */
 #define PG_P_CURVE_BASE 96
@@ -175,6 +187,7 @@ typedef struct PGModContext {
   struct bGPDlayer *gpl; /* the layer in gpd->layers (used by Offset's layer mode) */
   struct bGPDframe *gpf; /* frame whose ->strokes contains the stroke being deformed */
   int cfra;              /* current frame number (Noise) */
+  const struct bGPDframe *orig; /* the layer frame gpf was copied from (prev/next keys), or NULL */
 } PGModContext;
 
 /* Type information */

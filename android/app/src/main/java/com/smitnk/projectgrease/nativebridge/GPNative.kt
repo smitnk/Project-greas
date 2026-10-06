@@ -44,9 +44,11 @@ object GPNative {
     external fun nativeToolSamples(handle: Long, tool: Int, samples: FloatArray, count: Int, phase: Int): Int
     /** Edit-mode overlay: points of the editable strokes, selected points highlighted. */
     external fun nativeSetSelectionOverlay(handle: Long, enabled: Boolean): Boolean
-    /** Fill tool options: leak (px, Blender fill_leak), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
+    /** Fill tool options: leak (px; 0 = Blender ceil(3 x fill_factor)), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
     external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
     external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float): Boolean
+    /** Fill precision (brush fill_factor, 0.05..8) and the Extend Lines stroke collision check. */
+    external fun nativeSetFillPrecisionEglRenderer(handle: Long, factor: Float, collide: Boolean): Boolean
     /** Stroke (fill = false) or fill texture image of a material slot, ARGB top row first; null removes. */
     external fun nativeSetMaterialTextureEglRenderer(handle: Long, slot: Int, fill: Boolean, argb: IntArray?, width: Int, height: Int): Boolean
     external fun nativeFxSetTarget(handle: Long, layer: Int, index: Int, target: Int): Boolean
@@ -139,6 +141,19 @@ object GPNative {
     external fun nativeSceneLiteLineArt(handle: Long, levelEnd: Int): FloatArray?
     /** Line Art strokes: [count, { pointCount, edgeType, level, x0, y0, ... }] in frame-buffer coordinates. */
     external fun nativeSceneLiteLineArtStrokes(handle: Long, levelEnd: Int): FloatArray?
+    /**
+     * Line Art strokes with the modifier's options (PGLineartSettings), same output as nativeSceneLiteLineArtStrokes.
+     * ints (15) and floats (12): see LineArtOptions.ints() / floats() in editor/ReferenceScene.kt.
+     */
+    external fun nativeSceneLiteLineArtStrokesEx(handle: Long, ints: IntArray, floats: FloatArray, sourceVertexGroup: String?): FloatArray?
+    /** Object line art: usage, flags, own crease (rad), own intersection priority, collection (-1 = scene). */
+    external fun nativeSceneLiteSetObjectLineArt(handle: Long, index: Int, usage: Int, flags: Int, crease: Float, priority: Int, collection: Int): Boolean
+    /** Adds a collection (parent -1 = scene) with line art usage / flags / intersection mask / priority; its index or -1. */
+    external fun nativeSceneLiteAddCollection(handle: Long, name: String, parent: Int, usage: Int, flags: Int, mask: Int, priority: Int): Int
+    /** Material line art: flags, mask bits, occlusion, intersection priority, back-face culling. */
+    external fun nativeSceneLiteSetMaterialLineArt(handle: Long, index: Int, flags: Int, maskBits: Int, occlusion: Int, priority: Int, backfaceCulling: Boolean): Boolean
+    /** Names of the scene's objects (kind 0), materials (1) or collections (2). */
+    external fun nativeSceneLiteNames(handle: Long, kind: Int): Array<String>?
     // Annotations (project_grease_annotations.h): command ids PG_ANNOT_CMD_* of project_grease_gp_bridge.h.
     external fun nativeAnnotationCommand(handle: Long, command: Int, args: FloatArray?): Int
     /** r, g, b, a, thickness (px), visible (1/0); null without a document. */

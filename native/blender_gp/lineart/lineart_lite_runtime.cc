@@ -3,8 +3,8 @@
  * Runtime pieces the verbatim Line Art core calls that live in parts of Blender Project Grease
  * does not link: a serial BLI_task pool / parallel range (Line Art is run with one thread, which
  * also makes its output deterministic), spin locks (no other thread touches the data), G and PIL
- * time (debug timing only), and the shadow entry points (shadows / light contour are not
- * supported: try_generate returns false and the rest are never reached or have nothing to do).
+ * time (debug timing only). The shadow stage is project_grease_lineart_shadow.c (generated from
+ * lineart_shadow.c).
  */
 
 #include <chrono>
@@ -96,18 +96,3 @@ void BLI_task_parallel_range(int start, int stop, void *userdata, TaskParallelRa
   for (int i = start; i < stop; i++) func(userdata, i, &tls);
   if (settings && settings->func_free && tls.userdata_chunk) settings->func_free(userdata, tls.userdata_chunk);
 }
-
-/* ---- shadow / light contour: not supported ----------------------------------------------- */
-bool lineart_main_try_generate_shadow(Depsgraph * /*depsgraph*/, Scene * /*scene*/, LineartData * /*original_ld*/,
-                                      LineartGpencilModifierData * /*lmd*/, LineartStaticMemPool * /*shadow_data_pool*/,
-                                      LineartElementLinkNode ** /*r_veln*/, LineartElementLinkNode ** /*r_eeln*/,
-                                      ListBase * /*r_calculated_edges_eln_list*/, LineartData ** /*r_shadow_ld_if_reproject*/)
-{
-  return false;
-}
-void lineart_main_transform_and_add_shadow(LineartData * /*ld*/, LineartElementLinkNode * /*veln*/, LineartElementLinkNode * /*eeln*/) {}
-LineartElementLinkNode *lineart_find_matching_eln(ListBase * /*shadow_elns*/, int /*obindex*/) { return nullptr; }
-LineartEdge *lineart_find_matching_edge(LineartElementLinkNode * /*shadow_eln*/, uint64_t /*edge_identifier*/) { return nullptr; }
-void lineart_register_shadow_cuts(LineartData * /*ld*/, LineartEdge * /*e*/, LineartEdge * /*shadow_edge*/) {}
-void lineart_register_intersection_shadow_cuts(LineartData * /*ld*/, ListBase * /*shadow_elns*/) {}
-void lineart_main_make_enclosed_shapes(LineartData * /*ld*/, LineartData * /*shadow_ld*/) {}

@@ -2,7 +2,8 @@
  * 1. golden replay: every scenario of tools/draw_input_golden (the former Kotlin engine, whose
  *    unit tests were derived from Blender 3.6.23 gpencil_paint.c) must release the same points in
  *    the same calls;
- * 2. the assertions of the former LegacyGpBrushStrokeEngineTest.kt, ported one to one. */
+ * 2. the assertions of the former LegacyGpBrushStrokeEngineTest.kt, ported one to one;
+ * 3. Blender pixel math (zoom), BLI_rng jitter sequence and sbuffer point times. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +49,7 @@ static void golden(const char *path)
     }
     else if (!strcmp(tok[0], "settings")) {
       PGDrawSettings s;
+      pg_draw_settings_default(&s); /* px_per_unit 1, random seed: not in the golden format */
       s.draw_strength = bits(tok[1]); s.use_pressure = atoi(tok[2]); s.use_strength_pressure = atoi(tok[3]);
       s.pressure_curve = bits(tok[4]); s.strength_curve = bits(tok[5]); s.active_smooth = bits(tok[6]);
       s.input_samples = atoi(tok[7]); s.lazy_enabled = atoi(tok[8]); s.smooth_stroke_radius = bits(tok[9]);
@@ -76,8 +78,13 @@ static void golden(const char *path)
       CHECK(n_actual == n_expected, "%s: %d points released, golden %d", name, n_actual, n_expected);
       for (int k = 0; k < n_actual && k < n_expected; k++) {
         const PGDrawPoint *a = &actual[k], *e = &expected[k];
-        const int ok = actual_call[k] == expected_call[k] && near(a->x, e->x) && near(a->y, e->y) &&
-                       near(a->pressure, e->pressure) && near(a->strength, e->strength) && near(a->time, e->time);
+        /* Blender-faithful deviations from the Kotlin reference (not produced by Blender's code
+         * path, so the golden file is kept as is): jitter draws from BLI_rng with a run-time seed
+         * (positions differ; pressure / strength still compared) and arc points keep Blender's
+         * sbuffer times instead of interpolated ones, so `time` is checked by time_tests(). */
+        const int jitter = !strcmp(name, "jitter");
+        const int ok = actual_call[k] == expected_call[k] && (jitter || (near(a->x, e->x) && near(a->y, e->y))) &&
+                       near(a->pressure, e->pressure) && near(a->strength, e->strength);
         CHECK(ok, "%s point %d (call %d/%d): (%g %g p%g s%g t%g) vs golden (%g %g p%g s%g t%g)", name, k,
               actual_call[k], expected_call[k], a->x, a->y, a->pressure, a->strength, a->time, e->x, e->y,
               e->pressure, e->strength, e->time);
@@ -226,10 +233,103 @@ static void kotlin_tests(void)
   pg_draw_input_free(&d);
 }
 
+/* ---- Blender pixel math, BLI_rng and sbuffer times ------------------------------------------ */
+static int accepted(PGDrawSettings s, float zoom, float x, float y)
+{
+  PGDrawInput d;
+  memset(&d, 0, sizeof d);
+  const PGDrawPoint *out;
+  s.px_per_unit = zoom;
+  pg_draw_input_begin(&d, &s);
+  pg_draw_input_add(&d, 0, 0, 1, 0, &out);
+  const int n = pg_draw_input_add(&d, x, y, 1, 0.1f, &out);
+  pg_draw_input_free(&d);
+  return n;
+}
+
+static void blender_tests(void)
+{
+  PGDrawSettings s = defaults();
+  /* gpencil_stroke_filtermval(): dx = (int)fabsf(mval - mvalo) in region pixels. Euclidean 1 px:
+   * 1.5 canvas units are 1 px at zoom 1 (1*1 > 1 fails) and 3 px at zoom 2 (9 > 1 passes). */
+  CHECK(accepted(s, 1, 1.5f, 0) == 0, "euclidean zoom 1 filters");
+  CHECK(accepted(s, 2, 1.5f, 0) == 1, "euclidean zoom 2 passes");
+  /* Manhattan 1 px on both axes (Euclidean 10 px out of the way): (1.5, 1.5) -> 1 px / 3 px. */
+  s.euclidean_threshold = 10;
+  CHECK(accepted(s, 1, 1.5f, 1.5f) == 0, "manhattan zoom 1 filters");
+  CHECK(accepted(s, 2, 1.5f, 1.5f) == 1, "manhattan zoom 2 passes");
+  /* Lazy mouse: brush->smooth_stroke_radius is pixels; 4 units = 4 px (16 <= 25) / 8 px (64 > 25). */
+  s = defaults(); s.lazy_enabled = 1; s.smooth_stroke_radius = 5; s.smooth_stroke_factor = 0.5f;
+  CHECK(accepted(s, 1, 4, 0) == 0, "lazy radius zoom 1 holds");
+  CHECK(accepted(s, 2, 4, 0) == 1, "lazy radius zoom 2 passes");
+  /* gpencil_add_fake_points(): input_samples 4 -> min_dist 4 * 7 = 28 px; a 15 unit jump is
+   * 15 px at zoom 1 (no arc) and 30 px at zoom 2 (arc of 2 slices). */
+  for (int zoom = 1; zoom <= 2; zoom++) {
+    PGDrawInput d;
+    memset(&d, 0, sizeof d);
+    const PGDrawPoint *out;
+    s = defaults(); s.input_samples = 4; s.px_per_unit = (float)zoom;
+    pg_draw_input_begin(&d, &s);
+    const float xs[4] = {0, 10, 20, 35};
+    for (int i = 0; i < 4; i++) pg_draw_input_add(&d, xs[i], 0, 1, 0.01f * i, &out);
+    CHECK(d.used == (zoom == 1 ? 4 : 5), "fake points zoom %d: %d buffered", zoom, d.used);
+    pg_draw_input_free(&d);
+  }
+
+  /* BLI_rng_new(seed) + BLI_rng_get_float(): blender::RandomNumberGenerator is the drand48 LCG
+   * (x = seed << 16 | 0x330E), so srand48() / lrand48() is an independent reference. */
+  {
+    unsigned long long x;
+    pg_draw_rng_seed(&x, 1234u);
+    srand48(1234);
+    int same = 1;
+    for (int i = 0; i < 1000; i++) same &= pg_draw_rng_get_float(&x) == (float)(int)lrand48() / 0x80000000;
+    CHECK(same, "BLI_rng sequence");
+  }
+  /* gpencil_stroke_addpoint(): one BLI_rng_get_float() per point (also for the first two, which
+   * gpencil_brush_jitter() does not move); fac = (rand * 2 - 1) * (jitter + 2)^2; the diagonal
+   * movement gives mvec = (0.5, 0.5) after the cos / sin reduction, in pixels. */
+  for (int zoom = 1; zoom <= 2; zoom++) {
+    static Run r;
+    float ev[8][4];
+    for (int i = 0; i < 8; i++) { ev[i][0] = 100.0f * i; ev[i][1] = 100.0f * i; ev[i][2] = 1; ev[i][3] = 0.01f * i; }
+    s = defaults(); s.jitter = 0.5f; s.use_seed = 1; s.seed = 77u; s.px_per_unit = (float)zoom;
+    run(&r, &s, (const float (*)[4])ev, 8);
+    CHECK(r.n == 8, "jitter count %d", r.n);
+    srand48(77);
+    for (int i = 0; i < r.n; i++) {
+      const float rand = (float)(int)lrand48() / 0x80000000 * 2.0f - 1.0f;
+      const float fac = rand * 6.25f;
+      const float off = i < 2 ? 0.0f : 0.5f * fac * 10.0f / (float)zoom;
+      CHECK(fabsf(r.sent[i].x - (100.0f * i + off)) < 2e-3f && fabsf(r.sent[i].y - (100.0f * i + off)) < 2e-3f,
+            "jitter zoom %d point %d: (%g %g) expected offset %g", zoom, i, r.sent[i].x, r.sent[i].y, off);
+    }
+    pg_draw_input_free(&r.d);
+  }
+
+  /* Point times: pt->time = curtime - inittime for every added point; gpencil_add_arc_points()
+   * does not write time: the first arc point reuses the replaced slot (keeps 0.2), the next one is
+   * a zeroed sbuffer slot (0). Events 0, 40, 80, 120 px with input_samples 4: 40 > 28 -> 2 slices. */
+  {
+    static Run r;
+    float ev[4][4];
+    for (int i = 0; i < 4; i++) { ev[i][0] = 40.0f * i; ev[i][1] = 0; ev[i][2] = 1; ev[i][3] = 10.0f + 0.1f * i; }
+    s = defaults(); s.input_samples = 4;
+    run(&r, &s, (const float (*)[4])ev, 4);
+    const float expect[5] = {0.0f, (10.1f - 10.0f), (10.2f - 10.0f), 0.0f, (10.3f - 10.0f)};
+    CHECK(r.n == 5, "arc times count %d", r.n);
+    for (int i = 0; i < r.n && i < 5; i++)
+      CHECK(r.sent[i].time == expect[i], "arc time %d: %g expected %g", i, r.sent[i].time, expect[i]);
+    CHECK(r.sent[2].x > 40.0f && r.sent[2].x < r.sent[3].x && r.sent[3].x < 120.0f, "arc positions interpolated");
+    pg_draw_input_free(&r.d);
+  }
+}
+
 int main(int argc, char **argv)
 {
   golden(argc > 1 ? argv[1] : "draw_input_golden.txt");
   kotlin_tests();
+  blender_tests();
   if (failures) { fprintf(stderr, "%d draw input check(s) failed\n", failures); return 1; }
   printf("draw input tests passed\n");
   return 0;

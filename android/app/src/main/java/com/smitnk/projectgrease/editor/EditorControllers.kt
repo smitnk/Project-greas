@@ -250,12 +250,11 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             if (!playing || native.handle == 0L) return
             val end = endFrame()
             timelineEnd = end
-            var next = currentFrame + 1
-            if (next > end) {
-                if (loop) next = 1 else {
-                    playing = false
-                    return
-                }
+            // screen_animation_step: wraps within the preview range when it is on (PRVRANGEON).
+            val next = TimelineRules.nextPlaybackFrame(currentFrame, timeline.preview, end, loop)
+            if (next == null) {
+                playing = false
+                return
             }
             if (native.selectFrameOrHold(next)) {
                 currentFrame = next
@@ -328,37 +327,40 @@ class AnimationController(private val native: NativeEditorBridge, private val re
      * one after gets an in-between (step 1), each eased with the current easing; existing frames in the
      * gap are replaced as Blender does. Returns the number of frames created (one undo step).
      */
-    fun interpolateSequence(frame:Int = currentFrame):Int {
+    /** GPENCIL_OT_interpolate_sequence options: flip (0 none, 1 always, 2 auto), step, smoothing,
+     *  only selected (Edit mode), exclude breakdowns. */
+    var interpolateFlip = ProjectGreaseSelect.INTERP_FLIP_AUTO
+    var interpolateStep = 1
+    var interpolateSmoothFactor = 0f
+    var interpolateSmoothSteps = 1
+    var interpolateOnlySelected = false
+    var interpolateExcludeBreakdowns = false
+    /** Blender interpolates between the keys before and after the current frame; on a key the gap
+     *  after it is filled (the frame just after the key is used as the current frame). */
+    private fun interpolationFrame(frame:Int):Int = if (frame in native.frameNumbers()) frame + 1 else frame
+    private fun runInterpolation(frame:Int, single:Boolean):Int {
         if (native.handle == 0L) return 0
         ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
-        val keys = native.frameNumbers().sorted()
-        val previous = keys.lastOrNull { it <= frame } ?: return 0
-        val next = keys.firstOrNull { it > previous } ?: return 0
-        // gpencil_interpolate_seq_exec(): in-betweens of (prev, next) with the keys of that gap removed
-        for (k in keys) if (k in (previous + 1) until next) native.deleteFrame(k)
-        var made = 0
-        val span = (next - previous).toFloat()
-        for (f in previous + 1 until next) {
-            if (native.interpolateFrame(previous, next, f, (f - previous) / span, easingType, easingMode)) made++
-        }
-        currentFrame = frame.coerceIn(1, maxOf(1, next))
-        native.selectFrameOrHold(currentFrame)
+        val before = native.frameNumbers().toSet()
+        val c = ProjectGreaseSelect.interpolate(frame, interpolateStep, interpolateFlip, interpolateOnlySelected,
+            interpolateExcludeBreakdowns, easingType, easingMode, interpolateSmoothFactor, interpolateSmoothSteps, single)
+        if (!native.applyEditCommand(c.id, c.args)) return 0
+        val made = native.frameNumbers().count { it !in before }.coerceAtLeast(if (single) 1 else 0)
         frameCount = native.frameCount().coerceAtLeast(1)
         timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         return made
     }
+    fun interpolateSequence(frame:Int = currentFrame):Int {
+        val made = runInterpolation(interpolationFrame(frame), single = false)
+        currentFrame = frame.coerceAtLeast(1)
+        native.selectFrameOrHold(currentFrame)
+        return made
+    }
     fun interpolateAt(frame:Int):Boolean {
-        ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
-        if (native.handle == 0L) return false
-        val keys = native.frameNumbers().sorted()
-        val previous = keys.lastOrNull { it < frame } ?: return false
-        val next = keys.firstOrNull { it > frame } ?: return false
-        val span = (next - previous).coerceAtLeast(1)
-        val factor = (frame - previous).toFloat() / span.toFloat()
-        if (!native.interpolateFrame(previous,next,frame,factor,easingType,easingMode)) return false
-        currentFrame=frame
-        frameCount=native.frameCount().coerceAtLeast(1)
-        timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
+        if (frame in native.frameNumbers()) return false
+        if (runInterpolation(frame, single = true) <= 0) return false
+        currentFrame = frame
+        native.selectFrameOrHold(currentFrame)
         return true
     }
     fun deleteFrame(frameNumber:Int):Boolean {
@@ -386,6 +388,23 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if(playing) handler.post(tick)
     }
     fun toggleLoop(){loop=!loop}
+
+    /** Scene markers and preview range; part of every undo step and saved in the project file. */
+    var timeline by androidx.compose.runtime.mutableStateOf(TimelineState()); private set
+    fun restoreTimeline(state: TimelineState) { timeline = state }
+    /** Scrubbing snaps to the nearest keyframe instead of the nearest frame when on (UI option). */
+    var scrubSnapToKeys by androidx.compose.runtime.mutableStateOf(false)
+    /** ANIM_OT_change_frame: [position] is a fractional frame; it is rounded (or key-snapped) first. */
+    fun scrubTo(position: Float): Boolean {
+        val frame = TimelineRules.scrubFrame(position, 1, maxOf(timelineEnd, endFrame()), keyframes, scrubSnapToKeys)
+        return frame == currentFrame || setFrame(frame)
+    }
+    /** Applies a marker / preview-range rule result; false (nothing changed) when the rule refused. */
+    fun applyTimeline(state: TimelineState?): Boolean {
+        if (state == null || state == timeline) return false
+        timeline = state
+        return true
+    }
     fun stop(){playing=false;handler.removeCallbacks(tick)}
 }
 
@@ -454,7 +473,7 @@ class BrushController(private val materials: MaterialController) {
     var usePressure = true; private set
     var useStrengthPressure = false; private set
     var inputSamples = 10; private set
-    var activeSmooth = 0f; private set // until a preset is picked (the Pencil preset sets 0.35)
+    var activeSmooth = 0.35f; private set // ACTIVE_SMOOTH of the default Pencil preset (BKE_gpencil_brush_preset_set)
     var angle = 0f; private set
     var angleFactor = 0f; private set
     var hardness = 1f; private set
@@ -593,7 +612,7 @@ class SelectionController(private val native: NativeEditorBridge) {
 class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
 enum class EraserMode { HARD, SOFT, STROKE }
 enum class SculptBrush {
-    SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE
+    SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE, CLONE
 }
 
 /** Sculpt brush selection; the brushes themselves run natively (project_grease_tool_sculpt.c). */
@@ -609,6 +628,16 @@ class SculptController {
     fun select(value: SculptBrush) { brush = value }
 
     fun setInvert(value: Boolean) { invert = value }
+    /** ToolSettings gp_sculpt.flag auto-masking bits, gpencil_selectmode_sculpt, brush curve preset. */
+    var automask = 0
+        private set
+    var selectMask = 0
+        private set
+    var curvePreset = 0
+        private set
+    fun toggleAutomask(bit: Int) { automask = automask xor bit }
+    fun setSelectMask(mask: Int) { selectMask = mask and 7 }
+    fun setCurvePreset(preset: Int) { if (ToolSession.CURVE_PRESETS.any { it.first == preset }) curvePreset = preset }
 }
 
 class OnionSkinController {
@@ -680,8 +709,9 @@ class EditorController {
     val reference=ReferenceScene()
     val document=DocumentController()
     val history=HistoryController(native).also { h ->
-        h.captureExtras = { captureTextures() }
-        h.restoreExtras = { restoreTextures(it) }
+        // Kotlin-side state of an undo step: material textures plus the timeline (markers, preview range).
+        h.captureExtras = { Pair(captureTextures(), animation.timeline) }
+        h.restoreExtras = { e -> (e as? Pair<*, *>)?.let { restoreTextures(it.first); (it.second as? TimelineState)?.let(animation::restoreTimeline) } }
     }
     val animation=AnimationController(native) { render() }
     val materials=MaterialController()
@@ -752,6 +782,7 @@ class EditorController {
             reapplyOnion()
             selectedLayer=0
             animation.setSceneEnd(0)
+            animation.restoreTimeline(TimelineState())
             animation.initialize()
             history.reset()
             document.markDirty()
@@ -782,6 +813,8 @@ class EditorController {
         mode == GreaseMode.VERTEX_PAINT && paintsInMode() -> ToolSession.TOOL_VERTEX_PAINT
         mode == GreaseMode.WEIGHT_PAINT && paintsInMode() -> ToolSession.TOOL_WEIGHT_PAINT
         tools.activeTool == GreaseTool.SCULPT -> ToolSession.TOOL_SCULPT
+        // Draw mode's Tint tool (GPAINT_TOOL_TINT) runs the vertex paint session
+        tools.activeTool == GreaseTool.DRAW && mode == GreaseMode.DRAW && drawTint -> ToolSession.TOOL_VERTEX_PAINT
         tools.activeTool == GreaseTool.DRAW -> ToolSession.TOOL_DRAW
         else -> -1
     }
@@ -798,13 +831,16 @@ class EditorController {
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
                 ToolSession.sculptTool(sculpt.brush), brushes.size.coerceAtLeast(0.5f),
-                brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++)
+                brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
+                selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
-                pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget)
+                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
+                pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
+                curvePreset = paintCurvePreset)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
                 weightPaintBrush, brushes.size.coerceAtLeast(0.5f), brushes.strength, pxPerUnit,
-                invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue)
+                invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue,
+                curvePreset = paintCurvePreset)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
                 material = materials.activeMaterial, thickness = materials.thickness,
                 strength = brushes.strength, usePressure = brushes.usePressure,
@@ -818,7 +854,8 @@ class EditorController {
                 angle = if (legacyDrawAngleFactor != 0f) legacyDrawAngle else brushes.angle,
                 guideType = view.guideType, guideX = view.guideCenterX, guideY = view.guideCenterY,
                 guideAngle = view.guideAngle, guideSpacing = view.guideSpacing,
-                pressureCurvePoints = brushes.pressureCurvePoints, strengthCurvePoints = brushes.strengthCurvePoints
+                pressureCurvePoints = brushes.pressureCurvePoints, strengthCurvePoints = brushes.strengthCurvePoints,
+                pxPerUnit = pxPerUnit
             ).toParams()
             else -> null
         }
@@ -1497,17 +1534,23 @@ class EditorController {
         return ok
     }
     /** Vector pages (SVG/PDF export) for [frames]; the layer/frame selection is restored afterwards. */
-    fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false):List<VectorPage> {
+    /** Layer names in document order (export dialog layer filter). */
+    fun exportLayerNames():List<String> {
+        if (native.handle == 0L) return emptyList()
+        val adapter = NativeDocumentAdapter(native)
+        return (0 until adapter.layerCount()).map { adapter.layerRecord(it)?.name?.ifBlank { "Layer ${it + 1}" } ?: "Layer ${it + 1}" }
+    }
+    fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false, options:VectorExportOptions = VectorExportOptions()):List<VectorPage> {
         if (native.handle == 0L || frames.isEmpty()) return emptyList()
         val originalLayer = selectedLayer
         val originalFrame = animation.currentFrame
-        var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames)
+        var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames, options)
         if (includeAnnotations) {
             val dump = annotationDump()
             val style = annotationStyle()
             pages = pages.map { page ->
                 val notes = AnnotationData.exportLayer(dump, style, page.frame)
-                if (notes == null) page else VectorPage(page.frame, page.width, page.height, page.layers + notes)
+                if (notes == null) page else VectorPage(page.frame, page.width, page.height, page.layers + notes, page.clip)
             }
         }
         if (native.layerCount() > 0) {
@@ -1524,7 +1567,8 @@ class EditorController {
         val originalFrame = animation.currentFrame
         val json = ProjectDocumentCodec.encode(
             NativeDocumentAdapter(native),
-            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd
+            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd,
+            animation.timeline
         )
         if (native.layerCount() > 0) {
             native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
@@ -1550,6 +1594,7 @@ class EditorController {
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
         animation.setFps((parsed.fps ?: animation.fps).coerceIn(1,120))
         animation.setSceneEnd(parsed.frameEnd)
+        animation.restoreTimeline(parsed.timeline)
         if (!ProjectDocumentCodec.restore(parsed, NativeDocumentAdapter(native), brushes.size)) return false
         val rawJson = runCatching { org.json.JSONObject(raw) }.getOrNull()
         // "settings": older files use defaults with the file's canvas size, fps and end frame
@@ -1620,15 +1665,24 @@ class EditorController {
         if(ok){ multiframeEditing=enabled; render() }
         return ok
     }
-    // Fill tool options (Blender fill brush): leak size, dilate (negative contracts), boundary source.
-    var fillLeak = 3; private set
+    // Fill tool options (Blender fill brush): leak size (0 = Blender's ceil(3 x precision)),
+    // dilate (negative contracts), boundary source.
+    var fillLeak = 0; private set
     var fillDilate = 1; private set
     var fillBoundary = FILL_BOUNDARY_ALL; private set
     /** Fill "Extend Lines" (brush fill_extend_fac, Blender default 0). */
     var fillExtend = 0f; private set
     fun setFillExtend(value:Float) { fillExtend = if (value.isFinite()) value.coerceIn(0f, 10f) else 0f }
+    /** Fill "Precision" (brush fill_factor, Blender default 1, range 0.05..8). */
+    var fillPrecision = 1f; private set
+    /** Extend Lines "Collide" (GP_BRUSH_FILL_STROKE_COLLIDE): only extensions that hit a stroke close gaps. */
+    var fillCollide = false; private set
+    fun setFillPrecision(value:Float = fillPrecision, collide:Boolean = fillCollide) {
+        fillPrecision = if (value.isFinite()) value.coerceIn(0.05f, 8f) else 1f
+        fillCollide = collide
+    }
     fun setFillOptions(leak:Int = fillLeak, dilate:Int = fillDilate, boundary:Int = fillBoundary) {
-        fillLeak = leak.coerceIn(1, 100)
+        fillLeak = leak.coerceIn(0, 100)
         fillDilate = dilate.coerceIn(-40, 40)
         fillBoundary = boundary.coerceIn(FILL_BOUNDARY_ALL, FILL_BOUNDARY_EDIT_LINES)
     }
@@ -1644,6 +1698,7 @@ class EditorController {
         }
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
+        GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, fillPrecision, fillCollide)
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
         else if (enabledFill) {
@@ -1787,7 +1842,10 @@ class EditorController {
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             GPNative.nativeRenderEgl(rendererHandle)
         }
+        if (transformSettings.proportional || transformSettings.pivot == ProjectGreaseSelect.PIVOT_CURSOR) overlayTick++
     }
+    /** Bumped on renders while the proportional circle or 2D cursor overlay is visible. */
+    var overlayTick by androidx.compose.runtime.mutableIntStateOf(0)
     fun selectionOverlayVisible():Boolean = mode == GreaseMode.EDIT || tools.activeTool in SELECTION_TOOLS
     fun layerCount() = native.layerCount()
 
@@ -1889,6 +1947,7 @@ class EditorController {
         animation.setFps(template.fps)
         animation.initialize()
         animation.setSceneEnd(template.endFrame)
+        animation.restoreTimeline(TimelineState())
         materials.select(0)
         template.materials.firstOrNull()?.let { materials.setColor(it.stroke) }
         pushMaterialColor()
@@ -2191,7 +2250,7 @@ class EditorController {
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun duplicateSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.duplicateStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.translate(dx,dy));val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return edit9Translate(dx,dy);if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.translate(dx,dy));val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun flipSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.flipStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     /** Median of every selected point (native stroke_center(-1)); null when nothing is selected. */
     fun selectionPivot():FloatArray? = native.strokeCenter(-1)?.takeIf { it.size >= 2 }
@@ -2225,6 +2284,7 @@ class EditorController {
     fun toggleSelectionCaps(type:Int=ProjectGreaseSelect.CAPS_TOGGLE_BOTH) = runSelectCommand(ProjectGreaseSelect.caps(type))
     fun setSelectionStartPoint() = runSelectCommand(ProjectGreaseSelect.startSet())
     fun separateSelectionToLayer() = runSelectCommand(ProjectGreaseSelect.separateToLayer())
+    fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runSelectCommand(ProjectGreaseSelect.separate(mode))
     fun moveSelectionToLayer(index:Int) = runSelectCommand(ProjectGreaseSelect.moveToLayer(index))
     /** Copy does not change the document; call native directly so no undo step is recorded. */
     fun copySelection():Boolean = native.handle != 0L &&
@@ -2263,8 +2323,18 @@ class EditorController {
         private set
     var vertexPaintTarget = ProjectGreaseSelect.PAINT_STROKE
         private set
-    fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_REPLACE) vertexPaintBrush = brush }
+    fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_TINT) vertexPaintBrush = brush }
+    /** Vertex colour palette (Paint.palette swatches): picking one makes it the paint colour. */
+    val vertexPalette = androidx.compose.runtime.mutableStateListOf<Int>()
+    fun addPaletteColor(argb:Int = materials.colorArgb):Boolean { if (argb in vertexPalette || vertexPalette.size >= 64) return false; vertexPalette.add(argb); document.markDirty(); return true }
+    fun removePaletteColor(index:Int):Boolean { if (index !in vertexPalette.indices) return false; vertexPalette.removeAt(index); document.markDirty(); return true }
+    fun usePaletteColor(index:Int):Boolean { val c = vertexPalette.getOrNull(index) ?: return false; materials.setColor(c); return true }
     fun setVertexPaintTarget(target:Int) { if (target in ProjectGreaseSelect.PAINT_STROKE..ProjectGreaseSelect.PAINT_BOTH) vertexPaintTarget = target }
+    /** Draw mode's Tint tool: paints vertex colour with the active colour instead of drawing. */
+    var drawTint by androidx.compose.runtime.mutableStateOf(false)
+    /** gpencil_selectmode_vertex (GP_VERTEX_MASK_SELECTMODE_*) and the paint brushes' falloff curve preset. */
+    var vertexSelectMask = 0
+    var paintCurvePreset = 0
     /** Mirror modifier as copies, about the selection median (Blender uses the object origin). */
     fun mirrorSelectionCopy(axisX:Boolean, axisY:Boolean):Boolean {
         val pivot = selectionPivot() ?: return false
@@ -2350,9 +2420,9 @@ class EditorController {
     fun selectionVertexColorLevels(offset:Float, gain:Float, mode:Int=ProjectGreaseSelect.PAINT_BOTH) =
         runSelectCommand(ProjectGreaseSelect.vcolorLevels(mode, offset, gain))
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_ROTATE,snapRotation(radians),0f,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_SCALE,scaleX,scaleY,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStroke(mirrorX:Boolean,mirrorY:Boolean):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStroke(i,mirrorX,mirrorY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.mirror(mirrorX,mirrorY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun subdivideSelectedStroke(level:Int=1):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.subdivideStroke(i,level);if(ok){history.markEdit();document.markDirty();render()};return ok}
@@ -2429,13 +2499,93 @@ class EditorController {
     /** Key type of keyframe [frame] (BEZT_KEYTYPE_*) on the active layer, 0 when not a keyframe. */
     fun frameKeyType(frame:Int):Int = animation.keyTypes[frame] ?: 0
     /** Sets the key type of keyframe [frame]; the selected keyframes too when [frame] is one of them. */
+    /** Pivot, proportional editing and increment snapping (ToolSettings) for selection transforms. */
+    var transformSettings by androidx.compose.runtime.mutableStateOf(ProjectGreaseSelect.TransformSettings())
+    /** Next canvas tap places the 2D cursor (pivot "2D Cursor"). */
+    var placingCursor2D = false
+    private var snapRemX = 0f
+    private var snapRemY = 0f
+    private var snapRemRot = 0f
+    fun setPivot(pivot:Int):Boolean { if (pivot !in ProjectGreaseSelect.PIVOT_MEDIAN..ProjectGreaseSelect.PIVOT_CURSOR) return false; transformSettings = transformSettings.copy(pivot = pivot); render(); return true }
+    /** 2D cursor placement (tap with the 2D Cursor pivot). */
+    fun setCursor2D(x:Float, y:Float) { if (x.isFinite() && y.isFinite()) { transformSettings = transformSettings.copy(cursorX = x, cursorY = y); render() } }
+    fun toggleProportional():Boolean { transformSettings = transformSettings.copy(proportional = !transformSettings.proportional); render(); return transformSettings.proportional }
+    fun setProportionalConnected(on:Boolean) { transformSettings = transformSettings.copy(connected = on) }
+    fun setProportionalFalloff(falloff:Int):Boolean { if (falloff !in ProjectGreaseSelect.FALLOFF_VALUES) return false; transformSettings = transformSettings.copy(falloff = falloff); return true }
+    /** Proportional size (pinch while transforming), clamped like Blender's 0.00001..5000 range. */
+    fun setProportionalSize(size:Float) { if (size.isFinite()) { transformSettings = transformSettings.copy(size = size.coerceIn(0.00001f, 5000f)); render() } }
+    fun setSnapIncrement(increment:Float) { transformSettings = transformSettings.copy(snapIncrement = if (increment.isFinite() && increment > 0f) increment else 0f); snapRemX = 0f; snapRemY = 0f; snapRemRot = 0f }
+    /** Incremental drag deltas are accumulated so snapping moves in whole increments without losing motion. */
+    private fun edit9Translate(dx:Float, dy:Float):Boolean {
+        val inc = transformSettings.snapIncrement
+        var mx = dx; var my = dy
+        if (inc > 0f) {
+            snapRemX += dx; snapRemY += dy
+            mx = kotlin.math.round(snapRemX / inc) * inc; my = kotlin.math.round(snapRemY / inc) * inc
+            snapRemX -= mx; snapRemY -= my
+            if (mx == 0f && my == 0f) return false
+        }
+        return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_TRANSLATE, mx, my, transformSettings))
+    }
+    private fun snapRotation(radians:Float):Float {
+        if (transformSettings.snapIncrement <= 0f) return radians
+        val step = (Math.PI / 36.0).toFloat()
+        snapRemRot += radians
+        val r = kotlin.math.round(snapRemRot / step) * step
+        snapRemRot -= r
+        return r
+    }
+    /** Dope sheet (action editor) frame operators; each is one undo step. */
+    private fun runFrameCommand(c:ProjectGreaseSelect.Command?):Boolean {
+        if (c == null) return false
+        val ok = native.applyEditCommand(c.id, c.args)
+        animation.refreshKeyInfo()
+        return docChanged(ok)
+    }
+    fun boxSelectFrames(fmin:Int, fmax:Int, extend:Boolean = false) = runFrameCommand(ProjectGreaseSelect.framesSelectRange(fmin, fmax, extend))
+    fun moveSelectedFrames(offset:Int) = offset != 0 && runFrameCommand(ProjectGreaseSelect.framesMove(offset))
+    fun scaleSelectedFrames(factor:Float) = runFrameCommand(ProjectGreaseSelect.framesScale(animation.currentFrame, factor))
+    fun copySelectedFrames():Boolean { val c = ProjectGreaseSelect.framesCopy(); return native.applyEditCommand(c.id, c.args) }
+    fun pasteFrames() = runFrameCommand(ProjectGreaseSelect.framesPaste(animation.currentFrame))
+    fun setDashSegments(offset:Int, segments:List<Pair<Int,Int>>) = docChanged(ProjectGreaseSelect.dashSegments(offset, segments)?.let { native.applyEditCommand(it.id, it.args) } ?: false)
+    /**
+     * ACTION_OT_keyframe_type: applies to the selected keyframes when [frame] is one of them or is not a
+     * keyframe itself (long press on a hold cell with a selection); otherwise just to [frame].
+     */
     fun setFrameKeyType(frame:Int, type:Int):Boolean {
-        val targets = if (frame in animation.selectedFrames) animation.selectedFrames + frame else setOf(frame)
+        val selected = animation.selectedFrames.filter { it in animation.keyframes }.toSet()
+        val isKey = frame in animation.keyframes
+        val targets = when {
+            frame in selected -> selected
+            !isKey -> selected
+            else -> setOf(frame)
+        }
+        if (targets.isEmpty()) return false
         var any = false
         for (f in targets) ProjectGreaseSelect.frameKeyType(f, type)?.let { any = native.applyEditCommand(it.id, it.args) || any }
         animation.refreshKeyInfo()
         return docChanged(any)
     }
+    // ---- scene markers and preview range (TimelineRules); each change is one undo step ----
+    private fun timelineChanged(state:TimelineState?):Boolean {
+        if (!animation.applyTimeline(state)) return false
+        history.markEdit(); document.markDirty(); return true
+    }
+    private fun markerEdit(rule:(List<TimeMarker>) -> List<TimeMarker>?):Boolean =
+        timelineChanged(rule(animation.timeline.markers)?.let { animation.timeline.copy(markers = it) })
+    /** MARKER_OT_add at the current frame (named "F_<frame>", selected alone); refused when one is there. */
+    fun addMarker(frame:Int = animation.currentFrame) = markerEdit { TimelineRules.addMarker(it, frame) }
+    fun renameMarker(name:String) = markerEdit { TimelineRules.renameMarker(it, name) }
+    fun moveSelectedMarkers(offset:Int) = markerEdit { TimelineRules.moveMarkers(it, offset) }
+    fun deleteSelectedMarkers() = markerEdit { TimelineRules.deleteMarkers(it) }
+    /** Marker selection is not an undo step in this app (frame selection is not either). */
+    fun selectMarker(frame:Int, extend:Boolean = false):Boolean =
+        animation.applyTimeline(animation.timeline.copy(markers = TimelineRules.selectMarker(animation.timeline.markers, frame, extend)))
+    fun setPreviewRange(start:Int, end:Int) = timelineChanged(animation.timeline.copy(preview = TimelineRules.setPreviewRange(start, end)))
+    fun clearPreviewRange() = timelineChanged(animation.timeline.copy(preview = PreviewRange()))
+    /** Timeline drag: moves the current frame to the whole frame under [position] (no undo step, like Blender). */
+    fun scrubTo(position:Float):Boolean { val ok = animation.scrubTo(position); if (ok) render(); return ok }
+
     /** Timeline frame selection (GP_FRAME_SELECT): replace, toggle or extend; drives multiframe editing. */
     fun selectTimelineFrame(frame:Int, mode:Int = ProjectGreaseSelect.FRAME_SELECT_TOGGLE):Boolean {
         val c = ProjectGreaseSelect.frameSelect(frame, mode)
@@ -2466,6 +2616,13 @@ class EditorController {
         docChanged(ProjectGreaseSelect.layerPass(layer, pass).let { native.applyEditCommand(it.id, it.args) })
 
     // ---- materials: name, order, lock / hide / solo, line type, pass ----
+    /** Gradient fill (GP_MATERIAL_FILL_STYLE_GRADIENT); null turns it back to a solid fill. */
+    fun setMaterialGradient(slot:Int, gradient:FloatArray?):Boolean {
+        val g = gradient ?: (materialRecord(slot)?.gradient ?: return false)
+        return docChanged(ProjectGreaseSelect.materialGradient(slot, gradient != null, g)?.let { native.applyEditCommand(it.id, it.args) } ?: false)
+    }
+    fun setMaterialOptions(slot:Int, strokeHoldout:Boolean, fillHoldout:Boolean, selfOverlap:Boolean) =
+        docChanged(ProjectGreaseSelect.materialOptions(slot, strokeHoldout, fillHoldout, selfOverlap).let { native.applyEditCommand(it.id, it.args) })
     fun materialRecord(slot:Int = materials.activeMaterial):MaterialRecord? = NativeDocumentAdapter(native).materialRecord(slot)
     fun materialName(slot:Int):String = native.materialName(slot)?.takeIf { it.isNotBlank() } ?: "Material ${slot + 1}"
     fun renameMaterial(slot:Int, name:String):Boolean {

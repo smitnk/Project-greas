@@ -1008,6 +1008,9 @@ PGVertexPaintSession *pg_vpaint_session_begin(bGPdata *gpd, const PGToolBrushPar
   brush->gpencil_settings = &s->settings;
   brush->gpencil_vertex_tool = (char)params->brush;
   brush->curve_preset = BRUSH_CURVE_SMOOTH;
+  if (params->curve_preset > BRUSH_CURVE_CUSTOM && params->curve_preset <= BRUSH_CURVE_SMOOTHER) {
+    brush->curve_preset = params->curve_preset;
+  }
   s->settings.flag |= GP_BRUSH_USE_PRESSURE;
   if (params->brush == GPVERTEX_TOOL_REPLACE) {
     s->settings.flag &= ~GP_BRUSH_USE_PRESSURE; /* "Don't use pressure or invert" */
@@ -1031,7 +1034,10 @@ PGVertexPaintSession *pg_vpaint_session_begin(bGPdata *gpd, const PGToolBrushPar
   gso->scene = &s->view.scene;
   gso->object = &s->view.ob;
   gso->region = &s->view.region;
-  gso->mask = 0; /* no "selected only" masking */
+  /* ts->gpencil_selectmode_vertex (GP_VERTEX_MASK_SELECTMODE_POINT / STROKE / SEGMENT) */
+  gso->mask = (eGP_Vertex_SelectMaskFlag)(params->select_mask & (GP_VERTEX_MASK_SELECTMODE_POINT |
+                                                                  GP_VERTEX_MASK_SELECTMODE_STROKE |
+                                                                  GP_VERTEX_MASK_SELECTMODE_SEGMENT));
   gso->is_multiframe = GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
   if (params->invert) {
     gso->flag |= GP_VERTEX_FLAG_INVERT;

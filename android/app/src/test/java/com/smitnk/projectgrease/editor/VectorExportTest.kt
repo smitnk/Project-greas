@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** A tiny in-memory document for the export tests. */
-private class ExportDoc : DocumentNative {
+internal class ExportDoc : DocumentNative {
     class Frame(val number: Int, val strokes: List<StrokeRecord>)
     class Layer(val record: LayerRecord, val frames: List<Frame>)
 
@@ -61,7 +61,7 @@ class VectorExportTest {
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
 <g id="layer-1" data-name="Sketch">
 <polyline points="10,20 30,40" fill="none" stroke="#ff0000" stroke-opacity="1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M 50 50 L 70 50 L 60 70 Z" fill="#00ff00" fill-opacity="0.25" stroke="none"/>
+<path d="M 50 50 L 70 50 L 60 70 Z" fill="#00ff00" fill-opacity="0.5" stroke="none"/>
 <polygon points="50,50 70,50 60,70" fill="none" stroke="#0000ff" stroke-opacity="0.5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 </svg>

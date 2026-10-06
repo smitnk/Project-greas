@@ -6,6 +6,8 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "project_grease_lineart_lite.h"
@@ -134,6 +136,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArt(JNIEn
   PGLineartSettings settings;
   pg_lineart_settings_default(&settings);
   settings.level_end = level_end < 0 ? 0 : (level_end > 128 ? 128 : level_end);
+  settings.use_multiple_levels = 1;
   PGLineartSegment *segments = nullptr;
   const int n = pg_lineart_compute(scene, &settings, &segments);
   if (n < 0) return nullptr;
@@ -158,6 +161,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArtStroke
   PGLineartSettings settings;
   pg_lineart_settings_default(&settings);
   settings.level_end = level_end < 0 ? 0 : (level_end > 128 ? 128 : level_end);
+  settings.use_multiple_levels = 1;
   PGLineartStrokes strokes;
   if (pg_lineart_compute_strokes(scene, &settings, &strokes) < 0) return nullptr;
   std::vector<float> out;
@@ -170,4 +174,155 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArtStroke
   }
   pg_lineart_free_strokes(&strokes);
   return to_java(env, out);
+}
+
+namespace {
+/* nativeSceneLiteLineArtStrokes output layout for a strokes result (frees the strokes). */
+jfloatArray strokes_to_java(JNIEnv *env, PGLineartStrokes &strokes)
+{
+  std::vector<float> out;
+  out.reserve(1u + size_t(strokes.stroke_count) * 3u + size_t(strokes.point_count) * 2u);
+  out.push_back(float(strokes.stroke_count));
+  for (int i = 0; i < strokes.stroke_count; i++) {
+    const PGLineartStroke &s = strokes.strokes[i];
+    out.insert(out.end(), {float(s.point_count), float(s.edge_type), float(s.level)});
+    out.insert(out.end(), strokes.image + size_t(s.first) * 2u, strokes.image + size_t(s.first + s.point_count) * 2u);
+  }
+  pg_lineart_free_strokes(&strokes);
+  return to_java(env, out);
+}
+
+int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+}  // namespace
+
+/* Line Art strokes with the modifier's options (PGLineartSettings); same output as
+ * nativeSceneLiteLineArtStrokes. ints: edge_types, calculation_flags, use_multiple_levels,
+ * level_start, level_end, stroke_types, source_type, source_index, modifier_flags, mask_switches,
+ * material_mask_bits, intersection_mask, shadow_selection, silhouette_selection, light type (-1 =
+ * no light_contour_object, else PG_LITE_LIGHT_*). floats: crease_threshold (rad), overscan,
+ * chaining_image_threshold, chain_smooth_tolerance, angle_splitting_threshold, stroke_depth_offset,
+ * shadow_camera_near / far / size, light yaw / pitch / distance (an orbit around the origin, like
+ * the camera's). sourceVertexGroup may be null. Null on failure. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteLineArtStrokesEx(JNIEnv *env, jobject, jlong handle, jintArray ints, jfloatArray floats, jstring sourceVertexGroup)
+{
+  PGSceneLite *scene = scene_from(handle);
+  if (!scene || !ints || !floats || env->GetArrayLength(ints) < 15 || env->GetArrayLength(floats) < 12) return nullptr;
+  jint iv[15];
+  jfloat fv[12];
+  env->GetIntArrayRegion(ints, 0, 15, iv);
+  env->GetFloatArrayRegion(floats, 0, 12, fv);
+  PGLineartSettings st;
+  pg_lineart_settings_default(&st);
+  st.edge_types = iv[0] & 0x1ff;
+  st.calculation_flags = iv[1];
+  st.use_multiple_levels = iv[2] != 0;
+  st.level_start = clampi(iv[3], 0, 128);
+  st.level_end = clampi(iv[4], 0, 128);
+  st.stroke_types = iv[5] & 0x1ff;
+  st.source_type = clampi(iv[6], 0, 2);
+  st.source_index = iv[7];
+  st.modifier_flags = iv[8];
+  st.mask_switches = iv[9] & 0xff;
+  st.material_mask_bits = iv[10] & 0xff;
+  st.intersection_mask = iv[11] & 0xff;
+  st.shadow_selection = clampi(iv[12], 0, 3);
+  st.silhouette_selection = clampi(iv[13], 0, 2);
+  st.crease_threshold = fv[0];
+  st.overscan = fv[1];
+  st.chaining_image_threshold = fv[2];
+  st.chain_smooth_tolerance = fv[3];
+  st.angle_splitting_threshold = fv[4];
+  st.stroke_depth_offset = fv[5];
+  st.shadow_camera_near = fv[6];
+  st.shadow_camera_far = fv[7];
+  st.shadow_camera_size = fv[8];
+  if (sourceVertexGroup) {
+    const char *name = env->GetStringUTFChars(sourceVertexGroup, nullptr);
+    if (name) {
+      snprintf(st.source_vertex_group, sizeof(st.source_vertex_group), "%s", name);
+      env->ReleaseStringUTFChars(sourceVertexGroup, name);
+    }
+  }
+  scene->light.present = iv[14] >= 0;
+  if (scene->light.present) {
+    scene->light.type = iv[14];
+    PGCameraLite tmp;
+    pg_lite_camera_default(&tmp);
+    const float target[3] = {0.0f, 0.0f, 0.0f};
+    pg_lite_camera_orbit(&tmp, target, fv[9], fv[10], fv[11]);
+    std::memcpy(scene->light.matrix_world, tmp.matrix_world, sizeof(tmp.matrix_world));
+  }
+  PGLineartStrokes strokes;
+  if (pg_lineart_compute_strokes(scene, &st, &strokes) < 0) return nullptr;
+  return strokes_to_java(env, strokes);
+}
+
+/* Object line art (ObjectLineArt): usage (PG_LITE_USAGE_*), flags (PG_LITE_OBJECT_*), own crease
+ * threshold (radians), own intersection priority, and its collection (-1 = master). */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteSetObjectLineArt(JNIEnv *, jobject, jlong handle, jint index, jint usage, jint flags, jfloat crease, jint priority, jint collection)
+{
+  PGSceneLite *scene = scene_from(handle);
+  if (!scene || index < 0 || index >= scene->totobject || collection < -1 || collection >= scene->totcollection) return JNI_FALSE;
+  PGObjectLite &ob = scene->objects[index];
+  ob.line_art_usage = usage;
+  ob.line_art_flags = flags;
+  ob.line_art_crease_threshold = crease;
+  ob.line_art_intersection_priority = clampi(priority, 0, 255);
+  ob.collection = collection;
+  return JNI_TRUE;
+}
+
+/* Adds a collection under parent (-1 = master) with line art usage / flags / intersection mask /
+ * priority; returns its index, -1 on failure. */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteAddCollection(JNIEnv *env, jobject, jlong handle, jstring name, jint parent, jint usage, jint flags, jint mask, jint priority)
+{
+  PGSceneLite *scene = scene_from(handle);
+  if (!scene) return -1;
+  const char *n = name ? env->GetStringUTFChars(name, nullptr) : nullptr;
+  const int c = pg_lite_add_collection(scene, n ? n : "Collection", parent);
+  if (n) env->ReleaseStringUTFChars(name, n);
+  if (c < 0) return -1;
+  PGCollectionLite &col = scene->collections[c];
+  col.lineart_usage = usage;
+  col.lineart_flags = flags;
+  col.lineart_intersection_mask = mask & 0xff;
+  col.lineart_intersection_priority = clampi(priority, 0, 255);
+  return c;
+}
+
+/* Material line art (MaterialLineArt): flags (PG_LITE_MATERIAL_*), mask bits, occlusion, priority,
+ * back-face culling. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteSetMaterialLineArt(JNIEnv *, jobject, jlong handle, jint index, jint flags, jint maskBits, jint occlusion, jint priority, jboolean backfaceCulling)
+{
+  PGSceneLite *scene = scene_from(handle);
+  if (!scene || index < 0 || index >= scene->totmaterial) return JNI_FALSE;
+  PGMaterialLite &m = scene->materials[index];
+  m.lineart_flags = flags;
+  m.material_mask_bits = maskBits & 0xff;
+  m.mat_occlusion = clampi(occlusion, 0, 255);
+  m.intersection_priority = clampi(priority, 0, 255);
+  m.use_backface_culling = backfaceCulling ? 1 : 0;
+  return JNI_TRUE;
+}
+
+/* Names of the scene's objects (kind 0), materials (1) or collections (2). */
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSceneLiteNames(JNIEnv *env, jobject, jlong handle, jint kind)
+{
+  PGSceneLite *scene = scene_from(handle);
+  jclass string_class = env->FindClass("java/lang/String");
+  if (!scene || !string_class) return nullptr;
+  const int n = kind == 0 ? scene->totobject : (kind == 1 ? scene->totmaterial : scene->totcollection);
+  jobjectArray result = env->NewObjectArray(n, string_class, nullptr);
+  for (int i = 0; result && i < n; i++) {
+    const char *name = kind == 0 ? scene->objects[i].name : (kind == 1 ? scene->materials[i].name : scene->collections[i].name);
+    jstring s = env->NewStringUTF(name);
+    env->SetObjectArrayElement(result, i, s);
+    env->DeleteLocalRef(s);
+  }
+  return result;
 }

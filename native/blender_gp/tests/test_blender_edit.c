@@ -18,6 +18,7 @@
 #include "project_grease_blender_edit4.h"
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_edit7.h"
+#include "project_grease_blender_edit9.h"
 
 int pg_test_mem_free_count = 0; /* see select_shim/MEM_guardedalloc.h */
 
@@ -244,6 +245,23 @@ bGPDlayer *BKE_gpencil_layer_addnew(bGPdata *gpd, const char *name, bool setacti
   if (gpd->layers.last) ((bGPDlayer *)gpd->layers.last)->next = l; else gpd->layers.first = l;
   gpd->layers.last = l;
   return l;
+}
+
+void BKE_gpencil_layer_copy_settings(const bGPDlayer *src, bGPDlayer *dst)
+{
+  dst->opacity = src->opacity;
+  dst->flag = src->flag;
+}
+void BKE_gpencil_layer_mask_copy(const bGPDlayer *src, bGPDlayer *dst) { (void)src; (void)dst; }
+bGPDframe *BKE_gpencil_layer_frame_get(bGPDlayer *gpl, int cframe, int addnew)
+{
+  LISTBASE_FOREACH (bGPDframe *, f, &gpl->frames) {
+    if (f->framenum == cframe) { gpl->actframe = f; return f; }
+  }
+  if (addnew != GP_GETFRAME_ADD_NEW) return NULL;
+  bGPDframe *f = BKE_gpencil_frame_addnew(gpl, cframe);
+  gpl->actframe = f;
+  return f;
 }
 
 void BLI_addtail(ListBase *lb, void *vlink)
@@ -746,8 +764,8 @@ static void test_structure_operators(void)
   bGPDstroke *b = add_stroke(f, 3, 0, 0, 50, 10, 0);
   select_points(gpd, a, (1u << 1) | (1u << 2));
   CHECK(pg_gp_duplicate(gpd, NULL) == 1, "duplicate");
-  CHECK(stroke_count(f) == 3 && a->next != b, "copy inserted right after the original");
-  bGPDstroke *copy = a->next;
+  CHECK(stroke_count(f) == 3 && a->next == b && f->strokes.last != b, "copy appended at the frame end (BLI_movelisttolist)");
+  bGPDstroke *copy = f->strokes.last;
   CHECK(copy->totpoints == 2 && NEAR(copy->points[0].x, 10) && NEAR(copy->points[1].x, 20), "copy holds only the selected points");
   CHECK(sel_mask(copy) == 3 && (copy->flag & GP_STROKE_SELECT), "the copy is selected");
   CHECK(sel_mask(a) == 0 && !(a->flag & GP_STROKE_SELECT) && a->totpoints == 5, "original kept and deselected");
@@ -785,10 +803,10 @@ static void test_structure_operators(void)
   select_points(g3, s, (1u << 2) | (1u << 3));
   CHECK(pg_gp_split(g3, NULL) == 1 && stroke_count(f3) == 2, "split creates a stroke");
   CHECK(s->totpoints == 2 && NEAR(s->points[1].x, 10), "original keeps the unselected points");
-  CHECK(s->next->totpoints == 2 && NEAR(s->next->points[0].x, 20) && sel_mask(s->next) == 3, "new stroke has the selected points, selected");
+  CHECK(s->next->totpoints == 2 && NEAR(s->next->points[0].x, 20), "new stroke has the selected points (reselection needs the real BKE tag; see test_edit10)");
   select_points(g3, s, 3);
   select_points(g3, s->next, 0);
-  CHECK(pg_gp_split(g3, NULL) == 0, "a fully selected stroke is not split");
+  CHECK(pg_gp_split(g3, NULL) == 1, "a fully selected stroke is still processed, as in Blender");
 
   /* join */
   bGPdata *g4 = make_gpd();
@@ -821,7 +839,7 @@ static void test_dissolve_keeps_weights_aligned(void)
   select_points(gpd, d, (1u << 1) | (1u << 2));
   const int frees_before = pg_test_mem_free_count;
   CHECK(pg_gp_dissolve(gpd, NULL, PG_DISSOLVE_POINTS) == 1 && d->totpoints == 2, "weighted stroke is dissolved, not skipped");
-  CHECK(pg_test_mem_free_count - frees_before == 2, "the weights of both removed points are freed (no leak)");
+  CHECK(pg_test_mem_free_count - frees_before == 4, "the old weights are all freed; kept points get copies (no leak)");
   CHECK(NEAR(d->dvert[0].dw->weight, 0.0f) && NEAR(d->dvert[1].dw->weight, 0.3f), "weights stay with their points");
   for (int i = 0; i < 2; i++) free(d->dvert[i].dw);
   free(d->dvert);
@@ -1047,7 +1065,7 @@ static void test_edit2_operators(void)
         "new end points are selected at the old end positions; old ends deselected");
   CHECK(geometry_updates == 1 && a->totpoints == 2, "only the changed stroke updated; unselected stroke untouched");
   b->flag |= GP_STROKE_CYCLIC;
-  CHECK(pg_gp_extrude(gpd, NULL) == 0, "closed strokes have no ends to extrude");
+  CHECK(pg_gp_extrude(gpd, NULL) == 1, "Blender extrudes the ends of cyclic strokes too");
 
   const float sv[5] = {1, 0, 0, 0.05f, 1};
   CHECK(pg_gp_edit_dispatch(gpd, l, PG_EDIT2_CMD_SELECT_VCOLOR, sv, 4) == 0, "select vcolor needs 5 args");
@@ -1397,6 +1415,117 @@ static void test_edit7(void)
   CHECK(pg_gp_edit_dispatch(g3, a2, PG_EDIT7_CMD_LOCK_ALL, NULL, 0) == 1, "routed to edit6");
 }
 
+static int frames_of(bGPDlayer *l, int *out) { int n = 0; for (bGPDframe *f = l->frames.first; f; f = f->next) out[n++] = f->framenum; return n; }
+
+static void test_edit9_materials(void)
+{
+  bGPdata *gpd = make_gpd();
+  const float a[14] = {0, 1, 1, 0, 0, 1, 1, 0.25f, 0.5f, 2, 0.001f, 0.1f, 200, 1};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, a, 14) == 1, "gradient set");
+  MaterialGPencilStyle *st = gpd->mat[0]->gp_style;
+  CHECK(st->fill_style == GP_MATERIAL_FILL_STYLE_GRADIENT && st->gradient_type == GP_MATERIAL_GRADIENT_RADIAL &&
+        NEAR(st->mix_rgba[2], 1.0f) && NEAR(st->mix_factor, 0.25f) && NEAR(st->texture_angle, 0.5f) &&
+        NEAR(st->texture_scale[1], 0.01f) && NEAR(st->texture_offset[1], 100.0f) && (st->flag & GP_MATERIAL_FLIP_FILL),
+        "gradient fields clamped to the rna ranges");
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, a, 13) == 0, "short gradient args rejected");
+  const float bad[14] = {5, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, bad, 14) == 0, "bad slot rejected");
+  const float o[4] = {0, 1, 0, 1};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_OPTIONS, o, 4) == 1 &&
+        (st->flag & GP_MATERIAL_IS_STROKE_HOLDOUT) && !(st->flag & GP_MATERIAL_IS_FILL_HOLDOUT) &&
+        (st->flag & GP_MATERIAL_DISABLE_STENCIL), "holdout and self overlap flags");
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_OPTIONS, o, 4) == 0, "unchanged options report no change");
+  const float off[14] = {0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0};
+  CHECK(pg_gp_edit9_dispatch(gpd, NULL, PG_EDIT9_CMD_MATERIAL_GRADIENT, off, 14) == 1 && st->fill_style == GP_MATERIAL_FILL_STYLE_SOLID &&
+        !(st->flag & GP_MATERIAL_FLIP_FILL), "gradient off");
+}
+static void test_edit9(void)
+{
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_SMOOTH, 5, 10), 0.5f) && NEAR(pg_prop_falloff(PG_PROP_LIN, 2.5f, 10), 0.75f) &&
+        NEAR(pg_prop_falloff(PG_PROP_SHARP, 5, 10), 0.25f) && NEAR(pg_prop_falloff(PG_PROP_ROOT, 7.5f, 10), 0.5f) &&
+        NEAR(pg_prop_falloff(PG_PROP_CONST, 9, 10), 1.0f) && pg_prop_falloff(PG_PROP_LIN, 10, 10) == 0.0f, "falloff curves");
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_SPHERE, 5, 10), sqrtf(0.75f)), "sphere falloff");
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_SMOOTH, 7.5f, 10), 0.15625f), "smooth curve differs from linear at a quarter");
+
+  /* proportional translate: select point 0 of a 5-point line (x 0..40), radius 20, linear */
+  bGPdata *gpd = make_gpd(); bGPDlayer *l = add_layer(gpd, 0); bGPDframe *f = add_frame(l);
+  bGPDstroke *s = add_stroke(f, 5, 0, 0, 0, 10, 0);
+  bGPDstroke *other = add_stroke(f, 1, 0, 5, 100, 0, 0);
+  select_points(gpd, s, 1);
+  PGTransform t = {PG_XFORM_TRANSLATE, 0, 10, PG_PIVOT_MEDIAN, {0, 0}, 1, 0, PG_PROP_LIN, 20};
+  CHECK(pg_gp_transform(gpd, NULL, &t) == 1, "proportional translate");
+  CHECK(NEAR(s->points[0].y, 10) && NEAR(s->points[1].y, 5) && NEAR(s->points[2].y, 0), "weights 1, 0.5, 0 along distance");
+  CHECK(NEAR(other->points[0].y, 100), "points outside the radius stay");
+  /* connected: distance along the stroke; a U-shaped stroke whose far end is near in a straight line */
+  bGPdata *g2 = make_gpd(); bGPDlayer *l2 = add_layer(g2, 0); bGPDframe *f2 = add_frame(l2);
+  bGPDstroke *u = add_stroke(f2, 3, 0, 0, 0, 0, 0);
+  u->points[1].x = 30; u->points[2].x = 0; u->points[2].y = 5; /* end 5 px from the start in a line, 60 px along */
+  select_points(g2, u, 1);
+  PGTransform tc = {PG_XFORM_TRANSLATE, 10, 0, PG_PIVOT_MEDIAN, {0, 0}, 1, 1, PG_PROP_LIN, 20};
+  pg_gp_transform(g2, NULL, &tc);
+  CHECK(NEAR(u->points[2].x, 0), "connected mode ignores the straight-line neighbour");
+  PGTransform ts = tc; ts.connected = 0;
+  pg_gp_transform(g2, NULL, &ts);
+  CHECK(fabsf(u->points[2].x - 10.0f * (1.0f - hypotf(10, 5) / 20.0f)) < 1e-3f, "straight-line mode moves it by its falloff weight (~4.4)");
+
+  /* pivots: scale x2 of two selected strokes */
+  bGPdata *g3 = make_gpd(); bGPDlayer *l3 = add_layer(g3, 0); bGPDframe *f3 = add_frame(l3);
+  bGPDstroke *a = add_stroke(f3, 2, 0, 0, 0, 10, 0);   /* 0..10 */
+  bGPDstroke *b = add_stroke(f3, 2, 0, 100, 0, 10, 0); /* 100..110 */
+  select_points(g3, a, 3); select_points(g3, b, 3);
+  PGTransform ti = {PG_XFORM_SCALE, 2, 2, PG_PIVOT_INDIVIDUAL, {0, 0}, 0, 0, 0, 0};
+  pg_gp_transform(g3, NULL, &ti);
+  CHECK(NEAR(a->points[0].x, -5) && NEAR(a->points[1].x, 15) && NEAR(b->points[0].x, 95), "individual origins: each about its own centre");
+  PGTransform tb = {PG_XFORM_SCALE, 0.5f, 0.5f, PG_PIVOT_BOUNDS, {0, 0}, 0, 0, 0, 0};
+  pg_gp_transform(g3, NULL, &tb); /* bounds -5..115 -> centre 55 */
+  CHECK(NEAR(a->points[0].x, 25), "bounding box centre pivot");
+  PGTransform tk = {PG_XFORM_ROTATE, (float)M_PI, 0, PG_PIVOT_CURSOR, {0, 0}, 0, 0, 0, 0};
+  pg_gp_transform(g3, NULL, &tk);
+  CHECK(NEAR(a->points[0].x, -25), "2D cursor pivot");
+
+  /* dope sheet */
+  bGPdata *g4 = make_gpd(); bGPDlayer *l4 = add_layer(g4, 0); bGPDframe *k1 = add_frame(l4);
+  BKE_gpencil_frame_addnew(l4, 5); BKE_gpencil_frame_addnew(l4, 9);
+  add_stroke(k1, 2, 0, 0, 0, 1, 0);
+  int fr[8];
+  CHECK(pg_gp_frames_select_range(g4, l4, 4, 9, 0) == 1, "select frames 4..9");
+  CHECK(pg_gp_frames_move(g4, l4, 2) == 1 && frames_of(l4, fr) == 3 && fr[1] == 7 && fr[2] == 11, "move selected frames +2");
+  CHECK(pg_gp_frames_scale(g4, l4, 1, 0.5f) == 1 && frames_of(l4, fr) == 3 && fr[1] == 4 && fr[2] == 6, "scale around frame 1 (7->4, 11->6)");
+  pg_gp_frames_select_range(g4, l4, 6, 6, 0);
+  CHECK(pg_gp_frames_move(g4, l4, -2) == 1 && frames_of(l4, fr) == 2 && fr[1] == 4, "moving onto an occupied frame leaves one frame");
+  CHECK((((bGPDframe *)l4->frames.last)->flag & GP_FRAME_SELECT) != 0, "...and it is the moved (selected) one");
+  pg_gp_frames_select_range(g4, l4, 1, 1, 0);
+  pg_gp_frames_copy(g4, l4);
+  CHECK(pg_gp_frames_paste(g4, l4, 20) == 1 && frames_of(l4, fr) == 3 && fr[2] == 20, "paste at frame 20");
+  bGPDframe *last = l4->frames.last;
+  CHECK(stroke_count(last) == 1 && (last->flag & GP_FRAME_SELECT), "pasted frame has the drawing and is selected");
+  pg_gp_frames_clipboard_free();
+  CHECK(pg_gp_frames_paste(g4, l4, 30) == 0, "empty clipboard");
+
+  /* dash with two segments: (2 on, 1 off) then (1 on, 1 off) -> period 5 on 10 points */
+  bGPdata *g5 = make_gpd(); bGPDlayer *l5 = add_layer(g5, 0); bGPDframe *f5 = add_frame(l5);
+  bGPDstroke *d = add_stroke(f5, 10, 0, 0, 0, 10, 0);
+  select_points(g5, d, 0x3FF);
+  const int dash[2] = {2, 1}, gap[2] = {1, 1};
+  CHECK(pg_gp_dash_segments(g5, NULL, dash, gap, 2, 0) == 1 && stroke_count(f5) == 2, "two-segment pattern: 1-point dashes drop, 2-point dashes kept");
+  CHECK(NEAR(((bGPDstroke *)f5->strokes.first)->points[0].x, 0) && NEAR(((bGPDstroke *)f5->strokes.last)->points[0].x, 50), "dashes at points 0-1 and 5-6");
+  /* calculatePropRatio edge cases and the command path */
+  CHECK(pg_prop_falloff(PG_PROP_CONST, 10, 10) == 1.0f && pg_prop_falloff(PG_PROP_CONST, 10.01f, 10) == 0.0f,
+        "Constant: 1 up to and including the radius (rdist > prop_size is outside)");
+  CHECK(NEAR(pg_prop_falloff(PG_PROP_INVSQUARE, 5, 10), 0.75f), "inverse square falloff");
+  bGPdata *g6 = make_gpd(); bGPDlayer *l6 = add_layer(g6, 0); bGPDframe *f6 = add_frame(l6);
+  bGPDstroke *e = add_stroke(f6, 2, 0, 0, 0, 10, 0);
+  select_points(g6, e, 3);
+  const float snapped[11] = {PG_XFORM_TRANSLATE, 13, 4, PG_PIVOT_MEDIAN, 0, 0, 0, 0, 0, 0, 10};
+  CHECK(pg_gp_edit9_dispatch(g6, l6, PG_EDIT9_CMD_TRANSFORM, snapped, 11) == 1 &&
+        NEAR(e->points[0].x, 10) && NEAR(e->points[0].y, 0), "increment snapping: (13, 4) moves by (10, 0)");
+  const float bad[10] = {PG_XFORM_TRANSLATE, 1, 1, 9, 0, 0, 0, 0, 0, 0};
+  CHECK(pg_gp_edit9_dispatch(g6, l6, PG_EDIT9_CMD_TRANSFORM, bad, 10) == 0, "unknown pivot rejected");
+  const float dash_args[4] = {0, 1, 2, 1};
+  CHECK(pg_gp_edit9_dispatch(g6, l6, PG_EDIT9_CMD_DASH_SEGMENTS, dash_args, 3) == 0, "dash args shorter than 2 + 2n rejected");
+}
+
+
 int main(void)
 {
   test_pick();
@@ -1426,6 +1555,8 @@ int main(void)
   test_edit4();
   test_edit6();
   test_edit7();
+  test_edit9();
+  test_edit9_materials();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

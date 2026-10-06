@@ -7,7 +7,9 @@ import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.smitnk.projectgrease.editor.EditorController
 import com.smitnk.projectgrease.editor.GifEncoder
 import com.smitnk.projectgrease.editor.VectorExport
+import com.smitnk.projectgrease.editor.VectorExportOptions
 
 /**
  * PNG export of the current frame: the presenter's own offscreen render at canvas size (what the
@@ -43,11 +46,11 @@ internal fun writePng(context: Context, uri: Uri, argb: IntArray, width: Int, he
  * Animated GIF of the project's frame range (project settings start..end, fps; holds show the
  * previous keyframe), each frame rendered offscreen like PNG export. Returns the number of frames.
  */
-internal fun writeGif(context: Context, uri: Uri, controller: EditorController, transparent: Boolean): Int = runCatching {
+internal fun writeGif(context: Context, uri: Uri, controller: EditorController, transparent: Boolean, dither: Boolean = false): Int = runCatching {
     var frames = 0
     context.contentResolver.openOutputStream(uri)?.use { out ->
         val gif = GifEncoder(java.io.BufferedOutputStream(out), controller.document.canvasWidth, controller.document.canvasHeight,
-            controller.projectSettings.fps)
+            controller.projectSettings.fps, dither)
         gif.begin()
         val ok = controller.renderExportFrames(transparent) { _, px -> gif.addFrame(px); frames++ }
         gif.finish()
@@ -86,8 +89,18 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     var wholeTimeline by remember { mutableStateOf(false) }
     // Annotations are overlay notes, not part of the drawing: left out unless asked for.
     var includeAnnotations by remember { mutableStateOf(false) }
-    val frames = if (wholeTimeline) (1..controller.animation.timelineEnd.coerceAtLeast(1)).toList()
+    // Blender export options: frame_start..frame_end range, use_clip_camera, selected-only (layers here)
+    var frameRange by remember { mutableStateOf(false) }
+    var clipToCanvas by remember { mutableStateOf(false) }
+    var selectedLayersOnly by remember { mutableStateOf(false) }
+    val layerNames = remember { controller.exportLayerNames() }
+    var chosenLayers by remember { mutableStateOf(setOf(controller.selectedLayer)) }
+    var dither by remember { mutableStateOf(false) }
+    val settings = controller.projectSettings
+    val frames = if (frameRange) VectorExport.frameRange(settings.frameStart.coerceAtLeast(1), settings.frameEnd)
+    else if (wholeTimeline) (1..controller.animation.timelineEnd.coerceAtLeast(1)).toList()
     else listOf(controller.animation.currentFrame)
+    val exportOptions = VectorExportOptions(if (selectedLayersOnly) chosenLayers else null, clipToCanvas)
     val baseName = controller.document.projectName.ifBlank { "Project Grease" }
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
@@ -100,7 +113,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         ActivityResultContracts.CreateDocument(if (pdf) "application/pdf" else "image/svg+xml")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val pages = controller.exportPages(frames, includeAnnotations)
+        val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
         val ok = pages.isNotEmpty() && writeBytes(
             uri,
             if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
@@ -119,7 +132,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val gifFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/gif")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val n = writeGif(context, uri, controller, transparent)
+        val n = writeGif(context, uri, controller, transparent, dither)
         toast(if (n > 0) "Exported GIF, $n frames" else "GIF export failed")
         if (n > 0) onDismiss()
     }
@@ -139,7 +152,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
-        val pages = controller.exportPages(frames, includeAnnotations)
+        val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         var written = 0
         for (page in pages) {
@@ -182,9 +195,13 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
                         Switch(transparent, { transparent = it })
                     }
                     val s = controller.projectSettings
+                    if (gif) Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Dither (Floyd–Steinberg)", Modifier.weight(1f))
+                        Switch(dither, { dither = it })
+                    }
                     Text(
                         "Frames ${s.frameStart}–${s.frameEnd} at ${s.fps} FPS (Project > Settings), ${controller.document.canvasWidth}×${controller.document.canvasHeight} px; held frames repeat the previous keyframe." +
-                            if (gif) " GIF uses a 252-colour palette." else " One PNG per frame in the chosen folder.",
+                            if (gif) " GIF uses an adaptive 255-colour palette per frame (exact when a frame has 255 colours or fewer)." else " One PNG per frame in the chosen folder.",
                         Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 } else if (png) {
@@ -199,15 +216,33 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
                 } else {
                     Text("Frames", Modifier.padding(top = 8.dp))
                     Row {
-                        FilterChip(selected = !wholeTimeline, onClick = { wholeTimeline = false }, label = { Text("Current frame") }, modifier = Modifier.padding(end = 6.dp))
-                        FilterChip(selected = wholeTimeline, onClick = { wholeTimeline = true }, label = { Text("Timeline (${controller.animation.timelineEnd})") })
+                        FilterChip(selected = !wholeTimeline && !frameRange, onClick = { wholeTimeline = false; frameRange = false }, label = { Text("Current") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = frameRange, onClick = { frameRange = true; wholeTimeline = false }, label = { Text("${settings.frameStart}–${settings.frameEnd}") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = wholeTimeline, onClick = { wholeTimeline = true; frameRange = false }, label = { Text("Timeline (${controller.animation.timelineEnd})") })
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Clip to canvas", Modifier.weight(1f))
+                        Switch(clipToCanvas, { clipToCanvas = it })
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Selected layers only", Modifier.weight(1f))
+                        Switch(selectedLayersOnly, { selectedLayersOnly = it })
+                    }
+                    if (selectedLayersOnly) Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        layerNames.forEachIndexed { index, name ->
+                            FilterChip(
+                                selected = index in chosenLayers,
+                                onClick = { chosenLayers = if (index in chosenLayers) chosenLayers - index else chosenLayers + index },
+                                label = { Text(name) }, modifier = Modifier.padding(end = 6.dp)
+                            )
+                        }
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Include annotations", Modifier.weight(1f))
                         Switch(includeAnnotations, { includeAnnotations = it })
                     }
                     Text(
-                        if (pdf) "One PDF, one page per frame." else if (wholeTimeline) "A folder with one SVG per frame." else "One SVG file.",
+                        if (pdf) "One PDF, one page per frame." else if (wholeTimeline || frameRange) "A folder with one SVG per frame." else "One SVG file.",
                         Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 }
@@ -220,7 +255,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
                 else if (gif) gifFile.launch("$baseName.gif")
                 else if (sequence) sequenceFolder.launch(null)
                 else if (png) pngFile.launch("$baseName.png")
-                else if (!pdf && wholeTimeline) folder.launch(null) else singleFile.launch("$baseName.$extension")
+                else if (!pdf && (wholeTimeline || frameRange)) folder.launch(null) else singleFile.launch("$baseName.$extension")
             }) { Text("Export") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

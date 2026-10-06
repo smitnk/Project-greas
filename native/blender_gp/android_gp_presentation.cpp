@@ -24,6 +24,7 @@
 #include "project_grease_stroke_outline.h"
 #include "project_grease_blender_edit5.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_fill.h"
 #include "project_grease_blender_mod2.h"
 
 namespace {
@@ -37,6 +38,7 @@ GLuint g_vc_program=0, g_vc_mask_program=0;
 struct MatTex { GLuint id=0; int w=0, h=0; };
 std::map<int,MatTex> g_mat_tex;
 GLuint g_tex_program=0;
+GLuint g_grad_program=0;
 // Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
 // stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
 // stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
@@ -57,14 +59,17 @@ DrawMode g_draw_mode=DRAW_NORMAL;
 int g_weight_group=-1;
 // Fill boundary source (brush fill_draw_mode): 0 GP_FILL_DMODE_BOTH, 1 STROKE, 2 CONTROL.
 int g_fill_draw_mode=0;
-// Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): open strokes are prolonged at both
-// ends in the boundary mask by this fraction of their length (pg_fill_extend_segments).
+// Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): Blender's line extensions
+// (pg_fill_extend_lines: fill_extend_fac * 0.1 BU, cut where they meet) are drawn in the mask.
 float g_fill_extend=0.0f;
+// GP_BRUSH_FILL_STROKE_COLLIDE: only extensions that hit something are drawn.
+int g_fill_collide=0;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
 // open sbuffer are not part of an export.
 int g_export_mode=0;
 /* Background of opaque exports (export mode 1): the project settings' background colour. */
 float g_export_background[4]={0.96f,0.96f,0.96f,1.0f};
+const float g_paper_color[4]={0.96f,0.96f,0.96f,1.0f};
 // Edit-mode overlay: the points of the editable strokes (Blender's edit-mode vertices), selected
 // points in the theme's vertex-select orange.
 int g_selection_overlay=0;
@@ -180,6 +185,28 @@ bool ensure_tex_program(){
   if(ok==GL_FALSE){glDeleteProgram(g_tex_program);g_tex_program=0;return false;}
   return true;
 }
+// Gradient fill (gpencil_frag.glsl GP_FILL_GRADIENT_USE): fac = radial ? length(uv * 2 - 1) : uv.x,
+// col = mix(fill_color, fill_mix_color, fac); gpencil_color_output() then mixes it with the
+// (vertex-colour mixed) fill colour by fill_texture_mix = 1 - mix_factor. Straight-alpha form of
+// out = col * color_mul + col.a * color_add.
+const char *grad_fs_src(){
+  return "precision mediump float; varying vec2 v_uv; uniform vec4 u_c1; uniform vec4 u_c2; uniform vec4 u_color; "
+         "uniform float u_mix; uniform float u_radial; uniform sampler2D u_mask; uniform vec2 u_size; uniform float u_use_mask; "
+         "void main(){float f=clamp(u_radial>0.5?length(v_uv*2.0-1.0):v_uv.x,0.0,1.0);vec4 g=mix(u_c1,u_c2,f);"
+         "vec4 c=vec4(g.rgb*u_mix+u_color.rgb*(1.0-u_mix),g.a*u_color.a);"
+         "if(u_use_mask>0.5)c.a*=texture2D(u_mask,gl_FragCoord.xy/u_size).r;gl_FragColor=c;}";
+}
+bool ensure_grad_program(){
+  if(g_grad_program)return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,tex_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,grad_fs_src());
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  g_grad_program=glCreateProgram();glAttachShader(g_grad_program,vs);glAttachShader(g_grad_program,fs);
+  glBindAttribLocation(g_grad_program,0,"a_position");glBindAttribLocation(g_grad_program,1,"a_uv");
+  glLinkProgram(g_grad_program);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_grad_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_grad_program);g_grad_program=0;return false;}
+  return true;
+}
 const MatTex* material_texture(int slot,int fill){
   auto it=g_mat_tex.find(slot*2+(fill?1:0));
   return it!=g_mat_tex.end()&&it->second.id?&it->second:nullptr;
@@ -208,6 +235,32 @@ void draw_textured(const std::vector<UVVertex>&v,const MatTex&tex,const float co
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
   glDisable(GL_BLEND);
   glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,0);glActiveTexture(GL_TEXTURE0);
+  if(masked)glBindTexture(GL_TEXTURE_2D,0);
+  glDisableVertexAttribArray(1);glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
+}
+void draw_gradient(const std::vector<UVVertex>&v,const float c1[4],const float c2[4],const float color[4],float mix_tex,bool radial){
+  if(v.empty()||!ensure_grad_program())return;
+  const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL;
+  glUseProgram(g_grad_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(UVVertex)),v.data(),GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
+  glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),nullptr);
+  glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),reinterpret_cast<const void*>(2*sizeof(float)));
+  glActiveTexture(GL_TEXTURE0);
+  if(masked)glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
+  glUniform1i(glGetUniformLocation(g_grad_program,"u_mask"),0);
+  glUniform2f(glGetUniformLocation(g_grad_program,"u_size"),float(g_active_w),float(g_active_h));
+  glUniform1f(glGetUniformLocation(g_grad_program,"u_use_mask"),masked?1.0f:0.0f);
+  glUniform4f(glGetUniformLocation(g_grad_program,"u_c1"),c1[0],c1[1],c1[2],c1[3]);
+  glUniform4f(glGetUniformLocation(g_grad_program,"u_c2"),c2[0],c2[1],c2[2],c2[3]);
+  glUniform4f(glGetUniformLocation(g_grad_program,"u_color"),color[0],color[1],color[2],color[3]);
+  glUniform1f(glGetUniformLocation(g_grad_program,"u_mix"),std::clamp(mix_tex,0.0f,1.0f));
+  glUniform1f(glGetUniformLocation(g_grad_program,"u_radial"),radial?1.0f:0.0f);
+  glEnable(GL_BLEND);
+  if(g_draw_mode==DRAW_REVEALAGE)glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);
+  else glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
+  glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
+  glDisable(GL_BLEND);
   if(masked)glBindTexture(GL_TEXTURE_2D,0);
   glDisableVertexAttribArray(1);glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
@@ -361,6 +414,22 @@ void draw_stroke_once(const std::vector<Vertex>&v,const float color[4]){
   draw_vertices(v,color);
   coverage_end(on);
 }
+// Holdout materials (gpencil_frag.glsl: revealColor = fragColor.aaaa) cut through what is below.
+// Offscreen (premultiplied) and transparent export targets are erased; the direct path shows the
+// canvas paper (or the export background), which is what lies under every layer there.
+void draw_holdout(const std::vector<Vertex>&v,float alpha,bool overlap){
+  if(v.empty()||g_draw_mode==DRAW_REVEALAGE||g_draw_mode==DRAW_INVERT)return;
+  const float a=std::clamp(alpha,0.0f,1.0f);
+  if(g_draw_mode==DRAW_PREMULT||g_export_mode==2){
+    const DrawMode saved=g_draw_mode;g_draw_mode=DRAW_REVEALAGE;
+    const float c[4]={0,0,0,a};
+    const bool on=overlap?false:coverage_begin();draw_vertices(v,c);if(!overlap)coverage_end(on);
+    g_draw_mode=saved;return;
+  }
+  const float*bg=g_export_mode==1?g_export_background:g_paper_color;
+  const float c[4]={bg[0],bg[1],bg[2],a};
+  const bool on=overlap?false:coverage_begin();draw_vertices(v,c);if(!overlap)coverage_end(on);
+}
 void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
 {
   if (!gpd || !gpd->runtime.sbuffer || gpd->runtime.sbuffer_used <= 0) return;
@@ -424,10 +493,46 @@ void append_textured_fill(std::vector<UVVertex>&out,const bGPDstroke*s,const Mat
   const float ca=std::cos(st->texture_angle),sa=std::sin(st->texture_angle);
   for(int i=0;i<s->tot_triangles;i++)for(int k=0;k<3;k++){
     const bGPDspoint&p=s->points[s->triangles[i].verts[k]];
-    const float u0=(p.x-mn[0])/size-0.5f,v0=(p.y-mn[1])/size-0.5f;
+    float u0=(p.x-mn[0])/size-0.5f+s->uv_translation[0],v0=(p.y-mn[1])/size-0.5f+s->uv_translation[1];
+    // the stroke's own fill uv transform (Texture Mapping modifier / gpencil_calc_stroke_fill_uv)
+    if(s->uv_rotation!=0.0f){const float rs=std::sin(s->uv_rotation),rc=std::cos(s->uv_rotation);
+      const float x=u0*rc-v0*rs,y=u0*rs+v0*rc;u0=x;v0=y;}
+    if(s->uv_scale!=0.0f&&s->uv_scale!=1.0f){u0/=s->uv_scale;v0/=s->uv_scale;}
     const float u1=(ca*u0-sa*v0)*st->texture_scale[0],v1=(sa*u0+ca*v0)*st->texture_scale[1];
     const Vertex n=ndc(p.x,p.y,w,h);
     out.push_back({n.x,n.y,u1+0.5f+st->texture_offset[0],v1+0.5f+st->texture_offset[1]});
+  }
+}
+// gpencil_uv_transform_get (gpencil_draw_data.c): T(0.5) * S(1 / scale) * R(-angle) * T(offset).
+void gradient_uv_transform(const MaterialGPencilStyle*st,float m[2][2],float off[2]){
+  const float sx=st->texture_scale[0]!=0.0f?1.0f/st->texture_scale[0]:0.0f,sy=st->texture_scale[1]!=0.0f?1.0f/st->texture_scale[1]:0.0f;
+  const float c=std::cos(-st->texture_angle),s=std::sin(-st->texture_angle);
+  // columns of the 2x2 part: S * R
+  m[0][0]=sx*c;m[0][1]=sy*s;m[1][0]=-sx*s;m[1][1]=sy*c;
+  off[0]=m[0][0]*st->texture_offset[0]+m[1][0]*st->texture_offset[1]+0.5f;
+  off[1]=m[0][1]*st->texture_offset[0]+m[1][1]*st->texture_offset[1]+0.5f;
+}
+// The fill uv follows gpencil_calc_stroke_fill_uv (uv_translation, uv_rotation about 0.5, then
+// 1 / uv_scale) but over the stroke's bounding square, centred: Blender normalises by a fixed -1..1 box in
+// world units, and the canvas has no world unit (a literal port repeats every 2 canvas units).
+void append_gradient_fill(std::vector<UVVertex>&out,const bGPDstroke*s,const MaterialGPencilStyle*st,int w,int h){
+  if(!s->triangles||s->tot_triangles<=0)return;
+  float mn[2]={1e30f,1e30f},mx[2]={-1e30f,-1e30f};
+  for(int i=0;i<s->totpoints;i++){mn[0]=std::min(mn[0],s->points[i].x);mn[1]=std::min(mn[1],s->points[i].y);
+    mx[0]=std::max(mx[0],s->points[i].x);mx[1]=std::max(mx[1],s->points[i].y);}
+  const float size=std::max({mx[0]-mn[0],mx[1]-mn[1],1e-6f});
+  const float rs=std::sin(s->uv_rotation),rc=std::cos(s->uv_rotation);
+  float m[2][2],off[2];gradient_uv_transform(st,m,off);
+  for(int i=0;i<s->tot_triangles;i++)for(int k=0;k<3;k++){
+    const int vi=s->triangles[i].verts[k];
+    if(vi<0||vi>=s->totpoints)continue;
+    const bGPDspoint&p=s->points[vi];
+    float u=(p.x-0.5f*(mn[0]+mx[0]))/size+s->uv_translation[0],v=(p.y-0.5f*(mn[1]+mx[1]))/size+s->uv_translation[1];
+    // centred on the box: the material transform adds the 0.5 back (gpencil_uv_transform_get)
+    float x=u*rc-v*rs,y=u*rs+v*rc;
+    if(s->uv_scale!=0.0f){x/=s->uv_scale;y/=s->uv_scale;}
+    const Vertex n=ndc(p.x,p.y,w,h);
+    out.push_back({n.x,n.y,m[0][0]*x+m[1][0]*y+off[0],m[0][1]*x+m[1][1]*y+off[1]});
   }
 }
 void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,int w,int h,float alpha){
@@ -477,22 +582,45 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     const MatTex*stroke_tex=style&&style->stroke_style==GP_MATERIAL_STROKE_STYLE_TEXTURE?material_texture(s->mat_nr,0):nullptr;
     const MatTex*fill_tex=style&&style->fill_style==GP_MATERIAL_FILL_STYLE_TEXTURE?material_texture(s->mat_nr,1):nullptr;
     if((g_draw_parts&1)&&(style==nullptr||((style->flag&GP_MATERIAL_STROKE_SHOW)!=0))){
-      if(stroke_tex&&!g_ghost_tint&&g_draw_mode!=DRAW_REVEALAGE){
+      const bool overlap=style&&(style->flag&GP_MATERIAL_DISABLE_STENCIL);
+      if(style&&(style->flag&GP_MATERIAL_IS_STROKE_HOLDOUT)&&!g_ghost_tint){
+        if(style->mode!=GP_MATERIAL_MODE_LINE)append_dots(stroke,s,style,float(s->thickness),w,h);
+        else append_stroke_outline(stroke,s,float(s->thickness),w,h);
+        draw_holdout(stroke,color[3],overlap); stroke.clear();
+      }
+      else if(stroke_tex&&!g_ghost_tint&&g_draw_mode!=DRAW_REVEALAGE){
         std::vector<UVVertex> tv;append_textured_stroke(tv,s,style->texture_pixsize,w,h);
         const bool on=coverage_begin();draw_textured(tv,*stroke_tex,color,style->mix_stroke_factor);coverage_end(on);
       }
       else if(style&&style->mode!=GP_MATERIAL_MODE_LINE){
         append_dots(stroke,s,style,float(s->thickness),w,h);
-        draw_stroke_once(stroke,color); stroke.clear();
+        if(overlap)draw_vertices(stroke,color);else draw_stroke_once(stroke,color);
+        stroke.clear();
       }
       else{
         append_stroke_outline(stroke,s,float(s->thickness),w,h);
-        draw_stroke_once(stroke,color); stroke.clear();
+        // Self Overlap (GP_MATERIAL_DISABLE_STENCIL): every triangle blends, crossings darken
+        if(overlap)draw_vertices(stroke,color);else draw_stroke_once(stroke,color);
+        stroke.clear();
       }
     }
     if(g_draw_parts&2){
-      if(fill_tex&&(style->flag&GP_MATERIAL_FILL_SHOW)&&!g_ghost_tint&&g_draw_mode!=DRAW_REVEALAGE){
+      if(style&&(style->flag&GP_MATERIAL_IS_FILL_HOLDOUT)&&(style->flag&GP_MATERIAL_FILL_SHOW)&&!g_ghost_tint){
+        append_fill(fill,s,w,h);draw_holdout(fill,fill_color[3],true);fill.clear();
+      }
+      else if(fill_tex&&(style->flag&GP_MATERIAL_FILL_SHOW)&&!g_ghost_tint&&g_draw_mode!=DRAW_REVEALAGE){
         std::vector<UVVertex> tv;append_textured_fill(tv,s,style,w,h);draw_textured(tv,*fill_tex,fill_color,style->mix_factor);
+      }
+      else if(style&&style->fill_style==GP_MATERIAL_FILL_STYLE_GRADIENT&&(style->flag&GP_MATERIAL_FILL_SHOW)&&!g_ghost_tint&&g_draw_mode!=DRAW_REVEALAGE){
+        float c1[4],c2[4];
+        for(int c=0;c<4;c++){c1[c]=style->fill_rgba[c];c2[c]=style->mix_rgba[c];}
+        if(style->flag&GP_MATERIAL_FLIP_FILL)for(int c=0;c<4;c++)std::swap(c1[c],c2[c]);
+        // gpencil_vert.glsl: gradient mode does not modulate alpha by the material (fill_col.a = 1)
+        float base[3];pg_gp_mix_vertex_color(c1,s->vert_color_fill,PG_GP_VERTEX_COLOR_OPACITY,base);
+        if(g_layer_tint[3]>0.0f)for(int c=0;c<3;c++)base[c]+=(g_layer_tint[c]-base[c])*g_layer_tint[3];
+        const float gcol[4]={base[0],base[1],base[2],alpha_scale};
+        std::vector<UVVertex> tv;append_gradient_fill(tv,s,style,w,h);
+        draw_gradient(tv,c1,c2,gcol,1.0f-style->mix_factor,style->gradient_type==GP_MATERIAL_GRADIENT_RADIAL);
       }
       else{
         if(style && (style->flag&GP_MATERIAL_FILL_SHOW)) append_fill(fill,s,w,h);
@@ -788,8 +916,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       ndc(0,0,w,h), ndc(g_canvas_width,0,w,h), ndc(0,g_canvas_height,w,h),
       ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
   });
-  const float canvas_color[4]={0.96f,0.96f,0.96f,1.0f};
-  if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:canvas_color,false);
+  if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:g_paper_color,false);
   (void)x0; (void)y0; (void)x1; (void)y1;
   for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
     if(layer->flag&GP_LAYER_HIDE)continue;
@@ -992,17 +1119,27 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
       else {
         append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
       }
-      float ext[8];
-      if (g_fill_extend > 0.0f && pg_fill_extend_segments(stroke, g_fill_extend, ext)) {
-        const float r = 0.5f / std::max(g_map_scale, 1e-6f); /* 1 px, as Blender's extension lines */
-        for (int e = 0; e < 2; e++) {
-          const std::vector<PGOutlinePoint> seg = {PGOutlinePoint{ext[e * 4], ext[e * 4 + 1], r},
-                                                   PGOutlinePoint{ext[e * 4 + 2], ext[e * 4 + 3], r}};
-          append_outline(strokes, seg, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END, w, h);
-        }
-      }
     }
     draw_vertices(strokes, mask_color, false);
+  }
+
+  // Extend Lines: gpencil_draw_datablock() draws the extension strokes with
+  // gpencil_draw_basic_stroke(thickness 1) -> line width 2 px.
+  if (g_fill_extend > 0.0f) {
+    update_canvas_map(w, h);
+    std::vector<float> ext(4096 * 4);
+    const int n = pg_fill_extend_lines(const_cast<bGPdata*>(gpd), frame_number, g_fill_extend,
+                                       g_fill_collide, g_map_scale, g_map_origin_x, g_map_origin_y,
+                                       0.5f * float(g_canvas_width), 0.5f * float(g_canvas_height),
+                                       ext.data(), 4096);
+    const float r = 1.0f / std::max(g_map_scale, 1e-6f);
+    std::vector<Vertex> lines;
+    for (int e = 0; e < n; e++) {
+      const std::vector<PGOutlinePoint> seg = {PGOutlinePoint{ext[e * 4], ext[e * 4 + 1], r},
+                                               PGOutlinePoint{ext[e * 4 + 2], ext[e * 4 + 3], r}};
+      append_outline(lines, seg, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END, w, h);
+    }
+    draw_vertices(lines, mask_color, false);
   }
 
   return glGetError() == GL_NO_ERROR ? 1 : 0;
@@ -1099,6 +1236,7 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
   t.w=w;t.h=h;g_mat_tex[key]=t;
   return glGetError()==GL_NO_ERROR?1:0;
 }
+extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
 extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy){
@@ -1123,7 +1261,7 @@ extern "C" void project_grease_android_present_set_color(float r,float g,float b
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
   if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
-  for(auto&kv:g_mat_tex)if(kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;
+  for(auto&kv:g_mat_tex)if(kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;
   if(g_vc_program)glDeleteProgram(g_vc_program);if(g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
   // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
   // stale id in the next context has no storage, every later store failed and each input sample

@@ -816,6 +816,9 @@ PGWeightPaintSession *pg_wpaint_session_begin(bGPdata *gpd, const PGToolBrushPar
   brush->gpencil_settings = &s->settings;
   brush->gpencil_weight_tool = (char)params->brush;
   brush->curve_preset = BRUSH_CURVE_SMOOTH;
+  if (params->curve_preset > BRUSH_CURVE_CUSTOM && params->curve_preset <= BRUSH_CURVE_SMOOTHER) {
+    brush->curve_preset = params->curve_preset;
+  }
   s->settings.flag |= GP_BRUSH_USE_PRESSURE;
   pg_tool_view_init(&s->view, &gso->gsc, params->px_per_unit);
   brush->size = max_ii(1, (int)lroundf(params->radius * s->view.px_per_unit));

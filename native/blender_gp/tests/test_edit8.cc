@@ -107,7 +107,7 @@ int main()
   CHECK(n == -1);
   const float q1[1] = {1};
   n = pg_gp_doc_query(gpd, a, PG_DOC_Q_MATERIAL, q1, 1, out, 64);
-  CHECK(n == 6 && out[0] == GP_MATERIAL_MODE_DOT && out[1] == GP_MATERIAL_FOLLOW_FIXED && out[2] == 0.5f && out[3] == 1);
+  CHECK(n == 22 && out[0] == GP_MATERIAL_MODE_DOT && out[1] == GP_MATERIAL_FOLLOW_FIXED && out[2] == 0.5f && out[3] == 1);
   /* onion filter + loop */
   const float on[2] = {BEZT_KEYTYPE_BREAKDOWN, 1};
   CHECK(pg_gp_edit8_dispatch(gpd, a, PG_EDIT8_CMD_ONION_FILTER, on, 2) == 1);

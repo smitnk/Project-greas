@@ -3,6 +3,11 @@ name: Project Grease Android Shell
 
 on:
   workflow_dispatch:
+    inputs:
+      run_emulator:
+        description: "Run the emulator device tests, sweep and monkey (off unless asked)"
+        type: boolean
+        default: false
   pull_request:
     branches:
       - "feature/project-grease-ui-real-integration"
@@ -145,6 +150,11 @@ jobs:
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_edit5_tests.sh
+
+      - name: Native fill tool tests (Blender gpencil_fill.c port)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_fill_tests.sh
 
       - name: Run native tool session tests (draw input golden, sculpt / vertex / weight paint ports)
         env:
@@ -289,7 +299,7 @@ jobs:
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
-          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes", b"nativeSetFillOptionsEglRenderer", b"nativeRenderCanvasPixelsEglRenderer", b"nativeToolSamples", b"nativeSetSelectionOverlay"):
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes", b"nativeSceneLiteLineArtStrokesEx", b"nativeSceneLiteSetObjectLineArt", b"nativeSceneLiteSetMaterialLineArt", b"nativeSceneLiteAddCollection", b"nativeSceneLiteNames", b"nativeSetFillOptionsEglRenderer", b"nativeRenderCanvasPixelsEglRenderer", b"nativeToolSamples", b"nativeSetSelectionOverlay"):
               owners = [name for name, data in libs.items() if sym in data]
               assert owners, "no native library exports " + sym.decode()
               print(sym.decode(), "in", owners)
@@ -315,6 +325,8 @@ jobs:
   # Device-bugfix checks on an x86_64 emulator: the debug APK (arm64-v8a + x86_64) and the
   # instrumented test APK from the job above; real touches, native state and screenshots.
   emulator-tests:
+    # Manual only: Actions > Project Grease Android Shell > Run workflow > run_emulator.
+    if: github.event_name == 'workflow_dispatch' && inputs.run_emulator == true
     needs: android-shell
     runs-on: ubuntu-24.04
     timeout-minutes: 120

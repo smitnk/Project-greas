@@ -9,6 +9,8 @@
 #include "project_grease_blender_edit7.h"
 #include "project_grease_annotations.h"
 #include "project_grease_legacy_fill.h"
+#include "project_grease_blender_fill.h"
+#include <cstdlib>
 #include "project_grease_legacy_primitive.h"
 #include "project_grease_legacy_eraser.h"
 #include "project_grease_blender_edit.h"
@@ -259,6 +261,8 @@ struct Backend::Impl {
 
   std::vector<HistorySnapshot *> undo_history;
   float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
+  // Brush fill_factor ("Precision"), Blender default 1.
+  float fill_factor = 1.0f;
   std::vector<HistorySnapshot *> redo_history;
 
   // Live modifier stacks: stacks[i] belongs to the i-th layer of gpd->layers. They are document
@@ -1970,68 +1974,12 @@ bool Backend::dissolve_selected_points()
     impl_->last_error = "no active frame";
     return false;
   }
-
-  bool changed = false;
-  for (bGPDstroke *stroke = static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       stroke != nullptr;) {
-    bGPDstroke *next = stroke->next;
-    bool has_selected = false;
-    for (int i = 0; i < stroke->totpoints; ++i) {
-      if (stroke->points[i].flag & GP_SPOINT_SELECT) {
-        stroke->points[i].flag |= GP_SPOINT_TAG;
-        has_selected = true;
-      }
-    }
-
-    if (has_selected) {
-      // The Android closure intentionally does not link the full legacy
-      // gpencil_geom.c implementation. Compact tagged points in-place while
-      // preserving the real Blender 3.6.23 bGPDstroke/bGPDspoint layout.
-      int write_index = 0;
-      for (int read_index = 0; read_index < stroke->totpoints; ++read_index) {
-        bGPDspoint &point = stroke->points[read_index];
-        if (point.flag & GP_SPOINT_TAG) {
-          continue;
-        }
-        if (write_index != read_index) {
-          std::memcpy(&stroke->points[write_index], &point, sizeof(bGPDspoint));
-        }
-        ++write_index;
-      }
-      if (write_index != stroke->totpoints) {
-        if (write_index == 0) {
-          MEM_SAFE_FREE(stroke->points);
-          stroke->totpoints = 0;
-          stroke->flag &= ~GP_STROKE_SELECT;
-        }
-        else {
-          bGPDspoint *points = static_cast<bGPDspoint *>(
-              MEM_mallocN(sizeof(bGPDspoint) * static_cast<size_t>(write_index),
-                           "Project Grease dissolve points"));
-          if (!points) {
-            impl_->last_error = "dissolve point allocation failed";
-            return false;
-          }
-          std::memcpy(points,
-                      stroke->points,
-                      sizeof(bGPDspoint) * static_cast<size_t>(write_index));
-          MEM_freeN(stroke->points);
-          stroke->points = points;
-          stroke->totpoints = write_index;
-        }
-        MEM_SAFE_FREE(stroke->triangles);
-        stroke->tot_triangles = 0;
-        changed = true;
-      }
-    }
-    stroke = next;
-  }
-
-  if (!changed) {
-    impl_->last_error = "no selected points to dissolve";
+  // GPENCIL_OT_dissolve(type=POINTS): the port in project_grease_blender_edit.c (weights kept
+  // aligned, emptied strokes freed, selection cleared as in Blender).
+  if (!pg_gp_dissolve(impl_->gpd, impl_->layer, PG_DISSOLVE_POINTS)) {
+    impl_->last_error = "no selected strokes to dissolve";
     return false;
   }
-
   impl_->stroke = nullptr;
   BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);
@@ -4746,6 +4694,11 @@ void Backend::set_fill_screen_map(float scale, float origin_x, float origin_y)
   impl_->fill_map_origin_y = origin_y;
 }
 
+void Backend::set_fill_factor(float factor)
+{
+  impl_->fill_factor = pg_fill_factor_clamp(factor);
+}
+
 bool Backend::fill_at_screen(const float* rgba,
                              int width,
                              int height,
@@ -4768,36 +4721,61 @@ bool Backend::fill_at_screen(const float* rgba,
   std::copy(rgba, rgba + count, image.rgba().begin());
 
   // Blender's fill operator works on a stroke-only render mask. The Android
-  // presentation layer supplies that mask; this call performs Blender 3.6.23's
-  // boundary-fill + Moore-neighborhood outline extraction.
+  // presentation layer supplies that mask (red = boundary, lower-left origin).
   legacy_gp_fill::normalize_to_legacy_mask(image, 0.5f);
 
-  // GLES readback has its origin at the lower-left; Android touch coordinates
-  // are top-left based.
+  // gpencil_render_offscreen() renders at region size * fill_factor (min 128 px). The presenter
+  // renders at view size, so the mask is resampled on the CPU to that size
+  // (project_grease_blender_fill.c documents the adaptation).
+  const float factor = impl_->fill_factor;
+  const int sx = pg_fill_render_size(width, factor);
+  const int sy = pg_fill_render_size(height, factor);
+  std::vector<float> scaled;
+  float *mask = image.rgba().data();
+  if (sx != width || sy != height) {
+    scaled.resize(static_cast<size_t>(sx) * static_cast<size_t>(sy) * 4u);
+    pg_fill_resample_mask(mask, width, height, scaled.data(), sx, sy);
+    mask = scaled.data();
+  }
+  // GLES readback has its origin at the lower-left; Android touch coordinates are top-left based.
   const int raster_seed_y = height - 1 - seed_y;
-  legacy_gp_fill::Result result =
-      legacy_gp_fill::run(image, seed_x, raster_seed_y, fill_leak, dilate_pixels);
-
-  if (!result.valid || result.outline.size() < 3) {
-    impl_->last_error = result.border_contact
+  const int img_seed_x = std::min(sx - 1, static_cast<int>(static_cast<float>(seed_x) * sx / width));
+  const int img_seed_y =
+      std::min(sy - 1, static_cast<int>(static_cast<float>(raster_seed_y) * sy / height));
+  // tgpf->fill_leak = ceil(FILL_LEAK * fill_factor); a positive fill_leak overrides it.
+  const int leak = fill_leak > 0 ? fill_leak : pg_fill_leak_from_factor(factor);
+  // draw_mouse_position(): point of 4 * fill_factor * sqrt(2) px.
+  const float point_size = 4.0f * factor * 1.41421356f;
+  float *xy = nullptr;
+  int border_contact = 0;
+  const int total = pg_fill_raster(mask, sx, sy, img_seed_x, img_seed_y, point_size, leak,
+                                   dilate_pixels, &xy, &border_contact);
+  if (total < 3) {
+    std::free(xy);
+    impl_->last_error = border_contact
         ? "Legacy GP fill reached the render boundary"
         : "Legacy GP fill found no closed area";
     return false;
   }
 
-  // The outline is in screen pixels of the rendered view: back to canvas units, as Blender's fill
-  // unprojects its 2D boundary (gpencil_points_from_stack -> gpencil_stroke_convertcoords_tpoint).
+  // The outline is in pixels of the fill image: back to view pixels and canvas units, as Blender's
+  // fill unprojects its 2D boundary (gpencil_stroke_from_buffer -> gpencil_stroke_convertcoords_tpoint).
   const float map_scale = impl_->fill_map_scale > 1e-6f ? impl_->fill_map_scale : 1.0f;
+  const float kx = static_cast<float>(width) / static_cast<float>(sx);
+  const float ky = static_cast<float>(height) / static_cast<float>(sy);
   std::vector<StrokePoint> points;
-  points.reserve(result.outline.size());
-  for (const legacy_gp_fill::Point& p : result.outline) {
-    points.push_back({(p.x - impl_->fill_map_origin_x) / map_scale,
-                      (static_cast<float>(height) - p.y - impl_->fill_map_origin_y) / map_scale,
+  points.reserve(static_cast<size_t>(total));
+  for (int i = 0; i < total; i++) {
+    const float px = xy[i * 2] * kx;
+    const float py = xy[i * 2 + 1] * ky;
+    points.push_back({(px - impl_->fill_map_origin_x) / map_scale,
+                      (static_cast<float>(height) - py - impl_->fill_map_origin_y) / map_scale,
                       0.0f,
                       1.0f,
                       1.0f,
                       0.0f});
   }
+  std::free(xy);
 
   if (!create_polyline(points.data(),
                        static_cast<int>(points.size()),
@@ -4806,19 +4784,15 @@ bool Backend::fill_at_screen(const float* rgba,
     return false;
   }
 
-  // Use Blender's real Legacy GP geometry update/smoothing path on the new
-  // stroke rather than a Project Grease replacement.
+  // gpencil_stroke_from_buffer(): per-point smooth in place, fill_simplylvl (brush default 1)
+  // passes of BKE_gpencil_stroke_simplify_fixed, then the geometry update.
   if (impl_->stroke) {
-    BKE_gpencil_stroke_smooth(impl_->stroke,
-                              1.0f,
-                              2,
-                              true,
-                              false,
-                              false,
-                              false,
-                              true,
-                              nullptr);
-    BKE_gpencil_stroke_geometry_update(impl_->gpd, impl_->stroke);
+    bGPDstroke *gps = impl_->stroke;
+    for (int i = 0; i < gps->totpoints; i++) {
+      BKE_gpencil_stroke_smooth_point(gps, i, 1.0f, 2, false, true, gps);
+    }
+    BKE_gpencil_stroke_simplify_fixed(impl_->gpd, gps);
+    BKE_gpencil_stroke_geometry_update(impl_->gpd, gps);
   }
 
   impl_->last_error.clear();

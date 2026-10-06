@@ -17,8 +17,15 @@
  * operations); tools/draw_input_golden holds that Kotlin reference and the generator of the
  * golden data the native test compares against. Pressure / strength curves: the brush's
  * CurveMapping (project_grease_curvemap.c, BKE_curvemapping_evaluateF) when the caller set one,
- * else the former power curve. Known approximations: a local random generator for jitter,
- * interpolated arc point times.
+ * else the former power curve.
+ *
+ * Blender works on region pixels (tGPspoint.m_xy = event mval); the engine keeps canvas units and
+ * converts every pixel comparison with `px_per_unit` (the view zoom): the Manhattan / Euclidean
+ * and lazy-radius tests of gpencil_stroke_filtermval, the fake point distance of
+ * gpencil_add_fake_points and the jitter displacement of gpencil_brush_jitter. Jitter draws from
+ * BLI_rng (blender::RandomNumberGenerator, drand48 LCG) seeded as gpencil_paint_initstroke() does
+ * unless the caller fixes the seed. Arc points keep Blender's sbuffer times: the first arc point
+ * reuses the slot (and time) of the replaced point, the others are slots of the zeroed buffer.
  */
 #ifndef PROJECT_GREASE_DRAW_INPUT_H
 #define PROJECT_GREASE_DRAW_INPUT_H
@@ -52,6 +59,9 @@ typedef struct PGDrawSettings {
   float draw_angle_factor;
   float draw_angle;
   int synthesize_fast_points; /* 1 */
+  float px_per_unit;          /* 1: region pixels per canvas unit */
+  int use_seed;               /* 0: seed like gpencil_paint_initstroke() */
+  unsigned int seed;
   /* Brush curve_sensitivity / curve_strength (BKE_curvemapping_evaluateF); unused while !built. */
   PGCurve pressure_map;
   PGCurve strength_map;
@@ -69,7 +79,7 @@ typedef struct PGDrawInput {
   int released;
   float last_input_x, last_input_y;
   float initial_time, previous_time;
-  unsigned int rng;
+  unsigned long long rng_x; /* blender::RandomNumberGenerator::x_ */
 } PGDrawInput;
 
 void pg_draw_settings_default(PGDrawSettings *s);
@@ -81,6 +91,9 @@ int pg_draw_input_add(PGDrawInput *d, float x, float y, float pressure, float ti
 int pg_draw_input_end(PGDrawInput *d, const PGDrawPoint **r_out);
 void pg_draw_input_cancel(PGDrawInput *d);
 void pg_draw_input_free(PGDrawInput *d);
+/* BLI_rng_new(seed) / BLI_rng_get_float() (blender::RandomNumberGenerator). */
+void pg_draw_rng_seed(unsigned long long *x, unsigned int seed);
+float pg_draw_rng_get_float(unsigned long long *x);
 /* BLI_math_base interpf(): `target` weighted by `fac`. */
 float pg_draw_interpf(float target, float origin, float fac);
 

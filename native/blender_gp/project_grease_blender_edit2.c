@@ -188,53 +188,183 @@ int pg_gp_stroke_sample(bGPdata *gpd, const bGPDlayer *only_layer, float length,
   return changed;
 }
 
-/* Add a copy of point `src` at index `at` (0 = before the first point, totpoints = after the last). */
-static bool pe2_insert_point(bGPDstroke *gps, int src, int at)
+/* gpencil_copy_move_point() (gpencil_edit.c) */
+static void pe2_copy_move_point(bGPDstroke *gps, bGPDspoint *temp_points, MDeformVert *temp_dverts,
+                                int from_idx, int to_idx, const bool copy)
 {
-  const int n = gps->totpoints;
-  bGPDspoint *pts = MEM_callocN(sizeof(bGPDspoint) * (size_t)(n + 1), "pg_extrude_points");
-  if (pts == NULL) return false;
-  memcpy(pts, gps->points, sizeof(bGPDspoint) * (size_t)at);
-  pts[at] = gps->points[src];
-  memcpy(pts + at + 1, gps->points + at, sizeof(bGPDspoint) * (size_t)(n - at));
+  bGPDspoint *pt = &temp_points[from_idx];
+  bGPDspoint *pt_final = &gps->points[to_idx];
+
+  pt_final->x = pt->x;
+  pt_final->y = pt->y;
+  pt_final->z = pt->z;
+  pt_final->pressure = pt->pressure;
+  pt_final->strength = pt->strength;
+  pt_final->time = pt->time;
+  pt_final->flag = pt->flag;
+  pt_final->uv_fac = pt->uv_fac;
+  pt_final->uv_rot = pt->uv_rot;
+  memcpy(pt_final->vert_color, pt->vert_color, sizeof(float[4]));
+
   if (gps->dvert != NULL) {
-    MDeformVert *dv = MEM_callocN(sizeof(MDeformVert) * (size_t)(n + 1), "pg_extrude_dvert");
-    if (dv == NULL) { MEM_freeN(pts); return false; }
-    memcpy(dv, gps->dvert, sizeof(MDeformVert) * (size_t)at);
-    memcpy(dv + at + 1, gps->dvert + at, sizeof(MDeformVert) * (size_t)(n - at)); /* new point: no weights */
-    MEM_freeN(gps->dvert);
-    gps->dvert = dv;
+    MDeformVert *dvert = &temp_dverts[from_idx];
+    MDeformVert *dvert_final = &gps->dvert[to_idx];
+    dvert_final->totweight = dvert->totweight;
+    /* if copy, duplicate memory, otherwise move only the pointer */
+    if (copy) {
+      dvert_final->dw = NULL;
+      if (dvert->dw != NULL && dvert->totweight > 0) {
+        dvert_final->dw = MEM_callocN(sizeof(MDeformWeight) * (size_t)dvert->totweight, "pg_extrude_dw");
+        memcpy(dvert_final->dw, dvert->dw, sizeof(MDeformWeight) * (size_t)dvert->totweight);
+      }
+    }
+    else {
+      dvert_final->dw = dvert->dw;
+    }
   }
-  MEM_freeN(gps->points);
-  gps->points = pts;
-  gps->totpoints = n + 1;
-  return true;
 }
 
+/* MEM_recallocN(): keep the old bytes, zero the new tail. */
+static void *pe2_recalloc(void *old, size_t old_size, size_t new_size)
+{
+  void *mem = MEM_callocN(new_size, "pg_extrude_recalloc");
+  memcpy(mem, old, old_size < new_size ? old_size : new_size);
+  MEM_freeN(old);
+  return mem;
+}
+
+/* gpencil_add_move_points() (gpencil_edit.c) */
+static void pe2_add_move_points(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps)
+{
+  bGPDspoint *temp_points = NULL;
+  MDeformVert *temp_dverts = NULL;
+  bGPDspoint *pt = NULL;
+  const bGPDspoint *pt_start = &gps->points[0];
+  const bGPDspoint *pt_last = &gps->points[gps->totpoints - 1];
+  const bool do_first = (pt_start->flag & GP_SPOINT_SELECT);
+  const bool do_last = ((pt_last->flag & GP_SPOINT_SELECT) && (pt_start != pt_last));
+  const bool do_stroke = (do_first || do_last);
+
+  /* review points in the middle of stroke to create new strokes */
+  for (int i = 0; i < gps->totpoints; i++) {
+    if (ELEM(i, 0, gps->totpoints - 1)) {
+      continue;
+    }
+    pt = &gps->points[i];
+    if (pt->flag == GP_SPOINT_SELECT) {
+      bGPDstroke *gps_new = BKE_gpencil_stroke_duplicate(gps, false, true);
+      gps_new->prev = gps_new->next = NULL;
+      gps_new->totpoints = 1;
+      gps_new->points = MEM_callocN(sizeof(bGPDspoint), __func__);
+      gps_new->dvert = NULL;
+      if (gps->dvert != NULL) {
+        gps_new->dvert = MEM_callocN(sizeof(MDeformVert), __func__);
+      }
+      /* BLI_insertlinkafter(&gpf->strokes, gps, gps_new) */
+      gps_new->prev = gps;
+      gps_new->next = gps->next;
+      if (gps->next) gps->next->prev = gps_new; else gpf->strokes.last = gps_new;
+      gps->next = gps_new;
+
+      pe2_copy_move_point(gps_new, gps->points, gps->dvert, i, 0, true);
+
+      BKE_gpencil_stroke_geometry_update(gpd, gps);
+      BKE_gpencil_stroke_geometry_update(gpd, gps_new);
+
+      pt->flag &= ~GP_SPOINT_SELECT;
+    }
+  }
+
+  int i2 = 0;
+  int totnewpoints, oldtotpoints;
+  if ((do_first) || (do_last)) {
+    totnewpoints = gps->totpoints;
+    if (do_first) totnewpoints++;
+    if (do_last) totnewpoints++;
+
+    oldtotpoints = gps->totpoints;
+    temp_points = MEM_callocN(sizeof(bGPDspoint) * (size_t)oldtotpoints, "pg_extrude_tmp");
+    memcpy(temp_points, gps->points, sizeof(bGPDspoint) * (size_t)oldtotpoints);
+    if (gps->dvert != NULL) {
+      temp_dverts = MEM_callocN(sizeof(MDeformVert) * (size_t)oldtotpoints, "pg_extrude_tmpdv");
+      memcpy(temp_dverts, gps->dvert, sizeof(MDeformVert) * (size_t)oldtotpoints);
+    }
+
+    if (do_first) i2 = 1;
+
+    gps->totpoints = totnewpoints;
+    gps->points = pe2_recalloc(gps->points, sizeof(bGPDspoint) * (size_t)oldtotpoints,
+                               sizeof(bGPDspoint) * (size_t)gps->totpoints);
+    if (gps->dvert != NULL) {
+      gps->dvert = pe2_recalloc(gps->dvert, sizeof(MDeformVert) * (size_t)oldtotpoints,
+                                sizeof(MDeformVert) * (size_t)gps->totpoints);
+    }
+
+    for (int i = 0; i < oldtotpoints; i++) {
+      pe2_copy_move_point(gps, temp_points, temp_dverts, i, i2, false);
+      i2++;
+    }
+
+    if (do_first) {
+      pe2_copy_move_point(gps, temp_points, temp_dverts, 0, 0, true);
+      gps->points[1].flag &= ~GP_SPOINT_SELECT;
+      gps->points[0].flag |= GP_SPOINT_SELECT;
+    }
+
+    if (do_last) {
+      pe2_copy_move_point(gps, temp_points, temp_dverts, oldtotpoints - 1, gps->totpoints - 1, true);
+      gps->points[gps->totpoints - 2].flag &= ~GP_SPOINT_SELECT;
+      gps->points[gps->totpoints - 1].flag |= GP_SPOINT_SELECT;
+    }
+
+    /* Flip stroke if it was only one point to consider extrude point as last point. */
+    if (gps->totpoints == 2) {
+      BKE_gpencil_stroke_flip(gps);
+    }
+
+    BKE_gpencil_stroke_geometry_update(gpd, gps);
+
+    MEM_SAFE_FREE(temp_points);
+    MEM_SAFE_FREE(temp_dverts);
+  }
+
+  /* if the stroke is not reused, deselect */
+  if (!do_stroke) {
+    gps->flag &= ~GP_STROKE_SELECT;
+    BKE_gpencil_stroke_select_index_reset(gps);
+  }
+}
+
+/* Port of gpencil_extrude_exec() (non curve-edit). The new one-point stroke made for a selected
+ * inner point is inserted after its source and then visited by the same loop, which extends it to
+ * two points and flips it, as in Blender. Strokes are not filtered by material (Blender only
+ * checks ED_gpencil_stroke_can_use() here). */
 int pg_gp_extrude(bGPdata *gpd, const bGPDlayer *only_layer)
 {
   if (gpd == NULL) return 0;
+  const bool is_multiedit = (gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
   int changed = 0;
-  PE2_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL || gps->totpoints < 1) continue;
-    if (gps->flag & GP_STROKE_CYCLIC) continue; /* closed strokes have no ends */
-    const bool last_sel = (gps->points[gps->totpoints - 1].flag & GP_SPOINT_SELECT) != 0;
-    const bool first_sel = gps->totpoints > 1 && (gps->points[0].flag & GP_SPOINT_SELECT) != 0;
-    bool stroke_changed = false;
-    if (last_sel && pe2_insert_point(gps, gps->totpoints - 1, gps->totpoints)) {
-      gps->points[gps->totpoints - 2].flag &= ~GP_SPOINT_SELECT; /* old end deselected */
-      stroke_changed = true;
-    }
-    if (first_sel && pe2_insert_point(gps, 0, 0)) {
-      gps->points[1].flag &= ~GP_SPOINT_SELECT;
-      stroke_changed = true;
-    }
-    if (stroke_changed) {
-      BKE_gpencil_stroke_geometry_update(gpd, gps);
-      changed = 1;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if ((only_layer != NULL && gpl != only_layer) || !BKE_gpencil_layer_is_editable(gpl)) continue;
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
+        for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
+          if ((gps->flag & GP_STROKE_SELECT) && gps->points != NULL && gps->totpoints > 0) {
+            /* ED_gpencil_stroke_can_use (gpencil_edit.c:1298): hidden / locked materials are skipped */
+            if (gpd->mat != NULL && gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol && gpd->mat[gps->mat_nr] &&
+                gpd->mat[gps->mat_nr]->gp_style &&
+                ((gpd->mat[gps->mat_nr]->gp_style->flag & GP_MATERIAL_HIDE) ||
+                 (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (gpd->mat[gps->mat_nr]->gp_style->flag & GP_MATERIAL_LOCKED))))
+              continue;
+            pe2_add_move_points(gpd, gpf, gps);
+            changed = 1;
+          }
+        }
+        if (!is_multiedit) break;
+      }
     }
   }
-  PE2_STROKES_END;
   return changed;
 }
 

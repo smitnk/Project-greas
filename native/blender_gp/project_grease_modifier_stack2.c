@@ -36,6 +36,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit4.h"
+#include "project_grease_blender_build.h"
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_mod2.h"
 #include "project_grease_curvemap.h"
@@ -111,6 +112,11 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_MULTIPLY_DUPLICATIONS] = 3.0f;
       p[PG_P_MULTIPLY_DISTANCE] = 10.0f;
       break;
+    case PG_MOD_TEXTURE: /* uv_scale 1, fill_scale 1, fit GP_TEX_CONSTANT_LENGTH, mode STROKE */
+      p[PG_P_TEXTURE_UV_SCALE] = 1.0f;
+      p[PG_P_TEXTURE_FILL_SCALE] = 1.0f;
+      p[PG_P_TEXTURE_FIT] = GP_TEX_CONSTANT_LENGTH;
+      break;
     default:
       break;
   }
@@ -120,8 +126,13 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
 {
   switch (type) {
     case PG_MOD_BUILD:
-      p[PG_P_BUILD_MODE] = m2_int(p[PG_P_BUILD_MODE], 0, 1);
-      p[PG_P_BUILD_TRANSITION] = m2_int(p[PG_P_BUILD_TRANSITION], 0, 1);
+      p[PG_P_BUILD_MODE] = m2_int(p[PG_P_BUILD_MODE], 0, 2);
+      p[PG_P_BUILD_TRANSITION] = m2_int(p[PG_P_BUILD_TRANSITION], 0, 2);
+      p[PG_P_BUILD_TIME_ALIGN] = m2_int(p[PG_P_BUILD_TIME_ALIGN], 0, 1);
+      p[PG_P_BUILD_USE_FADE] = m2_int(p[PG_P_BUILD_USE_FADE], 0, 1);
+      p[PG_P_BUILD_FADE_FAC] = m2_clamp(p[PG_P_BUILD_FADE_FAC], 0.0f, 1.0f);
+      p[PG_P_BUILD_FADE_THICKNESS] = m2_clamp(p[PG_P_BUILD_FADE_THICKNESS], 0.0f, 1.0f);
+      p[PG_P_BUILD_FADE_OPACITY] = m2_clamp(p[PG_P_BUILD_FADE_OPACITY], 0.0f, 1.0f);
       p[PG_P_BUILD_START] = m2_clamp(p[PG_P_BUILD_START], 0.0f, 10000.0f);
       p[PG_P_BUILD_LENGTH] = m2_clamp(p[PG_P_BUILD_LENGTH], 1.0f, 10000.0f);
       break;
@@ -199,6 +210,17 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
     case PG_MOD_MULTIPLY:
       p[PG_P_MULTIPLY_DUPLICATIONS] = m2_int(p[PG_P_MULTIPLY_DUPLICATIONS], 1, 100);
       p[PG_P_MULTIPLY_DISTANCE] = m2_clamp(p[PG_P_MULTIPLY_DISTANCE], -10000.0f, 10000.0f);
+      break;
+    case PG_MOD_TEXTURE: /* rna_gpencil_legacy_modifier.c ranges */
+      p[PG_P_TEXTURE_MODE] = m2_int(p[PG_P_TEXTURE_MODE], 0, 2);
+      p[PG_P_TEXTURE_FIT] = m2_int(p[PG_P_TEXTURE_FIT], 0, 1);
+      p[PG_P_TEXTURE_UV_OFFSET] = m2_clamp(p[PG_P_TEXTURE_UV_OFFSET], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_UV_SCALE] = m2_clamp(p[PG_P_TEXTURE_UV_SCALE], 0.0f, FLT_MAX);
+      p[PG_P_TEXTURE_ALIGN_ROT] = m2_clamp(p[PG_P_TEXTURE_ALIGN_ROT], (float)(-M_PI_2), (float)M_PI_2); /* +-90 degrees */
+      p[PG_P_TEXTURE_FILL_ROT] = m2_clamp(p[PG_P_TEXTURE_FILL_ROT], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_FILL_OFFSET_X] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_X], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_FILL_OFFSET_Y] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_Y], -FLT_MAX, FLT_MAX);
+      p[PG_P_TEXTURE_FILL_SCALE] = m2_clamp(p[PG_P_TEXTURE_FILL_SCALE], 0.01f, 100.0f);
       break;
     default:
       break;
@@ -786,39 +808,26 @@ static int m2_envelope_generate(const PGModContext *ctx, const PGModEntry *e)
 static int m2_build(const PGModContext *ctx, const PGModEntry *e)
 {
   const float *p = e->params;
-  int n = 0;
+  int any_affected = 0;
   LISTBASE_FOREACH (bGPDstroke *, gps, &ctx->gpf->strokes) {
-    if (pg_mod_stroke_affected(ctx, e, gps)) n++;
+    if (pg_mod_stroke_affected(ctx, e, gps)) { any_affected = 1; break; }
   }
-  if (n == 0) return 0;
-  int *tot = MEM_malloc_arrayN((size_t)n, sizeof(int), "pg_build_tot");
-  int *vis = MEM_malloc_arrayN((size_t)n, sizeof(int), "pg_build_vis");
-  bGPDstroke **list = MEM_malloc_arrayN((size_t)n, sizeof(bGPDstroke *), "pg_build_list");
-  int k = 0;
-  LISTBASE_FOREACH (bGPDstroke *, gps, &ctx->gpf->strokes) {
-    if (pg_mod_stroke_affected(ctx, e, gps)) { list[k] = gps; tot[k] = gps->totpoints; k++; }
-  }
-  /* frames are counted from the keyframe, as Blender's build counts from gpf->framenum */
-  const float rel = (float)(ctx->cfra - ctx->gpf->framenum);
-  pg_build_visible(tot, n, (int)p[PG_P_BUILD_MODE], (int)p[PG_P_BUILD_TRANSITION], rel,
-                   p[PG_P_BUILD_START], p[PG_P_BUILD_LENGTH], vis);
-  int any = 0;
-  for (int i = 0; i < n; i++) {
-    bGPDstroke *gps = list[i];
-    if (vis[i] >= tot[i]) continue;
-    any = 1;
-    if (vis[i] <= 0) {
-      BLI_remlink(&ctx->gpf->strokes, gps);
-      BKE_gpencil_free_stroke(gps);
-    }
-    else {
-      BKE_gpencil_stroke_trim_points(gps, 0, vis[i] - 1, false);
-    }
-  }
-  MEM_freeN(tot);
-  MEM_freeN(vis);
-  MEM_freeN(list);
-  return any;
+  if (!any_affected) return 0; /* layer / pass filters */
+  const bGPDframe *orig = ctx->orig ? ctx->orig : ctx->gpf;
+  PGBuildParams b;
+  memset(&b, 0, sizeof(b));
+  b.mode = (int)p[PG_P_BUILD_MODE];
+  b.transition = (int)p[PG_P_BUILD_TRANSITION];
+  b.time_alignment = (int)p[PG_P_BUILD_TIME_ALIGN];
+  b.start_delay = p[PG_P_BUILD_START];
+  b.length = p[PG_P_BUILD_LENGTH];
+  b.use_fading = p[PG_P_BUILD_USE_FADE] != 0.0f;
+  b.fade_fac = p[PG_P_BUILD_FADE_FAC];
+  b.fade_thickness_strength = p[PG_P_BUILD_FADE_THICKNESS];
+  b.fade_opacity_strength = p[PG_P_BUILD_FADE_OPACITY];
+  const int prev = orig->prev ? BLI_listbase_count(&orig->prev->strokes) : -1;
+  const int next = orig->next ? orig->next->framenum : -1;
+  return pg_build_generate(ctx->gpd, ctx->gpf, orig->framenum, prev, next, (float)ctx->cfra, &b);
 }
 
 /* ---------------------------------------------------------------------------------------- */
@@ -952,6 +961,37 @@ static int m2_weight_modifier(const PGModContext *ctx, const PGModEntry *e, bGPD
 }
 
 /* ---------------------------------------------------------------------------------------- */
+/* Texture Mapping (MOD_gpencil_legacy_texture.c deformStroke; the vertex group filter is the
+ * entry's influence filter block)                                                          */
+
+static int m2_texture(const PGModContext *ctx, const float *p, bGPDstroke *gps)
+{
+  const int mode = (int)p[PG_P_TEXTURE_MODE];
+  if (ELEM(mode, 1, 2)) { /* FILL, STROKE_AND_FILL */
+    gps->uv_rotation += p[PG_P_TEXTURE_FILL_ROT];
+    gps->uv_translation[0] += p[PG_P_TEXTURE_FILL_OFFSET_X];
+    gps->uv_translation[1] += p[PG_P_TEXTURE_FILL_OFFSET_Y];
+    gps->uv_scale *= p[PG_P_TEXTURE_FILL_SCALE];
+    BKE_gpencil_stroke_geometry_update(ctx->gpd, gps);
+  }
+  if (ELEM(mode, 0, 2)) { /* STROKE, STROKE_AND_FILL */
+    float totlen = 1.0f;
+    if ((int)p[PG_P_TEXTURE_FIT] == GP_TEX_FIT_STROKE) {
+      totlen = 0.0f;
+      for (int i = 1; i < gps->totpoints; i++) totlen += len_v3v3(&gps->points[i - 1].x, &gps->points[i].x);
+    }
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      pt->uv_fac /= totlen;
+      pt->uv_fac *= p[PG_P_TEXTURE_UV_SCALE];
+      pt->uv_fac += p[PG_P_TEXTURE_UV_OFFSET];
+      pt->uv_rot += p[PG_P_TEXTURE_ALIGN_ROT];
+    }
+  }
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------------------- */
 /* Dispatch                                                                                  */
 
 int pg_mod2_is_frame_level(int type)
@@ -1003,6 +1043,8 @@ int pg_mod2_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstro
     case PG_MOD_WEIGHT_PROX:
     case PG_MOD_WEIGHT_ANGLE:
       return m2_weight_modifier(ctx, e, gps);
+    case PG_MOD_TEXTURE:
+      return m2_texture(ctx, p, gps);
     default:
       return 0;
   }

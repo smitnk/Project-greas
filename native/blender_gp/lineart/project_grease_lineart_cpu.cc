@@ -12,6 +12,54 @@
 #include "lineart_lite_shim.h"
 
 
+/* The scene being computed: Line Art runs single-threaded (lineart_lite_runtime.cc), and the
+ * material / collection lookups below need it where Blender reaches Main through the object. */
+static const PGSceneLite *pg_scene = nullptr;
+/* BKE_object_material_get(ob, index + 1) on Scene-lite. */
+static const PGMaterialLite *pg_material_get(int tri_material)
+{
+  if (!pg_scene || tri_material < 0 || tri_material >= pg_scene->totmaterial) {
+    return nullptr;
+  }
+  return &pg_scene->materials[tri_material];
+}
+/* BKE_collection_has_object(): the collection (-1 = master) directly holds the object. */
+static bool pg_collection_has_object(int c, const PGObjectLite *ob)
+{
+  return ob->collection == c;
+}
+/* BKE_collection_has_object_recursive_instanced(): in the collection or any child of it. */
+static bool pg_collection_has_object_recursive(int c, const PGObjectLite *ob)
+{
+  for (int k = ob->collection; k >= -1; k = (k >= 0 ? pg_scene->collections[k].parent : -2)) {
+    if (k == c) {
+      return true;
+    }
+  }
+  return false;
+}
+/* "c->gobject.first": the collection directly holds any object. */
+static bool pg_collection_has_objects(int c)
+{
+  for (int i = 0; i < pg_scene->totobject; i++) {
+    if (pg_scene->objects[i].collection == c) {
+      return true;
+    }
+  }
+  return false;
+}
+/* The shadow stage (project_grease_lineart_shadow.c, generated from lineart_shadow.c) with its
+ * Scene-lite lineart_main_try_generate_shadow(), and the geometry loader it calls back. */
+extern "C" bool pg_lineart_main_try_generate_shadow(const PGSceneLite *scene,
+                                                    LineartData *original_ld,
+                                                    const PGLineartSettings *lmd,
+                                                    LineartStaticMemPool *shadow_data_pool,
+                                                    LineartElementLinkNode **r_veln,
+                                                    LineartElementLinkNode **r_eeln,
+                                                    ListBase *r_calculated_edges_eln_list,
+                                                    LineartData **r_shadow_ld_if_reproject);
+extern "C" void pg_lineart_load_geometries_for_shadow(const PGSceneLite *scene, LineartData *ld);
+extern "C" void pg_lineart_free_deferred_shadow(void);
 /* Scene-lite access for the replacements below. */
 static const PGObjectLite *pg_obi_object(const LineartObjectInfo *obi)
 {
@@ -1460,6 +1508,7 @@ struct EdgeFeatData {
   LineartData *ld;
   const PGMeshLite *me;
   const int *material_indices; /* per triangle */
+  const PGObjectLite *ob_eval;
   LineartTriangle *tri_array;
   LineartVert *v_array;
   float crease_threshold;
@@ -1563,7 +1612,22 @@ static void lineart_identify_mlooptri_feature_edges(void *__restrict userdata,
     }
   }
 
-  /* use_contour_secondary needs a light reference object: not supported. */
+  if (ld->conf.use_contour_secondary) {
+    view_vector = view_vector_persp;
+    if (ld->conf.cam_is_persp_secondary) {
+      sub_v3_v3v3_db(view_vector, vert->gloc, ld->conf.camera_pos_secondary);
+    }
+    else {
+      view_vector = ld->conf.view_vector_secondary;
+    }
+
+    dot_v1 = dot_v3v3_db(view_vector, tri1->gn);
+    dot_v2 = dot_v3v3_db(view_vector, tri2->gn);
+
+    if ((result = dot_v1 * dot_v2) <= 0 && (dot_v1 + dot_v2)) {
+      edge_flag_result |= LRT_EDGE_FLAG_CONTOUR_SECONDARY;
+    }
+  }
 
   if (!only_contour) {
     if (ld->conf.use_crease) {
@@ -1583,8 +1647,16 @@ static void lineart_identify_mlooptri_feature_edges(void *__restrict userdata,
     int mat2 = material_indices ? material_indices[f2] : 0;
 
     if (mat1 != mat2) {
-      /* Both materials have Blender's default mat_occlusion (1), so the "occlusion 0 vs non-0"
-       * contour rule never applies. */
+      const PGMaterialLite *m1 = pg_material_get(mat1);
+      const PGMaterialLite *m2 = pg_material_get(mat2);
+      if (m1 && m2 &&
+          ((m1->mat_occlusion == 0 && m2->mat_occlusion != 0) ||
+           (m2->mat_occlusion == 0 && m1->mat_occlusion != 0)))
+      {
+        if (ld->conf.use_contour) {
+          edge_flag_result |= LRT_EDGE_FLAG_CONTOUR;
+        }
+      }
       if (ld->conf.use_material) {
         edge_flag_result |= LRT_EDGE_FLAG_MATERIAL;
       }
@@ -1725,10 +1797,17 @@ static void lineart_load_tri_task(void *__restrict userdata,
   tri->v[1] = &vert_arr[v2];
   tri->v[2] = &vert_arr[v3];
 
-  /* Material mask bits and occlusion effectiveness assignment: Blender's default material. */
-  tri->material_mask_bits |= 0;
-  tri->mat_occlusion |= 1;
-  tri->intersection_priority = ob_info->intersection_priority;
+  /* Material mask bits and occlusion effectiveness assignment. */
+  const PGMaterialLite *mat = pg_material_get(me->tri_material ? me->tri_material[i] : -1);
+  tri->material_mask_bits |= ((mat && (mat->lineart_flags & LRT_MATERIAL_MASK_ENABLED)) ?
+                                  mat->material_mask_bits :
+                                  0);
+  tri->mat_occlusion |= (mat ? mat->mat_occlusion : 1);
+  tri->intersection_priority = ((mat && (mat->lineart_flags &
+                                         LRT_MATERIAL_CUSTOM_INTERSECTION_PRIORITY)) ?
+                                    mat->intersection_priority :
+                                    ob_info->intersection_priority);
+  tri->flags |= (mat && mat->use_backface_culling) ? LRT_TRIANGLE_MAT_BACK_FACE_CULLING : 0;
 
   tri->intersection_mask = ob_info->override_intersection_mask;
 
@@ -1843,7 +1922,7 @@ static LineartEdgeNeighbor *lineart_build_edge_neighbor(const PGMeshLite *me, in
 /* Scene-lite replacement for lineart_geometry_object_load (lineart_scene_lite_replacements.cc) */
 static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
                                          LineartData *la_data,
-                                         ListBase * /*shadow_elns*/)
+                                         ListBase *shadow_elns)
 {
   const PGObjectLite *pob = pg_obi_object(ob_info);
   const PGMeshLite *me = &pob->mesh;
@@ -1885,9 +1964,15 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
   elem_link_node->object_ref = orig_ob;
   ob_info->v_eln = elem_link_node;
 
-  /* No per-object crease override and no auto smooth in Scene-lite. */
+  /* No auto smooth in Scene-lite. */
   bool use_auto_smooth = false;
-  float crease_angle = la_data->conf.crease_threshold;
+  float crease_angle = 0;
+  if (pob->line_art_flags & OBJECT_LRT_OWN_CREASE) {
+    crease_angle = cosf(M_PI - pob->line_art_crease_threshold);
+  }
+  else {
+    crease_angle = la_data->conf.crease_threshold;
+  }
 
   BLI_spin_lock(&la_data->lock_task);
   elem_link_node = static_cast<LineartElementLinkNode *>(
@@ -1965,6 +2050,7 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
   edge_feat_data.ld = la_data;
   edge_feat_data.me = me;
   edge_feat_data.material_indices = material_indices;
+  edge_feat_data.ob_eval = pob;
   edge_feat_data.edge_nabr = lineart_build_edge_neighbor(me, total_edges);
   edge_feat_data.tri_array = la_tri_arr;
   edge_feat_data.v_array = la_v_arr;
@@ -2017,6 +2103,11 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
   elem_link_node->object_ref = orig_ob;
   elem_link_node->obindex = ob_info->obindex;
 
+  LineartElementLinkNode *shadow_eln = nullptr;
+  if (shadow_elns) {
+    shadow_eln = lineart_find_matching_eln(shadow_elns, ob_info->obindex);
+  }
+
   /* Start of the edge/seg arr */
   LineartEdge *la_edge;
   LineartEdgeSegment *la_seg;
@@ -2063,6 +2154,16 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
       la_edge->edge_identifier = LRT_EDGE_IDENTIFIER(ob_info, la_edge);
       BLI_addtail(&la_edge->segments, la_seg);
 
+      if (shadow_eln) {
+        /* TODO(Yiming): It's gonna be faster to do this operation after second stage occlusion if
+         * we only need visible segments to have shadow info, however that way we lose information
+         * on "shadow behind transparency window" type of region. */
+        LineartEdge *shadow_e = lineart_find_matching_edge(shadow_eln, la_edge->edge_identifier);
+        if (shadow_e) {
+          lineart_register_shadow_cuts(la_data, la_edge, shadow_e);
+        }
+      }
+
       if (ELEM(usage,
                OBJECT_LRT_INHERIT,
                OBJECT_LRT_INCLUDE,
@@ -2103,6 +2204,12 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
                OBJECT_LRT_FORCE_INTERSECTION))
       {
         lineart_add_edge_to_array_thread(ob_info, la_edge);
+        if (shadow_eln) {
+          LineartEdge *shadow_e = lineart_find_matching_edge(shadow_eln, la_edge->edge_identifier);
+          if (shadow_e) {
+            lineart_register_shadow_cuts(la_data, la_edge, shadow_e);
+          }
+        }
       }
       la_edge++;
       la_seg++;
@@ -2124,16 +2231,49 @@ static void lineart_object_load_worker(TaskPool *__restrict /*pool*/,
 /* END VERBATIM */
 
 /* Scene-lite replacement for lineart_intersection_mask_check (lineart_scene_lite_replacements.cc) */
-/* Collections are not modeled: no collection intersection masks. */
-static uchar lineart_intersection_mask_check(const PGObjectLite * /*ob*/)
+/* c: collection index, -1 = the scene's master collection. */
+static uchar lineart_intersection_mask_check(int c, const PGObjectLite *ob)
 {
+  for (int cc = 0; cc < pg_scene->totcollection; cc++) { /* LISTBASE_FOREACH children */
+    if (pg_scene->collections[cc].parent != c) {
+      continue;
+    }
+    uchar result = lineart_intersection_mask_check(cc, ob);
+    if (result) {
+      return result;
+    }
+  }
+
+  if (c >= 0 && pg_collection_has_object(c, ob)) {
+    if (pg_scene->collections[c].lineart_flags & COLLECTION_LRT_USE_INTERSECTION_MASK) {
+      return pg_scene->collections[c].lineart_intersection_mask;
+    }
+  }
+
   return 0;
 }
 
 /* Scene-lite replacement for lineart_intersection_priority_check (lineart_scene_lite_replacements.cc) */
-/* Collections are not modeled: no collection intersection priority. */
-static uchar lineart_intersection_priority_check(const PGObjectLite * /*ob*/)
+static uchar lineart_intersection_priority_check(int c, const PGObjectLite *ob)
 {
+  if (ob->line_art_flags & OBJECT_LRT_OWN_INTERSECTION_PRIORITY) {
+    return ob->line_art_intersection_priority;
+  }
+
+  for (int cc = 0; cc < pg_scene->totcollection; cc++) { /* LISTBASE_FOREACH children */
+    if (pg_scene->collections[cc].parent != c) {
+      continue;
+    }
+    uchar result = lineart_intersection_priority_check(cc, ob);
+    if (result) {
+      return result;
+    }
+  }
+  if (c >= 0 && pg_collection_has_object(c, ob)) {
+    if (pg_scene->collections[c].lineart_flags & COLLECTION_LRT_USE_INTERSECTION_PRIORITY) {
+      return pg_scene->collections[c].lineart_intersection_priority;
+    }
+  }
   return 0;
 }
 
@@ -2145,13 +2285,57 @@ static uchar lineart_intersection_priority_check(const PGObjectLite * /*ob*/)
 /* END VERBATIM */
 
 /* Scene-lite replacement for lineart_usage_check (lineart_scene_lite_replacements.cc) */
-/* lineart_usage_check() without collections: the object's own line art usage (INHERIT means
- * INCLUDE, as when no collection overrides it). */
-static int lineart_usage_check(const PGObjectLite *ob)
+/**
+ * See if this object in such collection is used for generating line art,
+ * Disabling a collection for line art will doable all objects inside.
+ * (The master collection, c == -1, has no line art usage and no hide flags.)
+ */
+static int lineart_usage_check(int c, const PGObjectLite *ob, bool is_render)
 {
-  if (ob->line_art_usage != OBJECT_LRT_INHERIT) {
+  int object_has_special_usage = (ob->line_art_usage != OBJECT_LRT_INHERIT);
+
+  if (object_has_special_usage) {
     return ob->line_art_usage;
   }
+
+  if (pg_collection_has_objects(c)) {
+    if (pg_collection_has_object(c, ob)) {
+      const int flag = c >= 0 ? pg_scene->collections[c].flag : 0;
+      const int lineart_usage = c >= 0 ? pg_scene->collections[c].lineart_usage : 0;
+      if ((is_render && (flag & COLLECTION_HIDE_RENDER)) ||
+          ((!is_render) && (flag & COLLECTION_HIDE_VIEWPORT)))
+      {
+        return OBJECT_LRT_EXCLUDE;
+      }
+      if (ob->line_art_usage == OBJECT_LRT_INHERIT) {
+        switch (lineart_usage) {
+          case COLLECTION_LRT_OCCLUSION_ONLY:
+            return OBJECT_LRT_OCCLUSION_ONLY;
+          case COLLECTION_LRT_EXCLUDE:
+            return OBJECT_LRT_EXCLUDE;
+          case COLLECTION_LRT_INTERSECTION_ONLY:
+            return OBJECT_LRT_INTERSECTION_ONLY;
+          case COLLECTION_LRT_NO_INTERSECTION:
+            return OBJECT_LRT_NO_INTERSECTION;
+          case COLLECTION_LRT_FORCE_INTERSECTION:
+            return OBJECT_LRT_FORCE_INTERSECTION;
+        }
+        return OBJECT_LRT_INHERIT;
+      }
+      return ob->line_art_usage;
+    }
+  }
+
+  for (int cc = 0; cc < pg_scene->totcollection; cc++) { /* LISTBASE_FOREACH children */
+    if (pg_scene->collections[cc].parent != c) {
+      continue;
+    }
+    int result = lineart_usage_check(cc, ob, is_render);
+    if (result > OBJECT_LRT_INHERIT) {
+      return result;
+    }
+  }
+
   return OBJECT_LRT_INHERIT;
 }
 
@@ -2238,9 +2422,10 @@ static void lineart_object_load_single_instance(LineartData *ld,
 {
   LineartObjectInfo *obi = static_cast<LineartObjectInfo *>(
       lineart_mem_acquire(&ld->render_data_pool, sizeof(LineartObjectInfo)));
-  obi->usage = lineart_usage_check(ob);
-  obi->override_intersection_mask = lineart_intersection_mask_check(ob);
-  obi->intersection_priority = lineart_intersection_priority_check(ob);
+  /* scene->master_collection is -1; viewport evaluation (is_render false). */
+  obi->usage = lineart_usage_check(-1, ob, false);
+  obi->override_intersection_mask = lineart_intersection_mask_check(-1, ob);
+  obi->intersection_priority = lineart_intersection_priority_check(-1, ob);
 
   if (obi->usage == OBJECT_LRT_EXCLUDE) {
     return;
@@ -2275,14 +2460,16 @@ static void lineart_object_load_single_instance(LineartData *ld,
 /* Scene-lite replacement for lineart_main_load_geometries (lineart_scene_lite_replacements.cc) */
 void lineart_main_load_geometries(const PGSceneLite *scene,
                                   LineartData *ld,
+                                  bool do_shadow_casting,
                                   ListBase *shadow_elns)
 {
   double proj[4][4], view[4][4], result[4][4];
   float inv[4][4];
 
   /* Camera projection as in Blender (see pg_lite_view_projection(), which carries the verbatim
-   * camera math); ld->conf.cam_obmat was set (axes normalized) by lineart_create_render_buffer. */
-  {
+   * camera math); ld->conf.cam_obmat was set (axes normalized) by lineart_create_render_buffer.
+   * The shadow stage has set its light "camera" matrices already. */
+  if (!do_shadow_casting) {
     pg_lite_view_projection(&scene->camera, ld->w, ld->h, ld->conf.overscan, proj);
     copy_m4_m4_db(ld->conf.view_projection, proj);
 
@@ -3232,6 +3419,11 @@ void MOD_lineart_clear_cache(LineartCache **lc)
 /* END VERBATIM */
 
 /* Scene-lite replacement for lineart_create_render_buffer (lineart_scene_lite_replacements.cc) */
+/* BKE_gpencil_set_lineart_modifier_limits() for a single (first) Line Art modifier. */
+static int pg_level_end_override(const PGLineartSettings *lmd)
+{
+  return MAX2(0, (lmd->use_multiple_levels ? lmd->level_end : lmd->level_start));
+}
 static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
                                                  const PGLineartSettings *lmd,
                                                  LineartCache *lc)
@@ -3280,6 +3472,18 @@ static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
   ld->conf.shift_x /= (1 + ld->conf.overscan);
   ld->conf.shift_y /= (1 + ld->conf.overscan);
 
+  if (scene->light.present) {
+    copy_v3db_v3fl(ld->conf.camera_pos_secondary, scene->light.matrix_world[3]);
+    copy_m4_m4(ld->conf.cam_obmat_secondary, scene->light.matrix_world);
+    /* Make sure none of the scaling factor makes in, line art expects no scaling on cameras and
+     * lights. */
+    normalize_v3(ld->conf.cam_obmat_secondary[0]);
+    normalize_v3(ld->conf.cam_obmat_secondary[1]);
+    normalize_v3(ld->conf.cam_obmat_secondary[2]);
+    ld->conf.light_reference_available = true;
+    ld->conf.cam_is_persp_secondary = scene->light.type != PG_LITE_LIGHT_SUN;
+  }
+
   ld->conf.crease_threshold = cos(M_PI - lmd->crease_threshold);
   ld->conf.chaining_image_threshold = lmd->chaining_image_threshold;
   ld->conf.angle_splitting_threshold = lmd->angle_splitting_threshold;
@@ -3306,7 +3510,7 @@ static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
 
   /* This is used to limit calculation to a certain level to save time, lines who have higher
    * occlusion levels will get ignored. */
-  ld->conf.max_occlusion_level = lmd->level_end;
+  ld->conf.max_occlusion_level = pg_level_end_override(lmd);
 
   int16_t edge_types = lmd->edge_types;
 
@@ -3316,13 +3520,15 @@ static LineartData *lineart_create_render_buffer(const PGSceneLite *scene,
   ld->conf.use_edge_marks = (edge_types & LRT_EDGE_FLAG_EDGE_MARK) != 0;
   ld->conf.use_intersections = (edge_types & LRT_EDGE_FLAG_INTERSECTION) != 0;
   ld->conf.use_loose = (edge_types & LRT_EDGE_FLAG_LOOSE) != 0;
-  /* Light contour and projected shadow need a light object: not supported. */
-  ld->conf.use_light_contour = false;
-  ld->conf.use_shadow = false;
+  ld->conf.use_light_contour = ((edge_types & LRT_EDGE_FLAG_LIGHT_CONTOUR) != 0 &&
+                                (scene->light.present != 0));
+  ld->conf.use_shadow = ((edge_types & LRT_EDGE_FLAG_PROJECTED_SHADOW) != 0 &&
+                         (scene->light.present != 0));
 
-  ld->conf.shadow_selection = 0;
-  ld->conf.shadow_enclose_shapes = false;
-  ld->conf.shadow_use_silhouette = false;
+  ld->conf.shadow_selection = lmd->shadow_selection;
+  ld->conf.shadow_enclose_shapes = lmd->shadow_selection ==
+                                   LRT_SHADOW_FILTER_ILLUMINATED_ENCLOSED_SHAPES;
+  ld->conf.shadow_use_silhouette = lmd->silhouette_selection != 0;
 
   ld->conf.use_back_face_culling = (lmd->calculation_flags & LRT_USE_BACK_FACE_CULLING) != 0;
 
@@ -4622,6 +4828,19 @@ LineartBoundingArea *lineart_bounding_area_next(LineartBoundingArea *self,
 /* END VERBATIM */
 
 /* Scene-lite replacement for MOD_lineart_compute_feature_lines (lineart_scene_lite_replacements.cc) */
+/* The re-projection data of a computation stopped after occlusion (do_chains false). */
+static LineartData *pg_shadow_rb_pending = nullptr;
+/* The end of MOD_lineart_compute_feature_lines(): shadow data pool and the re-projection data. */
+static void pg_lineart_free_shadow(LineartCache *lc, LineartData *ld, LineartData *shadow_rb)
+{
+  lineart_mem_destroy(&lc->shadow_data_pool);
+
+  if (ld->conf.shadow_enclose_shapes && shadow_rb) {
+    lineart_destroy_render_data_keep_init(shadow_rb);
+    MEM_freeN(shadow_rb);
+  }
+  pg_lineart_free_deferred_shadow();
+}
 /* MOD_lineart_compute_feature_lines() on Scene-lite. With do_chains false it stops after the
  * occlusion stage (pg_lineart_compute() reads the edge segments); with do_chains true it continues
  * through enclosed shapes, chaining, splitting, connecting, smoothing, trimming, angle splitting
@@ -4642,13 +4861,30 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
    * See definition of LineartTriangleThread for details. */
   ld->sizeof_triangle = lineart_triangle_size_get(ld);
 
+  LineartData *shadow_rb = nullptr;
+  LineartElementLinkNode *shadow_veln, *shadow_eeln;
+  ListBase *shadow_elns = ld->conf.shadow_selection ? &lc->shadow_elns : nullptr;
+  bool shadow_generated = pg_lineart_main_try_generate_shadow(scene,
+                                                              ld,
+                                                              lmd,
+                                                              &lc->shadow_data_pool,
+                                                              &shadow_veln,
+                                                              &shadow_eeln,
+                                                              shadow_elns,
+                                                              &shadow_rb);
+
   /* Get view vector before loading geometries, because we detect feature lines there. */
   lineart_main_get_view_vector(ld);
 
-  lineart_main_load_geometries(scene, ld, nullptr);
+  lineart_main_load_geometries(scene, ld, false, shadow_elns);
+
+  if (shadow_generated) {
+    lineart_main_transform_and_add_shadow(ld, shadow_veln, shadow_eeln);
+  }
 
   if (!ld->geom.vertex_buffer_pointers.first) {
     /* No geometry loaded, return early. */
+    pg_lineart_free_shadow(lc, ld, shadow_rb);
     return ld;
   }
 
@@ -4675,6 +4911,9 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
    * can do its job. */
   lineart_main_add_triangles(ld);
 
+  /* Add shadow cuts to intersection lines as well. */
+  lineart_register_intersection_shadow_cuts(ld, shadow_elns);
+
   /* Re-link bounding areas because they have been subdivided by worker threads and we need
    * adjacent info. */
   lineart_main_bounding_areas_connect_post(ld);
@@ -4687,11 +4926,13 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
   /* Occlusion is work-and-wait. This call will not return before work is completed. */
   lineart_main_occlusion_begin(ld);
 
+  lineart_main_make_enclosed_shapes(ld, shadow_rb);
+
   if (!do_chains) {
+    /* pg_lineart_compute() reads the edges (shadow edges live in lc->shadow_data_pool) first. */
+    pg_shadow_rb_pending = shadow_rb;
     return ld;
   }
-
-  lineart_main_make_enclosed_shapes(ld, nullptr);
 
   lineart_main_remove_unused_lines_from_tiles(ld);
 
@@ -4729,7 +4970,9 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
     MOD_lineart_chain_offset_towards_camera(ld, lmd->stroke_depth_offset, false);
   }
 
-  /* shadow_use_silhouette is off (no light objects). */
+  if (ld->conf.shadow_use_silhouette) {
+    MOD_lineart_chain_find_silhouette_backdrop_objects(ld);
+  }
 
   /* Finally transfer the result list into cache. */
   memcpy(&(*cached_result)->chains, &ld->chains, sizeof(ListBase));
@@ -4739,27 +4982,47 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
 
   MOD_lineart_finalize_chains(ld);
 
+  pg_lineart_free_shadow(lc, ld, shadow_rb);
+
   return ld;
 }
 
 /* Scene-lite replacement for lineart_gpencil_generate (lineart_scene_lite_replacements.cc) */
-/* lineart_gpencil_generate() writing Project Grease strokes instead of GP strokes. The source is
- * the whole scene (no object / collection source), and there are no material masks, intersection
- * masks, shadow selection, silhouette filter or vertex groups in Scene-lite, so the filters that
- * remain are the original's picked / type / level checks and the two-point minimum. Points keep
- * eci->gpos (the GP object is at the origin, so gp_obmat_inverse is the identity) and eci->pos. */
+/* lineart_gpencil_generate() writing Project Grease strokes instead of GP strokes. Every filter of
+ * the original is kept (picked, types, levels, source object / collection, material mask,
+ * intersection mask, shadow selection, silhouette) in the original order. Points keep eci->gpos
+ * (the GP object is at the origin, so gp_obmat_inverse is the identity) and eci->pos.
+ * Vertex groups: Project Grease has one output weight per point, so the transfer is the original's
+ * non-matching path (every source group whose name starts with source_vgname goes into the one
+ * output group, max of the weights); see PGLineartSettings::source_vertex_group. */
 static void lineart_gpencil_generate(LineartCache *cache,
                                      const PGSceneLite *scene,
                                      int level_start,
                                      int level_end,
+                                     const PGObjectLite *source_object,
+                                     int source_collection,
                                      int types,
+                                     uchar mask_switches,
+                                     uchar material_mask_bits,
+                                     uchar intersection_mask,
+                                     uchar shaodow_selection,
+                                     uchar silhouette_mode,
+                                     const char *source_vgname,
+                                     int modifier_flags,
+                                     int modifier_calculation_flags,
                                      PGLineartStrokes *out)
 {
   if (cache == nullptr) {
     return;
   }
 
+  const PGObjectLite *orig_ob = source_object;
+  /* -2: no collection source; (!orig_col && !orig_ob) means the whole scene is selected. */
+  const bool orig_col = source_collection >= -1;
+
   int enabled_types = cache->all_enabled_edge_types;
+  bool invert_input = modifier_calculation_flags & LRT_GPENCIL_INVERT_SOURCE_VGROUP;
+  bool inverse_silhouette = modifier_flags & LRT_GPENCIL_INVERT_SILHOUETTE_FILTER;
 
   /* two passes: count, then fill */
   for (int pass = 0; pass < 2; pass++) {
@@ -4775,6 +5038,101 @@ static void lineart_gpencil_generate(LineartCache *cache,
       if (ec->level > level_end || ec->level < level_start) {
         continue;
       }
+      const PGObjectLite *ec_ob = reinterpret_cast<const PGObjectLite *>(ec->object_ref);
+      if (orig_ob && orig_ob != ec_ob) {
+        continue;
+      }
+      if (orig_col && ec->object_ref) {
+        if (pg_collection_has_object_recursive(source_collection, ec_ob)) {
+          if (modifier_flags & LRT_GPENCIL_INVERT_COLLECTION) {
+            continue;
+          }
+        }
+        else {
+          if (!(modifier_flags & LRT_GPENCIL_INVERT_COLLECTION)) {
+            continue;
+          }
+        }
+      }
+      if (mask_switches & LRT_GPENCIL_MATERIAL_MASK_ENABLE) {
+        if (mask_switches & LRT_GPENCIL_MATERIAL_MASK_MATCH) {
+          if (ec->material_mask_bits != material_mask_bits) {
+            continue;
+          }
+        }
+        else {
+          if (!(ec->material_mask_bits & material_mask_bits)) {
+            continue;
+          }
+        }
+      }
+      if (ec->type & LRT_EDGE_FLAG_INTERSECTION) {
+        if (mask_switches & LRT_GPENCIL_INTERSECTION_MATCH) {
+          if (ec->intersection_mask != intersection_mask) {
+            continue;
+          }
+        }
+        else {
+          if ((intersection_mask) && !(ec->intersection_mask & intersection_mask)) {
+            continue;
+          }
+        }
+      }
+      if (shaodow_selection) {
+        if (ec->shadow_mask_bits != LRT_SHADOW_MASK_UNDEFINED) {
+          /* TODO(@Yiming): Give a behavior option for how to display undefined shadow info. */
+          if (shaodow_selection == LRT_SHADOW_FILTER_ILLUMINATED &&
+              !(ec->shadow_mask_bits & LRT_SHADOW_MASK_ILLUMINATED))
+          {
+            continue;
+          }
+          if (shaodow_selection == LRT_SHADOW_FILTER_SHADED &&
+              !(ec->shadow_mask_bits & LRT_SHADOW_MASK_SHADED))
+          {
+            continue;
+          }
+          if (shaodow_selection == LRT_SHADOW_FILTER_ILLUMINATED_ENCLOSED_SHAPES) {
+            uint32_t test_bits = ec->shadow_mask_bits & LRT_SHADOW_TEST_SHAPE_BITS;
+            if ((test_bits != LRT_SHADOW_MASK_ILLUMINATED) &&
+                (test_bits != (LRT_SHADOW_MASK_SHADED | LRT_SHADOW_MASK_ILLUMINATED_SHAPE)))
+            {
+              continue;
+            }
+          }
+        }
+      }
+      if (silhouette_mode && (ec->type & (LRT_EDGE_FLAG_CONTOUR))) {
+        bool is_silhouette = false;
+        if (orig_col) {
+          if (!ec->silhouette_backdrop) {
+            is_silhouette = true;
+          }
+          else if (!pg_collection_has_object_recursive(
+                       source_collection,
+                       reinterpret_cast<const PGObjectLite *>(ec->silhouette_backdrop)))
+          {
+            is_silhouette = true;
+          }
+        }
+        else {
+          if ((!orig_ob) && (!ec->silhouette_backdrop)) {
+            is_silhouette = true;
+          }
+        }
+
+        if ((silhouette_mode == LRT_SILHOUETTE_FILTER_INDIVIDUAL || orig_ob) &&
+            ec->silhouette_backdrop != ec->object_ref)
+        {
+          is_silhouette = true;
+        }
+
+        if (inverse_silhouette) {
+          is_silhouette = !is_silhouette;
+        }
+        if (!is_silhouette) {
+          continue;
+        }
+      }
 
       const int count = MOD_lineart_chain_count(ec);
       if (count < 2) {
@@ -4789,7 +5147,7 @@ static void lineart_gpencil_generate(LineartCache *cache,
         s.level = ec->level;
         s.object_index = -1;
         for (int i = 0; i < scene->totobject; i++) {
-          if (ec->object_ref == reinterpret_cast<const Object *>(&scene->objects[i])) {
+          if (ec_ob == &scene->objects[i]) {
             s.object_index = i;
           }
         }
@@ -4798,6 +5156,31 @@ static void lineart_gpencil_generate(LineartCache *cache,
           copy_v3_v3(&out->world[(point_i + i) * 3], eci->gpos);
           out->image[(point_i + i) * 2] = eci->pos[0];
           out->image[(point_i + i) * 2 + 1] = eci->pos[1];
+          out->weights[point_i + i] = 0.0f;
+        }
+
+        if (source_vgname && source_vgname[0] && ec_ob) {
+          const PGVertexGroupsLite *vg = &ec_ob->vgroups;
+          const int totvert = ec_ob->mesh.totvert;
+          for (int dindex = 0; dindex < vg->totgroup; dindex++) {
+            if (strstr(vg->names[dindex], source_vgname) != vg->names[dindex]) {
+              continue;
+            }
+            int sindex = 0, vindex;
+            LISTBASE_FOREACH (LineartEdgeChainItem *, eci, &ec->chain) {
+              vindex = int(eci->index);
+              if (vindex >= totvert) {
+                break;
+              }
+              float use_weight = vg->weights[size_t(dindex) * size_t(totvert) + size_t(vindex)];
+              if (invert_input) {
+                use_weight = 1 - use_weight;
+              }
+              float &gdw = out->weights[point_i + sindex];
+              gdw = MAX2(use_weight, gdw);
+              sindex++;
+            }
+          }
         }
       }
       stroke_i++;
@@ -4809,7 +5192,8 @@ static void lineart_gpencil_generate(LineartCache *cache,
       out->strokes = static_cast<PGLineartStroke *>(malloc(sizeof(PGLineartStroke) * size_t(stroke_i > 0 ? stroke_i : 1)));
       out->world = static_cast<float *>(malloc(sizeof(float) * 3 * size_t(point_i > 0 ? point_i : 1)));
       out->image = static_cast<float *>(malloc(sizeof(float) * 2 * size_t(point_i > 0 ? point_i : 1)));
-      if (!out->strokes || !out->world || !out->image) {
+      out->weights = static_cast<float *>(malloc(sizeof(float) * size_t(point_i > 0 ? point_i : 1)));
+      if (!out->strokes || !out->world || !out->image || !out->weights) {
         return;
       }
     }
@@ -4835,6 +5219,26 @@ void pg_lineart_settings_default(PGLineartSettings *s)
   s->angle_splitting_threshold = 0.0f;
   s->stroke_depth_offset = 0.05f;
   s->stroke_types = LRT_EDGE_FLAG_ALL_TYPE;
+  s->use_multiple_levels = 0;
+  s->source_type = LRT_SOURCE_SCENE;
+  s->source_index = -1;
+  s->modifier_flags = 0;
+  s->mask_switches = 0;
+  s->material_mask_bits = 0;
+  s->intersection_mask = 0;
+  s->shadow_selection = LRT_SHADOW_FILTER_NONE;
+  s->silhouette_selection = LRT_SILHOUETTE_FILTER_NONE;
+  s->shadow_camera_near = 0.1f;
+  s->shadow_camera_far = 200.0f;
+  s->shadow_camera_size = 200.0f;
+  s->source_vertex_group[0] = '\0';
+}
+
+/* lineart_main_load_geometries(depsgraph, scene, NULL, ld, ..., true, NULL) for the shadow
+ * stage (its light "camera" matrices are set already). */
+void pg_lineart_load_geometries_for_shadow(const PGSceneLite *scene, LineartData *ld)
+{
+  lineart_main_load_geometries(scene, ld, true, nullptr);
 }
 
 static int pg_lineart_object_index(const PGSceneLite *scene, const void *object_ref)
@@ -4856,6 +5260,7 @@ int pg_lineart_compute(const PGSceneLite *scene,
     return -1;
   }
   LineartCache *lc = nullptr;
+  pg_scene = scene;
   LineartData *ld = pg_lineart_compute_occlusion(scene, settings, &lc);
   if (!ld) {
     MOD_lineart_clear_cache(&lc);
@@ -4902,6 +5307,8 @@ int pg_lineart_compute(const PGSceneLite *scene,
                            pg_lineart_object_index(scene, e->object_ref);
     }
   }
+  pg_lineart_free_shadow(lc, ld, pg_shadow_rb_pending);
+  pg_shadow_rb_pending = nullptr;
   lineart_destroy_render_data_keep_init(ld);
   MEM_freeN(ld);
   MOD_lineart_clear_cache(&lc);
@@ -4922,15 +5329,41 @@ int pg_lineart_compute_strokes(const PGSceneLite *scene,
   if (!scene || !settings || scene->width < 1 || scene->height < 1) {
     return -1;
   }
+  /* isModifierDisabled(): an object / collection source needs its reference. */
+  if ((settings->source_type == LRT_SOURCE_OBJECT &&
+       (settings->source_index < 0 || settings->source_index >= scene->totobject)) ||
+      (settings->source_type == LRT_SOURCE_COLLECTION &&
+       (settings->source_index < 0 || settings->source_index >= scene->totcollection)))
+  {
+    return -1;
+  }
   LineartCache *lc = nullptr;
+  pg_scene = scene;
   LineartData *ld = pg_lineart_compute_occlusion(scene, settings, &lc, true);
   if (!ld) {
     MOD_lineart_clear_cache(&lc);
     return -1;
   }
-  lineart_gpencil_generate(lc, scene, settings->level_start, settings->level_end,
-                           settings->stroke_types, r_strokes);
-  const bool ok = r_strokes->strokes && r_strokes->world && r_strokes->image;
+  /* generate_strokes_actual() / MOD_lineart_gpencil_generate() */
+  lineart_gpencil_generate(
+      lc,
+      scene,
+      settings->level_start,
+      settings->use_multiple_levels ? settings->level_end : settings->level_start,
+      settings->source_type == LRT_SOURCE_OBJECT ? &scene->objects[settings->source_index] :
+                                                   nullptr,
+      settings->source_type == LRT_SOURCE_COLLECTION ? settings->source_index : -2,
+      settings->stroke_types,
+      uchar(settings->mask_switches),
+      uchar(settings->material_mask_bits),
+      uchar(settings->intersection_mask),
+      uchar(settings->shadow_selection),
+      uchar(settings->silhouette_selection),
+      settings->source_vertex_group,
+      settings->modifier_flags,
+      settings->calculation_flags,
+      r_strokes);
+  const bool ok = r_strokes->strokes && r_strokes->world && r_strokes->image && r_strokes->weights;
   lineart_destroy_render_data_keep_init(ld);
   MEM_freeN(ld);
   MOD_lineart_clear_cache(&lc);
@@ -4949,5 +5382,6 @@ void pg_lineart_free_strokes(PGLineartStrokes *strokes)
   free(strokes->strokes);
   free(strokes->world);
   free(strokes->image);
+  free(strokes->weights);
   std::memset(strokes, 0, sizeof(*strokes));
 }

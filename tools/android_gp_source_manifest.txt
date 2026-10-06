@@ -55,6 +55,7 @@ CXX|native/blender_gp/lineart/project_grease_lineart_cpu.cc
 CXX|native/blender_gp/lineart/lineart_lite_runtime.cc
 C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/lineart/lineart_util.c
 C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/lineart/lineart_chain.c
+C|native/blender_gp/lineart/project_grease_lineart_shadow.c
 C|native/blender_gp/project_grease_modifier_stack.c
 C|native/blender_gp/project_grease_modifier_stack2.c
 C|native/blender_gp/project_grease_blender_build.c

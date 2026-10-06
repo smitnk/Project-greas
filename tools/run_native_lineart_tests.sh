@@ -16,11 +16,12 @@ build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test
   g++ "${XF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/lineart_lite_runtime.cc" -o "$OUT/lineart_runtime$sfx.o"
   gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_util.c" -o "$OUT/lineart_util$sfx.o"
   gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_chain.c" -o "$OUT/lineart_chain$sfx.o"
+  gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/project_grease_lineart_shadow.c" -o "$OUT/lineart_shadow$sfx.o"
   gcc "${CF[@]}" "$@" "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_scene_lite.c" -o "$OUT/scene_lite$sfx.o"
   gcc -std=gnu11 -Wall "$@" -I"$ROOT/native/blender_gp" -c "$ROOT/native/blender_gp/tests/test_lineart.c" -o "$OUT/test_lineart$sfx.o"
   gcc -std=gnu11 -Wall "$@" "${TDEF[@]}" -I"$ROOT/native/blender_gp" -c "$ROOT/native/blender_gp/tests/test_lineart_reference.c" -o "$OUT/test_lineart_reference$sfx.o"
   g++ "$@" "$OUT/test_lineart$sfx.o" "$OUT/test_lineart_reference$sfx.o" "$OUT/lineart_cpu$sfx.o" "$OUT/lineart_runtime$sfx.o" \
-    "$OUT/lineart_util$sfx.o" "$OUT/lineart_chain$sfx.o" "$OUT/scene_lite$sfx.o" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_lineart$sfx"
+    "$OUT/lineart_util$sfx.o" "$OUT/lineart_chain$sfx.o" "$OUT/lineart_shadow$sfx.o" "$OUT/scene_lite$sfx.o" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_lineart$sfx"
 }
 build ""
 "$OUT/test_lineart" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}

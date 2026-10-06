@@ -43,6 +43,111 @@ data class ReferenceCamera(
 }
 
 /**
+ * The Line Art modifier's options (LineartGpencilModifierData / PGLineartSettings), packed for
+ * GPNative.nativeSceneLiteLineArtStrokesEx. Defaults are a new Blender Line Art modifier's. Bit
+ * values are Blender's: edge types LRT_EDGE_FLAG_*, calculation flags eLineartMainFlags, mask
+ * switches eLineartGpencilMaskSwitches, shadow LRT_SHADOW_FILTER_*, silhouette LRT_SILHOUETTE_FILTER_*.
+ */
+data class LineArtOptions(
+    val edgeTypes: Int = EDGE_INIT,
+    val calculationFlags: Int = DEFAULT_CALCULATION_FLAGS,
+    val creaseThreshold: Float = Math.toRadians(140.0).toFloat(),
+    val useMultipleLevels: Boolean = false,
+    val levelStart: Int = 0,
+    val levelEnd: Int = 0,
+    val sourceType: Int = SOURCE_SCENE,
+    val sourceIndex: Int = -1,
+    val invertCollection: Boolean = false,
+    val maskSwitches: Int = 0,
+    val materialMaskBits: Int = 0,
+    val intersectionMask: Int = 0,
+    val chainingImageThreshold: Float = 0.001f,
+    val chainSmoothTolerance: Float = 0f,
+    val angleSplittingThreshold: Float = 0f,
+    val overscan: Float = 0.1f,
+    val strokeDepthOffset: Float = 0.05f,
+    /** -1 = no light_contour_object, else LIGHT_POINT / LIGHT_SUN. */
+    val lightType: Int = -1,
+    val lightYaw: Float = 0.4f,
+    val lightPitch: Float = 1.2f,
+    val lightDistance: Float = 12f,
+    val shadowSelection: Int = 0,
+    val silhouetteSelection: Int = 0,
+    val invertSilhouette: Boolean = false,
+    val shadowCameraNear: Float = 0.1f,
+    val shadowCameraFar: Float = 200f,
+    val shadowCameraSize: Float = 200f,
+    val sourceVertexGroup: String = ""
+) {
+    fun hasFlag(flag: Int): Boolean = (calculationFlags and flag) != 0
+    fun withFlag(flag: Int, on: Boolean): LineArtOptions =
+        copy(calculationFlags = if (on) calculationFlags or flag else calculationFlags and flag.inv())
+    fun hasType(type: Int): Boolean = (edgeTypes and type) != 0
+    fun withType(type: Int, on: Boolean): LineArtOptions =
+        copy(edgeTypes = if (on) edgeTypes or type else edgeTypes and type.inv())
+
+    /** These options, also returning lines hidden up to hiddenUpTo (the "include hidden lines" switch). */
+    fun forLevels(hiddenUpTo: Int): LineArtOptions =
+        if (hiddenUpTo <= 0) this
+        else copy(
+            useMultipleLevels = true,
+            levelStart = if (useMultipleLevels) levelStart else 0,
+            levelEnd = maxOf(hiddenUpTo, if (useMultipleLevels) levelEnd else levelStart)
+        )
+
+    fun ints(): IntArray = intArrayOf(
+        edgeTypes, calculationFlags, if (useMultipleLevels) 1 else 0, levelStart, levelEnd, EDGE_ALL,
+        sourceType, sourceIndex,
+        (if (invertCollection) INVERT_COLLECTION else 0) or (if (invertSilhouette) INVERT_SILHOUETTE else 0),
+        maskSwitches, materialMaskBits, intersectionMask, shadowSelection, silhouetteSelection, lightType
+    )
+
+    fun floats(): FloatArray = floatArrayOf(
+        creaseThreshold, overscan, chainingImageThreshold, chainSmoothTolerance, angleSplittingThreshold,
+        strokeDepthOffset, shadowCameraNear, shadowCameraFar, shadowCameraSize, lightYaw, lightPitch, lightDistance
+    )
+
+    companion object {
+        const val EDGE_MARK = 1 shl 0
+        const val EDGE_CONTOUR = 1 shl 1
+        const val EDGE_CREASE = 1 shl 2
+        const val EDGE_MATERIAL = 1 shl 3
+        const val EDGE_INTERSECTION = 1 shl 4
+        const val EDGE_LOOSE = 1 shl 5
+        const val EDGE_LIGHT_CONTOUR = 1 shl 6
+        const val EDGE_SHADOW = 1 shl 8
+        const val EDGE_INIT = 0x37
+        const val EDGE_ALL = 0x1ff
+        const val INTERSECTION_AS_CONTOUR = 1 shl 0
+        const val INVERT_SOURCE_VGROUP = 1 shl 7
+        const val CHAIN_LOOSE_EDGES = 1 shl 12
+        const val CHAIN_GEOMETRY_SPACE = 1 shl 13
+        const val USE_CREASE_ON_SMOOTH = 1 shl 15
+        const val USE_BACK_FACE_CULLING = 1 shl 19
+        const val USE_IMAGE_BOUNDARY_TRIMMING = 1 shl 20
+        const val CHAIN_PRESERVE_DETAILS = 1 shl 22
+        /** LRT_ALLOW_DUPLI_OBJECTS | LRT_ALLOW_CLIPPING_BOUNDARIES | LRT_GPENCIL_MATCH_OUTPUT_VGROUP |
+         *  LRT_USE_CREASE_ON_SHARP_EDGES | LRT_FILTER_FACE_MARK_KEEP_CONTOUR */
+        const val DEFAULT_CALCULATION_FLAGS = (1 shl 2) or (1 shl 4) or (1 shl 8) or (1 shl 16) or (1 shl 18)
+        const val SOURCE_COLLECTION = 0
+        const val SOURCE_OBJECT = 1
+        const val SOURCE_SCENE = 2
+        const val INVERT_COLLECTION = 1 shl 6
+        const val INVERT_SILHOUETTE = 1 shl 7
+        const val MATERIAL_MASK_ENABLE = 1 shl 0
+        const val MATERIAL_MASK_MATCH = 1 shl 1
+        const val INTERSECTION_MATCH = 1 shl 2
+        const val LIGHT_POINT = 0
+        const val LIGHT_SUN = 1
+        /** Object line art usage (eObjectLineArt_Usage): label to value. */
+        val OBJECT_USAGES: List<Pair<String, Int>> = listOf(
+            "Inherit" to 0, "Include" to 1, "Occlusion only" to 2, "Exclude" to 4,
+            "Intersection only" to 8, "No intersection" to 16, "Force intersection" to 32
+        )
+    }
+}
+
+/**
  * The 3D reference scene for Line Art (SPEC_LINE_ART_ARCHITECTURE batch 1): OBJ meshes and a
  * camera in native Scene-lite, previewed as a wireframe of the mesh edges over the canvas. Line
  * Art itself (occlusion, edge types, chaining, strokes) comes in later batches. Not saved with
@@ -59,6 +164,10 @@ class ReferenceScene {
         private set
     private var segments: FloatArray = FloatArray(0)
     private var lineArt: FloatArray = FloatArray(0)
+    /** Line Art modifier options used for generated / baked strokes. */
+    var lineArtOptions = LineArtOptions()
+    /** Per-object line art usage (eObjectLineArt_Usage), by object index; kept until clear(). */
+    private val objectUsage = HashMap<Int, Int>()
 
     private fun ensure(): Long {
         if (handle == 0L) handle = runCatching { GPNative.nativeSceneLiteCreate() }.getOrDefault(0L)
@@ -80,6 +189,7 @@ class ReferenceScene {
 
     fun clear() {
         if (handle != 0L) GPNative.nativeSceneLiteClear(handle)
+        objectUsage.clear()
         segments = FloatArray(0)
         lineArt = FloatArray(0)
     }
@@ -177,8 +287,29 @@ class ReferenceScene {
         val h = ensure()
         if (h == 0L) return emptyList()
         GPNative.nativeSceneLiteSetCamera(h, camera.params(canvasW, canvasH))
-        return parseStrokes(GPNative.nativeSceneLiteLineArtStrokes(h, levelEnd) ?: return emptyList(), canvasW, canvasH)
+        val options = lineArtOptions.forLevels(levelEnd)
+        val raw = GPNative.nativeSceneLiteLineArtStrokesEx(h, options.ints(), options.floats(),
+            options.sourceVertexGroup.ifEmpty { null }) ?: return emptyList()
+        return parseStrokes(raw, canvasW, canvasH)
     }
+
+    /** Names of the reference's objects (kind 0), materials (1) or collections (2). */
+    fun names(kind: Int): List<String> =
+        (if (handle != 0L) GPNative.nativeSceneLiteNames(handle, kind) else null)?.toList() ?: emptyList()
+
+    fun objectUsage(index: Int): Int = objectUsage[index] ?: 0
+
+    /** Sets an object's line art usage (Object > Line Art > Usage in Blender). */
+    fun setObjectUsage(index: Int, usage: Int): Boolean {
+        if (handle == 0L) return false
+        val ok = GPNative.nativeSceneLiteSetObjectLineArt(handle, index, usage, 0, Math.toRadians(140.0).toFloat(), 0, -1)
+        if (ok) objectUsage[index] = usage
+        return ok
+    }
+
+    /** Sets a material's line art mask bits (Material > Line Art > Material Mask) and occlusion. */
+    fun setMaterialLineArt(index: Int, maskBits: Int, occlusion: Int = 1): Boolean =
+        handle != 0L && GPNative.nativeSceneLiteSetMaterialLineArt(handle, index, if (maskBits != 0) 1 else 0, maskBits, occlusion, 0, false)
 
     fun release() {
         if (handle != 0L) GPNative.nativeSceneLiteFree(handle)

@@ -1,0 +1,9 @@
+# two loose polylines whose ends almost meet (0.0005 apart)
+o Wire
+v -1 0 0
+v 1 0 0
+v 1.0005 0 0
+v 2 0 0.5
+v 2 0 1.5
+l 1 2
+l 3 4 5

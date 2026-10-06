@@ -189,13 +189,91 @@ PGSceneLite *pg_lite_scene_create(void)
   return scene;
 }
 
+static void object_free(PGObjectLite *ob)
+{
+  mesh_free(&ob->mesh);
+  free(ob->vgroups.names);
+  free(ob->vgroups.weights);
+  memset(&ob->vgroups, 0, sizeof(ob->vgroups));
+}
+
 void pg_lite_scene_clear(PGSceneLite *scene)
 {
   if (!scene) return;
-  for (int i = 0; i < scene->totobject; i++) mesh_free(&scene->objects[i].mesh);
+  for (int i = 0; i < scene->totobject; i++) object_free(&scene->objects[i]);
   free(scene->objects);
   scene->objects = NULL;
   scene->totobject = 0;
+  free(scene->collections);
+  scene->collections = NULL;
+  scene->totcollection = 0;
+  free(scene->materials);
+  scene->materials = NULL;
+  scene->totmaterial = 0;
+}
+
+int pg_lite_add_collection(PGSceneLite *scene, const char *name, int parent)
+{
+  if (!scene || parent < -1 || parent >= scene->totcollection) return -1;
+  PGCollectionLite *all = realloc(scene->collections, sizeof(PGCollectionLite) * (size_t)(scene->totcollection + 1));
+  if (!all) return -1;
+  scene->collections = all;
+  PGCollectionLite *c = &all[scene->totcollection];
+  memset(c, 0, sizeof(*c));
+  strncpy(c->name, name ? name : "Collection", sizeof(c->name) - 1);
+  c->parent = parent;
+  return scene->totcollection++;
+}
+
+int pg_lite_find_material(const PGSceneLite *scene, const char *name)
+{
+  if (!scene || !name) return -1;
+  for (int i = 0; i < scene->totmaterial; i++) {
+    if (strcmp(scene->materials[i].name, name) == 0) return i;
+  }
+  return -1;
+}
+
+int pg_lite_material_ensure(PGSceneLite *scene, const char *name)
+{
+  const int found = pg_lite_find_material(scene, name);
+  if (found >= 0 || !scene || !name) return found;
+  PGMaterialLite *all = realloc(scene->materials, sizeof(PGMaterialLite) * (size_t)(scene->totmaterial + 1));
+  if (!all) return -1;
+  scene->materials = all;
+  PGMaterialLite *m = &all[scene->totmaterial];
+  memset(m, 0, sizeof(*m));
+  strncpy(m->name, name, sizeof(m->name) - 1);
+  m->mat_occlusion = 1; /* _DNA_DEFAULT_MaterialLineArt */
+  return scene->totmaterial++;
+}
+
+int pg_lite_find_object(const PGSceneLite *scene, const char *name)
+{
+  if (!scene || !name) return -1;
+  for (int i = 0; i < scene->totobject; i++) {
+    if (strcmp(scene->objects[i].name, name) == 0) return i;
+  }
+  return -1;
+}
+
+int pg_lite_object_add_vertex_group(PGObjectLite *ob, const char *name)
+{
+  if (!ob) return -1;
+  PGVertexGroupsLite *vg = &ob->vgroups;
+  const int n = vg->totgroup + 1;
+  const int nv = ob->mesh.totvert;
+  char (*names)[64] = realloc(vg->names, sizeof(char[64]) * (size_t)n);
+  if (!names) return -1;
+  vg->names = names;
+  float *w = realloc(vg->weights, sizeof(float) * (size_t)(n * (nv > 0 ? nv : 1)));
+  if (!w) return -1;
+  vg->weights = w;
+  memset(names[n - 1], 0, sizeof(names[n - 1]));
+  strncpy(names[n - 1], name ? name : "Group", 63);
+  for (int v = 0; v < nv; v++) w[(n - 1) * nv + v] = 0.0f;
+  vg->totgroup = n;
+  return n - 1;
 }
 
 void pg_lite_scene_free(PGSceneLite *scene)
@@ -326,6 +404,8 @@ static int pending_emit(PGSceneLite *scene, Growable *objects, ObjPending *p, co
   strncpy(ob->name, p->name[0] ? p->name : "Object", sizeof(ob->name) - 1);
   unit_m4(ob->matrix_world);
   ob->line_art_usage = PG_LITE_USAGE_INHERIT;
+  ob->line_art_crease_threshold = 2.4434609527920612f; /* DEG2RAD(140), _DNA_DEFAULT_ObjectLineArt */
+  ob->collection = -1;
   (void)scene;
   /* remap global vertex indices to local ones */
   int maxv = -1;
@@ -376,8 +456,7 @@ int pg_lite_load_obj(PGSceneLite *scene, const char *text, int length)
   if (!scene || !text || length <= 0) return 0;
   Growable verts = {NULL, 0, 0, sizeof(float[3])};
   Growable objects = {NULL, 0, 0, sizeof(PGObjectLite)};
-  char matnames[64][64];
-  int matcount = 0, curmat = 0, cursmooth = 0, ok = 1;
+  int curmat = -1, cursmooth = 0, ok = 1;
   ObjPending p;
   pending_init(&p, "Object");
   char *buf = malloc((size_t)length + 1);
@@ -414,12 +493,7 @@ int pg_lite_load_obj(PGSceneLite *scene, const char *text, int length)
     else if (strncmp(line, "usemtl", 6) == 0 && (line[6] == ' ' || line[6] == '\t')) {
       char name[64] = "";
       sscanf(line + 7, "%63s", name);
-      curmat = -1;
-      for (int i = 0; i < matcount; i++) if (strcmp(matnames[i], name) == 0) curmat = i;
-      if (curmat < 0) {
-        if (matcount < 64) { strcpy(matnames[matcount], name); curmat = matcount++; }
-        else curmat = 63;
-      }
+      curmat = pg_lite_material_ensure(scene, name);
     }
     else if ((line[0] == 'f' || line[0] == 'l') && (line[1] == ' ' || line[1] == '\t')) {
       int idx[256], n = 0;
@@ -460,13 +534,13 @@ int pg_lite_load_obj(PGSceneLite *scene, const char *text, int length)
   free(verts.data);
   PGObjectLite *obs = objects.data;
   if (!ok || objects.count == 0) {
-    for (int i = 0; i < objects.count; i++) mesh_free(&obs[i].mesh);
+    for (int i = 0; i < objects.count; i++) object_free(&obs[i]);
     free(obs);
     return 0;
   }
   PGObjectLite *all = realloc(scene->objects, sizeof(PGObjectLite) * (size_t)(scene->totobject + objects.count));
   if (!all) {
-    for (int i = 0; i < objects.count; i++) mesh_free(&obs[i].mesh);
+    for (int i = 0; i < objects.count; i++) object_free(&obs[i]);
     free(obs);
     return 0;
   }

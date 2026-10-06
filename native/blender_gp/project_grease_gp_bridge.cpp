@@ -1057,6 +1057,11 @@ void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float 
   if (handle) handle->backend.set_fill_screen_map(scale, origin_x, origin_y);
 }
 
+void project_grease_gp_set_fill_factor(ProjectGreaseGPHandle *handle, float factor)
+{
+  if (handle) handle->backend.set_fill_factor(factor);
+}
+
 int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      const float *rgba,
                                      int width,

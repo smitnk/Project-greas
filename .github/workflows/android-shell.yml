@@ -151,6 +151,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_edit5_tests.sh
 
+      - name: Native fill tool tests (Blender gpencil_fill.c port)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_fill_tests.sh
+
       - name: Run native tool session tests (draw input golden, sculpt / vertex / weight paint ports)
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

@@ -583,7 +583,8 @@ static void test_onion_modes_and_colors()
   CHECK(s3.r < 200 && std::abs(s3.r - s3.b) < 8);     /* grey ghost, no tint */
 }
 
-/* Fill extend lines: an open stroke prolonged at its ends in the boundary mask (fill_extend_fac). */
+/* Fill extend lines: an open stroke prolonged at its ends in the boundary mask by Blender's
+ * fill_extend_fac * 0.1 BU (PG_FILL_CANVAS_UNITS_PER_BU canvas units per BU). */
 static void test_fill_extend()
 {
   Doc d = make_doc();
@@ -594,7 +595,7 @@ static void test_fill_extend()
   CHECK(project_grease_android_present_gp_fill_mask(d.gpd, 1) == 1);
   read_back();
   CHECK(pixel_at_canvas(40, 60).r < 50);    /* nothing beyond the end without extension */
-  project_grease_android_present_set_fill_extend(0.5f); /* +40 at each end */
+  project_grease_android_present_set_fill_extend(4.0f); /* 4 * 0.1 BU = +40 canvas units at each end */
   CHECK(project_grease_android_present_gp_fill_mask(d.gpd, 1) == 1);
   read_back();
   CHECK(pixel_at_canvas(30, 60).r > 200 && pixel_at_canvas(170, 60).r > 200);

@@ -271,6 +271,8 @@ class Backend {
   // Screen-pixel to canvas mapping of the image fill_at_screen() reads (the presenter's canvas map:
   // screen = origin + canvas * scale, y down). Identity until set.
   void set_fill_screen_map(float scale, float origin_x, float origin_y);
+  // Brush fill_factor (Precision, clamped to [0.05, 8]): fill image resolution and default leak.
+  void set_fill_factor(float factor);
   bool fill_at_screen(const float* rgba,
                       int width,
                       int height,

@@ -119,14 +119,18 @@ object ToolSession {
     data class DrawSettings(
         val material: Int, val thickness: Float, val strength: Float = 1f, val usePressure: Boolean = true,
         val useStrengthPressure: Boolean = false, val pressureCurve: Float = 1f, val strengthCurve: Float = 1f,
-        val activeSmooth: Float = 0f, val inputSamples: Int = 0, val lazy: Boolean = false, val lazyRadius: Float = 0f,
+        val activeSmooth: Float = 0.35f, val inputSamples: Int = 0, val lazy: Boolean = false, val lazyRadius: Float = 0f,
         val lazyFactor: Float = 0f, val disableStabilizer: Boolean = false, val manhattan: Int = 1,
         val euclidean: Float = 1f, val jitter: Float = 0f, val angleFactor: Float = 0f, val angle: Float = 0f,
         val fakePoints: Boolean = true,
         val guideType: Int = -1, val guideX: Float = 0f, val guideY: Float = 0f, val guideAngle: Float = 0f,
         val guideSpacing: Float = 0f,
         val pressureCurvePoints: List<Pair<Float, Float>> = emptyList(),
-        val strengthCurvePoints: List<Pair<Float, Float>> = emptyList()
+        val strengthCurvePoints: List<Pair<Float, Float>> = emptyList(),
+        /** region pixels per canvas unit: gpencil_paint.c filters / stabilizer compare pixels */
+        val pxPerUnit: Float = 1f,
+        /** jitter BLI_rng seed; null = seeded like gpencil_paint_initstroke() */
+        val seed: Long? = null
     ) {
         fun toParams(): FloatArray {
             val out = FloatArray(DRAW_P_COUNT)
@@ -143,14 +147,18 @@ object ToolSession {
             }
             curve(DRAW_P_PRESSURE_CURVE_N, pressureCurvePoints)
             curve(DRAW_P_STRENGTH_CURVE_N, strengthCurvePoints)
+            out[DRAW_P_PX_PER_UNIT] = pxPerUnit
+            out[DRAW_P_SEED] = seed?.let { (it and 0xFFFFFFFFL).toFloat() + 1f } ?: 0f
             return out
         }
         private fun flag(v: Boolean) = if (v) 1f else 0f
     }
-    /** PG_DRAW_P_PRESSURE_CURVE_N / PG_DRAW_P_STRENGTH_CURVE_N / PG_DRAW_P_COUNT (project_grease_tool_session.h). */
+    /** PG_DRAW_P_PRESSURE_CURVE_N / PG_DRAW_P_STRENGTH_CURVE_N / PG_DRAW_P_PX_PER_UNIT / PG_DRAW_P_SEED / PG_DRAW_P_COUNT (project_grease_tool_session.h). */
     const val DRAW_P_PRESSURE_CURVE_N = 24
     const val DRAW_P_STRENGTH_CURVE_N = 41
-    const val DRAW_P_COUNT = 58
+    const val DRAW_P_PX_PER_UNIT = 58
+    const val DRAW_P_SEED = 59
+    const val DRAW_P_COUNT = 60
     const val CURVE_MAX_POINTS = 8
 
     /** samples (count * STRIDE floats) followed by the BEGIN parameters. */

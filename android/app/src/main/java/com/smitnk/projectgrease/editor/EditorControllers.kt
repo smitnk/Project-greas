@@ -457,7 +457,7 @@ class BrushController(private val materials: MaterialController) {
     var usePressure = true; private set
     var useStrengthPressure = false; private set
     var inputSamples = 10; private set
-    var activeSmooth = 0f; private set // until a preset is picked (the Pencil preset sets 0.35)
+    var activeSmooth = 0.35f; private set // ACTIVE_SMOOTH of the default Pencil preset (BKE_gpencil_brush_preset_set)
     var angle = 0f; private set
     var angleFactor = 0f; private set
     var hardness = 1f; private set
@@ -836,7 +836,8 @@ class EditorController {
                 angle = if (legacyDrawAngleFactor != 0f) legacyDrawAngle else brushes.angle,
                 guideType = view.guideType, guideX = view.guideCenterX, guideY = view.guideCenterY,
                 guideAngle = view.guideAngle, guideSpacing = view.guideSpacing,
-                pressureCurvePoints = brushes.pressureCurvePoints, strengthCurvePoints = brushes.strengthCurvePoints
+                pressureCurvePoints = brushes.pressureCurvePoints, strengthCurvePoints = brushes.strengthCurvePoints,
+                pxPerUnit = pxPerUnit
             ).toParams()
             else -> null
         }

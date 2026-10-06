@@ -1515,17 +1515,23 @@ class EditorController {
         return ok
     }
     /** Vector pages (SVG/PDF export) for [frames]; the layer/frame selection is restored afterwards. */
-    fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false):List<VectorPage> {
+    /** Layer names in document order (export dialog layer filter). */
+    fun exportLayerNames():List<String> {
+        if (native.handle == 0L) return emptyList()
+        val adapter = NativeDocumentAdapter(native)
+        return (0 until adapter.layerCount()).map { adapter.layerRecord(it)?.name?.ifBlank { "Layer ${it + 1}" } ?: "Layer ${it + 1}" }
+    }
+    fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false, options:VectorExportOptions = VectorExportOptions()):List<VectorPage> {
         if (native.handle == 0L || frames.isEmpty()) return emptyList()
         val originalLayer = selectedLayer
         val originalFrame = animation.currentFrame
-        var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames)
+        var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames, options)
         if (includeAnnotations) {
             val dump = annotationDump()
             val style = annotationStyle()
             pages = pages.map { page ->
                 val notes = AnnotationData.exportLayer(dump, style, page.frame)
-                if (notes == null) page else VectorPage(page.frame, page.width, page.height, page.layers + notes)
+                if (notes == null) page else VectorPage(page.frame, page.width, page.height, page.layers + notes, page.clip)
             }
         }
         if (native.layerCount() > 0) {

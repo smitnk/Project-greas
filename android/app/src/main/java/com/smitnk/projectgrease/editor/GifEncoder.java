@@ -9,50 +9,46 @@ import java.util.Map;
 /**
  * Animated GIF89a writer for Project Grease animation export (Blender exports animation through
  * FFmpeg/image sequences; Android has no GIF encoder, so this is a small self-contained one).
- * Palette: fixed 6x7x6 color cube (252 colors) plus one transparent index (alpha < 128).
- * Frame delay from fps, infinite loop (NETSCAPE2.0). Usage: begin(), addFrame() per frame, finish().
+ * Palette: an adaptive local color table per frame ({@link GifQuantizer}: median cut, up to 255
+ * colors, exact when the frame has no more than 255 distinct opaque colors) plus one transparent
+ * index (alpha < 128), optionally with Floyd-Steinberg dithering. Deterministic: the same frames give
+ * the same bytes. Frame delay from fps, infinite loop (NETSCAPE2.0). Usage: begin(), addFrame() per
+ * frame, finish().
  */
 public final class GifEncoder {
     private final OutputStream out;
     private final int width, height;
     private final int delayCs;
+    private final boolean dither;
     private boolean started;
 
-    public static final int TRANSPARENT_INDEX = 252;
+    public static final int TRANSPARENT_INDEX = 255;
 
-    public GifEncoder(OutputStream out, int width, int height, int fps) {
+    public GifEncoder(OutputStream out, int width, int height, int fps) { this(out, width, height, fps, false); }
+
+    public GifEncoder(OutputStream out, int width, int height, int fps, boolean dither) {
         if (width <= 0 || height <= 0 || width > 65535 || height > 65535 || fps <= 0) throw new IllegalArgumentException("bad size/fps");
         this.out = out; this.width = width; this.height = height;
         this.delayCs = Math.max(2, Math.round(100f / fps)); // browsers clamp < 2 cs
+        this.dither = dither;
     }
 
     public void begin() throws IOException {
         write("GIF89a");
         short16(width); short16(height);
-        out.write(0xF7); // global color table, 8 bits color resolution, 256 entries
-        out.write(TRANSPARENT_INDEX); out.write(0);
-        for (int i = 0; i < 256; i++) {
-            int[] c = paletteColor(i);
-            out.write(c[0]); out.write(c[1]); out.write(c[2]);
-        }
+        out.write(0x70); // no global color table (each frame has its own), 8 bits color resolution
+        out.write(0); out.write(0);
         // NETSCAPE2.0 loop forever
         out.write(0x21); out.write(0xFF); out.write(11); write("NETSCAPE2.0");
         out.write(3); out.write(1); short16(0); out.write(0);
         started = true;
     }
 
-    static int[] paletteColor(int i) {
-        if (i >= TRANSPARENT_INDEX) return new int[]{0, 0, 0};
-        int r = i / 42, g = (i / 6) % 7, b = i % 6;
-        return new int[]{r * 255 / 5, g * 255 / 6, b * 255 / 5};
-    }
-
-    static int index(int argb) {
-        if (((argb >>> 24) & 0xFF) < 128) return TRANSPARENT_INDEX;
-        int r = (((argb >> 16) & 0xFF) * 5 + 127) / 255;
-        int g = (((argb >> 8) & 0xFF) * 6 + 127) / 255;
-        int b = ((argb & 0xFF) * 5 + 127) / 255;
-        return r * 42 + g * 6 + b;
+    /** The 256-entry local table: the palette, black padding, index 255 transparent. */
+    static int[] colorTable(int[] palette) {
+        int[] table = new int[256];
+        System.arraycopy(palette, 0, table, 0, Math.min(palette.length, TRANSPARENT_INDEX));
+        return table;
     }
 
     /** One frame, ARGB pixels row by row (width * height). */
@@ -63,10 +59,11 @@ public final class GifEncoder {
         out.write(0x21); out.write(0xF9); out.write(4); out.write(0x09);
         short16(delayCs); out.write(TRANSPARENT_INDEX); out.write(0);
         // image descriptor
-        out.write(0x2C); short16(0); short16(0); short16(width); short16(height); out.write(0);
-        byte[] px = new byte[argb.length];
-        for (int i = 0; i < px.length; i++) px[i] = (byte) index(argb[i]);
-        lzw(px);
+        int[] palette = GifQuantizer.palette(argb, GifQuantizer.MAX_COLORS);
+        out.write(0x2C); short16(0); short16(0); short16(width); short16(height);
+        out.write(0x87); // local color table, 256 entries
+        for (int c : colorTable(palette)) { out.write((c >> 16) & 0xFF); out.write((c >> 8) & 0xFF); out.write(c & 0xFF); }
+        lzw(GifQuantizer.indexFrame(argb, width, height, palette, dither, TRANSPARENT_INDEX));
     }
 
     public void finish() throws IOException {

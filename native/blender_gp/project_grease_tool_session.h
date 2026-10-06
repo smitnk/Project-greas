@@ -82,7 +82,11 @@ enum {
   PG_DRAW_P_PRESSURE_CURVE_XY,
   PG_DRAW_P_STRENGTH_CURVE_N = PG_DRAW_P_PRESSURE_CURVE_XY + 16,
   PG_DRAW_P_STRENGTH_CURVE_XY,
-  PG_DRAW_P_COUNT = PG_DRAW_P_STRENGTH_CURVE_XY + 16
+  /* region pixels per canvas unit (view zoom): gpencil_paint.c compares mval distances in pixels */
+  PG_DRAW_P_PX_PER_UNIT = PG_DRAW_P_STRENGTH_CURVE_XY + 16,
+  /* jitter BLI_rng seed + 1; 0 = seed like gpencil_paint_initstroke() (time ^ pointer) */
+  PG_DRAW_P_SEED,
+  PG_DRAW_P_COUNT
 };
 
 /* Where Draw puts its points: the backend's stroke buffer (sbuffer). Return 0 on failure. */

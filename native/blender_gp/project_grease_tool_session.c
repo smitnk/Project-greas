@@ -112,7 +112,7 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
     ds.use_strength_pressure = param(p, n, PG_DRAW_P_USE_STRENGTH_PRESSURE, 0) != 0.0f;
     ds.pressure_curve = param(p, n, PG_DRAW_P_PRESSURE_CURVE, 1);
     ds.strength_curve = param(p, n, PG_DRAW_P_STRENGTH_CURVE, 1);
-    ds.active_smooth = param(p, n, PG_DRAW_P_ACTIVE_SMOOTH, 0);
+    ds.active_smooth = param(p, n, PG_DRAW_P_ACTIVE_SMOOTH, 0.35f); /* ACTIVE_SMOOTH, Pencil preset */
     ds.input_samples = (int)param(p, n, PG_DRAW_P_INPUT_SAMPLES, 0);
     ds.lazy_enabled = param(p, n, PG_DRAW_P_LAZY, 0) != 0.0f;
     ds.smooth_stroke_radius = param(p, n, PG_DRAW_P_LAZY_RADIUS, 0);
@@ -124,6 +124,14 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
     ds.draw_angle_factor = param(p, n, PG_DRAW_P_ANGLE_FACTOR, 0);
     ds.draw_angle = param(p, n, PG_DRAW_P_ANGLE, 0);
     ds.synthesize_fast_points = param(p, n, PG_DRAW_P_FAKE_POINTS, 1) != 0.0f;
+    ds.px_per_unit = param(p, n, PG_DRAW_P_PX_PER_UNIT, 1);
+    {
+      const float seed1 = param(p, n, PG_DRAW_P_SEED, 0);
+      if (seed1 >= 1.0f && seed1 <= 4294967296.0f) {
+        ds.use_seed = 1;
+        ds.seed = (unsigned int)((double)seed1 - 1.0);
+      }
+    }
     const int pn = (int)param(p, n, PG_DRAW_P_PRESSURE_CURVE_N, 0);
     if (pn >= 2 && pn <= 8 && n >= PG_DRAW_P_PRESSURE_CURVE_XY + 2 * pn) {
       pg_curve_set(&ds.pressure_map, &p[PG_DRAW_P_PRESSURE_CURVE_XY], pn);

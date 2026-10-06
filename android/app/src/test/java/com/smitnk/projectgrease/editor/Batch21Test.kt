@@ -24,7 +24,11 @@ class Batch21Test {
     fun drawParametersMatchTheNativeLayout() {
         val header = repoFile("native/blender_gp/project_grease_tool_session.h").readText()
         assertTrue(header.contains("PG_DRAW_P_STRENGTH_CURVE_N = PG_DRAW_P_PRESSURE_CURVE_XY + 16"))
-        assertTrue(header.contains("PG_DRAW_P_COUNT = PG_DRAW_P_STRENGTH_CURVE_XY + 16"))
+        assertTrue(header.contains("PG_DRAW_P_PX_PER_UNIT = PG_DRAW_P_STRENGTH_CURVE_XY + 16,"))
+        assertTrue(Regex("PG_DRAW_P_PX_PER_UNIT = PG_DRAW_P_STRENGTH_CURVE_XY \\+ 16,\\s*(/\\*.*?\\*/\\s*)?PG_DRAW_P_SEED,\\s*PG_DRAW_P_COUNT\\b", RegexOption.DOT_MATCHES_ALL).containsMatchIn(header))
+        assertEquals(ToolSession.DRAW_P_STRENGTH_CURVE_N + 17, ToolSession.DRAW_P_PX_PER_UNIT)
+        assertEquals(ToolSession.DRAW_P_PX_PER_UNIT + 1, ToolSession.DRAW_P_SEED)
+        assertEquals(ToolSession.DRAW_P_SEED + 1, ToolSession.DRAW_P_COUNT)
         val p = ToolSession.DrawSettings(material = 2, thickness = 9f, guideType = 3, guideX = 10f, guideY = 20f,
             guideAngle = 0.5f, guideSpacing = 40f, pressureCurvePoints = listOf(0f to 0f, 0.5f to 0.1f, 1f to 1f)).toParams()
         assertEquals(ToolSession.DRAW_P_COUNT, p.size)

@@ -151,7 +151,34 @@ static double stroke_distance(const float *a, const float *b, int n)
     if (df > fwd) fwd = df;
     if (dr > rev) rev = dr;
   }
-  return sqrt(fwd < rev ? fwd : rev);
+  double best = fwd < rev ? fwd : rev;
+  /* A closed loop (first point == last point in both strokes) has no defined start: Blender starts
+   * the chain at the first pending edge, whose order depends on how its loader threads are scheduled
+   * (lineart_geometry_load_assign_thread), so the same loop can start at any of its vertices. Try
+   * every rotation of the loop, forward and reversed; open strokes keep the strict comparison. */
+  if (n > 2) {
+    double ea = 0, eb = 0;
+    for (int k = 0; k < 3; k++) {
+      ea += (a[k] - a[(n - 1) * 3 + k]) * (a[k] - a[(n - 1) * 3 + k]);
+      eb += (b[k] - b[(n - 1) * 3 + k]) * (b[k] - b[(n - 1) * 3 + k]);
+    }
+    if (ea < 1e-12 && eb < 1e-12) {
+      const int m = n - 1; /* distinct loop vertices */
+      for (int r = 0; r < m; r++) {
+        for (int dir = 0; dir < 2; dir++) {
+          double worst = 0;
+          for (int i = 0; i < m; i++) {
+            const int j = dir == 0 ? (i + r) % m : ((r - i) % m + m) % m;
+            double d = 0;
+            for (int k = 0; k < 3; k++) d += (a[i * 3 + k] - b[j * 3 + k]) * (a[i * 3 + k] - b[j * 3 + k]);
+            if (d > worst) worst = d;
+          }
+          if (worst < best) best = worst;
+        }
+      }
+    }
+  }
+  return sqrt(best);
 }
 
 #define STROKE_TOLERANCE 1e-3 /* world units */

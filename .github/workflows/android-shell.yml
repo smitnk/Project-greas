@@ -294,7 +294,7 @@ jobs:
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
-          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes", b"nativeSetFillOptionsEglRenderer", b"nativeRenderCanvasPixelsEglRenderer", b"nativeToolSamples", b"nativeSetSelectionOverlay"):
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes", b"nativeSceneLiteLineArtStrokesEx", b"nativeSceneLiteSetObjectLineArt", b"nativeSceneLiteSetMaterialLineArt", b"nativeSceneLiteAddCollection", b"nativeSceneLiteNames", b"nativeSetFillOptionsEglRenderer", b"nativeRenderCanvasPixelsEglRenderer", b"nativeToolSamples", b"nativeSetSelectionOverlay"):
               owners = [name for name, data in libs.items() if sym in data]
               assert owners, "no native library exports " + sym.decode()
               print(sym.decode(), "in", owners)

@@ -7,7 +7,8 @@ For each scene: an empty scene, the OBJ imported with Blender's importer (defaul
 Scene-lite), a camera with the listed parameters placed by the same orbit as
 pg_lite_camera_orbit(), the render size, and a Grease Pencil object with a default Line Art
 modifier (source: scene) except overscan 0 and stroke depth offset 0, so the generated stroke points
-are the Line Art chain points in world space. OUTDIR/<name>.txt lists the strokes:
+are the Line Art chain points in world space. Optional key=value tokens after level_end set Line Art
+options (see scenes.txt and apply_options()). OUTDIR/<name>.txt lists the strokes:
     stroke <point count>
     x y z            (one line per point, world space)
 """
@@ -40,9 +41,108 @@ def orbit_matrix(target, yaw, pitch, distance):
     return m
 
 
+LINE_TYPES = {
+    "contour": "use_contour", "crease": "use_crease", "material": "use_material",
+    "edge_mark": "use_edge_mark", "intersection": "use_intersection", "loose": "use_loose",
+    "light_contour": "use_light_contour", "shadow": "use_shadow",
+}
+SHADOW_FILTER = ["NONE", "ILLUMINATED", "SHADED", "ILLUMINATED_ENCLOSED"]
+SILHOUETTE_FILTER = {0: "NONE", 1: "GROUP", 2: "INDIVIDUAL"}
+
+
+def bits8(value):
+    return [bool((int(value) >> i) & 1) for i in range(8)]
+
+
+def apply_options(options, scene, mod):
+    """The Line Art options of scenes.txt (mirrored by apply_option() in test_lineart_reference.c)."""
+    collections = {}
+    for opt in options:
+        key, value = opt.split("=", 1)
+        if key == "types":
+            for prop in LINE_TYPES.values():
+                setattr(mod, prop, False)
+            for t in value.split("+"):
+                setattr(mod, LINE_TYPES[t], True)
+        elif key == "crease":
+            mod.crease_threshold = math.radians(float(value))
+        elif key == "level":
+            mod.use_multiple_levels = False
+            mod.level_start = int(value)
+        elif key == "levels":
+            start, end = value.split(":")
+            mod.use_multiple_levels = True
+            mod.level_start = int(start)
+            mod.level_end = int(end)
+        elif key.startswith("usage:"):
+            bpy.data.objects[key[6:]].lineart.usage = value
+        elif key.startswith("coll:"):
+            ob = bpy.data.objects[key[5:]]
+            coll = collections.get(value)
+            if coll is None:
+                coll = bpy.data.collections.new(value)
+                scene.collection.children.link(coll)
+                collections[value] = coll
+            for c in list(ob.users_collection):
+                c.objects.unlink(ob)
+            coll.objects.link(ob)
+        elif key.startswith("collusage:"):
+            collections[key[10:]].lineart_usage = value
+        elif key.startswith("collmask:"):
+            coll = collections[key[9:]]
+            coll.lineart_use_intersection_mask = True
+            coll.lineart_intersection_mask = bits8(value)
+        elif key.startswith("matmask:"):
+            mat = bpy.data.materials[key[8:]]
+            mat.lineart.use_material_mask = True
+            mat.lineart.use_material_mask_bits = bits8(value)
+        elif key.startswith("matocc:"):
+            bpy.data.materials[key[7:]].lineart.mat_occlusion = int(value)
+        elif key == "maskswitch":
+            mod.use_material_mask = bool(int(value) & 1)
+            mod.use_material_mask_match = bool(int(value) & 2)
+            mod.use_intersection_match = bool(int(value) & 4)
+        elif key == "maskbits":
+            mod.use_material_mask_bits = bits8(value)
+        elif key == "isectmask":
+            mod.use_intersection_mask = bits8(value)
+        elif key == "chain":
+            mod.chaining_image_threshold = float(value)
+        elif key == "smooth":
+            mod.smooth_tolerance = float(value)
+        elif key == "loosechain":
+            mod.use_loose_edge_chain = value == "1"
+        elif key == "geomchain":
+            mod.use_geometry_space_chain = value == "1"
+        elif key == "light":
+            kind, lyaw, lpitch, ldist = value.split(":")
+            light = bpy.data.lights.new("Light", 'SUN' if kind == "sun" else 'POINT')
+            lob = bpy.data.objects.new("Light", light)
+            scene.collection.objects.link(lob)
+            lob.matrix_world = orbit_matrix((0.0, 0.0, 0.0), float(lyaw), float(lpitch), float(ldist))
+            mod.light_contour_object = lob
+        elif key == "shadowsel":
+            mod.shadow_region_filtering = SHADOW_FILTER[int(value)]
+        elif key == "silhouette":
+            mod.silhouette_filtering = SILHOUETTE_FILTER[int(value)]
+        elif key == "source":
+            kind, ref = value.split(":", 1)
+            if kind == "object":
+                mod.source_type = 'OBJECT'
+                mod.source_object = bpy.data.objects[ref]
+            else:
+                mod.source_type = 'COLLECTION'
+                mod.source_collection = collections[ref]
+        elif key == "invertcoll":
+            mod.use_invert_collection = value == "1"
+        else:
+            raise SystemExit("unknown option " + opt)
+
+
 def run_scene(fields, scene_dir, out_dir):
     (name, obj, cam_type, lens, ortho_scale, yaw, pitch, distance, shift_x, shift_y,
-     width, height, level_end) = fields
+     width, height, level_end) = fields[:13]
+    options = fields[13:]
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     bpy.ops.wm.obj_import(filepath=os.path.join(scene_dir, obj))
@@ -85,6 +185,7 @@ def run_scene(fields, scene_dir, out_dir):
     mod.level_end = int(level_end)
     mod.overscan = 0.0
     mod.stroke_depth_offset = 0.0
+    apply_options(options, scene, mod)
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     depsgraph.update()

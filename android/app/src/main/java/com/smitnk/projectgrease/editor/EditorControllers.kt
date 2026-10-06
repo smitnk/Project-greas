@@ -1638,15 +1638,24 @@ class EditorController {
         if(ok){ multiframeEditing=enabled; render() }
         return ok
     }
-    // Fill tool options (Blender fill brush): leak size, dilate (negative contracts), boundary source.
-    var fillLeak = 3; private set
+    // Fill tool options (Blender fill brush): leak size (0 = Blender's ceil(3 x precision)),
+    // dilate (negative contracts), boundary source.
+    var fillLeak = 0; private set
     var fillDilate = 1; private set
     var fillBoundary = FILL_BOUNDARY_ALL; private set
     /** Fill "Extend Lines" (brush fill_extend_fac, Blender default 0). */
     var fillExtend = 0f; private set
     fun setFillExtend(value:Float) { fillExtend = if (value.isFinite()) value.coerceIn(0f, 10f) else 0f }
+    /** Fill "Precision" (brush fill_factor, Blender default 1, range 0.05..8). */
+    var fillPrecision = 1f; private set
+    /** Extend Lines "Collide" (GP_BRUSH_FILL_STROKE_COLLIDE): only extensions that hit a stroke close gaps. */
+    var fillCollide = false; private set
+    fun setFillPrecision(value:Float = fillPrecision, collide:Boolean = fillCollide) {
+        fillPrecision = if (value.isFinite()) value.coerceIn(0.05f, 8f) else 1f
+        fillCollide = collide
+    }
     fun setFillOptions(leak:Int = fillLeak, dilate:Int = fillDilate, boundary:Int = fillBoundary) {
-        fillLeak = leak.coerceIn(1, 100)
+        fillLeak = leak.coerceIn(0, 100)
         fillDilate = dilate.coerceIn(-40, 40)
         fillBoundary = boundary.coerceIn(FILL_BOUNDARY_ALL, FILL_BOUNDARY_EDIT_LINES)
     }
@@ -1662,6 +1671,7 @@ class EditorController {
         }
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
+        GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, fillPrecision, fillCollide)
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
         else if (enabledFill) {

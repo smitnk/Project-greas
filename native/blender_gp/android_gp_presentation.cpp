@@ -24,6 +24,7 @@
 #include "project_grease_stroke_outline.h"
 #include "project_grease_blender_edit5.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_fill.h"
 #include "project_grease_blender_mod2.h"
 
 namespace {
@@ -58,9 +59,11 @@ DrawMode g_draw_mode=DRAW_NORMAL;
 int g_weight_group=-1;
 // Fill boundary source (brush fill_draw_mode): 0 GP_FILL_DMODE_BOTH, 1 STROKE, 2 CONTROL.
 int g_fill_draw_mode=0;
-// Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): open strokes are prolonged at both
-// ends in the boundary mask by this fraction of their length (pg_fill_extend_segments).
+// Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): Blender's line extensions
+// (pg_fill_extend_lines: fill_extend_fac * 0.1 BU, cut where they meet) are drawn in the mask.
 float g_fill_extend=0.0f;
+// GP_BRUSH_FILL_STROKE_COLLIDE: only extensions that hit something are drawn.
+int g_fill_collide=0;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
 // open sbuffer are not part of an export.
 int g_export_mode=0;
@@ -1116,17 +1119,27 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
       else {
         append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
       }
-      float ext[8];
-      if (g_fill_extend > 0.0f && pg_fill_extend_segments(stroke, g_fill_extend, ext)) {
-        const float r = 0.5f / std::max(g_map_scale, 1e-6f); /* 1 px, as Blender's extension lines */
-        for (int e = 0; e < 2; e++) {
-          const std::vector<PGOutlinePoint> seg = {PGOutlinePoint{ext[e * 4], ext[e * 4 + 1], r},
-                                                   PGOutlinePoint{ext[e * 4 + 2], ext[e * 4 + 3], r}};
-          append_outline(strokes, seg, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END, w, h);
-        }
-      }
     }
     draw_vertices(strokes, mask_color, false);
+  }
+
+  // Extend Lines: gpencil_draw_datablock() draws the extension strokes with
+  // gpencil_draw_basic_stroke(thickness 1) -> line width 2 px.
+  if (g_fill_extend > 0.0f) {
+    update_canvas_map(w, h);
+    std::vector<float> ext(4096 * 4);
+    const int n = pg_fill_extend_lines(const_cast<bGPdata*>(gpd), frame_number, g_fill_extend,
+                                       g_fill_collide, g_map_scale, g_map_origin_x, g_map_origin_y,
+                                       0.5f * float(g_canvas_width), 0.5f * float(g_canvas_height),
+                                       ext.data(), 4096);
+    const float r = 1.0f / std::max(g_map_scale, 1e-6f);
+    std::vector<Vertex> lines;
+    for (int e = 0; e < n; e++) {
+      const std::vector<PGOutlinePoint> seg = {PGOutlinePoint{ext[e * 4], ext[e * 4 + 1], r},
+                                               PGOutlinePoint{ext[e * 4 + 2], ext[e * 4 + 3], r}};
+      append_outline(lines, seg, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END, w, h);
+    }
+    draw_vertices(lines, mask_color, false);
   }
 
   return glGetError() == GL_NO_ERROR ? 1 : 0;
@@ -1223,6 +1236,7 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
   t.w=w;t.h=h;g_mat_tex[key]=t;
   return glGetError()==GL_NO_ERROR?1:0;
 }
+extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
 extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy){

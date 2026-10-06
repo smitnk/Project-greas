@@ -240,7 +240,8 @@ class SweepDrawTest : SweepBase() {
     @Test fun fillExtend() {
         // Open corner closed by extending the stroke ends (Blender's extend lines).
         line(200f, 300f, 880f); drag(900f to 220f, 900f to 500f); line(500f, 900f, 300f); drag(300f to 500f, 300f to 200f)
-        onUi { controller.setFillExtend(0.5f) }
+        // fill_extend_fac 5 = 0.5 BU of extension (PG_FILL_CANVAS_UNITS_PER_BU canvas units per BU)
+        onUi { controller.setFillExtend(5f) }
         fillAt("extend")
     }
 

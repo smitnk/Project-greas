@@ -30,6 +30,7 @@ extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
+extern "C" void project_grease_android_present_set_fill_collide(int collide);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
 extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy);
@@ -52,8 +53,11 @@ struct Renderer {
   bool gp_connected = false;
   std::vector<ProjectGreaseGPPoint> preview_points;
   float preview_thickness = 1.0f;
-  // Fill tool options (Blender brush defaults: fill_leak 3, dilate 1, fill_draw_mode BOTH).
-  int fill_leak = 3;
+  // Fill tool options (Blender brush defaults: dilate 1, fill_draw_mode BOTH, fill_factor 1).
+  // fill_leak 0 = Blender's ceil(3 * fill_factor); a positive value overrides it.
+  int fill_leak = 0;
+  float fill_factor = 1.0f;  // brush fill_factor ("Precision")
+  int fill_collide = 0;      // GP_BRUSH_FILL_STROKE_COLLIDE
   int fill_dilate = 1;
   int fill_draw_mode = 0;
   float fill_extend = 0.0f; // brush fill_extend_fac
@@ -602,6 +606,8 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
 
   project_grease_android_present_set_fill_draw_mode(renderer->fill_draw_mode);
   project_grease_android_present_set_fill_extend(renderer->fill_extend);
+  project_grease_android_present_set_fill_collide(renderer->fill_collide);
+  project_grease_gp_set_fill_factor(renderer->gp_handle, renderer->fill_factor);
   if (!project_grease_gp_render_fill_mask(renderer->gp_handle)) {
     return JNI_FALSE;
   }
@@ -697,9 +703,23 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillOptionsEglRende
 {
   Renderer *renderer = from_handle(handle);
   if (!renderer) return JNI_FALSE;
-  renderer->fill_leak = std::max(1, std::min(100, static_cast<int>(leak)));
+  renderer->fill_leak = std::max(0, std::min(100, static_cast<int>(leak)));
   renderer->fill_dilate = std::max(-40, std::min(40, static_cast<int>(dilate)));
   renderer->fill_draw_mode = std::max(0, std::min(2, static_cast<int>(draw_mode)));
+  return JNI_TRUE;
+}
+
+/* Fill precision (brush fill_factor, clamped to [0.05, 8]) and the Extend Lines stroke collision
+ * check (GP_BRUSH_FILL_STROKE_COLLIDE). */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillPrecisionEglRenderer(
+    JNIEnv *, jobject, jlong handle, jfloat factor, jboolean collide)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  const float f = std::isfinite(factor) ? static_cast<float>(factor) : 1.0f;
+  renderer->fill_factor = std::max(0.05f, std::min(8.0f, f));
+  renderer->fill_collide = collide ? 1 : 0;
   return JNI_TRUE;
 }
 

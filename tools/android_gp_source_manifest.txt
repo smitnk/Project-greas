@@ -59,6 +59,7 @@ C|native/blender_gp/project_grease_modifier_stack.c
 C|native/blender_gp/project_grease_modifier_stack2.c
 C|native/blender_gp/project_grease_blender_build.c
 C|native/blender_gp/project_grease_blender_interp.c
+C|native/blender_gp/project_grease_blender_fill.c
 C|native/blender_gp/project_grease_blender_mod2.c
 C|native/blender_gp/project_grease_curvemap.c
 C|native/blender_gp/project_grease_shader_fx.c
@@ -77,6 +78,7 @@ C|third_party/blender/source/blender/blenlib/intern/lasso_2d.c
 C|third_party/blender/source/blender/blenlib/intern/polyfill_2d.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_memarena.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_heap.c
+C|third_party/blender/source/blender/blenlib/intern/stack.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_ghash.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_ghash_utils.c
 C|third_party/blender/source/blender/blenlib/intern/BLI_mempool.c

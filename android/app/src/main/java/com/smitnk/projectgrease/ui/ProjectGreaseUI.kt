@@ -538,13 +538,19 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             FilterChip(selected=controller.fillBoundary==value,onClick={controller.setFillOptions(boundary=value);redraw()},
                 label={Text(label,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
         }
-        Text("Leak "+controller.fillLeak+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(64.dp))
-        Slider(controller.fillLeak.toFloat(),{controller.setFillOptions(leak=it.toInt());redraw()},valueRange=1f..20f,modifier=Modifier.width(120.dp))
+        // Leak 0 = Blender's own leak size, ceil(3 x Precision).
+        Text(if(controller.fillLeak==0)"Leak auto" else "Leak "+controller.fillLeak+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(64.dp))
+        Slider(controller.fillLeak.toFloat(),{controller.setFillOptions(leak=it.toInt());redraw()},valueRange=0f..20f,modifier=Modifier.width(120.dp))
+        // Precision (fill_factor): resolution of the fill image.
+        Text("Precision "+"%.2f".format(controller.fillPrecision),fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(84.dp))
+        Slider(controller.fillPrecision,{controller.setFillPrecision(value=it);redraw()},valueRange=0.05f..8f,modifier=Modifier.width(120.dp))
         Text("Dilate "+controller.fillDilate+" px",fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
         Slider(controller.fillDilate.toFloat(),{controller.setFillOptions(dilate=Math.round(it));redraw()},valueRange=-10f..10f,modifier=Modifier.width(120.dp))
         // Extend Lines (fill_extend_fac): open stroke ends are prolonged in the fill boundary.
         Text("Extend "+"%.2f".format(controller.fillExtend),fontSize=10.sp,modifier=Modifier.padding(start=6.dp).width(70.dp))
-        Slider(controller.fillExtend,{controller.setFillExtend(it);redraw()},valueRange=0f..1f,modifier=Modifier.width(120.dp))
+        Slider(controller.fillExtend,{controller.setFillExtend(it);redraw()},valueRange=0f..10f,modifier=Modifier.width(120.dp))
+        FilterChip(selected=controller.fillCollide,onClick={controller.setFillPrecision(collide=!controller.fillCollide);redraw()},
+            label={Text("Collide",fontSize=10.sp)},modifier=Modifier.padding(start=3.dp))
     }
 }
 

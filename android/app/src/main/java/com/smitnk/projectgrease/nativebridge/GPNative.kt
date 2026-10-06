@@ -44,9 +44,11 @@ object GPNative {
     external fun nativeToolSamples(handle: Long, tool: Int, samples: FloatArray, count: Int, phase: Int): Int
     /** Edit-mode overlay: points of the editable strokes, selected points highlighted. */
     external fun nativeSetSelectionOverlay(handle: Long, enabled: Boolean): Boolean
-    /** Fill tool options: leak (px, Blender fill_leak), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
+    /** Fill tool options: leak (px; 0 = Blender ceil(3 x fill_factor)), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
     external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
     external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float): Boolean
+    /** Fill precision (brush fill_factor, 0.05..8) and the Extend Lines stroke collision check. */
+    external fun nativeSetFillPrecisionEglRenderer(handle: Long, factor: Float, collide: Boolean): Boolean
     /** Stroke (fill = false) or fill texture image of a material slot, ARGB top row first; null removes. */
     external fun nativeSetMaterialTextureEglRenderer(handle: Long, slot: Int, fill: Boolean, argb: IntArray?, width: Int, height: Int): Boolean
     external fun nativeFxSetTarget(handle: Long, layer: Int, index: Int, target: Int): Boolean

@@ -33,7 +33,20 @@ build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test
   g++ "$@" "$OUT/test_lineart$sfx.o" "$OUT/test_lineart_reference$sfx.o" "$OUT/lineart_cpu$sfx.o" "$OUT/lineart_runtime$sfx.o" \
     "$OUT/lineart_util$sfx.o" "$OUT/lineart_chain$sfx.o" "$OUT/lineart_shadow$sfx.o" "$OUT/scene_lite$sfx.o" "${RT_OBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_lineart$sfx"
 }
+run_lineart() {
+  local bin="$1"
+  local log="$OUT/$(basename "$bin").log"
+  set +e
+  timeout 90s "$bin" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"} 2>&1 | tee "$log"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  if grep -q "LINEART WATCHDOG" "$log"; then
+    echo "LINEART WATCHDOG: resolving captured addresses"
+    grep -o '\\[0x[0-9a-fA-F]*\\]' "$log" | tr -d '[]' | addr2line -Cfipe "$bin" || true
+  fi
+  return "$rc"
+}
 build ""
-timeout 300s "$OUT/test_lineart" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}
+run_lineart "$OUT/test_lineart"
 build "_asan" -g -fsanitize=address,undefined -fno-omit-frame-pointer
-ASAN_OPTIONS=detect_leaks=0 timeout 300s "$OUT/test_lineart_asan" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}
+ASAN_OPTIONS=detect_leaks=0 run_lineart "$OUT/test_lineart_asan"

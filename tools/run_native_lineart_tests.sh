@@ -42,7 +42,11 @@ run_lineart() {
   set -e
   if grep -q "LINEART WATCHDOG" "$log"; then
     echo "LINEART WATCHDOG: resolving captured addresses"
-    grep -o '(+0x[0-9a-fA-F]*)' "$log" | tr -d '()+ ' | sed 's/^/0x/' | addr2line -Cfipe "$bin" || true
+    local text_vma
+    text_vma="$(readelf -SW "$bin" | awk '$2 == ".text" {print "0x"$4; exit}')"
+    grep -o '(+0x[0-9a-fA-F]*)' "$log" | sed -E 's/^\\(\\+0x//; s/\\)$//' | while read -r off; do
+      printf '0x%x\\n' "$((16#$off - text_vma))"
+    done | addr2line -j .text -Cfipe "$bin" || true
   fi
   return "$rc"
 }

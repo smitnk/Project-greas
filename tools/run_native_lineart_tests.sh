@@ -36,10 +36,27 @@ build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test
 run_lineart() {
   local bin="$1"
   local log="$OUT/$(basename "$bin").log"
+  if ! command -v gdb >/dev/null 2>&1; then
+    sudo apt-get update -qq
+    sudo apt-get install -y gdb
+  fi
   set +e
-  timeout 90s "$bin" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"} 2>&1 | tee "$log"
-  local rc=${PIPESTATUS[0]}
+  "$bin" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"} >"$log" 2>&1 &
+  local pid=$!
+  (
+    sleep 30
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "LINEART GDB WATCHDOG: attaching to PID $pid"
+      timeout 12s gdb -q -nx -batch         -ex "set pagination off"         -ex "thread apply all bt full"         -p "$pid" 2>&1 | tee "$OUT/$(basename "$bin").gdb.log"
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  ) &
+  local watchdog=$!
+  wait "$pid"
+  local rc=$?
+  kill "$watchdog" 2>/dev/null || true
   set -e
+  cat "$log"
   if grep -q "LINEART WATCHDOG" "$log"; then
     echo "LINEART WATCHDOG: resolving captured addresses"
     local text_vma
@@ -47,11 +64,12 @@ run_lineart() {
     grep -o '(+0x[0-9a-fA-F]*)' "$log" | while read -r frame; do
       off="${frame#(+0x}"
       off="${off%)}"
-      printf '0x%x\\n' "$((16#$off - text_vma))"
+      printf '0x%x\n' "$((16#$off - text_vma))"
     done | addr2line -j .text -Cfipe "$bin" || true
   fi
   return "$rc"
 }
+
 build ""
 run_lineart "$OUT/test_lineart"
 build "_asan" -g -fsanitize=address,undefined -fno-omit-frame-pointer

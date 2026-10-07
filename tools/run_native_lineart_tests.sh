@@ -34,6 +34,6 @@ build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test
     "$OUT/lineart_util$sfx.o" "$OUT/lineart_chain$sfx.o" "$OUT/lineart_shadow$sfx.o" "$OUT/scene_lite$sfx.o" "${RT_OBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_lineart$sfx"
 }
 build ""
-"$OUT/test_lineart" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}
+timeout 300s "$OUT/test_lineart" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}
 build "_asan" -g -fsanitize=address,undefined -fno-omit-frame-pointer
-ASAN_OPTIONS=detect_leaks=0 "$OUT/test_lineart_asan" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}
+ASAN_OPTIONS=detect_leaks=0 timeout 300s "$OUT/test_lineart_asan" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}

@@ -24,7 +24,3 @@ Global G = {};
  * the generated code can still pass the exact Blender lock fields around, but do not activate
  * pthread spin-lock synchronization inside the serial worker.
  */
-extern "C" void PG_lineart_spin_init(SpinLock * /*spin*/) {}
-extern "C" void PG_lineart_spin_lock(SpinLock * /*spin*/) {}
-extern "C" void PG_lineart_spin_unlock(SpinLock * /*spin*/) {}
-extern "C" void PG_lineart_spin_end(SpinLock * /*spin*/) {}

@@ -44,7 +44,9 @@ run_lineart() {
     echo "LINEART WATCHDOG: resolving captured addresses"
     local text_vma
     text_vma="$(readelf -SW "$bin" | awk '$2 == ".text" {print "0x"$4; exit}')"
-    grep -o '(+0x[0-9a-fA-F]*)' "$log" | sed -E 's/^\\(\\+0x//; s/\\)$//' | while read -r off; do
+    grep -o '(+0x[0-9a-fA-F]*)' "$log" | while read -r frame; do
+      off="${frame#(+0x}"
+      off="${off%)}"
       printf '0x%x\\n' "$((16#$off - text_vma))"
     done | addr2line -j .text -Cfipe "$bin" || true
   fi

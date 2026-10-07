@@ -54,4 +54,11 @@
  #define BLI_spin_init PG_lineart_spin_init
  #define BLI_spin_lock PG_lineart_spin_lock
  #define BLI_spin_unlock PG_lineart_spin_unlock
- #define BLI_spin_end PG_lineart_spin_end
+ /*
+ * The real Blender task pool executes pushes immediately when built without TBB. The previous
+ * Project Grease Line Art runtime queued all workers and ran them in push order at work_and_wait().
+ * Use Blender's suspended pool to preserve that observable serial scheduling contract while still
+ * using the real Blender 3.6.23 task-pool implementation.
+ */
+#define BLI_task_pool_create BLI_task_pool_create_suspended
+#define BLI_spin_end PG_lineart_spin_end

@@ -47,7 +47,7 @@ run_lineart() {
     sleep 30
     if kill -0 "$pid" 2>/dev/null; then
       echo "LINEART GDB WATCHDOG: attaching to PID $pid"
-      timeout 12s gdb -q -nx -batch         -ex "set pagination off"         -ex "thread apply all bt full"         -p "$pid" 2>&1 | tee "$OUT/$(basename "$bin").gdb.log"
+      sudo timeout 12s gdb -q -nx -batch         -ex "set pagination off"         -ex "thread apply all bt full"         -p "$pid" 2>&1 | tee "$OUT/$(basename "$bin").gdb.log"
       kill -TERM "$pid" 2>/dev/null || true
     fi
   ) &

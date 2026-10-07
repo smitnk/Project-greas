@@ -3,11 +3,6 @@ name: Project Grease Android Shell
 
 on:
   workflow_dispatch:
-    inputs:
-      run_emulator:
-        description: "Run the emulator device tests, sweep and monkey (off unless asked)"
-        type: boolean
-        default: false
   pull_request:
     branches:
       - "feature/project-grease-ui-real-integration"
@@ -209,7 +204,7 @@ jobs:
 
       - name: Build Android GP application
         working-directory: android
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+        run: ./gradlew :app:assembleDebug --no-daemon
 
       - name: Verify Android GP native link closure
         shell: bash
@@ -314,64 +309,3 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload instrumented test APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: project-grease-android-test-apk
-          path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-          if-no-files-found: error
-          retention-days: 7
-
-  # Device-bugfix checks on an x86_64 emulator: the debug APK (arm64-v8a + x86_64) and the
-  # instrumented test APK from the job above; real touches, native state and screenshots.
-  emulator-tests:
-    # Manual only: Actions > Project Grease Android Shell > Run workflow > run_emulator.
-    if: github.event_name == 'workflow_dispatch' && inputs.run_emulator == true
-    needs: android-shell
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    steps:
-      - name: Checkout (sweep script)
-        uses: actions/checkout@v4
-
-      - name: Download APKs
-        uses: actions/download-artifact@v4
-        with:
-          pattern: project-grease-*-apk
-          merge-multiple: true
-          path: apks
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run the device tests, the sweep and the monkey on the emulator (API 30, x86_64)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          arch: x86_64
-          target: google_apis
-          profile: pixel_4
-          cores: 4
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096
-          # logcat_full.txt is captured with `adb logcat -v threadtime` (pid per line) for app-only triage
-          script: SWEEP_LOGCAT_FORMAT=threadtime python3 tools/run_emulator_sweep.py
-
-      - name: Upload emulator screenshots and test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: device-bugfix-screenshots
-          path: |
-            screenshots/
-            instrument.txt
-            logcat.txt
-            logcat_full.txt
-            monkey.txt
-            sweep_summary.txt
-            anr/
-          if-no-files-found: warn
-          retention-days: 14

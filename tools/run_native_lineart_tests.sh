@@ -31,7 +31,7 @@ build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test
   gcc -std=gnu11 -Wall "$@" -I"$ROOT/native/blender_gp" -c "$ROOT/native/blender_gp/tests/test_lineart.c" -o "$OUT/test_lineart$sfx.o"
   gcc -std=gnu11 -Wall "$@" "${TDEF[@]}" -I"$ROOT/native/blender_gp" -c "$ROOT/native/blender_gp/tests/test_lineart_reference.c" -o "$OUT/test_lineart_reference$sfx.o"
   g++ "$@" "$OUT/test_lineart$sfx.o" "$OUT/test_lineart_reference$sfx.o" "$OUT/lineart_cpu$sfx.o" "$OUT/lineart_runtime$sfx.o" \
-    "$OUT/lineart_util$sfx.o" "$OUT/lineart_chain$sfx.o" "$OUT/lineart_shadow$sfx.o" "$OUT/scene_lite$sfx.o" "${RT_OBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_lineart$sfx"
+    "$OUT/lineart_util$sfx.o" "$OUT/lineart_chain$sfx.o" "$OUT/lineart_shadow$sfx.o" "$OUT/scene_lite$sfx.o" "${RT_OBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -rdynamic -ldl -lpthread -lm -o "$OUT/test_lineart$sfx"
 }
 build ""
 timeout 300s "$OUT/test_lineart" ${LINEART_REFERENCE_DIR:+"$LINEART_REFERENCE_DIR"}

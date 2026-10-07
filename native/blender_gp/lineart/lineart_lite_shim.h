@@ -38,18 +38,5 @@
 #include <algorithm>
 #include <cstring>
 
- /*
-  * Project Grease executes this scoped Line Art closure with Blender's task system built without
-  * TBB, so all Line Art workers are serialized. Keep Blender's lock API available to the rest of
-  * the closure, but use a scoped no-op lock for this serial-only generated Line Art translation
-  * unit. The previous Project Grease runtime used the same serialization guarantee; enabling the
-  * real pthread spin lock here introduced a regression/hang without adding synchronization value.
-  */
- extern "C" {
- }
- /*
- * The real Blender task pool executes pushes immediately when built without TBB. The previous
- * Project Grease Line Art runtime queued all workers and ran them in push order at work_and_wait().
- * Use Blender's suspended pool to preserve that observable serial scheduling contract while still
- * using the real Blender 3.6.23 task-pool implementation.
- */
+/* Preserve the old serial Line Art queue semantics with Blender's real suspended task pool. */
+#define BLI_task_pool_create BLI_task_pool_create_suspended

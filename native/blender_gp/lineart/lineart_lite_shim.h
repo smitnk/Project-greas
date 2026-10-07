@@ -37,3 +37,21 @@
 
 #include <algorithm>
 #include <cstring>
+
+ /*
+  * Project Grease executes this scoped Line Art closure with Blender's task system built without
+  * TBB, so all Line Art workers are serialized. Keep Blender's lock API available to the rest of
+  * the closure, but use a scoped no-op lock for this serial-only generated Line Art translation
+  * unit. The previous Project Grease runtime used the same serialization guarantee; enabling the
+  * real pthread spin lock here introduced a regression/hang without adding synchronization value.
+  */
+ extern "C" {
+ void PG_lineart_spin_init(SpinLock *spin);
+ void PG_lineart_spin_lock(SpinLock *spin);
+ void PG_lineart_spin_unlock(SpinLock *spin);
+ void PG_lineart_spin_end(SpinLock *spin);
+ }
+ #define BLI_spin_init PG_lineart_spin_init
+ #define BLI_spin_lock PG_lineart_spin_lock
+ #define BLI_spin_unlock PG_lineart_spin_unlock
+ #define BLI_spin_end PG_lineart_spin_end

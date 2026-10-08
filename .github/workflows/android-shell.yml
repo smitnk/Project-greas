@@ -104,11 +104,6 @@ jobs:
       - name: Run native Shrinkwrap D2 source-closure preflight
         run: bash tools/run_native_shrinkwrap_closure_tests.sh
 
-      - name: Run real Legacy GP Shrinkwrap link reachability test
-        env:
-          PG_REQUIRE_BLENDER_SOURCE: "1"
-        run: bash tools/run_native_shrinkwrap_link_tests.sh
-
       - name: Run native primitive tests
         run: bash tools/run_native_primitive_tests.sh
 
@@ -149,6 +144,11 @@ jobs:
 
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
+
+      - name: Run real Legacy GP Shrinkwrap link reachability test
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_shrinkwrap_link_tests.sh
 
       - name: Run native segment select / material / onion tests
         env:

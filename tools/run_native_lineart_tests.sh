@@ -71,7 +71,7 @@ run_lineart() {
   return "$rc"
 }
 
+build "_asan" -g -fsanitize=address,undefined -fno-omit-frame-pointer
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 run_lineart "$OUT/test_lineart_asan"
 build ""
 run_lineart "$OUT/test_lineart"
-build "_asan" -g -fsanitize=address,undefined -fno-omit-frame-pointer
-ASAN_OPTIONS=detect_leaks=0 run_lineart "$OUT/test_lineart_asan"

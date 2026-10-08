@@ -104,6 +104,11 @@ jobs:
       - name: Run native Shrinkwrap D2 source-closure preflight
         run: bash tools/run_native_shrinkwrap_closure_tests.sh
 
+      - name: Run real Legacy GP Shrinkwrap link reachability test
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_shrinkwrap_link_tests.sh
+
       - name: Run native primitive tests
         run: bash tools/run_native_primitive_tests.sh
 
@@ -251,7 +256,6 @@ jobs:
           libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
           assert libs, "APK has no native library"
           for name, data in libs.items():
-              # informational: debug symbols may be stripped by the packager
               print(name, "exports pg_gp_edit2_dispatch symbol:", b"pg_gp_edit2_dispatch" in data)
           print("APK carries the combined-batch UI entries")
           PY
@@ -293,7 +297,57 @@ jobs:
                        b"Dash (3 on / 2 off)", b"Multiply (2 copies)", b"Array (3 copies)", b"Merge by distance",
                        b"Toggle caps (round/flat)", b"Set start point", b"Separate to new layer", b"Copy strokes",
                        b"Paste strokes", b"Move selection here: ", b"Invert sculpt brush", b"Subtract"):
-              assert text in dex, "APK lacks UI text %r" % text
+              assert text in dex, "APK lacks the UI entry " + text.decode()
+          assert b"Line Art preview" in dex, "APK lacks the Line Art preview switch"
+          assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"
+          assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
+          libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
+          assert libs, "APK has no native library"
+          for sym in (b"nativeAnnotationCommand", b"nativeAnnotationDump", b"nativeGenerateBlenderPrimitive", b"nativeSceneLiteLoadObj", b"nativeSceneLiteProjectEdges", b"nativeSceneLiteLineArt", b"nativeSceneLiteLineArtStrokes", b"nativeSceneLiteLineArtStrokesEx", b"nativeSceneLiteSetObjectLineArt", b"nativeSceneLiteSetMaterialLineArt", b"nativeSceneLiteAddCollection", b"nativeSceneLiteNames", b"nativeSetFillOptionsEglRenderer", b"nativeRenderCanvasPixelsEglRenderer", b"nativeToolSamples", b"nativeSetSelectionOverlay"):
+              owners = [name for name, data in libs.items() if sym in data]
+              assert owners, "no native library exports " + sym.decode()
+              print(sym.decode(), "in", owners)
+          print("APK carries the edit3 / curve / templates / import / trace / annotation UI and JNI entry points")
+          PY
+
+      - name: Verify the shader effects are in the built APK
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          apk = zipfile.ZipFile("android/app/build/outputs/apk/debug/app-debug.apk")
+          dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
+          for text in (b"Add effect", b"Wave Distortion", b"Colorize", b"Pixelate", b"Nearest filter", b"Per-layer effect list in the Layers sheet"):
+              assert text in dex, "APK lacks the effects UI/registry text " + text.decode()
+          assert b"Shader effects need the full DRW pipeline." not in dex, "APK still carries the blocked VISUAL_EFFECTS entry"
+          libs = {n: apk.read(n) for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so")}
+          assert libs, "APK has no native library"
+          for name, data in libs.items():
+              print(name, "has Java_..._nativeFxAdd:", b"nativeFxAdd" in data)
+          print("APK carries the shader effect UI and the enabled registry entry")
+          PY
+
+      - name: Verify the edit3 / UI import batch is in the built APK
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          apk = zipfile.ZipFile("android/app/build/outputs/apk/debug/app-debug.apk")
+          dex = b"".join(apk.read(n) for n in apk.namelist() if n.startswith("classes") and n.endswith(".dex"))
+          for text in (b"Insert blank keyframe", b"Clean duplicate frames", b"Select random 50%", b"Vertex color levels x0.8",
+                       b"Confirm curve", b"Curve", b"Template", b"Storyboard", b"2D Animation", b"Import SVG", b"Trace image",
+                       b"Trace bright areas", b"Annotate", b"Erase notes", b"Clear annotations", b"Include annotations",
+                       b"3D reference (Line Art)", b"Import OBJ", b"Clear reference", b"Orthographic scale"):
+              assert text in dex, "APK lacks the UI entry " + text.decode()
+          for text in (b"Blender curve geometry", b"DIFFERENCE FROM BLENDER", b"GPENCIL_OT_blank_frame_add", b"separate annotation bGPdata"):
+              assert text in dex, "APK lacks the registry text " + text.decode()
+          assert b"BATCH 3 OF 3" in dex, "APK lacks the Line Art batch 3 registry entry"
+          assert b"Generate Line Art strokes" in dex, "APK lacks the Line Art stroke button"
+          assert b"Bake Line Art to frames" in dex, "APK lacks the Line Art bake button"
+          for text in (b"Fit canvas", b"Delete material", b"Segment", b"Use onion skinning", b"Edit Lines",
+                       b"Transparent background", b"Save as failed", b"PNG export failed",
+                       b"Dash (3 on / 2 off)", b"Multiply (2 copies)", b"Array (3 copies)", b"Merge by distance",
+                       b"Toggle caps (round/flat)", b"Set start point", b"Separate to new layer", b"Copy strokes",
+                       b"Paste strokes", b"Move selection here: ", b"Invert sculpt brush", b"Subtract"):
+              assert text in dex, "APK lacks the UI entry %r" % text
           assert b"Line Art preview" in dex, "APK lacks the Line Art preview switch"
           assert b"Needs a minimal scene/object/depsgraph closure that is not established." not in dex, "APK still carries the blocked LINE_ART entry"
           assert b"there is no tool, control-point editing or UI" not in dex, "APK still carries the missing CURVE entry"
@@ -313,4 +367,3 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
-

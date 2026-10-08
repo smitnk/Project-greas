@@ -55,6 +55,8 @@ INCLUDES=(
   "$BLENDER/intern/guardedalloc"
   "$BLENDER/intern/atomic"
   "$BLENDER/intern/clog"
+  "$BLENDER/intern/eigen"
+  "$BLENDER/extern/Eigen3"
   "$ROOT/build/blender-dna"
 )
 
@@ -67,9 +69,10 @@ COMMON_FLAGS=(
   -fdata-sections
   -fvisibility=hidden
 )
-CXXFLAGS=("${COMMON_FLAGS[@]}" -std=gnu++17)
-CFLAGS=("${COMMON_FLAGS[@]}" -std=gnu11)
-CFLAGS+=("-DMATH_STANDALONE")
+CXXFLAGS=("${COMMON_FLAGS[@]}" -std=gnu++17 -ffp-contract=off)
+CFLAGS=("${COMMON_FLAGS[@]}" -std=gnu11 -ffp-contract=off)
+CXXFLAGS+=(-DWITH_SSE2NEON "-I$ROOT/third_party/sse2neon")
+CFLAGS+=(-DWITH_SSE2NEON "-I$ROOT/third_party/sse2neon")
 for inc in "${INCLUDES[@]}"; do
   CXXFLAGS+=("-I$inc")
   CFLAGS+=("-I$inc")

@@ -17,7 +17,7 @@ TaskPool *PG_lineart_task_pool_create(void *userdata, eTaskPriority priority)
   return BLI_task_pool_create_no_threads(userdata);
 }
 
-void PG_lineart_spin_init(SpinLock * /*spin*/) {}
-void PG_lineart_spin_lock(SpinLock * /*spin*/) {}
-void PG_lineart_spin_unlock(SpinLock * /*spin*/) {}
-void PG_lineart_spin_end(SpinLock * /*spin*/) {}
+extern "C" void PG_lineart_spin_init(SpinLock * /*spin*/) {}
+extern "C" void PG_lineart_spin_lock(SpinLock * /*spin*/) {}
+extern "C" void PG_lineart_spin_unlock(SpinLock * /*spin*/) {}
+extern "C" void PG_lineart_spin_end(SpinLock * /*spin*/) {}

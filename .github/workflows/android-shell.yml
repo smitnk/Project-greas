@@ -100,6 +100,9 @@ jobs:
       - name: Verify verbatim Blender regions
         run: python3 tools/verify_blender_verbatim.py
 
+      - name: Run native Shrinkwrap D2 source-closure preflight
+        run: bash tools/run_native_shrinkwrap_closure_tests.sh
+
       - name: Run native primitive tests
         run: bash tools/run_native_primitive_tests.sh
 

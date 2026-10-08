@@ -43,13 +43,14 @@ if grep -Eiq '(^|[[:space:][:punct:]])(uses?|using|implemented[[:space:]]+with|f
 fi
 
 # Armature is explicitly outside the current L1 blocker scope.
-if grep -Eiq '^C(XX)?\\|.*armature' "$MANIFEST"; then
+if grep -Eiq '^C(XX)?[|].*armature' "$MANIFEST"; then
   echo "Armature source entered the Shrinkwrap L1 closure unexpectedly" >&2
   exit 1
 fi
 
-awk -F'|' '
-  /^[[:space:]]*(C|CXX)\\|/ {
+# Duplicate source paths would make the closure non-deterministic.
+awk -F'[|]' '
+  /^[[:space:]]*(C|CXX)[|]/ {
     if (++seen[$2] > 1) {
       print "duplicate manifest source: " $2 > "/dev/stderr"
       bad=1

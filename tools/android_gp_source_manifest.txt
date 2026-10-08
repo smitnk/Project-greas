@@ -41,7 +41,7 @@ C|native/blender_gp/project_grease_blender_edit5.c
 C|native/blender_gp/project_grease_blender_edit6.c
 C|native/blender_gp/project_grease_blender_edit7.c
 C|native/blender_gp/project_grease_blender_edit8.c
-C|native/blender_gp/project_grease_edit9.c
+C|native/blender_gp/project_grease_blender_edit9.c
 C|native/blender_gp/project_grease_tool_session.c
 C|native/blender_gp/project_grease_draw_input.c
 C|native/blender_gp/project_grease_tool_util.c

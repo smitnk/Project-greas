@@ -11,6 +11,7 @@ on:
       - native/blender-gp-phase40-cache
       - "feature/project-grease-ui-real-integration"
       - "feature/project-grease-full-feature-work"
+      - "fix/l1-blockers"
     paths:
       - "android/**"
       - "native/blender_gp/**"

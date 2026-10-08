@@ -710,6 +710,7 @@ bool Backend::initialize()
 
 void Backend::shutdown()
 {
+  sculpt_session_end(impl_);
   if (!impl_) {
     return;
   }
@@ -808,6 +809,7 @@ void Backend::shutdown()
 
 bool Backend::reset_document()
 {
+  sculpt_session_end(impl_);
   if (!impl_->initialized) {
     impl_->last_error = "backend is not initialized";
     return false;

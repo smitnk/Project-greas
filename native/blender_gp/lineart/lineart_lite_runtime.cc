@@ -7,5 +7,12 @@
  */
 
 #include "BKE_global.h"
+#include "BLI_task.h"
 
 Global G = {};
+
+TaskPool *PG_lineart_task_pool_create(void *userdata, eTaskPriority priority)
+{
+  (void)priority;
+  return BLI_task_pool_create_no_threads(userdata);
+}

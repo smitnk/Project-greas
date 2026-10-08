@@ -9,6 +9,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/native_host_closure.sh" "Line Art test"
 python3 "$ROOT/tools/gen_lineart_lite.py" --check
 LA="$BL/gpencil_modifiers_legacy/intern/lineart"
 LINC=(-I"$ROOT/native/blender_gp/lineart" -I"$LA" -I"$BL/gpencil_modifiers_legacy")
+RT_XF=("${XF[@]}" -UWITH_TBB -UWITH_TBB_GLOBAL_CONTROL)
 TDEF=(-DPG_LINEART_SCENES="\"$ROOT/tools/lineart_reference\"")
 # Blender 3.6.23 task pool / parallel range / spin locks / PIL timer (L1 closure, no TBB): these
 # replaced the old custom copies in lineart_lite_runtime.cc, so the host test links them too.
@@ -18,12 +19,12 @@ for s in "$BL/blenlib/intern/time.c" "$BL/blenlib/intern/gsqueue.c"; do
 done
 for s in "$BL/blenlib/intern/task_pool.cc" "$BL/blenlib/intern/task_range.cc" \
          "$BL/blenlib/intern/task_scheduler.cc" "$BL/blenlib/intern/threads.cc"; do
-  o="$OUT/rt_$(basename "$s").o"; g++ "${XF[@]}" "${INC[@]}" -c "$s" -o "$o"; RT_OBJS+=("$o")
+  o="$OUT/rt_$(basename "$s").o"; g++ "${RT_XF[@]}" "${INC[@]}" -c "$s" -o "$o"; RT_OBJS+=("$o")
 done
 build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test objects
   local sfx="$1"; shift
-  g++ "${XF[@]}" -g "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/project_grease_lineart_cpu.cc" -o "$OUT/lineart_cpu$sfx.o"
-  g++ "${XF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/lineart_lite_runtime.cc" -o "$OUT/lineart_runtime$sfx.o"
+  g++ "${RT_XF[@]}" -g "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/project_grease_lineart_cpu.cc" -o "$OUT/lineart_cpu$sfx.o"
+  g++ "${RT_XF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/lineart_lite_runtime.cc" -o "$OUT/lineart_runtime$sfx.o"
   gcc "${CF[@]}" -g "$@" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_util.c" -o "$OUT/lineart_util$sfx.o"
   gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_chain.c" -o "$OUT/lineart_chain$sfx.o"
   gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/project_grease_lineart_shadow.c" -o "$OUT/lineart_shadow$sfx.o"

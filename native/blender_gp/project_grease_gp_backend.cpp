@@ -4631,11 +4631,11 @@ bool Backend::sculpt_begin(int tool, float x, float y, float pressure,
   return true;
 }
 
-bool Backend::sculpt_update(int tool, float x, float /*prev_x*/, float prev_y,
+bool Backend::sculpt_update(int tool, float x, float y, float /*prev_x*/, float /*prev_y*/,
                             float pressure, float radius, float strength, bool invert)
 {
   if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
-      !std::isfinite(x) || !std::isfinite(prev_y) ||
+      !std::isfinite(x) || !std::isfinite(y) ||
       !std::isfinite(pressure) || !std::isfinite(strength)) {
     impl_->last_error = "invalid Legacy GP sculpt input";
     return false;
@@ -4653,7 +4653,7 @@ bool Backend::sculpt_update(int tool, float x, float /*prev_x*/, float prev_y,
     }
   }
 
-  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, prev_y, pressure)) {
+  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, pressure)) {
     impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
     return false;
   }

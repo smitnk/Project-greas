@@ -38,5 +38,11 @@
 #include <algorithm>
 #include <cstring>
 
-/* Preserve the old serial Line Art queue semantics with Blender's real suspended task pool. */
-#define BLI_task_pool_create BLI_task_pool_create_suspended
+/*
+ * Keep the scoped Line Art closure serial. The host closure may compile Blender's task pool with
+ * TBB, while this Project Grease Line Art port intentionally has no parallel dependency graph or
+ * thread-safe global runtime around it. Blender's NO_THREADS pool is still the real 3.6.23 task
+ * pool implementation and executes each pushed task synchronously.
+ */
+TaskPool *PG_lineart_task_pool_create(void *userdata, eTaskPriority priority);
+#define BLI_task_pool_create PG_lineart_task_pool_create

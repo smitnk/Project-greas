@@ -23,8 +23,6 @@ for entry in "${required_manifest[@]}"; do
   }
 done
 
-# First exact Blender 3.6.23 source boundaries for the D2 Shrinkwrap closure.
-# This is a source-closure guard, not a completion claim.
 required_sources=(
   "blenkernel/intern/shrinkwrap.cc"
   "blenkernel/intern/bvhutils.cc"
@@ -37,9 +35,10 @@ for rel in "${required_sources[@]}"; do
   }
 done
 
-# D2 is evaluated-mesh parity. Reject accidental base-mesh-only wording.
-if grep -Eiq 'base-mesh shortcut|base mesh shortcut|base-mesh-only' "$MAP"; then
-  echo "D2 invariant violated: dependency map contains a base-mesh-only shortcut" >&2
+# D2 is evaluated-mesh parity. Reject only affirmative base-mesh-only
+# implementation claims; exclusion/documentation wording is valid.
+if grep -Eiq '(^|[[:space:][:punct:]])(uses?|using|implemented[[:space:]]+with|falls?[[:space:]]+back[[:space:]]+to|only[[:space:]]+uses?)[[:space:]]+(a[[:space:]]+)?base[-[:space:]]mesh([[:space:]-]+only)?([[:space:][:punct:]]|$)' "$MAP"; then
+  echo "D2 invariant violated: dependency map contains an affirmative base-mesh-only implementation claim" >&2
   exit 1
 fi
 
@@ -49,8 +48,7 @@ if grep -Eiq '^C(XX)?\\|.*armature' "$MANIFEST"; then
   exit 1
 fi
 
-# Duplicate source paths would make the closure non-deterministic.
-awk -F'\\|' '
+awk -F'|' '
   /^[[:space:]]*(C|CXX)\\|/ {
     if (++seen[$2] > 1) {
       print "duplicate manifest source: " $2 > "/dev/stderr"

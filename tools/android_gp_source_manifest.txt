@@ -117,3 +117,6 @@ C|third_party/blender/source/blender/blentranslation/intern/blt_translation.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn_guarded_impl.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn_lockfree_impl.c
+
+CXX|third_party/blender/source/blender/blenkernel/intern/shrinkwrap.cc
+C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c

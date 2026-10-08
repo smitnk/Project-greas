@@ -214,7 +214,8 @@ jobs:
           export ANDROID_NDK_ROOT="${ANDROID_SDK_ROOT}/ndk/27.0.12077973"
           export ANDROID_API=26
           test -f "${ANDROID_NDK_ROOT}/source.properties"
-          bash tools/android_blender_gp_native_link_probe.sh
+          ANDROID_ABI=arm64-v8a bash tools/android_blender_gp_native_link_probe.sh
+          ANDROID_ABI=x86_64 bash tools/android_blender_gp_native_link_probe.sh
 
       - name: Verify APK
         run: |

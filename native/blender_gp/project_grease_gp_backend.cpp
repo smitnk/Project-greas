@@ -285,6 +285,8 @@ struct Backend::Impl {
   std::vector<std::unique_ptr<EvalCacheEntry>> eval_cache;
 };
 
+static void sculpt_session_end(Backend::Impl *impl);
+
 static void eval_cache_clear(Backend::Impl *impl)
 {
   for (auto &entry : impl->eval_cache) {

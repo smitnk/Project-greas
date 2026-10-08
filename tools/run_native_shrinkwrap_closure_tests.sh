@@ -11,14 +11,14 @@ test -f "$MAP"
 test -d "$BLENDER"
 
 required_manifest=(
-  "third_party/blender/source/blender/blenkernel/intern/shrinkwrap.cc"
-  "third_party/blender/source/blender/blenkernel/intern/bvhutils.cc"
-  "third_party/blender/source/blender/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c"
+  "CXX|third_party/blender/source/blender/blenkernel/intern/shrinkwrap.cc"
+  "CXX|third_party/blender/source/blender/blenkernel/intern/bvhutils.cc"
+  "C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c"
 )
 
-for rel in "${required_manifest[@]}"; do
-  grep -Fxq "CXX|$rel" "$MANIFEST" || {
-    echo "missing manifest root: CXX|$rel" >&2
+for entry in "${required_manifest[@]}"; do
+  grep -Fxq "$entry" "$MANIFEST" || {
+    echo "missing manifest root: $entry" >&2
     exit 1
   }
 done

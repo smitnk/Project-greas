@@ -37,3 +37,29 @@
 
 #include <algorithm>
 #include <cstring>
+
+/*
+ * Keep the scoped Line Art closure serial. The host closure may compile Blender's task pool with
+ * TBB, while this Project Grease Line Art port intentionally has no parallel dependency graph or
+ * thread-safe global runtime around it. Blender's NO_THREADS pool is still the real 3.6.23 task
+ * pool implementation and executes each pushed task synchronously.
+ */
+TaskPool *PG_lineart_task_pool_create(void *userdata, eTaskPriority priority);
+#define BLI_task_pool_create PG_lineart_task_pool_create
+
+/* Serial Project Grease Line Art closure: no concurrent worker can touch these locks. */
+#define BLI_spin_init PG_lineart_spin_init
+#define BLI_spin_lock PG_lineart_spin_lock
+#define BLI_spin_unlock PG_lineart_spin_unlock
+#define BLI_spin_end PG_lineart_spin_end
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+void PG_lineart_spin_init(SpinLock *spin);
+void PG_lineart_spin_lock(SpinLock *spin);
+void PG_lineart_spin_unlock(SpinLock *spin);
+void PG_lineart_spin_end(SpinLock *spin);
+#ifdef __cplusplus
+}
+#endif

@@ -13,12 +13,26 @@ if [[ -z "$NDK" ]]; then
 fi
 [[ -f "$MANIFEST" ]] || { echo "Missing Android GP source manifest: $MANIFEST" >&2; exit 2; }
 
-CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang++"
-CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang"
-[[ -x "$CXX" ]] || { echo "Missing Android ARM64 C++ compiler: $CXX" >&2; exit 2; }
-[[ -x "$CC" ]] || { echo "Missing Android ARM64 C compiler: $CC" >&2; exit 2; }
+ABI="${ANDROID_ABI:-arm64-v8a}"
+case "$ABI" in
+  arm64-v8a)
+    TOOLCHAIN_TRIPLE="aarch64-linux-android"
+    ;;
+  x86_64)
+    TOOLCHAIN_TRIPLE="x86_64-linux-android"
+    ;;
+  *)
+    echo "Unsupported ANDROID_ABI: $ABI (expected arm64-v8a or x86_64)" >&2
+    exit 2
+    ;;
+esac
 
-OUT="$ROOT/build/android-blender-gp-native-link-probe"
+CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/${TOOLCHAIN_TRIPLE}${API}-clang++"
+CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/${TOOLCHAIN_TRIPLE}${API}-clang"
+[[ -x "$CXX" ]] || { echo "Missing Android $ABI C++ compiler: $CXX" >&2; exit 2; }
+[[ -x "$CC" ]] || { echo "Missing Android $ABI C compiler: $CC" >&2; exit 2; }
+
+OUT="$ROOT/build/android-blender-gp-native-link-probe/$ABI"
 COMPAT="$ROOT/native/blender_gp/android_compat"
 mkdir -p "$OUT"
 LLVM_NM="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
@@ -55,6 +69,8 @@ INCLUDES=(
   "$BLENDER/intern/guardedalloc"
   "$BLENDER/intern/atomic"
   "$BLENDER/intern/clog"
+  "$BLENDER/intern/eigen"
+  "$BLENDER/extern/Eigen3"
   "$ROOT/build/blender-dna"
 )
 
@@ -67,9 +83,10 @@ COMMON_FLAGS=(
   -fdata-sections
   -fvisibility=hidden
 )
-CXXFLAGS=("${COMMON_FLAGS[@]}" -std=gnu++17)
-CFLAGS=("${COMMON_FLAGS[@]}" -std=gnu11)
-CFLAGS+=("-DMATH_STANDALONE")
+CXXFLAGS=("${COMMON_FLAGS[@]}" -std=gnu++17 -ffp-contract=off)
+CFLAGS=("${COMMON_FLAGS[@]}" -std=gnu11 -ffp-contract=off)
+CXXFLAGS+=(-DWITH_SSE2NEON "-I$ROOT/third_party/sse2neon")
+CFLAGS+=(-DWITH_SSE2NEON "-I$ROOT/third_party/sse2neon")
 for inc in "${INCLUDES[@]}"; do
   CXXFLAGS+=("-I$inc")
   CFLAGS+=("-I$inc")
@@ -156,7 +173,7 @@ while read -r sym owner provenance; do
   fi
 done < "$SYMBOL_MAP"
 
-echo "=== link actual Android GP native boundary ==="
+echo "=== Android GP native link closure: $ABI ==="
 "$CXX" -shared -Wl,--no-undefined -Wl,--gc-sections \
   "${OBJECTS[@]}" \
   -lEGL -lGLESv3 -landroid -llog \

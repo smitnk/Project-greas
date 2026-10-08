@@ -25,7 +25,7 @@ build() { # $1 = suffix, rest = extra flags for the Line Art / Scene-lite / test
   local sfx="$1"; shift
   g++ "${RT_XF[@]}" -g "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/project_grease_lineart_cpu.cc" -o "$OUT/lineart_cpu$sfx.o"
   g++ "${RT_XF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/lineart_lite_runtime.cc" -o "$OUT/lineart_runtime$sfx.o"
-  gcc "${CF[@]}" -g "$@" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_util.c" -o "$OUT/lineart_util$sfx.o"
+  gcc "${CF[@]}" -g "$@" -include "$ROOT/native/blender_gp/lineart/lineart_serial_locks.h" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_util.c" -o "$OUT/lineart_util$sfx.o"
   gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$LA/lineart_chain.c" -o "$OUT/lineart_chain$sfx.o"
   gcc "${CF[@]}" "$@" "${LINC[@]}" "${INC[@]}" -c "$ROOT/native/blender_gp/lineart/project_grease_lineart_shadow.c" -o "$OUT/lineart_shadow$sfx.o"
   gcc "${CF[@]}" -g "$@" "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_scene_lite.c" -o "$OUT/scene_lite$sfx.o"

@@ -10,10 +10,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/native_host_closure.sh" "shrinkwrap link 
 SW_CXX=(
   "$BL/blenkernel/intern/shrinkwrap.cc"
   "$BL/blenkernel/intern/bvhutils.cc"
+  "$BL/blenkernel/intern/mesh.cc"
+  "$BL/blenkernel/intern/attribute_access.cc"
+  "$BL/blenkernel/intern/customdata.cc"
   "$BL/blenlib/intern/generic_virtual_array.cc"
+  "$BL/blenlib/intern/cpp_type.cc"
 )
 SW_C=(
   "$BL/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c"
+  "$BL/blenlib/intern/kdopbvh.c"
 )
 
 SWOBJS=()

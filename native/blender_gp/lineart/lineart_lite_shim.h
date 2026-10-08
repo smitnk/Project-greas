@@ -53,7 +53,13 @@ TaskPool *PG_lineart_task_pool_create(void *userdata, eTaskPriority priority);
 #define BLI_spin_unlock PG_lineart_spin_unlock
 #define BLI_spin_end PG_lineart_spin_end
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void PG_lineart_spin_init(SpinLock *spin);
 void PG_lineart_spin_lock(SpinLock *spin);
 void PG_lineart_spin_unlock(SpinLock *spin);
 void PG_lineart_spin_end(SpinLock *spin);
+#ifdef __cplusplus
+}
+#endif

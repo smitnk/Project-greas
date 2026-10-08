@@ -41,7 +41,7 @@ C|native/blender_gp/project_grease_blender_edit5.c
 C|native/blender_gp/project_grease_blender_edit6.c
 C|native/blender_gp/project_grease_blender_edit7.c
 C|native/blender_gp/project_grease_blender_edit8.c
-C|native/blender_gp/project_grease_blender_edit9.c
+C|native/blender_gp/project_grease_edit9.c
 C|native/blender_gp/project_grease_tool_session.c
 C|native/blender_gp/project_grease_draw_input.c
 C|native/blender_gp/project_grease_tool_util.c
@@ -117,6 +117,6 @@ C|third_party/blender/source/blender/blentranslation/intern/blt_translation.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn_guarded_impl.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn_lockfree_impl.c
-
 CXX|third_party/blender/source/blender/blenkernel/intern/shrinkwrap.cc
+CXX|third_party/blender/source/blender/blenkernel/intern/bvhutils.cc
 C|third_party/blender/source/blender/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c

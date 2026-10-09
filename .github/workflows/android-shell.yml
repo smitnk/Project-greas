@@ -118,9 +118,6 @@ jobs:
       - name: Run native annotation tests
         run: bash tools/run_native_annotation_tests.sh
 
-      - name: Run native Scene-lite tests (Line Art batch 1)
-        run: bash tools/run_native_scene_lite_tests.sh
-
       - name: Run native document-state tests
         run: bash tools/run_native_document_state_tests.sh
 

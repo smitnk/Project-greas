@@ -1414,9 +1414,11 @@ int pg_gp_select_dispatch(bGPdata *gpd,
     }
   }
 
-  /* Transform commands address strokes of the active layer by index, so selection stays on
-   * that layer until selection-aware transforms are ported. */
-  const bGPDlayer *scope = active_layer;
+  /* Blender's GP edit selection iterates every visible, unlocked, editable layer. The
+   * platform bridge supplies the active layer for layer-specific commands, but area-selection
+   * operators must not silently restrict the lasso to that layer. */
+  (void)active_layer;
+  const bGPDlayer *scope = NULL;
   int changed = 0;
 
   switch (command) {

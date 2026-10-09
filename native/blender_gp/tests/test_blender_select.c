@@ -553,28 +553,33 @@ static void test_dispatch(void)
   bGPDstroke *s1, *s2;
   build_two_strokes(&gpd, &s1, &s2);
   bGPDlayer *layer = (bGPDlayer *)gpd->layers.first;
+  /* Area selection with a NULL scope must include editable strokes on other visible layers. */
+  bGPDlayer *other_layer = add_layer(gpd, 0);
+  bGPDframe *other_frame = add_frame(other_layer, 1, true);
+  bGPDstroke *other_stroke = add_stroke(other_frame, 5, 0, 0, 25, 10, 0);
 
   const float lasso[] = {PG_SEL_OP_SET, PG_SELECTMODE_POINT, 25, -10, 65, -10, 65, 10, 25, 10};
   dirty_tags = 0;
   gpd->flag &= ~GP_DATA_CACHE_IS_DIRTY;
-  CHECK(pg_gp_select_dispatch(gpd, layer, PG_SELECT_CMD_LASSO, lasso, 10) == 1, "dispatch lasso");
+  CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_LASSO, lasso, 10) == 1, "dispatch lasso");
   CHECK(point_mask(s1) == ((1u << 3) | (1u << 4) | (1u << 5) | (1u << 6)), "dispatch lasso selection");
+  CHECK(point_mask(other_stroke) == 0x1Fu, "dispatch lasso selects another visible editable layer");
   CHECK((gpd->flag & GP_DATA_CACHE_IS_DIRTY) != 0 && dirty_tags > 0, "a change tags the GP cache dirty");
 
   dirty_tags = 0;
-  CHECK(pg_gp_select_dispatch(gpd, layer, PG_SELECT_CMD_LASSO, lasso, 10) == 0, "no change -> 0");
+  CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_LASSO, lasso, 10) == 0, "no change -> 0");
   CHECK(dirty_tags == 0, "no change leaves the cache alone");
 
   const float box[] = {PG_SEL_OP_SET, PG_SELECTMODE_POINT, 0, 40, 100, 60};
-  CHECK(pg_gp_select_dispatch(gpd, layer, PG_SELECT_CMD_BOX, box, 6) == 1, "dispatch box");
+  CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_BOX, box, 6) == 1, "dispatch box");
   CHECK(point_mask(s2) == 0x3FF && point_mask(s1) == 0, "dispatch box selection");
 
   const float circle[] = {PG_SEL_OP_SET, PG_SELECTMODE_POINT, 0, 0, 5, 1};
-  CHECK(pg_gp_select_dispatch(gpd, layer, PG_SELECT_CMD_CIRCLE, circle, 6) == 1, "dispatch circle");
+  CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_CIRCLE, circle, 6) == 1, "dispatch circle");
   CHECK(point_mask(s1) == 1u && point_mask(s2) == 0, "dispatch circle selection");
 
   const float all[] = {PG_SEL_SELECT};
-  CHECK(pg_gp_select_dispatch(gpd, layer, PG_SELECT_CMD_ALL, all, 1) == 1, "dispatch select all");
+  CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_ALL, all, 1) == 1, "dispatch select all");
   CHECK(point_mask(s1) == 0x3FF && point_mask(s2) == 0x3FF, "dispatch select all result");
   const float first[] = {0, 0};
   pg_gp_select_dispatch(gpd, layer, PG_SELECT_CMD_FIRST, first, 2);

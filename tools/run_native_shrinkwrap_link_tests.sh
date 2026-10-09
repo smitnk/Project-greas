@@ -13,11 +13,21 @@ SW_CXX=(
   "$BL/blenkernel/intern/mesh.cc"
   "$BL/blenkernel/intern/attribute_access.cc"
   "$BL/blenkernel/intern/customdata.cc"
+  "$BL/blenkernel/intern/geometry_component_mesh.cc"
+  "$BL/blenkernel/intern/mesh_runtime.cc"
+  "$BL/blenkernel/intern/type_conversions.cc"
+  "$BL/blenkernel/intern/cpp_types.cc"
+  "$BL/functions/intern/cpp_types.cc"
+  "$BL/blenlib/intern/cpp_types.cc"
+  "$BL/blenlib/intern/task_range.cc"
+  "$BL/blenlib/intern/task_scheduler.cc"
+  "$BL/blenlib/intern/threads.cc"
   "$BL/blenlib/intern/generic_virtual_array.cc"
 )
 SW_C=(
   "$BL/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c"
   "$BL/blenlib/intern/BLI_kdopbvh.c"
+  "$BL/blenlib/intern/BLI_heap_simple.c"
 )
 
 SWOBJS=()

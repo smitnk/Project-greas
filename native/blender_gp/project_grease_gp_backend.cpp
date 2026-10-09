@@ -2500,7 +2500,7 @@ bool Backend::stroke_center(int index, float *x, float *y) const
 {
   // Reserved index -1: median of every selected point (pivot of selection-wide edits).
   if (index == -1 && x && y && impl_->gpd) {
-    return pg_gp_edit_selection_pivot(impl_->gpd, impl_->layer, x, y) != 0;
+    return pg_gp_edit_selection_pivot(impl_->gpd, nullptr, x, y) != 0;
   }
   if (!impl_->frame || index < 0 || !x || !y) {
     return false;

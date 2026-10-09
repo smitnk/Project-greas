@@ -14,7 +14,6 @@ SW_CXX=(
   "$BL/blenkernel/intern/attribute_access.cc"
   "$BL/blenkernel/intern/customdata.cc"
   "$BL/blenlib/intern/generic_virtual_array.cc"
-  "$BL/blenlib/intern/cpp_type.cc"
 )
 SW_C=(
   "$BL/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c"

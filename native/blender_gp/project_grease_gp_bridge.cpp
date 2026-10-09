@@ -544,8 +544,10 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
         }
         return changed;
       }
+      /* Blender's area selection operators scan all editable layers; the active layer is
+       * not a restriction for lasso, box, circle, or select-all. */
       return pg_gp_select_dispatch(handle->backend.document_data(),
-                                   handle->backend.active_layer_data(),
+                                   nullptr,
                                    command,
                                    args,
                                    arg_count);

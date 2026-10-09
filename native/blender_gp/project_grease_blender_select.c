@@ -1414,11 +1414,10 @@ int pg_gp_select_dispatch(bGPdata *gpd,
     }
   }
 
-  /* Blender's GP edit selection iterates every visible, unlocked, editable layer. The
-   * platform bridge supplies the active layer for layer-specific commands, but area-selection
-   * operators must not silently restrict the lasso to that layer. */
-  (void)active_layer;
-  const bGPDlayer *scope = NULL;
+  /* The caller chooses the layer scope. The Android bridge passes NULL for Blender-style
+   * edit selection across all visible, unlocked, editable layers, while tests and layer-specific
+   * callers can still request a single layer. */
+  const bGPDlayer *scope = active_layer;
   int changed = 0;
 
   switch (command) {

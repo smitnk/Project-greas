@@ -17,7 +17,7 @@ SW_CXX=(
 )
 SW_C=(
   "$BL/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_shrinkwrap.c"
-  "$BL/blenlib/intern/kdopbvh.c"
+  "$BL/blenlib/intern/BLI_kdopbvh.c"
 )
 
 SWOBJS=()

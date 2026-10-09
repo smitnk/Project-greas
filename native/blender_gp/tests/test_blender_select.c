@@ -556,7 +556,7 @@ static void test_dispatch(void)
   /* Area selection with a NULL scope must include editable strokes on other visible layers. */
   bGPDlayer *other_layer = add_layer(gpd, 0);
   bGPDframe *other_frame = add_frame(other_layer, 1, true);
-  bGPDstroke *other_stroke = add_stroke(other_frame, 5, 0, 25, 0, 10, 0);
+  bGPDstroke *other_stroke = add_stroke(other_frame, 5, 0, 30, 0, 8, 0);
 
   const float lasso[] = {PG_SEL_OP_SET, PG_SELECTMODE_POINT, 25, -10, 65, -10, 65, 10, 25, 10};
   dirty_tags = 0;

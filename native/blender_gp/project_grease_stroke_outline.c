@@ -26,6 +26,12 @@ static V2 safe_normalize(V2 a)
   return l > 1e-12f ? mul(a, 1.0f / l) : v2(1.0f, 0.0f);
 }
 
+typedef struct MiterJoin {
+  V2 outer_prev;
+  V2 outer_miter;
+  V2 outer_next;
+} MiterJoin;
+
 typedef struct Out {
   float *xy;
   int count, max;
@@ -126,6 +132,8 @@ int pg_stroke_outline(const PGOutlinePoint *points, int count, int flags, int ar
     end_ofs[s] = mul(perp(line), R((s + 1) % n));
   }
   /* Joins at interior points (every point of a cyclic stroke). */
+  MiterJoin *miter_joins = NULL;
+  int miter_join_count = 0, miter_join_cap = 0;
   for (int i = cyclic ? 0 : 1; i < (cyclic ? n : n - 1); i++) {
     const int s_prev = (i - 1 + segs) % segs, s_next = i % segs;
     const V2 line_adj = safe_normalize(sub(P(i), P((i - 1 + n) % n)));
@@ -137,6 +145,31 @@ int pg_stroke_outline(const PGOutlinePoint *points, int count, int flags, int ar
       const V2 miter = mul(perp(mul(miter_tan, 1.0f / miter_dot)), R(i));
       end_ofs[s_prev] = miter;
       start_ofs[s_next] = miter;
+
+      /* The miter replaces both segment offsets at the join. Preserve the two
+       * original outer endpoints and fill the triangle between them and the
+       * outer miter; otherwise the outer wedge is not covered. */
+      const float turn = cross2(line_adj, line);
+      if (fabsf(turn) > 1e-4f) {
+        if (miter_join_count >= miter_join_cap) {
+          const int new_cap = miter_join_cap ? miter_join_cap * 2 : 4;
+          MiterJoin *tmp = (MiterJoin *)realloc(
+              miter_joins, sizeof(*miter_joins) * (size_t)new_cap);
+          if (!tmp) {
+            free(miter_joins);
+            free(start_ofs);
+            free(idx);
+            return 0;
+          }
+          miter_joins = tmp;
+          miter_join_cap = new_cap;
+        }
+        const float outer_sign = turn > 0.0f ? -1.0f : 1.0f;
+        MiterJoin *join = &miter_joins[miter_join_count++];
+        join->outer_prev = add(P(i), mul(perp(line_adj), outer_sign * R(i)));
+        join->outer_miter = sub(P(i), miter);
+        join->outer_next = add(P(i), mul(perp(line), outer_sign * R(i)));
+      }
       continue;
     }
     /* Broken miter: bevel + round join on the outer side. Turning left (cross > 0) puts the outer
@@ -156,6 +189,10 @@ int pg_stroke_outline(const PGOutlinePoint *points, int count, int flags, int ar
     tri(&o, al, ar, bl);
     tri(&o, bl, ar, br);
   }
+  for (int j = 0; j < miter_join_count; j++) {
+    const MiterJoin *join = &miter_joins[j];
+    tri(&o, join->outer_prev, join->outer_miter, join->outer_next);
+  }
   if (!cyclic) {
     if (!(flags & PG_OUTLINE_FLAT_START)) {
       const V2 line = safe_normalize(sub(P(1), P(0)));
@@ -168,6 +205,7 @@ int pg_stroke_outline(const PGOutlinePoint *points, int count, int flags, int ar
   }
 #undef P
 #undef R
+  free(miter_joins);
   free(start_ofs);
   free(idx);
   return o.count;

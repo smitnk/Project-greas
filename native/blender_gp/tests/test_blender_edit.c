@@ -429,6 +429,10 @@ static void test_transform_skips_locked_and_other_layers(void)
   bGPDstroke *sb = add_stroke(add_frame(lb), 2, 0, 0, 50, 10, 0);
   bGPDstroke *locked = add_stroke(la->actframe, 2, 1, 0, 90, 10, 0);
   select_points(gpd, sa, 3); select_points(gpd, sb, 3); select_points(gpd, locked, 3);
+  float px = 0.0f, py = 0.0f;
+  CHECK(pg_gp_edit_selection_pivot(gpd, NULL, &px, &py) == 1 &&
+            NEAR(px, 5.0f) && NEAR(py, 25.0f),
+        "unscoped selection pivot includes selected editable points across layers, skips locked material");
   pg_gp_edit_translate(gpd, la, 100, 0);
   CHECK(NEAR(sa->points[0].x, 100), "scoped layer moves");
   CHECK(NEAR(sb->points[0].x, 0), "other layer is outside the explicit scope");

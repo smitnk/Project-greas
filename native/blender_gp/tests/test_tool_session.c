@@ -243,9 +243,10 @@ static void test_vertex_paint(PGToolSession *ts)
   Doc blur_doc = doc();
   bGPDstroke *blur_stroke = stroke(&blur_doc, 7, 0, 100, 10, 0);
   for (int i = 0; i < 7; i++) {
-    blur_stroke->points[i].vert_color[0] = (float)i / 6.0f;
+    /* An asymmetric color field ensures the sampled point differs from its neighbors' mean. */
+    blur_stroke->points[i].vert_color[0] = (i == 3) ? 1.0f : 0.0f;
     blur_stroke->points[i].vert_color[1] = 0.25f;
-    blur_stroke->points[i].vert_color[2] = 1.0f - (float)i / 6.0f;
+    blur_stroke->points[i].vert_color[2] = (i == 3) ? 0.0f : 1.0f;
     blur_stroke->points[i].vert_color[3] = 1.0f;
   }
   const float blur_before = blur_stroke->points[2].vert_color[0];
@@ -261,9 +262,10 @@ static void test_vertex_paint(PGToolSession *ts)
   Doc average_doc = doc();
   bGPDstroke *average_stroke = stroke(&average_doc, 7, 0, 100, 10, 0);
   for (int i = 0; i < 7; i++) {
-    average_stroke->points[i].vert_color[0] = (float)i / 6.0f;
+    /* Point 3 is red; the other sampled points are blue, so Average must alter it. */
+    average_stroke->points[i].vert_color[0] = (i == 3) ? 1.0f : 0.0f;
     average_stroke->points[i].vert_color[1] = 0.0f;
-    average_stroke->points[i].vert_color[2] = 1.0f - (float)i / 6.0f;
+    average_stroke->points[i].vert_color[2] = (i == 3) ? 0.0f : 1.0f;
     average_stroke->points[i].vert_color[3] = 1.0f;
   }
   const float average_before = average_stroke->points[3].vert_color[0];

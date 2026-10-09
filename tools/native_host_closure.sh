@@ -20,7 +20,7 @@ trap 'rm -rf "$OUT"' EXIT
 INC=(-I"$BL/draw" -I"$BL/draw/intern" -I"$BL/draw/engines/gpencil" -I"$BL/gpu" -I"$BL/gpu/intern" -I"$ROOT/native/blender_gp/android_compat" -I"$ROOT/native/blender_gp" -I"$BL" -I"$B/source"
      -I"$BL/blenlib" -I"$BL/blenkernel" -I"$BL/makesdna" -I"$BL/makesrna" -I"$BL/depsgraph"
      -I"$BL/gpencil_modifiers_legacy" -I"$BL/blentranslation" -I"$BL/blentranslation/intern"
-     -I"$BL/imbuf" -I"$BL/blenloader" -I"$BL/gpu" -I"$BL/gpu/intern" -I"$BL/draw" -I"$BL/bmesh" -I"$BL/editors/include" -I"$BL/windowmanager" -I"$BL/render"
+     -I"$BL/imbuf" -I"$BL/blenloader" -I"$BL/gpu" -I"$BL/gpu/intern" -I"$BL/draw" -I"$BL/bmesh" -I"$BL/editors/include" -I"$BL/windowmanager" -I"$BL/render" -I"$BL/functions"
      -I"$B/extern/curve_fit_nd" -I"$B/extern/wcwidth" -I"$B/intern/guardedalloc" -I"$B/intern/atomic"
      -I"$B/intern/clog" -I"$ROOT/build/blender-dna")
 CF=(-std=gnu11 -DNDEBUG -DMATH_STANDALONE -w -DMALLOC_USABLE_SIZE_DISABLED -ffunction-sections -fdata-sections)

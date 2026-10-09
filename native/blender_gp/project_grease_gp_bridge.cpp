@@ -529,7 +529,7 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
         /* Blender's edit-selection operators iterate all editable strokes, not just the
          * active layer. Keep layer-specific commands scoped above, but let pick/transform/
          * delete operate on the complete current editable selection. */
-        const bGPDlayer *edit_scope =
+        bGPDlayer *edit_scope =
             (command >= PG_EDIT_CMD_PICK && command <= PG_EDIT_CMD_DELETE_POINTS) ?
                 nullptr :
                 handle->backend.active_layer_data();

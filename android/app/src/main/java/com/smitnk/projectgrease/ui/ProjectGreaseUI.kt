@@ -713,7 +713,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         "SCULPT" to listOf(GreaseTool.SCULPT),
         "NOTES" to listOf(GreaseTool.ANNOTATE)
     )
-    Column(Modifier.width(86.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
+    Column(Modifier.width(62.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
         groups.forEach{(title,group)->
             Text(title,fontSize=9.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=6.dp,bottom=2.dp))
             group.forEach{tool->
@@ -721,11 +721,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 val capability=FeatureRegistry.capability(entry.feature)
                 val enabled=capability.state!=FeatureState.NOT_IMPLEMENTED
                 val selected=controller.tools.activeTool==tool
-                Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(tool);onState()}.padding(horizontal=4.dp,vertical=2.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(tool);onState()}.padding(horizontal=2.dp,vertical=1.dp),horizontalAlignment=Alignment.CenterHorizontally){
                     Surface(shape=RoundedCornerShape(18.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent){
-                        Icon(entry.icon,entry.label,Modifier.padding(8.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)
+                        Icon(entry.icon,entry.label,Modifier.padding(6.dp).size(18.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)
                     }
-                    Text(entry.label,fontSize=9.sp,maxLines=1)
+                    Text(entry.label,fontSize=8.sp,maxLines=1)
                 }
             }
         }

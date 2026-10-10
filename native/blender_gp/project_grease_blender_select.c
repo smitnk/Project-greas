@@ -1120,7 +1120,8 @@ int pg_gp_select_circle(bGPdata *gpd,
                         const bGPDlayer *only_layer)
 {
   if (gpd == NULL || radius < 0 || sel_op_in < SEL_OP_ADD || sel_op_in > SEL_OP_XOR ||
-      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE))
+      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE &&
+        selectmode != GP_SELECTMODE_SEGMENT))
   {
     return 0;
   }
@@ -1318,12 +1319,13 @@ static int pg_generic_select_exec(bGPdata *gpd,
                                   int selectmode)
 {
   if (sel_op_in < SEL_OP_ADD || sel_op_in > SEL_OP_XOR ||
-      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE))
+      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE &&
+        selectmode != GP_SELECTMODE_SEGMENT))
   {
     return 0;
   }
   const bool strokemode = (selectmode == GP_SELECTMODE_STROKE);
-  const bool segmentmode = false;
+  const bool segmentmode = (selectmode == GP_SELECTMODE_SEGMENT);
   const eSelectOp sel_op = (eSelectOp)sel_op_in;
 
   size_t before_len = 0;

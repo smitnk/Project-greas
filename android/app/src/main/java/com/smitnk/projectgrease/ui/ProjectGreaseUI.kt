@@ -755,6 +755,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
     var markersOpen by remember{mutableStateOf(false)}
     var previewOpen by remember{mutableStateOf(false)}
+    /* Keep the drawing canvas dominant on phone screens; advanced timeline controls are opt-in. */
+    var expanded by remember{mutableStateOf(false)}
     Surface(tonalElevation=4.dp){
         Column(Modifier.fillMaxWidth()){
             // Wrapping rows (no side-scroll strip): every timeline action stays reachable on narrow screens.
@@ -768,6 +770,10 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd,
                     Modifier.align(Alignment.CenterVertically).padding(horizontal=4.dp))
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
+                TextButton(onClick={expanded=!expanded},modifier=Modifier.testTag("timelineExpand")){
+                    Text(if(expanded)"Less" else "More")
+                }
+                if(expanded) {
                 TextButton(
                     enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
                     onClick={if(controller.interpolateFrameAt(controller.animation.currentFrame)){redraw()}}
@@ -793,11 +799,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 }
                 FilterChip(selected=controller.animation.scrubSnapToKeys,onClick={controller.animation.scrubSnapToKeys=!controller.animation.scrubSnapToKeys},
                     label={Text("Snap to keys")},modifier=Modifier.testTag("scrubSnapKeys"))
+                }
             }
             if(markersOpen)MarkersDialog(controller,{markersOpen=false},redraw)
             if(previewOpen)PreviewRangeDialog(controller,{previewOpen=false},redraw)
             val listState=androidx.compose.foundation.lazy.rememberLazyListState()
-            Box(Modifier.padding(horizontal=5.dp)){TimelineScrubStrip(controller,listState,52.dp,redraw)}
+            if(expanded) Box(Modifier.padding(horizontal=5.dp)){TimelineScrubStrip(controller,listState,52.dp,redraw)}
             // Lazy: only the visible frame cells are composed. The scene end can be up to 100000
             // frames; composing a cell for each one on every recomposition froze the main thread
             // (monkey ANR in Timeline).
@@ -806,7 +813,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             val frameTotal=controller.animation.timelineEnd.coerceAtLeast(1)
             val markerByFrame=controller.animation.timeline.markers.associateBy{it.frame}
             val previewRange=controller.animation.timeline.preview
-            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp),state=listState){
+            androidx.compose.foundation.lazy.LazyRow(
+                Modifier.fillMaxWidth().padding(horizontal=5.dp, vertical=if(expanded) 5.dp else 2.dp)
+                    .height(if(expanded) 62.dp else 34.dp),
+                state=listState
+            ){
                 items(frameTotal,key={it+1}){index->
                     val frame=index+1
                     val key=frame in keyframes
@@ -817,7 +828,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     Box(if(inPreview)Modifier.background(PreviewRangeColor) else Modifier){
                         // tap: go to the frame; long press: key type / frame selection menu
                         Surface(
-                            Modifier.width(52.dp).height(54.dp).padding(2.dp).testTag("frame_$frame")
+                            Modifier.width(52.dp).height(if(expanded) 54.dp else 30.dp).padding(2.dp).testTag("frame_$frame")
                                 .border(if(selectedKey)2.dp else 0.dp,if(selectedKey)Color(0xFFFF8500) else Color.Transparent,RoundedCornerShape(8.dp))
                                 .pointerInput(frame){detectTapGestures(onTap={controller.selectFrame(frame);redraw()},onLongPress={menuFrame=frame})},
                             shape=RoundedCornerShape(8.dp),
@@ -835,7 +846,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     }
                 }
                 item(key="add"){
-                    Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
+                    Surface(Modifier.width(64.dp).height(if(expanded) 54.dp else 30.dp).padding(2.dp).clickable{
                         controller.createFrame((controller.animation.timelineEnd+1).coerceAtLeast(1));redraw()
                     },shape=RoundedCornerShape(8.dp)){
                         Box(contentAlignment=Alignment.Center){Text("+")}

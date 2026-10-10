@@ -800,7 +800,7 @@ static bool gpencil_vertexpaint_select_stroke(tGP_BrushVertexpaintData *gso,
 
           /* To each point individually... */
           pt = &gps->points[i];
-          pt_active = (pt->runtime.pt_orig) ? pt->runtime.pt_orig : pt;
+          pt_active = pt->runtime.pt_orig;
           if (pt_active != NULL) {
             /* If masked and the point is not selected, skip it. */
             if (GPENCIL_ANY_VERTEX_MASK(gso->mask) && ((pt_active->flag & GP_SPOINT_SELECT) == 0))
@@ -823,7 +823,7 @@ static bool gpencil_vertexpaint_select_stroke(tGP_BrushVertexpaintData *gso,
            */
           if (i + 1 == gps->totpoints - 1) {
             pt = &gps->points[i + 1];
-            pt_active = (pt->runtime.pt_orig) ? pt->runtime.pt_orig : pt;
+            pt_active = pt->runtime.pt_orig;
             if (pt_active != NULL) {
               index = (pt->runtime.pt_orig) ? pt->runtime.idx_orig : i + 1;
               hit = true;
@@ -843,7 +843,7 @@ static bool gpencil_vertexpaint_select_stroke(tGP_BrushVertexpaintData *gso,
            * (but wasn't added then, to avoid double-ups).
            */
           pt = &gps->points[i];
-          pt_active = (pt->runtime.pt_orig) ? pt->runtime.pt_orig : pt;
+          pt_active = pt->runtime.pt_orig;
           if (pt_active != NULL) {
             index = (pt->runtime.pt_orig) ? pt->runtime.idx_orig : i;
             hit = true;
@@ -881,6 +881,47 @@ static bool gpencil_vertexpaint_select_stroke(tGP_BrushVertexpaintData *gso,
 
 /* ---- Project Grease adaptation of the operator loop ---------------------------------------- */
 
+/*
+ * Blender's editor passes evaluated strokes whose runtime.pt_orig fields map back to source points.
+ * Project Grease edits source data directly, so those backlinks are absent. Temporarily provide the
+ * same identity mapping around Blender's unchanged selector, then clear it before returning to the
+ * document model. This keeps the upstream selection/brush algorithm verbatim.
+ */
+static bool pgt_vpaint_select_stroke(tGP_BrushVertexpaintData *gso,
+                                     bGPDstroke *gps,
+                                     const char tool,
+                                     const float diff_mat[4][4],
+                                     const float bound_mat[4][4])
+{
+  if (gps == NULL || gps->points == NULL || gps->totpoints <= 0) {
+    return false;
+  }
+
+  bool source_points_only = (gps->runtime.gps_orig == NULL);
+  for (int i = 0; i < gps->totpoints && source_points_only; i++) {
+    if (gps->points[i].runtime.pt_orig != NULL) {
+      source_points_only = false;
+    }
+  }
+
+  if (source_points_only) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      gps->points[i].runtime.pt_orig = &gps->points[i];
+      gps->points[i].runtime.idx_orig = i;
+    }
+  }
+
+  const bool selected = gpencil_vertexpaint_select_stroke(gso, gps, tool, diff_mat, bound_mat);
+
+  if (source_points_only) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      gps->points[i].runtime.pt_orig = NULL;
+      gps->points[i].runtime.idx_orig = 0;
+    }
+  }
+  return selected;
+}
+
 /* gpencil_vertexpaint_brush_do_frame() without the context checks (every stroke can be used on the
  * canvas; editability uses bGPdata::mat[]). */
 static bool pgt_vpaint_do_frame(tGP_BrushVertexpaintData *gso, bGPDlayer *gpl, bGPDframe *gpf)
@@ -906,7 +947,7 @@ static bool pgt_vpaint_do_frame(tGP_BrushVertexpaintData *gso, bGPDlayer *gpl, b
     {
       continue;
     }
-    gpencil_vertexpaint_select_stroke(gso, gps, tool, diff_mat, bound_mat);
+    pgt_vpaint_select_stroke(gso, gps, tool, diff_mat, bound_mat);
   }
 
   /* For Average tool, the average resulting color from all colors under the brush. */

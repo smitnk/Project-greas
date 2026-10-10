@@ -39,10 +39,11 @@ enum {
   PG_SEL_OP_XOR = 5,
 };
 
-/* Values of Blender's eGP_Selectmode. Segment mode is not ported yet. */
+/* Values of Blender's eGP_Selectmode used by point, stroke and segment selection. */
 enum {
   PG_SELECTMODE_POINT = 0,
   PG_SELECTMODE_STROKE = 1,
+  PG_SELECTMODE_SEGMENT = 2,
 };
 
 /* GPENCIL_OT_select_grouped "type". */

@@ -1754,7 +1754,7 @@ class EditorController {
         native.setMaterialVisibility(target, record.visible)
         native.setMaterialName(target, record.name.ifBlank { "Material ${source + 1}" }.removeSuffix(" Color") + " Color")
         ProjectGreaseSelect.materialMode(target, record.mode, record.alignment, record.rotation)
-            .let { native.applyEditCommand(it.id, it.args) }
+            ?.let { native.applyEditCommand(it.id, it.args) }
         ProjectGreaseSelect.materialPass(target, record.passIndex)
             .let { native.applyEditCommand(it.id, it.args) }
         ProjectGreaseSelect.materialOptions(target, record.strokeHoldout, record.fillHoldout, record.selfOverlap)

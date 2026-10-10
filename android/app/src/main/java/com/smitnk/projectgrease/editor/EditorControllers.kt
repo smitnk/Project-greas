@@ -1752,7 +1752,7 @@ class EditorController {
         if (!native.setMaterialColors(target, record.stroke, record.fill) ||
             !native.setMaterialFillEnabled(target, record.fillEnabled)) return false
         native.setMaterialVisibility(target, record.visible)
-        native.setMaterialName(target, (record.name.ifBlank { "Material ${source + 1}" }) + " Color")
+        native.setMaterialName(target, record.name.ifBlank { "Material ${source + 1}" }.removeSuffix(" Color") + " Color")
         ProjectGreaseSelect.materialMode(target, record.mode, record.alignment, record.rotation)
             .let { native.applyEditCommand(it.id, it.args) }
         ProjectGreaseSelect.materialPass(target, record.passIndex)
@@ -1776,8 +1776,8 @@ class EditorController {
 
     fun setMaterialColor(argb:Int):Boolean {
         if (rendererHandle == 0L) return false
-        materials.setColor(argb)
         if (!forkUsedMaterialForColorEdit(argb)) return false
+        materials.setColor(argb)
         val c=colorToFloats(argb)
         val alpha=c[3]*materials.opacity
         val stroke=floatArrayOf(c[0],c[1],c[2],alpha)

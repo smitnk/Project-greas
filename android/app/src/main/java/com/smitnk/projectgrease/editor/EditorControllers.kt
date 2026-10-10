@@ -1740,9 +1740,7 @@ class EditorController {
      */
     private fun forkUsedMaterialForColorEdit(argb: Int): Boolean {
         val source = materials.activeMaterial
-        val used = (0 until native.strokeCount()).any { index ->
-            native.strokeInfo(index)?.getOrNull(0)?.toInt() == source
-        }
+        val used = native.materialUsedByStrokes(source)
         if (!used) return true
         val record = materialRecord(source) ?: return false
         val requested = colorToFloats(argb)

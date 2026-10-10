@@ -130,6 +130,7 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
                                          const float *args,
                                          int arg_count);
 int project_grease_gp_material_count(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_material_used_by_strokes(const ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_create_material(ProjectGreaseGPHandle *handle);
 int project_grease_gp_set_material_colors(ProjectGreaseGPHandle *handle, int index, const float stroke_rgba[4], const float fill_rgba[4]);
 int project_grease_gp_set_material_visibility(ProjectGreaseGPHandle *handle, int index, int visible);

@@ -130,6 +130,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun setMaterialName(slot: Int, name: String) = handle != 0L && GPNative.nativeSetMaterialName(handle, slot, name)
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
+    fun materialUsedByStrokes(index: Int) = handle != 0L && GPNative.nativeMaterialUsedByStrokes(handle, index)
     fun createMaterial() = handle != 0L && GPNative.nativeCreateMaterial(handle)
     fun setMaterialColors(index:Int, stroke:FloatArray, fill:FloatArray) = handle != 0L && GPNative.nativeSetMaterialColors(handle,index,stroke,fill)
     fun setMaterialVisibility(index:Int, visible:Boolean) = handle != 0L && GPNative.nativeSetMaterialVisibility(handle,index,visible)
@@ -1732,9 +1733,51 @@ class EditorController {
         return setMaterialColor(argb)
     }
 
+    /**
+     * Editing a material already used by strokes would recolour every old stroke that references it.
+     * For a colour-picker edit, fork the active material first when it is used by a stroke in the
+     * current editable frame. New strokes use the fork; existing strokes keep their original material.
+     */
+    private fun forkUsedMaterialForColorEdit(argb: Int): Boolean {
+        val source = materials.activeMaterial
+        val used = native.materialUsedByStrokes(source)
+        if (!used) return true
+        val record = materialRecord(source) ?: return false
+        val requested = colorToFloats(argb)
+        // Opacity controls also call setMaterialColor; don't create a new material when RGB is unchanged.
+        if ((0..2).all { kotlin.math.abs(record.stroke[it] - requested[it]) < (1f / 255f) }) return true
+        if (record.locked) return false
+        val target = native.materialCount()
+        if (!native.createMaterial()) return false
+        if (!native.setMaterialColors(target, record.stroke, record.fill) ||
+            !native.setMaterialFillEnabled(target, record.fillEnabled)) return false
+        native.setMaterialVisibility(target, record.visible)
+        native.setMaterialName(target, record.name.ifBlank { "Material ${source + 1}" }.removeSuffix(" Color") + " Color")
+        ProjectGreaseSelect.materialMode(target, record.mode, record.alignment, record.rotation)
+            ?.let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialPass(target, record.passIndex)
+            .let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialOptions(target, record.strokeHoldout, record.fillHoldout, record.selfOverlap)
+            .let { native.applyEditCommand(it.id, it.args) }
+        /* Material textures are controller-owned; copy both stroke and fill texture state as well. */
+        for (isFill in listOf(false, true)) {
+            val fromKey = textureKey(source, isFill)
+            val toKey = textureKey(target, isFill)
+            materialTextures[fromKey]?.let { materialTextures[toKey] = it.copy() }
+            textureImages[fromKey]?.let { image ->
+                textureImages[toKey] = Triple(image.first.copyOf(), image.second, image.third)
+            }
+        }
+        reapplyTextureSettings()
+        reuploadTextures()
+        materials.select(target)
+        return true
+    }
+
     fun setMaterialColor(argb:Int):Boolean {
-        materials.setColor(argb)
         if (rendererHandle == 0L) return false
+        if (!forkUsedMaterialForColorEdit(argb)) return false
+        materials.setColor(argb)
         val c=colorToFloats(argb)
         val alpha=c[3]*materials.opacity
         val stroke=floatArrayOf(c[0],c[1],c[2],alpha)

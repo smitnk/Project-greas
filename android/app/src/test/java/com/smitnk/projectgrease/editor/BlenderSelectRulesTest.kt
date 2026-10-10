@@ -39,6 +39,12 @@ class BlenderSelectRulesTest {
         assertNotNull(command)
         assertEquals(ProjectGreaseSelect.CMD_LASSO, command!!.id)
         assertArrayEquals(floatArrayOf(1f, 1f, 1f, 2f, 3f, 4f, 5f, 6f), command.args, 0f)
+
+        assertNull(ProjectGreaseSelect.lasso(
+            ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_SEGMENT,
+            listOf(1f to 2f, 3f to 4f, 5f to 6f)
+        ))
+        assertEquals(ProjectGreaseSelect.MODE_POINT, ProjectGreaseSelect.areaMode(ProjectGreaseSelect.MODE_SEGMENT))
     }
 
     @Test
@@ -46,7 +52,7 @@ class BlenderSelectRulesTest {
         val triangle = listOf(0f to 0f, 1f to 0f, 0f to 1f)
         assertNull(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, triangle.take(2)))
         assertNull(ProjectGreaseSelect.lasso(0, ProjectGreaseSelect.MODE_POINT, triangle))
-        assertNull(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, 2, triangle))
+        assertNull(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_SEGMENT, triangle))
         assertNull(
             ProjectGreaseSelect.lasso(
                 ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT,

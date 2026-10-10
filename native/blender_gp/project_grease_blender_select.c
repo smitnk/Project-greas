@@ -1120,7 +1120,7 @@ int pg_gp_select_circle(bGPdata *gpd,
                         const bGPDlayer *only_layer)
 {
   if (gpd == NULL || radius < 0 || sel_op_in < SEL_OP_ADD || sel_op_in > SEL_OP_XOR ||
-      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE))
+      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE ))
   {
     return 0;
   }
@@ -1414,8 +1414,9 @@ int pg_gp_select_dispatch(bGPdata *gpd,
     }
   }
 
-  /* Transform commands address strokes of the active layer by index, so selection stays on
-   * that layer until selection-aware transforms are ported. */
+  /* The caller chooses the layer scope. The Android bridge passes NULL for Blender-style
+   * edit selection across all visible, unlocked, editable layers, while tests and layer-specific
+   * callers can still request a single layer. */
   const bGPDlayer *scope = active_layer;
   int changed = 0;
 

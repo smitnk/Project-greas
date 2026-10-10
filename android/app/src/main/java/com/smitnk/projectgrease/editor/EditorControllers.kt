@@ -1737,13 +1737,16 @@ class EditorController {
      * For a colour-picker edit, fork the active material first when it is used by a stroke in the
      * current editable frame. New strokes use the fork; existing strokes keep their original material.
      */
-    private fun forkUsedMaterialForColorEdit(): Boolean {
+    private fun forkUsedMaterialForColorEdit(argb: Int): Boolean {
         val source = materials.activeMaterial
         val used = (0 until native.strokeCount()).any { index ->
             native.strokeInfo(index)?.getOrNull(0)?.toInt() == source
         }
         if (!used) return true
         val record = materialRecord(source) ?: return false
+        val requested = colorToFloats(argb)
+        // Opacity controls also call setMaterialColor; don't create a new material when RGB is unchanged.
+        if ((0..2).all { kotlin.math.abs(record.stroke[it] - requested[it]) < (1f / 255f) }) return true
         if (record.locked) return false
         val target = native.materialCount()
         if (!native.createMaterial()) return false
@@ -1764,7 +1767,7 @@ class EditorController {
     fun setMaterialColor(argb:Int):Boolean {
         if (rendererHandle == 0L) return false
         materials.setColor(argb)
-        if (!forkUsedMaterialForColorEdit()) return false
+        if (!forkUsedMaterialForColorEdit(argb)) return false
         val c=colorToFloats(argb)
         val alpha=c[3]*materials.opacity
         val stroke=floatArrayOf(c[0],c[1],c[2],alpha)

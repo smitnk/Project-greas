@@ -378,22 +378,22 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     Column(Modifier.fillMaxSize()){
         Surface(tonalElevation=3.dp){
-            Row(Modifier.fillMaxWidth().height(56.dp).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
-                IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
-                Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=120.dp))
+            Row(Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
+                Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=86.dp))
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
-                IconButton(onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
-                IconButton(onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
-                IconButton(onClick={
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={
                     persistProject()
                     Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show()
                 }){Icon(Icons.Default.Save,"Save")}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
-                IconButton(onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
-                IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
-                IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
             }
         }
         ModeBrushBar(controller,::redraw)

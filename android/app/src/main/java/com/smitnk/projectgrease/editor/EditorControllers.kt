@@ -1732,9 +1732,39 @@ class EditorController {
         return setMaterialColor(argb)
     }
 
+    /**
+     * Editing a material already used by strokes would recolour every old stroke that references it.
+     * For a colour-picker edit, fork the active material first when it is used by a stroke in the
+     * current editable frame. New strokes use the fork; existing strokes keep their original material.
+     */
+    private fun forkUsedMaterialForColorEdit(): Boolean {
+        val source = materials.activeMaterial
+        val used = (0 until native.strokeCount()).any { index ->
+            native.strokeInfo(index)?.getOrNull(0)?.toInt() == source
+        }
+        if (!used) return true
+        val record = materialRecord(source) ?: return false
+        if (record.locked) return false
+        val target = native.materialCount()
+        if (!native.createMaterial()) return false
+        if (!native.setMaterialColors(target, record.stroke, record.fill) ||
+            !native.setMaterialFillEnabled(target, record.fillEnabled)) return false
+        native.setMaterialVisibility(target, record.visible)
+        native.setMaterialName(target, (record.name.ifBlank { "Material ${source + 1}" }) + " Color")
+        ProjectGreaseSelect.materialMode(target, record.mode, record.alignment, record.rotation)
+            .let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialPass(target, record.passIndex)
+            .let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialOptions(target, record.strokeHoldout, record.fillHoldout, record.selfOverlap)
+            .let { native.applyEditCommand(it.id, it.args) }
+        materials.select(target)
+        return true
+    }
+
     fun setMaterialColor(argb:Int):Boolean {
-        materials.setColor(argb)
         if (rendererHandle == 0L) return false
+        materials.setColor(argb)
+        if (!forkUsedMaterialForColorEdit()) return false
         val c=colorToFloats(argb)
         val alpha=c[3]*materials.opacity
         val stroke=floatArrayOf(c[0],c[1],c[2],alpha)

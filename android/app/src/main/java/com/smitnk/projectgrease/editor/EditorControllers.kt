@@ -130,6 +130,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun setMaterialName(slot: Int, name: String) = handle != 0L && GPNative.nativeSetMaterialName(handle, slot, name)
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
+    fun materialUsedByStrokes(index: Int) = handle != 0L && GPNative.nativeMaterialUsedByStrokes(handle, index)
     fun createMaterial() = handle != 0L && GPNative.nativeCreateMaterial(handle)
     fun setMaterialColors(index:Int, stroke:FloatArray, fill:FloatArray) = handle != 0L && GPNative.nativeSetMaterialColors(handle,index,stroke,fill)
     fun setMaterialVisibility(index:Int, visible:Boolean) = handle != 0L && GPNative.nativeSetMaterialVisibility(handle,index,visible)

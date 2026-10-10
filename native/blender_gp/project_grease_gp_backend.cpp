@@ -3602,6 +3602,33 @@ int Backend::material_count() const
   return impl_->gpd ? impl_->gpd->totcol : 0;
 }
 
+/* Scan every Legacy GP layer and keyframe: materials are shared document-wide, not per canvas. */
+bool Backend::material_used_by_strokes(int index) const
+{
+  if (!impl_->gpd || index < 0 || index >= impl_->gpd->totcol) {
+    return false;
+  }
+  for (const bGPDlayer *layer = static_cast<const bGPDlayer *>(impl_->gpd->layers.first);
+       layer;
+       layer = layer->next)
+  {
+    for (const bGPDframe *frame = static_cast<const bGPDframe *>(layer->frames.first);
+         frame;
+         frame = frame->next)
+    {
+      for (const bGPDstroke *stroke = static_cast<const bGPDstroke *>(frame->strokes.first);
+           stroke;
+           stroke = stroke->next)
+      {
+        if (stroke->mat_nr == index) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 bool Backend::create_material()
 {
   if (!impl_->gpd || !gp_material_ensure_slot(impl_->gpd, impl_->gpd->totcol)) {

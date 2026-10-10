@@ -841,12 +841,14 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                             tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp
                         ){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
                             Text(frame.toString())
-                            if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
-                                Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
-                            } else Text("HOLD",fontSize=8.sp)
-                            if(marker!=null)Text(marker.name,fontSize=7.sp,maxLines=1,
-                                color=if(marker.selected)MarkerSelectedColor else Color.Unspecified,
-                                modifier=Modifier.testTag("markerLabel_$frame"))
+                            if(expanded) {
+                                if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
+                                    Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
+                                } else Text("HOLD",fontSize=8.sp)
+                                if(marker!=null)Text(marker.name,fontSize=7.sp,maxLines=1,
+                                    color=if(marker.selected)MarkerSelectedColor else Color.Unspecified,
+                                    modifier=Modifier.testTag("markerLabel_$frame"))
+                            }
                         }}
                         if(menuFrame==frame)KeyframeMenu(controller,frame,{menuFrame=-1},redraw)
                     }

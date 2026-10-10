@@ -938,6 +938,11 @@ int project_grease_gp_material_count(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.material_count();
 }
+int project_grease_gp_material_used_by_strokes(const ProjectGreaseGPHandle *handle, int index)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.material_used_by_strokes(index) ? 1 : 0;
+}
 int project_grease_gp_create_material(ProjectGreaseGPHandle *handle)
 {
   return ensure_ready(handle) && handle->backend.create_material() ? 1 : 0;

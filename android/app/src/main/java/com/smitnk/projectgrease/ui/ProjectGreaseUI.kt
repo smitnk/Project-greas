@@ -556,6 +556,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 
 @NonSkippableComposable
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
+    var brushMenuOpen by remember{mutableStateOf(false)}
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
             Row(
@@ -582,14 +583,19 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     )
                 }
                 Spacer(Modifier.width(7.dp))
-                Text("Brush",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
-                BrushPreset.entries.forEach{preset->
-                    FilterChip(
-                        selected=controller.brushes.preset==preset,
-                        onClick={controller.selectBrush(preset);redraw()},
-                        label={Text(preset.label,fontSize=10.sp)},
-                        modifier=Modifier.padding(end=3.dp).testTag("brush_"+preset.name)
-                    )
+                Box {
+                    TextButton(onClick={brushMenuOpen=true},modifier=Modifier.testTag("activeBrushMenu")) {
+                        Text("Brush: "+controller.brushes.preset.label,fontSize=11.sp,maxLines=1)
+                    }
+                    DropdownMenu(expanded=brushMenuOpen,onDismissRequest={brushMenuOpen=false}) {
+                        BrushPreset.entries.forEach{preset->
+                            DropdownMenuItem(
+                                text={Text(preset.label)},
+                                onClick={brushMenuOpen=false;controller.selectBrush(preset);redraw()},
+                                modifier=Modifier.testTag("brush_"+preset.name)
+                            )
+                        }
+                    }
                 }
             }
             if (controller.mode == GreaseMode.VERTEX_PAINT) {

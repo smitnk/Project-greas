@@ -1120,8 +1120,7 @@ int pg_gp_select_circle(bGPdata *gpd,
                         const bGPDlayer *only_layer)
 {
   if (gpd == NULL || radius < 0 || sel_op_in < SEL_OP_ADD || sel_op_in > SEL_OP_XOR ||
-      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE &&
-))
+      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE ))
   {
     return 0;
   }

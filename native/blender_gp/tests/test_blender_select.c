@@ -566,6 +566,14 @@ static void test_dispatch(void)
   CHECK(point_mask(other_stroke) == 0x1Fu, "dispatch lasso selects another visible editable layer");
   CHECK((gpd->flag & GP_DATA_CACHE_IS_DIRTY) != 0 && dirty_tags > 0, "a change tags the GP cache dirty");
 
+  /* Segment mode must use Blender's segment-expansion helper, not silently become Point mode. */
+  const float segment_lasso[] = {PG_SEL_OP_SET, PG_SELECTMODE_SEGMENT, 29, -5, 31, -5, 31, 5, 29, 5};
+  CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_LASSO, segment_lasso, 10) == 1,
+        "dispatch segment lasso");
+  CHECK((point_mask(s1) & (1u << 3)) != 0, "segment lasso selects hit point");
+  CHECK((point_mask(s1) & ((1u << 2) | (1u << 4))) != 0,
+        "segment lasso expands to adjacent segment point");
+
   dirty_tags = 0;
   CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_LASSO, lasso, 10) == 0, "no change -> 0");
   CHECK(dirty_tags == 0, "no change leaves the cache alone");

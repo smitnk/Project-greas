@@ -1319,8 +1319,7 @@ static int pg_generic_select_exec(bGPdata *gpd,
                                   int selectmode)
 {
   if (sel_op_in < SEL_OP_ADD || sel_op_in > SEL_OP_XOR ||
-      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE &&
-        selectmode != GP_SELECTMODE_SEGMENT))
+      (selectmode != GP_SELECTMODE_POINT && selectmode != GP_SELECTMODE_STROKE))
   {
     return 0;
   }

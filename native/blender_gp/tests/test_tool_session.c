@@ -248,6 +248,8 @@ static void test_vertex_paint(PGToolSession *ts)
     blur_stroke->points[i].vert_color[1] = 0.25f;
     blur_stroke->points[i].vert_color[2] = (i == 3) ? 0.0f : 1.0f;
     blur_stroke->points[i].vert_color[3] = 1.0f;
+    /* Android edits the original GP data directly; no evaluated point mapping is present. */
+    blur_stroke->points[i].runtime.pt_orig = NULL;
   }
   const float blur_before = blur_stroke->points[2].vert_color[0];
   brush(GPVERTEX_TOOL_BLUR, 35, 1.0f);
@@ -267,6 +269,8 @@ static void test_vertex_paint(PGToolSession *ts)
     average_stroke->points[i].vert_color[1] = 0.0f;
     average_stroke->points[i].vert_color[2] = (i == 3) ? 0.0f : 1.0f;
     average_stroke->points[i].vert_color[3] = 1.0f;
+    /* Exercise the real Android path where points have no evaluated-copy backlink. */
+    average_stroke->points[i].runtime.pt_orig = NULL;
   }
   const float average_before = average_stroke->points[3].vert_color[0];
   brush(GPVERTEX_TOOL_AVERAGE, 35, 1.0f);

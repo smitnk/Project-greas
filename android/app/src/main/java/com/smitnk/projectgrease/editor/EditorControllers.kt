@@ -1759,6 +1759,17 @@ class EditorController {
             .let { native.applyEditCommand(it.id, it.args) }
         ProjectGreaseSelect.materialOptions(target, record.strokeHoldout, record.fillHoldout, record.selfOverlap)
             .let { native.applyEditCommand(it.id, it.args) }
+        /* Material textures are controller-owned; copy both stroke and fill texture state as well. */
+        for (isFill in listOf(false, true)) {
+            val fromKey = textureKey(source, isFill)
+            val toKey = textureKey(target, isFill)
+            materialTextures[fromKey]?.let { materialTextures[toKey] = it.copy() }
+            textureImages[fromKey]?.let { image ->
+                textureImages[toKey] = Triple(image.first.copyOf(), image.second, image.third)
+            }
+        }
+        reapplyTextureSettings()
+        reuploadTextures()
         materials.select(target)
         return true
     }

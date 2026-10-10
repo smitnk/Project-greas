@@ -571,8 +571,8 @@ static void test_dispatch(void)
   CHECK(dirty_tags == 0, "no change leaves the cache alone");
 
   /* Blender segment selection is bounded by intersections with other strokes. */
-  (void)add_stroke(layer->actframe, 3, 0, 20, -10, 0, 10);
-  (void)add_stroke(layer->actframe, 3, 0, 40, -10, 0, 10);
+  (void)add_stroke(layer->actframe, 3, 0, 15, -10, 0, 10);
+  (void)add_stroke(layer->actframe, 3, 0, 45, -10, 0, 10);
   const float segment_lasso[] = {PG_SEL_OP_SET, PG_SELECTMODE_SEGMENT, 29, -5, 31, -5, 31, 5, 29, 5};
   CHECK(pg_gp_select_dispatch(gpd, NULL, PG_SELECT_CMD_LASSO, segment_lasso, 10) == 1,
         "dispatch segment lasso");

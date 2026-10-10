@@ -54,8 +54,8 @@ object ProjectGreaseSelect {
     fun isValidMode(mode: Int): Boolean = mode == MODE_POINT || mode == MODE_STROKE
     /** Modes of the Edit-mode switch (Point / Stroke / Segment). */
     fun isValidSelectMode(mode: Int): Boolean = mode == MODE_POINT || mode == MODE_STROKE || mode == MODE_SEGMENT
-    /** Preserve Blender's selected mode for area selection; native Legacy GP expands hit points to segments. */
-    fun areaMode(mode: Int): Int = if (isValidSelectMode(mode)) mode else MODE_POINT
+    /** Segment expansion in area selection needs ED_gpencil_select_stroke_segment, not yet linked here. */
+    fun areaMode(mode: Int): Int = if (mode == MODE_SEGMENT) MODE_POINT else mode
 
     /** Click select in segment mode: args x, y, radius_squared, flags. */
     fun segmentPick(x: Float, y: Float, radiusSquared: Int, flags: Int): Command? {
@@ -91,7 +91,7 @@ object ProjectGreaseSelect {
 
     /** args: op, mode, x0, y0, x1, y1, ... (needs at least three points). */
     fun lasso(op: Int, mode: Int, points: List<Pair<Float, Float>>): Command? {
-        if (!isValidOp(op) || !isValidSelectMode(mode) || points.size < 3) return null
+        if (!isValidOp(op) || !isValidMode(mode) || points.size < 3) return null
         val args = FloatArray(2 + points.size * 2)
         args[0] = op.toFloat()
         args[1] = mode.toFloat()
@@ -105,13 +105,13 @@ object ProjectGreaseSelect {
 
     /** args: op, mode, xmin, ymin, xmax, ymax. */
     fun box(op: Int, mode: Int, x0: Float, y0: Float, x1: Float, y1: Float): Command? {
-        if (!isValidOp(op) || !isValidSelectMode(mode) || !finite(x0, y0, x1, y1)) return null
+        if (!isValidOp(op) || !isValidMode(mode) || !finite(x0, y0, x1, y1)) return null
         return Command(CMD_BOX, floatArrayOf(op.toFloat(), mode.toFloat(), x0, y0, x1, y1))
     }
 
     /** args: op, mode, x, y, radius, isFirst. */
     fun circle(op: Int, mode: Int, x: Float, y: Float, radius: Float, isFirst: Boolean): Command? {
-        if (!isValidOp(op) || !isValidSelectMode(mode) || !finite(x, y, radius) || radius < 0f) return null
+        if (!isValidOp(op) || !isValidMode(mode) || !finite(x, y, radius) || radius < 0f) return null
         return Command(CMD_CIRCLE, floatArrayOf(op.toFloat(), mode.toFloat(), x, y, radius, flag(isFirst)))
     }
 

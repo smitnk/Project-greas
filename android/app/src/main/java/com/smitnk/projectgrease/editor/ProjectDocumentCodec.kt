@@ -32,7 +32,9 @@ class LayerRecord(
     val name: String, val visible: Boolean, val locked: Boolean, val opacity: Float,
     /** eGPLayerBlendModes, tint rgb + factor (tintcolor), thickness offset (line_change), pass index. */
     val blendMode: Int = 0, val tint: FloatArray = floatArrayOf(0f, 0f, 0f, 0f), val lineChange: Int = 0,
-    val passIndex: Int = 0
+    val passIndex: Int = 0,
+    /** Blender GP_LAYER_ONIONSKIN flag. Older project files default to the native new-layer value. */
+    val onionSkin: Boolean = true
 )
 
 /** One entry of a layer's mask list: [name] is the mask layer (masks refer to layers by name). */
@@ -191,6 +193,7 @@ object ProjectDocumentCodec {
                 if (it.tint.any { v -> v != 0f }) layerJson.put("tint", floatsJson(it.tint))
                 if (it.lineChange != 0) layerJson.put("lineChange", it.lineChange)
                 if (it.passIndex != 0) layerJson.put("pass", it.passIndex)
+                if (!it.onionSkin) layerJson.put("onionSkin", false)
             }
             val keyTypes = native.frameKeyTypes()
             val frames = JSONArray()
@@ -304,7 +307,7 @@ object ProjectDocumentCodec {
         val frames = json.optJSONArray("frames")?.let { array ->
             (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::parseFrame) }
         } ?: emptyList()
-        val record = if (json.has("name") || json.has("visible") || json.has("locked") || json.has("opacity")) {
+        val record = if (json.has("name") || json.has("visible") || json.has("locked") || json.has("opacity") || json.has("onionSkin")) {
             LayerRecord(
                 name = json.optString("name", ""),
                 visible = json.optBoolean("visible", true),
@@ -313,7 +316,8 @@ object ProjectDocumentCodec {
                 blendMode = json.optInt("blend", 0).coerceIn(0, 5),
                 tint = floats(json.optJSONArray("tint"), 4),
                 lineChange = json.optInt("lineChange", 0),
-                passIndex = json.optInt("pass", 0)
+                passIndex = json.optInt("pass", 0),
+                onionSkin = json.optBoolean("onionSkin", true)
             )
         } else null
         val masks = json.optJSONArray("masks")?.let { array ->

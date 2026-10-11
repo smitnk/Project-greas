@@ -53,7 +53,7 @@ struct ID *DEG_get_original_id(struct ID *id)
   return id;
 }
 
-/* BEGIN VERBATIM source/blender/blenkernel/intern/material.cc */
+/* ADAPTED from source/blender/blenkernel/intern/material.cc: the same code in C (C cast, NULL). */
 void BKE_gpencil_material_attr_init(Material *ma)
 {
   if ((ma) && (ma->gp_style == NULL)) {
@@ -73,7 +73,6 @@ void BKE_gpencil_material_attr_init(Material *ma)
     gp_style->flag |= GP_MATERIAL_STROKE_SHOW;
   }
 }
-/* END VERBATIM */
 
 /* material.cc default_material_gpencil (material_default_gpencil_init). */
 static Material pg_default_material_gpencil;
@@ -98,7 +97,7 @@ Material *BKE_gpencil_material(Object *ob, short act)
   return gpd->mat[act - 1];
 }
 
-/* BEGIN VERBATIM source/blender/blenkernel/intern/material.cc */
+/* ADAPTED from source/blender/blenkernel/intern/material.cc: the same code in C (NULL). */
 MaterialGPencilStyle *BKE_gpencil_material_settings(Object *ob, short act)
 {
   Material *ma = BKE_gpencil_material(ob, act);
@@ -112,7 +111,6 @@ MaterialGPencilStyle *BKE_gpencil_material_settings(Object *ob, short act)
 
   return BKE_material_default_gpencil()->gp_style;
 }
-/* END VERBATIM */
 
 /* ADAPTED: BKE_object_material_count_eval for the GP object: the data's slot count. */
 int BKE_object_material_count_eval(Object *ob)

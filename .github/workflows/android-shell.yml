@@ -171,6 +171,21 @@ jobs:
           LINEART_REFERENCE_DIR: build/lineart-reference
         run: bash tools/run_native_lineart_tests.sh
 
+      - name: Run native FileReader tests (L2, Blender 3.6.23 .blend readers on pinned zstd 1.5.0 / zlib 1.2.13)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_filereader_tests.sh
+
+      - name: Run native DNA defaults tests (L3, Blender 3.6.23 DNA_struct_default_get vs Project Grease defaults)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_dna_defaults_tests.sh
+
+      - name: Run native RNA range tests (L4, table regenerated from Blender 3.6.23 RNA; PG limits vs RNA)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_rna_ranges_tests.sh
+
       - name: Install software GLES (Mesa EGL) for the render tests
         run: |
           sudo apt-get update

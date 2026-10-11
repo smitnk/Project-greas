@@ -152,3 +152,4 @@ C|native/blender_gp/rna/project_grease_mod_rna.c
 # L5 batch 1: Blender 3.6.23 curve mapping and color band kernels (BKE).
 C|third_party/blender/source/blender/blenkernel/intern/colortools.c
 C|third_party/blender/source/blender/blenkernel/intern/colorband.c
+C|native/blender_gp/project_grease_key_extract.c

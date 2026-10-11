@@ -74,6 +74,7 @@ C_SRC=(
   "$B/intern/guardedalloc/intern/mallocn.c" "$B/intern/guardedalloc/intern/mallocn_guarded_impl.c"
   "$B/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
   "$BL/blenkernel/intern/colortools.c" "$BL/blenkernel/intern/colorband.c"
+  "$ROOT/native/blender_gp/project_grease_key_extract.c"
 )
 CXX_SRC=(
   "$BL/blenkernel/intern/gpencil_geom_legacy.cc" "$BL/blenkernel/intern/deform.cc"

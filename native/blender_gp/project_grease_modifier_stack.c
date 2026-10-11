@@ -730,6 +730,9 @@ static void pg_deform_simplify(const PGModContext *ctx, const float *p, bGPDstro
   SimplifyGpencilModifierData *mmd = &local;
   bGPdata *gpd = ctx->gpd; /* ADAPTED: ob->data */
   bGPDframe *gpf = ctx->gpf;
+  /* ADAPTED (L7): run in object space like Noise, so factor / length / distance are Blender units
+   * (PG_MOD_PIXELS_PER_UNIT canvas pixels per unit, y up) as their DNA defaults and RNA limits. */
+  pg_stroke_to_object_space(gps, 1.0f / PG_MOD_PIXELS_PER_UNIT);
 
 /* BEGIN VERBATIM source/blender/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_simplify.c */
   /* Select simplification mode. */
@@ -757,6 +760,7 @@ static void pg_deform_simplify(const PGModContext *ctx, const float *p, bGPDstro
       break;
   }
 /* END VERBATIM */
+  pg_stroke_from_object_space(gps, PG_MOD_PIXELS_PER_UNIT);
 }
 
 static void pg_deform_subdiv(const PGModContext *ctx, const float *p, bGPDstroke *gps)

@@ -196,6 +196,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_l6_tests.sh
 
+      - name: Run native L7 tests (PG 2D modifiers vs Blender 3.6.23 MOD_gpencil_legacy_*.c)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_l7_tests.sh
+
       - name: Install software GLES (Mesa EGL) for the render tests
         run: |
           sudo apt-get update

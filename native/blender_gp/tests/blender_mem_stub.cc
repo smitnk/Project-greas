@@ -4,9 +4,11 @@
 
 static void *plain_malloc(size_t len, const char *) { return malloc(len); }
 static void *plain_malloc_aligned(size_t len, size_t, const char *) { return malloc(len); }
+static void *plain_calloc(size_t len, const char *) { return calloc(1, len); }
 static void plain_free(void *p) { free(p); }
 extern "C" {
 void *(*MEM_mallocN)(size_t, const char *) = plain_malloc;
 void *(*MEM_mallocN_aligned)(size_t, size_t, const char *) = plain_malloc_aligned;
+void *(*MEM_callocN)(size_t, const char *) = plain_calloc;
 void (*MEM_freeN)(void *) = plain_free;
 }

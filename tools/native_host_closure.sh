@@ -73,11 +73,12 @@ C_SRC=(
   "$BL/blentranslation/intern/blt_translation.c"
   "$B/intern/guardedalloc/intern/mallocn.c" "$B/intern/guardedalloc/intern/mallocn_guarded_impl.c"
   "$B/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
+  "$BL/blenkernel/intern/colortools.c" "$BL/blenkernel/intern/colorband.c"
 )
 CXX_SRC=(
   "$BL/blenkernel/intern/gpencil_geom_legacy.cc" "$BL/blenkernel/intern/deform.cc"
   "$BL/blenlib/intern/listbase.cc" "$BL/blenlib/intern/rand.cc"
-  "$ROOT/native/blender_gp/project_grease_legacy_curve_helpers.cc"
+  "$BL/blenkernel/intern/curve.cc"
   "$B/intern/guardedalloc/intern/leak_detector.cc" "$B/intern/guardedalloc/intern/memory_usage.cc"
 )
 OBJS=()

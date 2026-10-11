@@ -26,7 +26,7 @@ CXX|third_party/blender/source/blender/gpu/intern/gpu_vertex_format.cc
 CXX|third_party/blender/source/blender/gpu/intern/gpu_capabilities.cc
 CXX|third_party/blender/source/blender/blenlib/intern/listbase.cc
 CXX|third_party/blender/source/blender/blenlib/intern/rand.cc
-CXX|native/blender_gp/project_grease_legacy_curve_helpers.cc
+CXX|third_party/blender/source/blender/blenkernel/intern/curve.cc
 CXX|third_party/blender/intern/guardedalloc/intern/leak_detector.cc
 CXX|third_party/blender/intern/guardedalloc/intern/memory_usage.cc
 C|native/blender_gp/project_grease_legacy_sbuffer.c
@@ -149,3 +149,6 @@ C|third_party/blender/release/datafiles/userdef/userdef_default_theme.c
 C|native/blender_gp/rna/project_grease_rna.c
 C|native/blender_gp/rna/project_grease_rna_gen.c
 C|native/blender_gp/rna/project_grease_mod_rna.c
+# L5 batch 1: Blender 3.6.23 curve mapping and color band kernels (BKE).
+C|third_party/blender/source/blender/blenkernel/intern/colortools.c
+C|third_party/blender/source/blender/blenkernel/intern/colorband.c

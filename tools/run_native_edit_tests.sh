@@ -17,11 +17,11 @@ if [[ ! -f "$BL/blenlib/intern/rand.cc" ]]; then
 fi
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
-SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit2.c" "$ROOT/native/blender_gp/project_grease_blender_edit3.c" "$ROOT/native/blender_gp/project_grease_blender_edit4.c" "$ROOT/native/blender_gp/project_grease_blender_edit6.c" "$ROOT/native/blender_gp/project_grease_blender_edit7.c" "$ROOT/native/blender_gp/project_grease_blender_edit9.c" "$ROOT/native/blender_gp/project_grease_curvemap.c")
+SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit2.c" "$ROOT/native/blender_gp/project_grease_blender_edit3.c" "$ROOT/native/blender_gp/project_grease_blender_edit4.c" "$ROOT/native/blender_gp/project_grease_blender_edit6.c" "$ROOT/native/blender_gp/project_grease_blender_edit7.c" "$ROOT/native/blender_gp/project_grease_blender_edit9.c")
 # Shims first; BLI_rand.h comes from the pinned tree.
-INC=(-I"$ROOT/native/blender_gp/tests/select_shim" -I"$ROOT/native/blender_gp" -I"$BL/blenlib")
+INC=(-I"$ROOT/native/blender_gp/tests/select_shim" -I"$ROOT/native/blender_gp" -I"$BL/blenlib" -I"$BL/makesdna")
 BINC=(-I"$ROOT/native/blender_gp/android_compat" -I"$ROOT/native/blender_gp" -I"$BL" -I"$BL/blenlib"
-      -I"$BL/makesdna" -I"$B/intern/guardedalloc" -I"$B/intern/atomic")
+      -I"$BL/makesdna" -I"$BL/blenkernel" -I"$BL/imbuf" -I"$BL/makesrna" -I"$BL/depsgraph" -I"$BL/blenloader" -I"$BL/blentranslation" -I"$BL/gpu" -I"$B/source" -I"$B/intern/clog" -I"$ROOT/build/blender-dna" -I"$B/intern/guardedalloc" -I"$B/intern/atomic")
 WARN=(-Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
 build() { # $1 = output, rest = extra flags
   local out="$1"; shift
@@ -33,7 +33,13 @@ build() { # $1 = output, rest = extra flags
     gcc -std=gnu11 -c "$@" "${WARN[@]}" "${INC[@]}" "$s" -o "$out.$(basename "$s").o"
     objs+=("$out.$(basename "$s").o")
   done
-  g++ "$@" "${objs[@]}" "$out.rand.o" "$out.noise.o" "$out.mem.o" -lm -o "$out"
+  # CurveMapping: PG's wrapper on Blender 3.6.23 colortools.c (L5), built with the real headers.
+  # The verbatim Blender objects are not instrumented: ASan keeps their unused .blend I/O alive.
+  gcc -std=gnu11 -c -DNDEBUG "$@" "${BINC[@]}" "$ROOT/native/blender_gp/project_grease_curvemap.c" -o "$out.curvemap.o"
+  gcc -std=gnu11 -c -DNDEBUG -ffunction-sections -fdata-sections "${BINC[@]}" "$BL/blenkernel/intern/colortools.c" -o "$out.colortools.o"
+  g++ -std=gnu++17 -c -DNDEBUG -ffunction-sections -fdata-sections "${BINC[@]}" "$BL/blenkernel/intern/curve.cc" -o "$out.curve.o"
+  gcc -std=gnu11 -c -DNDEBUG -ffunction-sections -fdata-sections "${BINC[@]}" "$BL/blenlib/intern/rct.c" -o "$out.rct.o"
+  g++ "$@" "${objs[@]}" "$out.curvemap.o" "$out.colortools.o" "$out.curve.o" "$out.rct.o" "$out.rand.o" "$out.noise.o" "$out.mem.o" -Wl,--gc-sections -lm -o "$out"
 }
 build "$OUT/test_edit"
 "$OUT/test_edit"

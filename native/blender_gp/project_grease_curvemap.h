@@ -1,16 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  *
  * CurveMapping evaluation for Project Grease (brush pressure/strength curves, modifier custom
- * curves). Port of the single-channel part of colortools.c (Blender 3.6.23): auto / vector
- * handles (calchandle_curvemap), the end-handle correction, the bezier segments
- * (BKE_curve_correct_bezpart + BKE_curve_forward_diff_bezier, CM_RESOL steps), the CM_TABLE + 1
- * equal-x table and BKE_curvemapping_evaluateF with CUMA_DO_CLIP over clipr (0,0)-(1,1) and
- * horizontal extension (no CUMA_EXTEND_EXTRAPOLATE). Points are sorted by x like
- * BKE_curvemap_sort... callers pass them sorted.
+ * curves). L5: the table is built and evaluated by Blender 3.6.23's colortools.c
+ * (BKE_curvemapping_changed / BKE_curvemapping_evaluateF) on a one-channel CurveMapping set up
+ * like BKE_curvemapping_add(1, 0, 0, 1, 1): CUMA_DO_CLIP over clipr (0,0)-(1,1) and
+ * CUMA_EXTEND_EXTRAPOLATE. PGCurve keeps a copy of the resulting table so it stays a value type.
  *
  * Also the elastic easing (BLI_easing_elastic_*, verbatim) used by interpolation.
  */
 #pragma once
+#include "DNA_color_types.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,8 +24,8 @@ typedef struct PGCurve {
   unsigned char vector[PG_CURVE_MAX_POINTS]; /* CUMA_HANDLE_VECTOR: 1, else auto */
   /* built by pg_curve_make_table */
   float mintable, maxtable, range;
-  float table_x[PG_CURVE_TABLE + 1];
-  float table_y[PG_CURVE_TABLE + 1];
+  CurveMapPoint table[PG_CURVE_TABLE + 1]; /* CurveMap.table, built by Blender's colortools.c */
+  float ext_in[2], ext_out[2];             /* CurveMap.ext_in / ext_out (extrapolation) */
   int built;
 } PGCurve;
 

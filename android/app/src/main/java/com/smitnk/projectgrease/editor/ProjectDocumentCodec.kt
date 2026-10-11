@@ -147,12 +147,13 @@ class ParsedDocument(
  * opacity) and the material palette; version 3 adds per-point vertex color (points may carry four
  * more values); version 4 adds the per-layer live modifier stack ("modifiers") and layer masks; version 5
  * adds the per-layer shader effect list ("effects"); version 6 adds keyframe types ("keyType"), layer
- * blend / tint / line change / pass and material name / lock / line type / alignment / pass. Older
+ * blend / tint / line change / pass and material name / lock / line type / alignment / pass; version 7 adds
+ * the per-layer onion-skin flag ("onionSkin"). Older
  * files still load: missing fields read as zero, which is "no vertex color", regular blending,
  * no tint, a plain line material and a Keyframe, and a missing stack or effect list is empty.
  */
 object ProjectDocumentCodec {
-    const val VERSION = 6
+    const val VERSION = 7
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0,

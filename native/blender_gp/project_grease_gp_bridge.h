@@ -68,6 +68,7 @@ int project_grease_gp_select_layer(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_layer_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_set_layer_visibility(ProjectGreaseGPHandle *handle, int index, int visible);
 int project_grease_gp_set_layer_locked(ProjectGreaseGPHandle *handle, int index, int locked);
+int project_grease_gp_set_layer_onion_skin(ProjectGreaseGPHandle *handle, int index, int enabled);
 int project_grease_gp_move_layer(ProjectGreaseGPHandle *handle, int from_index, int to_index);
 int project_grease_gp_duplicate_layer(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_delete_layer(ProjectGreaseGPHandle *handle, int index);

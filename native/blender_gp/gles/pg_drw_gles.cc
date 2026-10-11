@@ -15,6 +15,7 @@
 #include <GLES3/gl32.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -718,9 +719,32 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
   }
 }
 
+static bool trace_enabled()
+{
+  static int t = -1;
+  if (t < 0) {
+    const char *e = getenv("PG_DRW_TRACE");
+    t = (e && e[0] == '1') ? 1 : 0;
+  }
+  return t == 1;
+}
+
 void DRW_draw_pass(DRWPass *pass)
 {
   PGContext &c = pgc();
+  if (trace_enabled() && pass) {
+    int draws = 0;
+    for (DRWShadingGroup *g : pass->groups) {
+      for (const PGCmd &cmd : g->cmds) {
+        draws += (cmd.kind == CMD_RANGE || cmd.kind == CMD_PROCEDURAL) ? 1 : 0;
+      }
+    }
+    GLint fbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+    std::printf("[drw] pass %-22s state 0x%llx groups %zu draws %d fbo %d prog %u\n", pass->name,
+                (unsigned long long)pass->state, pass->groups.size(), draws, fbo,
+                pass->groups.empty() ? 0u : pg_gpu_shader_program(pass->groups[0]->shader));
+  }
   if (pass == nullptr || pass->groups.empty()) {
     return;
   }
@@ -729,6 +753,12 @@ void DRW_draw_pass(DRWPass *pass)
   drw_state_set(pass->state);
   for (DRWShadingGroup *g : pass->groups) {
     draw_shgroup(g, pass->state);
+  }
+  if (trace_enabled()) {
+    const GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+      std::printf("[drw]   GL error 0x%x after %s\n", err, pass->name);
+    }
   }
 }
 
@@ -1045,6 +1075,14 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
    * engine (DRW_cache_gpencil_sbuffer_*) when the tool session fills gpd->runtime.sbuffer. */
   const int sbuffer_used = gpd->runtime.sbuffer_used;
   gpd->runtime.sbuffer_used = 0;
+  /* ADAPTED: BKE_gpencil_frame_active_set (gpencil_modifier_legacy.c), the depsgraph step that
+   * makes each layer's active frame the one shown at the scene frame. Restored afterwards: the
+   * document's actframe is the editing frame. */
+  std::vector<bGPDframe *> actframes;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    actframes.push_back(gpl->actframe);
+    gpl->actframe = BKE_gpencil_layer_frame_get(gpl, cfra, GP_GETFRAME_USE_PREV);
+  }
   void *vedata = c.vedata_lists;
   DrawEngineType &e = draw_engine_gpencil_type;
   e.engine_init(vedata);
@@ -1054,6 +1092,10 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   GPU_framebuffer_bind(c.dfbl.default_fb);
   e.draw_scene(vedata);
   gpd->runtime.sbuffer_used = sbuffer_used;
+  size_t li = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    gpl->actframe = actframes[li++];
+  }
   frame_end(c);
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev_fbo);
   pg_gpu_framebuffer_set_backbuffer(prev_fbo);

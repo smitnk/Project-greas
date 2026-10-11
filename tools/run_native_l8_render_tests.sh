@@ -31,4 +31,4 @@ g++ "${XF[@]}" -Wall "${INC[@]}" "${LI[@]}" -I"$ROOT/native/blender_gp" "$ROOT/n
   -Wl,--gc-sections -lEGL -lGLESv2 -ldl -lpthread -lm -o "$OUT/test_l8_render" > "$OUT/link.txt" 2>&1 || {
   cat "$OUT/link.txt" | grep -v "pragma\|note:" | head -20
   grep -oE "(undefined reference to|multiple definition of) \`[^']*'" "$OUT/link.txt" | sort | uniq -c | sort -rn | head -60; exit 1; }
-EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$OUT/test_l8_render"
+PG_DRW_TRACE=1 EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$OUT/test_l8_render"

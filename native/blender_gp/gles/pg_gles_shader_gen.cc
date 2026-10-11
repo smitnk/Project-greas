@@ -753,6 +753,48 @@ static std::string gles_interface(std::string s)
   return s;
 }
 
+/* GLES 3.2 has no dual-source blending (index = 1 outputs need GL_EXT_blend_func_extended, which
+ * many Android GPUs lack). A create-info with DualBlend outputs gets them as globals; one GLES output
+ * carries DualBlend::SRC_0 or SRC_1 depending on the uniform pgDualSourcePass, and the draw-manager
+ * adapter (pg_drw_gles.cc) draws a DRW_STATE_BLEND_CUSTOM pass twice: dst *= SRC_1, then
+ * dst += SRC_0, which is GPU_BLEND_CUSTOM's ONE, SRC1_COLOR / ONE, SRC1_ALPHA. */
+static std::string gles_dual_source(const ShaderCreateInfo &info, std::string &interface)
+{
+  std::string src0, src1;
+  for (const ShaderCreateInfo::FragOut &out : info.fragment_outputs_) {
+    if (out.blend == DualBlend::SRC_0) {
+      src0 = out.name;
+    }
+    else if (out.blend == DualBlend::SRC_1) {
+      src1 = out.name;
+    }
+  }
+  if (src0.empty() || src1.empty()) {
+    return "";
+  }
+  std::string rewritten;
+  size_t pos = 0;
+  while (pos < interface.size()) {
+    size_t end = interface.find('\n', pos);
+    if (end == std::string::npos) {
+      end = interface.size();
+    }
+    std::string line = interface.substr(pos, end - pos);
+    const size_t out_kw = line.find(") out ");
+    if (line.rfind("layout(location = ", 0) == 0 && line.find(", index = ") != std::string::npos &&
+        out_kw != std::string::npos)
+    {
+      line = line.substr(out_kw + 6);
+    }
+    rewritten += line + "\n";
+    pos = end + 1;
+  }
+  interface = rewritten + "layout(location = 0) out vec4 pg_dual_out;\nuniform int pgDualSourcePass;\n" +
+              "#define main pg_dual_main\n";
+  return "\n#undef main\nvoid main()\n{\n  pg_dual_main();\n  pg_dual_out = (pgDualSourcePass == 0) ? " +
+         src0 + " : " + src1 + ";\n}\n";
+}
+
 static std::string join(Vector<const char *> &sources)
 {
   std::string s;
@@ -812,6 +854,7 @@ int main(int argc, char **argv)
   {
     auto code = gpu_shader_dependency_get_resolved_source(info.fragment_source_);
     std::string interface = gles_interface(fragment_interface_declare(info));
+    const std::string dual_tail = gles_dual_source(info, interface);
     Vector<const char *> sources;
     standard_defines(sources);
     sources.append("#define GPU_FRAGMENT_SHADER\n");
@@ -822,6 +865,7 @@ int main(int argc, char **argv)
     sources.extend(code);
     sources.extend(info.dependencies_generated);
     sources.append(info.fragment_source_generated.c_str());
+    sources.append(dual_tail.c_str());
     std::ofstream(argv[3]) << join(sources);
   }
   return 0;

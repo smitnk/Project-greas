@@ -620,7 +620,30 @@ static void apply_uniforms(DRWShadingGroup *g)
   }
 }
 
+static void draw_command_once(DRWShadingGroup *g, const PGCmd &cmd);
+
 static void draw_command(DRWShadingGroup *g, const PGCmd &cmd)
+{
+  PGContext &c = pgc();
+  const int dual = pg_gpu_shader_uniform(g->shader, "pgDualSourcePass");
+  if (dual >= 0 && (c.state & DRW_STATE_BLEND_ENABLED) == DRW_STATE_BLEND_CUSTOM) {
+    /* GPU_BLEND_CUSTOM (ONE, SRC1_COLOR / ONE, SRC1_ALPHA) without dual-source blending: the
+     * generated shader outputs SRC_1 then SRC_0 (tools/gles_shaders, gles_dual_source). */
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glUniform1i(dual, 1);
+    glBlendFuncSeparate(GL_ZERO, GL_SRC_COLOR, GL_ZERO, GL_SRC_ALPHA); /* dst *= SRC_1 */
+    draw_command_once(g, cmd);
+    glUniform1i(dual, 0);
+    glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE); /* dst += SRC_0 */
+    draw_command_once(g, cmd);
+    c.state = DRWState(~0u); /* blend function changed outside drw_state_set */
+    return;
+  }
+  draw_command_once(g, cmd);
+}
+
+static void draw_command_once(DRWShadingGroup *g, const PGCmd &cmd)
 {
   PGContext &c = pgc();
   const GPUShader *sh = g->shader;

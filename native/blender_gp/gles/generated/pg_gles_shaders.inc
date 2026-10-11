@@ -13769,9 +13769,12 @@ in gpencil_antialiasing_iface{
 };
 
 /* Outputs. */
-layout(location = 0, index = 0) out vec4 out_color;
-layout(location = 0, index = 1) out vec4 out_reveal;
+vec4 out_color;
+vec4 out_reveal;
 
+layout(location = 0) out vec4 pg_dual_out;
+uniform int pgDualSourcePass;
+#define main pg_dual_main
 /**
  * Copyright (C) 2013 Jorge Jimenez <jorge@iryoku.com>
  * Copyright (C) 2013 Jose I. Echevarria <joseignacioechevarria@gmail.com>
@@ -15335,6 +15338,13 @@ void main()
     out_reveal.rgb = out_reveal.aaa;
   }
 #endif
+}
+
+#undef main
+void main()
+{
+  pg_dual_main();
+  pg_dual_out = (pgDualSourcePass == 0) ? out_color : out_reveal;
 }
 )PGGLSL"},
     {"gpencil_fx_composite",

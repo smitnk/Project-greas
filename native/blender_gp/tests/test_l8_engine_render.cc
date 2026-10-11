@@ -10,6 +10,7 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl32.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -166,6 +167,16 @@ int main()
   CHECK(near4(px(100, 30), 0, 0, 0, 1));
   CHECK(near4(px(100, 90), 1, 1, 1, 1));
   /* 3. Width: thickness 20 * pixfactor 1000 / 1000 * scale 1 = 20 px (gpencil_stroke_thickness_modulate). */
+  {
+    int nonwhite = 0, minx = W, maxx = -1, miny = H, maxy = -1;
+    for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+      if (px(x, y)[0] < 0.999f) { nonwhite++; minx = std::min(minx, x); maxx = std::max(maxx, x); miny = std::min(miny, y); maxy = std::max(maxy, y); }
+    }
+    std::printf("  non-white pixels %d in x %d..%d y %d..%d\n", nonwhite, minx, maxx, miny, maxy);
+    std::printf("  column x=100 y=20..40:");
+    for (int y = 20; y <= 40; y++) std::printf(" %.2f", px(100, y)[0]);
+    std::printf("\n");
+  }
   int dark = 0;
   for (int y = 0; y < H; y++) dark += px(100, y)[0] < 0.5f ? 1 : 0;
   std::printf("  covered rows at x=100: %d (expected 20)\n", dark);

@@ -402,6 +402,16 @@ void DRW_shgroup_clear_framebuffer(DRWShadingGroup *shgroup,
 /** \name Execution (draw_manager_exec.c, gl_state.cc)
  * \{ */
 
+static bool trace_enabled()
+{
+  static int t = -1;
+  if (t < 0) {
+    const char *e = getenv("PG_DRW_TRACE");
+    t = (e && e[0] == '1') ? 1 : 0;
+  }
+  return t == 1;
+}
+
 static void gl_blend(eGPUBlend value)
 {
   /* GLStateManager::set_blend (gl_state.cc) */
@@ -690,6 +700,14 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
   pg_gpu_uniformbuf_bind(c.matrices_ubo, pg_gpu_shader_block_binding(g->shader, "drw_matrices"));
   pg_gpu_uniformbuf_bind(c.infos_ubo, pg_gpu_shader_block_binding(g->shader, "drw_infos"));
   apply_uniforms(g);
+  if (trace_enabled()) {
+    std::printf("[drw]   group prog %u uniforms %zu cmds %zu\n", prog, g->uniforms.size(), g->cmds.size());
+    for (const PGCmd &cmd : g->cmds) {
+      if (cmd.kind == CMD_RANGE) {
+        std::printf("[drw]     range first %u count %u handle %d\n", cmd.first, cmd.count, cmd.handle);
+      }
+    }
+  }
   drw_state_set(pass_state);
   DRWState enabled = DRWState(0), disabled = DRWState(0);
   for (const PGCmd &cmd : g->cmds) {
@@ -717,16 +735,6 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
         break;
     }
   }
-}
-
-static bool trace_enabled()
-{
-  static int t = -1;
-  if (t < 0) {
-    const char *e = getenv("PG_DRW_TRACE");
-    t = (e && e[0] == '1') ? 1 : 0;
-  }
-  return t == 1;
 }
 
 void DRW_draw_pass(DRWPass *pass)

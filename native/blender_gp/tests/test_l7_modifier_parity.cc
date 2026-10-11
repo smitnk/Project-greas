@@ -176,8 +176,8 @@ int main()
        [](GpencilModifierData *m) { auto *d = (SubdivGpencilModifierData *)m; d->type = GP_SUBDIV_SIMPLE; d->level = 2; }},
       {"Offset default", PG_MOD_OFFSET, &modifierType_Gpencil_Offset, none, bnone},
       {"Offset loc/rot/scale", PG_MOD_OFFSET, &modifierType_Gpencil_Offset,
-       /* PG's Offset location is in pixels, applied after the y-up flip: 0.3 / -0.2 units = 30 / -20 px. */
-       [](float *p) { p[PG_P_OFFSET_LOC] = 30.0f; p[PG_P_OFFSET_LOC + 1] = -20.0f; p[PG_P_OFFSET_ROT + 2] = 0.4f; p[PG_P_OFFSET_SCALE] = 0.5f; },
+       /* PG's Offset location is in pixels, applied after the y-up flip: 0.3 / -0.2 units. */
+       [](float *p) { p[PG_P_OFFSET_LOC] = 0.3f * PG_MOD_PIXELS_PER_UNIT; p[PG_P_OFFSET_LOC + 1] = -0.2f * PG_MOD_PIXELS_PER_UNIT; p[PG_P_OFFSET_ROT + 2] = 0.4f; p[PG_P_OFFSET_SCALE] = 0.5f; },
        [](GpencilModifierData *m) { auto *d = (OffsetGpencilModifierData *)m; d->loc[0] = 0.3f; d->loc[1] = -0.2f; d->rot[2] = 0.4f; d->scale[0] = 0.5f; }},
       {"Noise default", PG_MOD_NOISE, &modifierType_Gpencil_Noise, none, bnone},
       {"Noise all channels", PG_MOD_NOISE, &modifierType_Gpencil_Noise,
@@ -202,16 +202,16 @@ int main()
       {"Mirror X about origin", PG_MOD_MIRROR, &modifierType_Gpencil_Mirror,
        [](float *p) { p[PG_P_MIRROR_PX] = 0; p[PG_P_MIRROR_PY] = 0; }, bnone},
       {"Mirror X+Y about a pivot object", PG_MOD_MIRROR, &modifierType_Gpencil_Mirror,
-       [](float *p) { p[PG_P_MIRROR_Y] = 1; p[PG_P_MIRROR_PX] = 150; p[PG_P_MIRROR_PY] = 80; },
+       [](float *p) { p[PG_P_MIRROR_Y] = 1; p[PG_P_MIRROR_PX] = 1.5f * PG_MOD_PIXELS_PER_UNIT; p[PG_P_MIRROR_PY] = 0.8f * PG_MOD_PIXELS_PER_UNIT; },
        [](GpencilModifierData *m) { auto *d = (MirrorGpencilModifierData *)m; d->flag |= GP_MIRROR_AXIS_Y;
          static Object piv; std::memset(&piv, 0, sizeof(piv)); unit_m4(piv.object_to_world);
          piv.object_to_world[3][0] = 1.5f; piv.object_to_world[3][1] = -0.8f; d->object = &piv; }},
       {"Array default (relative)", PG_MOD_ARRAY, &modifierType_Gpencil_Array, none, bnone},
       {"Array 3, constant offset 1 unit", PG_MOD_ARRAY, &modifierType_Gpencil_Array,
-       [](float *p) { p[PG_P_ARRAY_COUNT_N] = 3; p[PG_P_ARRAY_USE_RELATIVE] = 0; p[PG_P_ARRAY_USE_OFFSET] = 1; p[PG_P_ARRAY_OX] = 100; },
+       [](float *p) { p[PG_P_ARRAY_COUNT_N] = 3; p[PG_P_ARRAY_USE_RELATIVE] = 0; p[PG_P_ARRAY_USE_OFFSET] = 1; p[PG_P_ARRAY_OX] = PG_MOD_PIXELS_PER_UNIT; },
        [](GpencilModifierData *m) { auto *d = (ArrayGpencilModifierData *)m; d->count = 3; d->flag = (d->flag & ~GP_ARRAY_USE_RELATIVE) | GP_ARRAY_USE_OFFSET; d->offset[0] = 1; }},
       {"Array 4, random offset/rotation/scale", PG_MOD_ARRAY, &modifierType_Gpencil_Array,
-       [](float *p) { p[PG_P_ARRAY_COUNT_N] = 4; p[PG_P_ARRAY_RND_OX] = 30; p[PG_P_ARRAY_RND_OY] = -20; p[PG_P_ARRAY_RND_ROT] = 0.5f;
+       [](float *p) { p[PG_P_ARRAY_COUNT_N] = 4; p[PG_P_ARRAY_RND_OX] = 0.3f * PG_MOD_PIXELS_PER_UNIT; p[PG_P_ARRAY_RND_OY] = -0.2f * PG_MOD_PIXELS_PER_UNIT; p[PG_P_ARRAY_RND_ROT] = 0.5f;
                       p[PG_P_ARRAY_RND_SX] = 0.3f; p[PG_P_ARRAY_RND_SY] = 0.2f; p[PG_P_ARRAY_SEED] = 7; },
        [](GpencilModifierData *m) { auto *d = (ArrayGpencilModifierData *)m; d->count = 4; d->rnd_offset[0] = 0.3f; d->rnd_offset[1] = 0.2f;
          d->rnd_rot[2] = 0.5f; d->rnd_scale[0] = 0.3f; d->rnd_scale[1] = 0.2f; d->seed = 7; }},

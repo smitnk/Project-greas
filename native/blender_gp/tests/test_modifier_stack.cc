@@ -389,15 +389,15 @@ static void test_golden_offset_noise()
   q[PG_P_NOISE_SEED] = 3; q[PG_P_NOISE_STEP] = 4; q[PG_P_NOISE_USE_RANDOM] = 1;
   q[PG_P_NOISE_MODE] = 0;
   auto a = eval(n, &noise, 1, 4);
-  CHECK(near(a[0][0].v[0], 100.05317890518579f, 1e-3f) && near(a[0][0].v[1], 199.9468210948142f, 1e-3f));
-  CHECK(near(a[0][1].v[0], 156.05677661884022f, 1e-3f) && near(a[0][1].v[1], 263.9432233811598f, 1e-3f));
-  CHECK(near(a[0][0].v[2], -0.10635781037158197f, 1e-3f) && near(a[0][1].v[2], 7.886446762319532f, 1e-3f));
-  CHECK(near(a[1][0].v[0], 97.83772983024063f, 1e-3f) && near(a[1][0].v[1], 202.16227016975935f, 1e-3f));
-  CHECK(near(a[1][1].v[0], 162.49617754235462f, 1e-3f) && near(a[1][1].v[1], 257.5038224576454f, 1e-3f));
+  CHECK(near(a[0][0].v[0], 100.53178905185791f, 1e-3f) && near(a[0][0].v[1], 199.4682109481421f, 1e-3f));
+  CHECK(near(a[0][1].v[0], 120.56776618840235f, 1e-3f) && near(a[0][1].v[1], 299.43223381159765f, 1e-3f));
+  CHECK(near(a[0][0].v[2], -1.0635781037158196f, 1e-3f) && near(a[0][1].v[2], 78.86446762319532f, 1e-3f));
+  CHECK(near(a[1][0].v[0], 78.37729830240639f, 1e-3f) && near(a[1][0].v[1], 221.62270169759364f, 1e-3f));
+  CHECK(near(a[1][1].v[0], 184.96177542354607f, 1e-3f) && near(a[1][1].v[1], 235.03822457645396f, 1e-3f));
   /* Time dependence: cfra 20 is another step (20/4 = 5 vs 4/4 = 1). */
   auto b = eval(n, &noise, 1, 20);
-  CHECK(near(b[0][0].v[0], 99.97062046894686f, 1e-3f) && near(b[0][0].v[1], 200.02937953105314f, 1e-3f));
-  CHECK(near(b[0][1].v[0], 163.2336605418309f, 1e-3f) && near(b[0][1].v[1], 256.7663394581691f, 1e-3f));
+  CHECK(near(b[0][0].v[0], 99.70620468946854f, 1e-3f) && near(b[0][0].v[1], 200.2937953105315f, 1e-3f));
+  CHECK(near(b[0][1].v[0], 192.33660541830875f, 1e-3f) && near(b[0][1].v[1], 227.66339458169128f, 1e-3f));
   /* Same step, other frame (5/4 == 4/4): identical to cfra 4. */
   CHECK(same(eval(n, &noise, 1, 7), a));
   free_doc(d);

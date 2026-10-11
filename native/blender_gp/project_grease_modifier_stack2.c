@@ -95,9 +95,9 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_ARRAY_SHIFT_X] = 1.0f;
       p[PG_P_ARRAY_SEED] = 1.0f;
       break;
-    case PG_MOD_MULTIPLY: /* duplications 3, distance 0.1 (10 px), fading centre / thickness / opacity 0.5 */
+    case PG_MOD_MULTIPLY: /* duplications 3, distance 0.1 units, fading centre / thickness / opacity 0.5 */
       p[PG_P_MULTIPLY_DUPLICATIONS] = 3.0f;
-      p[PG_P_MULTIPLY_DISTANCE] = 10.0f;
+      p[PG_P_MULTIPLY_DISTANCE] = 0.1f * PG_MOD_PIXELS_PER_UNIT;
       p[PG_P_MULTIPLY_FADE_CENTER] = 0.5f;
       p[PG_P_MULTIPLY_FADE_THICKNESS] = 0.5f;
       p[PG_P_MULTIPLY_FADE_OPACITY] = 0.5f;

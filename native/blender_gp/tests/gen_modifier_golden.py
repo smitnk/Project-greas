@@ -30,7 +30,7 @@ def noise_points(seed_param, stroke_index, cfra, step, factor, pts):
     seed = i32(seed_param + stroke_index + hash_string("Project Grease") + hash_string("Noise") + cfra // step)
     useed = (seed + 2) & 0xFFFFFFFF
     table = [hash_int_01(hash_int_2d(useed, i + 0 + 1)) for i in range(4)]
-    s = 100.0
+    s = 1000.0  # PG_MOD_PIXELS_PER_UNIT
     p = [[c[0] / s, -c[1] / s, c[2] / s] for c in pts]
     v1 = [p[0][k] - p[1][k] for k in range(3)]
     n = [1.0, 1.0, 1.0]

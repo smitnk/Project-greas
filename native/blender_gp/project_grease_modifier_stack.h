@@ -79,7 +79,11 @@ enum {
  * zero means "no curve, no filter", so stacks saved before these blocks existed load unchanged. */
 #define PG_MOD_MAX_PARAMS 120
 #define PG_MOD_MAX_STACK 32
-#define PG_MOD_PIXELS_PER_UNIT 100.0f
+/* Canvas pixels per Blender unit. 1000 because a Blender stroke's width relative to its geometry is
+ * thickness * pixfactor / 1000 object units (gpencil_stroke_thickness_modulate with
+ * GPENCIL_PIXEL_FACTOR 2000, pixfactor GP_DEFAULT_PIX_FACTOR 1): with 1000 px per unit a stroke of
+ * thickness t is t canvas pixels wide, as Project Grease has always drawn it. */
+#define PG_MOD_PIXELS_PER_UNIT 1000.0f
 #define PG_MOD_OBJECT_NAME "Project Grease"
 
 /* Parameter indices per type. Booleans are 0/1, enums and counts are stored as floats. */

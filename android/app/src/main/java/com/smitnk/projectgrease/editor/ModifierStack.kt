@@ -215,7 +215,7 @@ object ModifierSpecs {
             n(14, "Material (0 same, slot+1)", 0f, 64f)
         )
         ModifierType.MULTIPLY -> listOf(
-            n(0, "Duplicates", 0f, 10f), f(1, "Distance", -200f, 200f), f(2, "Offset", -1f, 1f), b(3, "Fade"),
+            n(0, "Duplicates", 0f, 10f), f(1, "Distance", -1000f, 1000f), f(2, "Offset", -1f, 1f), b(3, "Fade"),
             f(4, "Fade center", 0f, 1f), f(5, "Fade thickness", 0f, 1f), f(6, "Fade opacity", 0f, 1f)
         )
         else -> emptyList()

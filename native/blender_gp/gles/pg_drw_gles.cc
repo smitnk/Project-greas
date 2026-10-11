@@ -54,6 +54,7 @@
 #include "draw_view_data.h"
 
 #include "pg_gpu_gles.h"
+#include "project_grease_modifier_stack.h"
 
 extern "C" DrawEngineType draw_engine_gpencil_type;
 
@@ -971,8 +972,12 @@ static void context_init(PGContext &c)
   c.ob.type = OB_GPENCIL_LEGACY;
   c.ob.dt = OB_TEXTURE;
   std::snprintf(c.ob.id.name, sizeof(c.ob.id.name), "OBProject Grease");
+  /* Canvas pixels are the object's local space: PG_MOD_PIXELS_PER_UNIT pixels per unit, y up. */
   unit_m4(c.ob.object_to_world);
-  unit_m4(c.ob.world_to_object);
+  c.ob.object_to_world[0][0] = 1.0f / PG_MOD_PIXELS_PER_UNIT;
+  c.ob.object_to_world[1][1] = -1.0f / PG_MOD_PIXELS_PER_UNIT;
+  c.ob.object_to_world[2][2] = 1.0f / PG_MOD_PIXELS_PER_UNIT;
+  invert_m4_m4(c.ob.world_to_object, c.ob.object_to_world);
   std::memset(&c.ctx, 0, sizeof(c.ctx));
   c.ctx.scene = &c.scene;
   c.ctx.view_layer = &c.view_layer;
@@ -995,6 +1000,8 @@ static void context_init(PGContext &c)
     unit_m4((float(*)[4])&m.model);
     unit_m4((float(*)[4])&m.model_inverse);
   }
+  std::memcpy(&mats[1].model, c.ob.object_to_world, sizeof(float[4][4]));
+  std::memcpy(&mats[1].model_inverse, c.ob.world_to_object, sizeof(float[4][4]));
   c.matrices_ubo = GPU_uniformbuf_create_ex(sizeof(ObjectMatrices) * mats.size(), mats.data(), "drw_matrices");
   std::vector<ObjectInfos> infos(DRW_RESOURCE_CHUNK_LEN);
   std::memset(infos.data(), 0, sizeof(ObjectInfos) * infos.size());
@@ -1028,16 +1035,17 @@ static void viewport_ensure(PGContext &c, int w, int h)
 
 static void view_set(PGContext &c, const PGGpEngineView *v)
 {
-  /* World = canvas pixels, y down. View: y flipped to Blender's y up. Window: orthographic, the
-   * canvas at origin / scale in the viewport (as the Android presenter maps it). */
+  /* World = Blender units (the object maps canvas pixels to units, y up), front view: the view is
+   * the identity. Window: orthographic, the canvas at origin / scale in the viewport (as the Android
+   * presenter maps it). */
   unit_m4(c.viewmat);
-  c.viewmat[1][1] = -1.0f;
   invert_m4_m4(c.viewinv, c.viewmat);
   const float W = (float)v->viewport_w, H = (float)v->viewport_h;
+  const float U = PG_MOD_PIXELS_PER_UNIT;
   unit_m4(c.winmat);
-  c.winmat[0][0] = 2.0f * v->scale / W;
-  c.winmat[1][1] = 2.0f * v->scale / H;
-  c.winmat[2][2] = -0.001f; /* clip -1000 .. 1000 */
+  c.winmat[0][0] = 2.0f * v->scale * U / W;
+  c.winmat[1][1] = 2.0f * v->scale * U / H;
+  c.winmat[2][2] = -0.001f; /* clip -1000 .. 1000 units */
   c.winmat[3][0] = 2.0f * v->origin_x / W - 1.0f;
   c.winmat[3][1] = 1.0f - 2.0f * v->origin_y / H;
   invert_m4_m4(c.wininv, c.winmat);
@@ -1117,6 +1125,11 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
     actframes.push_back(gpl->actframe);
     gpl->actframe = BKE_gpencil_layer_frame_get(gpl, cfra, GP_GETFRAME_USE_PREV);
   }
+  /* ADAPTED: Blender scales a stroke's width with its object (gpThicknessScale = object scale).
+   * The object scale here is only the pixel -> unit conversion of the data, which a document in
+   * units would not have, so pixfactor is scaled back by it for the duration of the draw. */
+  const float pixfactor = gpd->pixfactor;
+  gpd->pixfactor = pixfactor * PG_MOD_PIXELS_PER_UNIT;
   void *vedata = c.vedata_lists;
   DrawEngineType &e = draw_engine_gpencil_type;
   e.engine_init(vedata);
@@ -1126,6 +1139,7 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   GPU_framebuffer_bind(c.dfbl.default_fb);
   e.draw_scene(vedata);
   gpd->runtime.sbuffer_used = sbuffer_used;
+  gpd->pixfactor = pixfactor;
   size_t li = 0;
   LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
     gpl->actframe = actframes[li++];

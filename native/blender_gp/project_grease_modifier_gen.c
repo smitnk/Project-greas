@@ -759,8 +759,8 @@ int pg_mod_gen_run(const PGModContext *ctx, const PGModEntry *e)
       if (p[PG_P_MIRROR_PX] != 0.0f || p[PG_P_MIRROR_PY] != 0.0f) {
         memset(&pivot, 0, sizeof(pivot));
         unit_m4(pivot.object_to_world);
-        pivot.object_to_world[3][0] = p[PG_P_MIRROR_PX] * inv;
-        pivot.object_to_world[3][1] = -p[PG_P_MIRROR_PY] * inv;
+        pivot.object_to_world[3][0] = p[PG_P_MIRROR_PX] / PG_MOD_PIXELS_PER_UNIT;
+        pivot.object_to_world[3][1] = -p[PG_P_MIRROR_PY] / PG_MOD_PIXELS_PER_UNIT;
         mmd.object = &pivot;
       }
       mirror_generate_geometry(&mmd.modifier, &ob, &layer, ctx->gpf, false);
@@ -774,12 +774,12 @@ int pg_mod_gen_run(const PGModContext *ctx, const PGModEntry *e)
       amd.flag = (p[PG_P_ARRAY_USE_OFFSET] != 0.0f ? GP_ARRAY_USE_OFFSET : 0) |
                  (p[PG_P_ARRAY_USE_RELATIVE] != 0.0f ? GP_ARRAY_USE_RELATIVE : 0) |
                  (p[PG_P_ARRAY_UNIFORM] != 0.0f ? GP_ARRAY_UNIFORM_RANDOM_SCALE : 0);
-      amd.offset[0] = p[PG_P_ARRAY_OX] * inv;
-      amd.offset[1] = -p[PG_P_ARRAY_OY] * inv;
+      amd.offset[0] = p[PG_P_ARRAY_OX] / PG_MOD_PIXELS_PER_UNIT;
+      amd.offset[1] = -p[PG_P_ARRAY_OY] / PG_MOD_PIXELS_PER_UNIT;
       amd.shift[0] = p[PG_P_ARRAY_SHIFT_X];
       amd.shift[1] = p[PG_P_ARRAY_SHIFT_Y];
-      amd.rnd_offset[0] = p[PG_P_ARRAY_RND_OX] * inv;
-      amd.rnd_offset[1] = -p[PG_P_ARRAY_RND_OY] * inv;
+      amd.rnd_offset[0] = p[PG_P_ARRAY_RND_OX] / PG_MOD_PIXELS_PER_UNIT;
+      amd.rnd_offset[1] = -p[PG_P_ARRAY_RND_OY] / PG_MOD_PIXELS_PER_UNIT;
       amd.rnd_rot[2] = p[PG_P_ARRAY_RND_ROT]; /* the canvas plane is the object's XY plane */
       amd.rnd_scale[0] = p[PG_P_ARRAY_RND_SX];
       amd.rnd_scale[1] = p[PG_P_ARRAY_RND_SY];
@@ -792,7 +792,7 @@ int pg_mod_gen_run(const PGModContext *ctx, const PGModEntry *e)
       MultiplyGpencilModifierData mmd;
       memset(&mmd, 0, sizeof(mmd));
       mmd.duplications = (int)p[PG_P_MULTIPLY_DUPLICATIONS];
-      mmd.distance = p[PG_P_MULTIPLY_DISTANCE] * inv;
+      mmd.distance = p[PG_P_MULTIPLY_DISTANCE] / PG_MOD_PIXELS_PER_UNIT;
       mmd.offset = p[PG_P_MULTIPLY_OFFSET];
       mmd.flags = p[PG_P_MULTIPLY_FADE] != 0.0f ? GP_MULTIPLY_ENABLE_FADING : 0;
       mmd.fading_center = p[PG_P_MULTIPLY_FADE_CENTER];

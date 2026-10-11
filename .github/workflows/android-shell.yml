@@ -201,6 +201,25 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_l7_tests.sh
 
+      - name: Cache glslang 14.3.0 (GLES shader validator)
+        id: glslang-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/glslang-14.3.0/build/StandAlone/glslang
+          key: glslang-14.3.0-standalone
+
+      - name: Build glslang 14.3.0
+        if: steps.glslang-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch 14.3.0 https://github.com/KhronosGroup/glslang.git ~/glslang-14.3.0
+          cmake -S ~/glslang-14.3.0 -B ~/glslang-14.3.0/build -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF
+          cmake --build ~/glslang-14.3.0/build -j4 --target glslang-standalone
+
+      - name: Run L8 shader check (Blender 3.6.23 GP draw-engine shaders for GLES 3.2, validated as ESSL 3.20)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: GLSLANG="$HOME/glslang-14.3.0/build/StandAlone/glslang" bash tools/gles_shaders/run_gles_gen.sh --check
+
       - name: Install software GLES (Mesa EGL) for the render tests
         run: |
           sudo apt-get update

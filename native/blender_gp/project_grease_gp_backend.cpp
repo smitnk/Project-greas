@@ -1045,6 +1045,16 @@ bool Backend::set_layer_locked(int index, bool locked)
   return true;
 }
 
+bool Backend::set_layer_onion_skin(int index, bool enabled)
+{
+  bGPDlayer *layer = layer_at(impl_->gpd, index);
+  if (!layer) { impl_->last_error = "layer index out of range"; return false; }
+  if (enabled) layer->onion_flag |= GP_LAYER_ONIONSKIN;
+  else layer->onion_flag &= ~GP_LAYER_ONIONSKIN;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
 bool Backend::move_layer(int from_index, int to_index)
 {
   if (!impl_->gpd || from_index < 0 || to_index < 0 ||

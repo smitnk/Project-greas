@@ -512,7 +512,7 @@ class ProjectDocumentRoundTripTest {
     }
 
     @Test
-    fun version6KeepsKeyTypesLayerLookAndMaterialSettings() {
+    fun version7KeepsKeyTypesLayerLookAndMaterialSettings() {
         val doc = FakeDocument()
         doc.createFrame(1)
         doc.addStroke(StrokeRecord(listOf(floatArrayOf(0f, 0f, 0f, 1f, 1f, 0f), floatArrayOf(5f, 5f, 0f, 1f, 1f, 0f))))

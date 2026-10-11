@@ -16,6 +16,7 @@ on:
       - native/blender-gp-phase40-cache
       - "feature/project-grease-ui-real-integration"
       - "feature/project-grease-full-feature-work"
+      - "fix/native-gp-render-readback-test"
     paths:
       - "android/**"
       - "native/blender_gp/**"

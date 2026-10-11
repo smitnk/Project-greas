@@ -705,6 +705,11 @@ class EditorController {
     private val native = NativeEditorBridge()
     var selectedLayer = 0
         private set
+    /**
+     * Visibility before the current isolate operation. A second Isolate restores this snapshot;
+     * changing layer topology or visibility manually invalidates it so stale indices are never used.
+     */
+    private var layerIsolationSnapshot: Pair<Int, List<Boolean>>? = null
     val tools=ToolController()
     /** 3D reference scene for Line Art (Scene-lite): OBJ meshes + camera, previewed as a wireframe. */
     val reference=ReferenceScene()
@@ -1397,7 +1402,49 @@ class EditorController {
         }
         return ok
     }
-    fun isolateLayer() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LAYER_ISOLATE))
+    /**
+     * Isolates the active layer and toggles back to the exact visibility state that preceded it.
+     * If the user selects another layer while isolated, restore the original visibility first and
+     * isolate the newly selected layer. One user action creates one undo step.
+     */
+    fun isolateLayer(): Boolean {
+        val count = native.layerCount()
+        if (count <= 0 || selectedLayer !in 0 until count) return false
+
+        val previous = layerIsolationSnapshot
+        if (previous != null) {
+            val (previousActive, previousVisibility) = previous
+            if (previousVisibility.size == count) {
+                for (i in 0 until count) {
+                    if (!native.setLayerVisibility(i, previousVisibility[i])) return false
+                }
+                layerIsolationSnapshot = null
+                if (previousActive == selectedLayer) {
+                    history.markEdit()
+                    document.markDirty()
+                    render()
+                    return true
+                }
+            } else {
+                layerIsolationSnapshot = null
+            }
+        }
+
+        val visibility = (0 until count).map { i ->
+            layerState(i)?.visible ?: return false
+        }
+        for (i in 0 until count) {
+            if (!native.setLayerVisibility(i, i == selectedLayer)) {
+                for (restore in 0 until count) native.setLayerVisibility(restore, visibility[restore])
+                return false
+            }
+        }
+        layerIsolationSnapshot = selectedLayer to visibility
+        history.markEdit()
+        document.markDirty()
+        render()
+        return true
+    }
     fun lockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LOCK_ALL))
     fun unlockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_UNLOCK_ALL))
 
@@ -1929,6 +1976,7 @@ class EditorController {
     fun applyLayerModifier(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.apply(native,layer,index))
 
     fun setLayerVisibility(index:Int, visible:Boolean):Boolean {
+        layerIsolationSnapshot = null
         val ok=native.setLayerVisibility(index,visible)
         if(ok){history.markEdit();document.markDirty();render()}
         return ok
@@ -1939,17 +1987,20 @@ class EditorController {
         return ok
     }
     fun moveLayer(from:Int,to:Int):Boolean {
+        layerIsolationSnapshot = null
         val ok=native.moveLayer(from,to)
         if(ok){selectedLayer=to;history.markEdit();document.markDirty();render()}
         return ok
     }
     fun duplicateLayer(index:Int=selectedLayer):Boolean {
+        layerIsolationSnapshot = null
         val ok=native.duplicateLayer(index)
         if(ok){selectedLayer=(index+1).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
         return ok
     }
     fun deleteLayer(index:Int=selectedLayer):Boolean {
         if(native.layerCount()<=1)return false
+        layerIsolationSnapshot = null
         val ok=native.deleteLayer(index)
         if(ok){selectedLayer=(index-1).coerceAtLeast(0).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
         return ok
@@ -2170,6 +2221,7 @@ class EditorController {
     }
 
     fun createLayer(name:String):Boolean {
+        layerIsolationSnapshot = null
         val ok = native.createLayer(name)
         if (ok) {
             selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)

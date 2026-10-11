@@ -335,6 +335,20 @@ class DeviceBugfixTest {
         assertEquals(2, strokes().size)
     }
 
+    @Test fun onionLayerFlagSurvivesSaveReload() {
+        assertTrue("disable per-layer onion skin", onUi { controller.setLayerOnion(0, false) })
+        val saved = onUi { controller.saveDocumentJson() }!!
+        val savedLayer = JSONObject(saved).getJSONArray("layers").getJSONObject(0)
+        assertTrue("false flag is explicitly serialized", savedLayer.has("onionSkin"))
+        assertTrue("saved flag is false", !savedLayer.getBoolean("onionSkin"))
+
+        assertTrue("reload project", onUi { controller.loadDocumentJson(saved) })
+        assertTrue("native layer flag restored as disabled", !onUi { controller.layerOnion(0) })
+        val resaved = onUi { controller.saveDocumentJson() }!!
+        assertTrue("false flag remains persisted",
+            !JSONObject(resaved).getJSONArray("layers").getJSONObject(0).getBoolean("onionSkin"))
+    }
+
     // ---- edit5 batch ----
     @Test fun outlineMakesAClosedStroke() {
         drag(200f to 300f, 600f to 250f, 1000f to 300f)

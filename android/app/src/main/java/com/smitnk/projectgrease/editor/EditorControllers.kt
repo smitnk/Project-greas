@@ -783,6 +783,7 @@ class EditorController {
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
         setupTrace("resetDocument ok=$ok")
         if(ok){
+            layerIsolationSnapshot = null
             clearTextures()
             projectSettings = ProjectSettings()
             reapplyOnion()
@@ -1637,6 +1638,7 @@ class EditorController {
         if (native.handle == 0L) return false
         val parsed = ProjectDocumentCodec.parse(raw) ?: return false
         if (!GPNative.nativeResetDocumentEgl(rendererHandle)) return false
+        layerIsolationSnapshot = null
         reapplyOnion()
         document.canvasWidth = (parsed.width ?: document.canvasWidth).coerceAtLeast(1)
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
@@ -2016,6 +2018,7 @@ class EditorController {
      * fps and the scene end frame. The top layer and material 0 end up active.
      */
     fun applyTemplate(template:GreaseTemplates.Template):Boolean {
+        layerIsolationSnapshot = null
         setupTrace("applyTemplate ${template.id} handle=${native.handle != 0L} layers=${native.layerCount()}")
         if (native.handle == 0L || template.layers.isEmpty()) return false
         if (native.layerCount() == 0) {

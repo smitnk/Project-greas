@@ -150,7 +150,7 @@ object FeatureRegistry {
         FeatureId.ONION_RANGE to wired("bGPdata gstep / gstep_next: keyframes (Relative) or frames (Absolute) before / after. $DEVICE"),
         FeatureId.ONION_OPACITY to wired("gpd->onion_factor through Blender's ghost alpha formula. $DEVICE"),
         FeatureId.ONION_FADE to wired("GP_ONION_FADE switch in Onion Skin; ghost alpha 1/|keyframe distance| x factor clamped to 0.1..1 like gpencil_layer_final_tint_and_alpha_get. $DEVICE"),
-        FeatureId.ONION_LAYER_FILTER to wired("Per-layer \"Use onion skinning\" switch in Layers (GP_LAYER_ONIONSKIN, on for new layers); not saved in the project file. $DEVICE"),
+        FeatureId.ONION_LAYER_FILTER to wired("Per-layer \"Use onion skinning\" switch in Layers (GP_LAYER_ONIONSKIN, on for new layers); serialized per layer and restored through the native layer API. $DEVICE"),
         FeatureId.MULTIFRAME to wired("Timeline long press > Select frame (GP_FRAME_SELECT, orange outline) and the Multiframe chip (GP_DATA_STROKE_MULTIEDIT): native edits act on every selected frame. No falloff curve. $DEVICE"),
 
         // ---- paint, materials, sculpt --------------------------------------------------

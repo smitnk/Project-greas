@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include "project_grease_lineart_lite.h"
 #include "project_grease_scene_lite.h"
@@ -534,8 +537,30 @@ static void test_shadow_and_light_contour(void)
   pg_lite_scene_free(s);
 }
 
+static void pg_lineart_timeout_handler(int sig)
+{
+  (void)sig;
+  const char msg[] = "\nLINEART WATCHDOG: test exceeded 45 seconds; stack trace follows\n";
+  write(STDERR_FILENO, msg, sizeof(msg) - 1);
+  void *frames[128];
+  const int n = backtrace(frames, 128);
+  backtrace_symbols_fd(frames, n, STDERR_FILENO);
+  _exit(124);
+}
+
+static void pg_lineart_install_watchdog(void)
+{
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = pg_lineart_timeout_handler;
+  sigaction(SIGALRM, &sa, NULL);
+  alarm(45);
+}
+
 int main(int argc, char **argv)
 {
+  pg_lineart_install_watchdog();
   test_strokes();
   test_cube();
   test_occluder_cuts_lines();
@@ -548,6 +573,7 @@ int main(int argc, char **argv)
   if (argc > 1) {
     failures += pg_lineart_reference_compare(argv[1]);
   }
+  alarm(0);
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

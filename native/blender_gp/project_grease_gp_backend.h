@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include "project_grease_legacy_sculpt.h"
+#include "project_grease_tool_brushes.h"
 #include "project_grease_document_state.h"
 
 // Blender DNA types, declared at global scope so the accessors below name the

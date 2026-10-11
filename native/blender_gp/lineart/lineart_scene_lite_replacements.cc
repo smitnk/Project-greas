@@ -1172,6 +1172,8 @@ static LineartData *pg_lineart_compute_occlusion(const PGSceneLite *scene,
 
   LineartCache *lc = lineart_init_cache();
   *cached_result = lc;
+  /* The non-TBB pthread SpinLock used by this closure must be initialized; zero means held. */
+  BLI_spin_init(&lc->shadow_data_pool.lock_mem);
 
   ld = lineart_create_render_buffer(scene, lmd, lc);
 

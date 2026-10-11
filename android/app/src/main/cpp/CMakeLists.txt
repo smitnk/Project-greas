@@ -56,6 +56,8 @@ set(BLENDER_INCLUDE_DIRS
     "${BLENDER_SOURCE_DIR}/intern/guardedalloc"
     "${BLENDER_SOURCE_DIR}/intern/atomic"
     "${BLENDER_SOURCE_DIR}/intern/clog"
+    "${BLENDER_SOURCE_DIR}/intern/eigen"
+    "${BLENDER_SOURCE_DIR}/extern/Eigen3"
     "${GENERATED_DNA_DIR}"
 )
 
@@ -124,12 +126,7 @@ set_source_files_properties(
     "${BLENDER_SOURCE_DIR}/source/blender/blenkernel/intern/deform.cc"
     PROPERTIES LANGUAGE CXX
 )
-set_source_files_properties(
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_matrix.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_vector.c"
-    "${BLENDER_SOURCE_DIR}/source/blender/blenlib/intern/math_rotation.c"
-    PROPERTIES COMPILE_DEFINITIONS MATH_STANDALONE
-)
+# L1: MATH_STANDALONE removed. Blender 3.6.23 uses the Eigen C API for matrix inverse.
 set_source_files_properties(
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_blender_string_compat.c"
     "${PROJECT_GREASE_ROOT}/native/blender_gp/android_blender_string_utf8_compat.c"
@@ -141,7 +138,16 @@ target_compile_options(projectgrease_jni PRIVATE
     -ffunction-sections
     -fdata-sections
     -fvisibility=hidden
+    -funsigned-char
+    -fno-strict-aliasing
+    -ffp-contract=off
 )
+
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    target_compile_definitions(projectgrease_jni PRIVATE WITH_SSE2NEON)
+    target_include_directories(projectgrease_jni SYSTEM PRIVATE
+        "${PROJECT_GREASE_ROOT}/third_party/sse2neon")
+endif()
 
 find_library(log-lib log)
 find_library(android-lib android)

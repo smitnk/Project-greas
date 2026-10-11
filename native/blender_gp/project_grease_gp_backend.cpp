@@ -16,6 +16,7 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_document_state.h"
 #include "project_grease_modifier_stack.h"
+#include "project_grease_tool_brushes.h"
 #include "project_grease_shader_fx.h"
 
 #include <algorithm>
@@ -240,6 +241,11 @@ struct Backend::Impl {
   StrokeStyle stroke_style{};
   LegacyPaintSettings paint_settings{};
   std::vector<StrokePoint> pending_points;
+  PGSculptSession *sculpt_session = nullptr;
+  int sculpt_session_tool = -1;
+  float sculpt_session_radius = 0.0f;
+  float sculpt_session_strength = 0.0f;
+  bool sculpt_session_invert = false;
 
 #ifndef __ANDROID__
   // Desktop proof path owns its temporary GHOST/GPU session.
@@ -278,6 +284,8 @@ struct Backend::Impl {
   bool annotations_visible = true;
   std::vector<std::unique_ptr<EvalCacheEntry>> eval_cache;
 };
+
+static void sculpt_session_end(Backend::Impl *impl);
 
 static void eval_cache_clear(Backend::Impl *impl)
 {
@@ -704,6 +712,7 @@ bool Backend::initialize()
 
 void Backend::shutdown()
 {
+  sculpt_session_end(impl_);
   if (!impl_) {
     return;
   }
@@ -802,6 +811,7 @@ void Backend::shutdown()
 
 bool Backend::reset_document()
 {
+  sculpt_session_end(impl_);
   if (!impl_->initialized) {
     impl_->last_error = "backend is not initialized";
     return false;
@@ -4527,96 +4537,131 @@ bool Backend::smooth_stroke(int index, float influence, int iterations)
   return false;
 }
 
+static void sculpt_session_end(Backend::Impl *impl)
+{
+  if (impl->sculpt_session != nullptr) {
+    pg_sculpt_session_end(impl->sculpt_session);
+    impl->sculpt_session = nullptr;
+  }
+  impl->sculpt_session_tool = -1;
+  impl->sculpt_session_radius = 0.0f;
+  impl->sculpt_session_strength = 0.0f;
+  impl->sculpt_session_invert = false;
+}
+
+static PGSculptSession *sculpt_session_begin(Backend::Impl *impl,
+                                             int tool,
+                                             float radius,
+                                             float strength,
+                                             bool invert)
+{
+  PGToolBrushParams params{};
+  params.brush = tool;
+  params.radius = radius;
+  params.strength = strength;
+  params.px_per_unit = 1.0f;
+  params.invert = invert ? 1 : 0;
+  params.seed = 0x47505343u;
+  params.select_mask = 0;
+  params.active_material = 0;
+
+  PGSculptSession *session = pg_sculpt_session_begin(impl->gpd, &params);
+  if (session == nullptr) {
+    return nullptr;
+  }
+
+  impl->sculpt_session = session;
+  impl->sculpt_session_tool = tool;
+  impl->sculpt_session_radius = radius;
+  impl->sculpt_session_strength = strength;
+  impl->sculpt_session_invert = invert;
+  return session;
+}
+
 bool Backend::sculpt_at(int tool, float x, float y, float radius, float influence)
 {
-  if (!impl_->frame) {
-    impl_->last_error = "no active frame";
+  if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
+      !std::isfinite(x) || !std::isfinite(y) ||
+      !std::isfinite(influence)) {
+    impl_->last_error = "invalid Legacy GP sculpt input";
     return false;
   }
-  return sculpt_update(tool, x, y, x, y, 1.0f, radius, influence, false);
+
+  if (impl_->sculpt_session == nullptr ||
+      impl_->sculpt_session_tool != tool ||
+      impl_->sculpt_session_radius != radius ||
+      impl_->sculpt_session_strength != influence ||
+      impl_->sculpt_session_invert) {
+    sculpt_session_end(impl_);
+    if (sculpt_session_begin(impl_, tool, radius, influence, false) == nullptr) {
+      impl_->last_error = "Blender 3.6.23 Legacy GP sculpt session creation failed";
+      return false;
+    }
+  }
+
+  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, 1.0f)) {
+    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
+    return false;
+  }
+
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
 }
 
 bool Backend::sculpt_begin(int tool, float x, float y, float pressure,
                            float radius, float strength, bool invert)
 {
-  impl_->stroke_style.thickness = radius;
-  impl_->last_error.clear();
-  if (!impl_->frame) {
-    impl_->last_error = "no active frame";
+  if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
+      !std::isfinite(x) || !std::isfinite(y) ||
+      !std::isfinite(pressure) || !std::isfinite(strength)) {
+    impl_->last_error = "invalid Legacy GP sculpt input";
     return false;
   }
-  return sculpt_update(tool, x, y, x, y, pressure, radius, strength, invert);
+
+  sculpt_session_end(impl_);
+  if (sculpt_session_begin(impl_, tool, radius, strength, invert) == nullptr) {
+    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt session creation failed";
+    return false;
+  }
+
+  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, pressure)) {
+    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
+    return false;
+  }
+
+  project_grease_gp_tag(impl_->gpd);
+  impl_->last_error.clear();
+  return true;
 }
 
-bool Backend::sculpt_update(int tool, float x, float y, float prev_x, float prev_y,
+bool Backend::sculpt_update(int tool, float x, float y, float /*prev_x*/, float /*prev_y*/,
                             float pressure, float radius, float strength, bool invert)
 {
   if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
       !std::isfinite(x) || !std::isfinite(y) ||
-      !std::isfinite(prev_x) || !std::isfinite(prev_y) ||
       !std::isfinite(pressure) || !std::isfinite(strength)) {
-    impl_->last_error = "invalid Legacy GP sculpt stroke";
+    impl_->last_error = "invalid Legacy GP sculpt input";
     return false;
   }
 
-  legacy_gp_sculpt::Tool sculpt_tool;
-  switch (tool) {
-    case 0: sculpt_tool = legacy_gp_sculpt::Smooth; break;
-    case 1: sculpt_tool = legacy_gp_sculpt::Thickness; break;
-    case 2: sculpt_tool = legacy_gp_sculpt::Strength; break;
-    case 3: sculpt_tool = legacy_gp_sculpt::Grab; break;
-    case 4: sculpt_tool = legacy_gp_sculpt::Push; break;
-    case 5: sculpt_tool = legacy_gp_sculpt::Pinch; break;
-    case 6: sculpt_tool = legacy_gp_sculpt::Twist; break;
-    case 7: sculpt_tool = legacy_gp_sculpt::Randomize; break;
-    default:
-      impl_->last_error = "unknown Legacy GP sculpt brush";
+  if (impl_->sculpt_session == nullptr ||
+      impl_->sculpt_session_tool != tool ||
+      impl_->sculpt_session_radius != radius ||
+      impl_->sculpt_session_strength != strength ||
+      impl_->sculpt_session_invert != invert) {
+    sculpt_session_end(impl_);
+    if (sculpt_session_begin(impl_, tool, radius, strength, invert) == nullptr) {
+      impl_->last_error = "Blender 3.6.23 Legacy GP sculpt session creation failed";
       return false;
+    }
   }
 
-  legacy_gp_sculpt::Context context{};
-  context.mouse_x = x;
-  context.mouse_y = y;
-  context.prev_x = prev_x;
-  context.prev_y = prev_y;
-  context.delta_x = x - prev_x;
-  context.delta_y = y - prev_y;
-
-  legacy_gp_sculpt::Settings settings{};
-  settings.brush_alpha = std::clamp(strength, 0.0f, 1.0f);
-  settings.pressure = std::clamp(pressure, 0.0f, 1.0f);
-  settings.radius = radius;
-  settings.invert = invert;
-  settings.apply_position = sculpt_tool == legacy_gp_sculpt::Smooth ||
-                             sculpt_tool == legacy_gp_sculpt::Grab ||
-                             sculpt_tool == legacy_gp_sculpt::Push ||
-                             sculpt_tool == legacy_gp_sculpt::Pinch ||
-                             sculpt_tool == legacy_gp_sculpt::Twist ||
-                             sculpt_tool == legacy_gp_sculpt::Randomize;
-  settings.apply_strength = sculpt_tool == legacy_gp_sculpt::Smooth ||
-                             sculpt_tool == legacy_gp_sculpt::Strength ||
-                             sculpt_tool == legacy_gp_sculpt::Randomize;
-  settings.apply_thickness = sculpt_tool == legacy_gp_sculpt::Smooth ||
-                              sculpt_tool == legacy_gp_sculpt::Thickness ||
-                              sculpt_tool == legacy_gp_sculpt::Randomize;
-  settings.apply_uv = sculpt_tool == legacy_gp_sculpt::Smooth ||
-                       sculpt_tool == legacy_gp_sculpt::Randomize;
-
-  bool changed = false;
-  for (bGPDstroke *stroke =
-           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       stroke; stroke = stroke->next) {
-    changed |= legacy_gp_sculpt::apply(
-        impl_->gpd, impl_->frame, stroke, sculpt_tool, context, settings, 2);
-  }
-
-  if (!changed) {
-    impl_->last_error = "Legacy GP sculpt brush hit no editable points";
+  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, pressure)) {
+    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
     return false;
   }
 
-  impl_->stroke = nullptr;
-  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
   return true;
@@ -4624,6 +4669,7 @@ bool Backend::sculpt_update(int tool, float x, float y, float prev_x, float prev
 
 bool Backend::sculpt_end()
 {
+  sculpt_session_end(impl_);
   impl_->last_error.clear();
   return true;
 }

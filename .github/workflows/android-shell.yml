@@ -136,7 +136,7 @@ jobs:
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
 
-      - name: Run native edit tests (after DNA: colortools.c needs dna_type_offsets.h since L5)
+      - name: Run native edit tests (after DNA generation, needed by colortools.c since L5)
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_edit_tests.sh

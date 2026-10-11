@@ -912,6 +912,10 @@ int pg_mod_eval_frame(bGPdata *gpd, bGPDlayer *gpl, bGPDframe *gpf, const PGModE
     BLI_addtail(&r_eval->strokes, copy);
     n++;
   }
+  /* L6: Blender's copy-on-write links the evaluated copy to the original before the modifiers
+   * run (BKE_gpencil_data_update_orig_pointers -> BKE_gpencil_layer_original_pointers_update). */
+  r_eval->runtime.gpf_orig = gpf;
+  BKE_gpencil_frame_original_pointers_update(gpf, r_eval);
 
   PGModContext ctx = {gpd, gpl, r_eval, cfra, gpf};
   for (int i = 0; i < count && entries != NULL; i++) {

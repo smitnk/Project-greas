@@ -512,7 +512,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(
 // ProjectDocumentCodec.kt:
 //   stroke info   [material, thickness, cyclic, fillOpacity, fillR, fillG, fillB, fillA]
 //   point color   [r, g, b, a]  (bGPDspoint.vert_color; alpha 0 = no vertex color)
-//   layer info    [visible, locked, opacity]
+//   layer info    [visible, locked, opacity, onion (GP_LAYER_ONIONSKIN)]
 //   material info [strokeR, strokeG, strokeB, strokeA, fillR, fillG, fillB, fillA, visible, fillEnabled]
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetStrokeInfo(

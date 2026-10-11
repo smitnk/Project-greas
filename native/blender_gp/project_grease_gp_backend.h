@@ -127,6 +127,7 @@ class Backend {
   bool select_first_points(bool only_selected_strokes, bool extend);
   bool select_grouped(int type); // 0=layer, 1=material
   int material_count() const;
+  bool material_used_by_strokes(int index) const;
   bool create_material();
   bool set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4]);
   bool set_material_visibility(int index, bool visible);

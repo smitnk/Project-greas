@@ -238,6 +238,75 @@ static void test_vertex_paint(PGToolSession *ts)
   CHECK(s->points[0].vert_color[1] == 1.0f && s->points[0].vert_color[0] == 0.0f, "replace");
   CHECK(s->points[5].vert_color[3] == 0.0f && s->points[5].vert_color[1] == 0.0f, "replace touched an unpainted point");
   free_doc(&d);
+
+  /* Blur must change existing vertex colors, not merely complete a gesture. */
+  Doc blur_doc = doc();
+  bGPDstroke *blur_stroke = stroke(&blur_doc, 7, 0, 100, 10, 0);
+  for (int i = 0; i < 7; i++) {
+    /* An asymmetric color field ensures the sampled point differs from its neighbors' mean. */
+    blur_stroke->points[i].vert_color[0] = (i == 3) ? 1.0f : 0.0f;
+    blur_stroke->points[i].vert_color[1] = 0.25f;
+    blur_stroke->points[i].vert_color[2] = (i == 3) ? 0.0f : 1.0f;
+    blur_stroke->points[i].vert_color[3] = 1.0f;
+    /* Android edits the original GP data directly; no evaluated point mapping is present. */
+    blur_stroke->points[i].runtime.pt_orig = NULL;
+  }
+  const float blur_before = blur_stroke->points[2].vert_color[0];
+  brush(GPVERTEX_TOOL_BLUR, 35, 1.0f);
+  params[PG_TOOL_P_TARGET] = GPPAINT_MODE_STROKE;
+  const float blur_xy[1][2] = {{30, 100}};
+  gesture(ts, blur_doc.gpd, PG_TOOL_VERTEX_PAINT, params, blur_xy, 1);
+  CHECK(fabsf(blur_stroke->points[2].vert_color[0] - blur_before) > 1e-6f,
+        "vertex Blur completed without changing any sampled color");
+  free_doc(&blur_doc);
+
+  /* Average must blend sampled vertex colors toward the sample average. */
+  Doc average_doc = doc();
+  bGPDstroke *average_stroke = stroke(&average_doc, 7, 0, 100, 10, 0);
+  for (int i = 0; i < 7; i++) {
+    /* Point 3 is red; the other sampled points are blue, so Average must alter it. */
+    average_stroke->points[i].vert_color[0] = (i == 3) ? 1.0f : 0.0f;
+    average_stroke->points[i].vert_color[1] = 0.0f;
+    average_stroke->points[i].vert_color[2] = (i == 3) ? 0.0f : 1.0f;
+    average_stroke->points[i].vert_color[3] = 1.0f;
+    /* Exercise the real Android path where points have no evaluated-copy backlink. */
+    average_stroke->points[i].runtime.pt_orig = NULL;
+  }
+  const float average_before = average_stroke->points[3].vert_color[0];
+  brush(GPVERTEX_TOOL_AVERAGE, 35, 1.0f);
+  params[PG_TOOL_P_TARGET] = GPPAINT_MODE_STROKE;
+  const float average_xy[1][2] = {{30, 100}};
+  gesture(ts, average_doc.gpd, PG_TOOL_VERTEX_PAINT, params, average_xy, 1);
+  CHECK(fabsf(average_stroke->points[3].vert_color[0] - average_before) > 1e-6f,
+        "vertex Average completed without changing any sampled color");
+  free_doc(&average_doc);
+
+  /* Smear is tested behaviorally: a multi-sample drag must transfer some sampled color.
+   * A no-crash assertion is not sufficient to call this brush functional. */
+  Doc smear_doc = doc();
+  bGPDstroke *smear_stroke = stroke(&smear_doc, 7, 0, 100, 10, 0);
+  for (int i = 0; i < 7; i++) {
+    smear_stroke->points[i].vert_color[0] = (i < 3) ? 1.0f : 0.0f;
+    smear_stroke->points[i].vert_color[1] = 0.0f;
+    smear_stroke->points[i].vert_color[2] = (i < 3) ? 0.0f : 1.0f;
+    smear_stroke->points[i].vert_color[3] = 1.0f;
+  }
+  float smear_before[7][3];
+  for (int i = 0; i < 7; i++) {
+    memcpy(smear_before[i], smear_stroke->points[i].vert_color, sizeof(smear_before[i]));
+  }
+  brush(GPVERTEX_TOOL_SMEAR, 35, 1.0f);
+  params[PG_TOOL_P_TARGET] = GPPAINT_MODE_STROKE;
+  const float smear_xy[5][2] = {{10, 100}, {15, 100}, {20, 100}, {25, 100}, {30, 100}};
+  gesture(ts, smear_doc.gpd, PG_TOOL_VERTEX_PAINT, params, smear_xy, 5);
+  float smear_delta = 0.0f;
+  for (int i = 0; i < 7; i++) {
+    for (int channel = 0; channel < 3; channel++) {
+      smear_delta += fabsf(smear_stroke->points[i].vert_color[channel] - smear_before[i][channel]);
+    }
+  }
+  CHECK(smear_delta > 1e-6f, "vertex Smear completed without transferring color");
+  free_doc(&smear_doc);
 }
 
 static void test_weight_paint(PGToolSession *ts)

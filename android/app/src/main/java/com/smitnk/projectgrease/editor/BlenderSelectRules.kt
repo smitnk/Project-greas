@@ -50,11 +50,11 @@ object ProjectGreaseSelect {
     class Command(val id: Int, val args: FloatArray)
 
     fun isValidOp(op: Int): Boolean = op in OP_ADD..OP_XOR
-    /** Modes the native box / lasso / circle / pick operators take (point or stroke). */
+    /** Modes the native pick operator takes directly (segment click uses its dedicated operator). */
     fun isValidMode(mode: Int): Boolean = mode == MODE_POINT || mode == MODE_STROKE
     /** Modes of the Edit-mode switch (Point / Stroke / Segment). */
     fun isValidSelectMode(mode: Int): Boolean = mode == MODE_POINT || mode == MODE_STROKE || mode == MODE_SEGMENT
-    /** Area selection (box / lasso / circle) treats Segment like Point (segment expansion is click-only here). */
+    /** Segment expansion in area selection needs ED_gpencil_select_stroke_segment, not yet linked here. */
     fun areaMode(mode: Int): Int = if (mode == MODE_SEGMENT) MODE_POINT else mode
 
     /** Click select in segment mode: args x, y, radius_squared, flags. */

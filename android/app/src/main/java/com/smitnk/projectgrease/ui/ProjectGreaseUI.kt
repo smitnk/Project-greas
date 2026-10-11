@@ -378,22 +378,22 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     Column(Modifier.fillMaxSize()){
         Surface(tonalElevation=3.dp){
-            Row(Modifier.fillMaxWidth().height(56.dp).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
-                IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
-                Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=120.dp))
+            Row(Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
+                Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=86.dp))
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
-                IconButton(onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
-                IconButton(onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
-                IconButton(onClick={
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={
                     persistProject()
                     Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show()
                 }){Icon(Icons.Default.Save,"Save")}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
-                IconButton(onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
-                IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
-                IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
+                IconButton(modifier=Modifier.size(36.dp),onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
             }
         }
         ModeBrushBar(controller,::redraw)
@@ -556,6 +556,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 
 @NonSkippableComposable
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
+    var brushMenuOpen by remember{mutableStateOf(false)}
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
             Row(
@@ -582,14 +583,19 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     )
                 }
                 Spacer(Modifier.width(7.dp))
-                Text("Brush",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
-                BrushPreset.entries.forEach{preset->
-                    FilterChip(
-                        selected=controller.brushes.preset==preset,
-                        onClick={controller.selectBrush(preset);redraw()},
-                        label={Text(preset.label,fontSize=10.sp)},
-                        modifier=Modifier.padding(end=3.dp).testTag("brush_"+preset.name)
-                    )
+                Box {
+                    TextButton(onClick={brushMenuOpen=true},modifier=Modifier.testTag("activeBrushMenu")) {
+                        Text("Brush: "+controller.brushes.preset.label,fontSize=11.sp,maxLines=1)
+                    }
+                    DropdownMenu(expanded=brushMenuOpen,onDismissRequest={brushMenuOpen=false}) {
+                        BrushPreset.entries.forEach{preset->
+                            DropdownMenuItem(
+                                text={Text(preset.label)},
+                                onClick={brushMenuOpen=false;controller.selectBrush(preset);redraw()},
+                                modifier=Modifier.testTag("brush_"+preset.name)
+                            )
+                        }
+                    }
                 }
             }
             if (controller.mode == GreaseMode.VERTEX_PAINT) {
@@ -707,7 +713,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         "SCULPT" to listOf(GreaseTool.SCULPT),
         "NOTES" to listOf(GreaseTool.ANNOTATE)
     )
-    Column(Modifier.width(86.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
+    Column(Modifier.width(62.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
         groups.forEach{(title,group)->
             Text(title,fontSize=9.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=6.dp,bottom=2.dp))
             group.forEach{tool->
@@ -715,11 +721,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 val capability=FeatureRegistry.capability(entry.feature)
                 val enabled=capability.state!=FeatureState.NOT_IMPLEMENTED
                 val selected=controller.tools.activeTool==tool
-                Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(tool);onState()}.padding(horizontal=4.dp,vertical=2.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(tool);onState()}.padding(horizontal=2.dp,vertical=1.dp),horizontalAlignment=Alignment.CenterHorizontally){
                     Surface(shape=RoundedCornerShape(18.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent){
-                        Icon(entry.icon,entry.label,Modifier.padding(8.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)
+                        Icon(entry.icon,entry.label,Modifier.padding(6.dp).size(18.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)
                     }
-                    Text(entry.label,fontSize=9.sp,maxLines=1)
+                    Text(entry.label,fontSize=8.sp,maxLines=1)
                 }
             }
         }
@@ -755,6 +761,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
     var markersOpen by remember{mutableStateOf(false)}
     var previewOpen by remember{mutableStateOf(false)}
+    /* Keep the drawing canvas dominant on phone screens; advanced timeline controls are opt-in. */
+    var expanded by remember{mutableStateOf(false)}
     Surface(tonalElevation=4.dp){
         Column(Modifier.fillMaxWidth()){
             // Wrapping rows (no side-scroll strip): every timeline action stays reachable on narrow screens.
@@ -768,6 +776,10 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd,
                     Modifier.align(Alignment.CenterVertically).padding(horizontal=4.dp))
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
+                TextButton(onClick={expanded=!expanded},modifier=Modifier.testTag("timelineExpand")){
+                    Text(if(expanded)"Less" else "More")
+                }
+                if(expanded) {
                 TextButton(
                     enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
                     onClick={if(controller.interpolateFrameAt(controller.animation.currentFrame)){redraw()}}
@@ -793,11 +805,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 }
                 FilterChip(selected=controller.animation.scrubSnapToKeys,onClick={controller.animation.scrubSnapToKeys=!controller.animation.scrubSnapToKeys},
                     label={Text("Snap to keys")},modifier=Modifier.testTag("scrubSnapKeys"))
+                }
             }
             if(markersOpen)MarkersDialog(controller,{markersOpen=false},redraw)
             if(previewOpen)PreviewRangeDialog(controller,{previewOpen=false},redraw)
             val listState=androidx.compose.foundation.lazy.rememberLazyListState()
-            Box(Modifier.padding(horizontal=5.dp)){TimelineScrubStrip(controller,listState,52.dp,redraw)}
+            if(expanded) Box(Modifier.padding(horizontal=5.dp)){TimelineScrubStrip(controller,listState,52.dp,redraw)}
             // Lazy: only the visible frame cells are composed. The scene end can be up to 100000
             // frames; composing a cell for each one on every recomposition froze the main thread
             // (monkey ANR in Timeline).
@@ -806,7 +819,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             val frameTotal=controller.animation.timelineEnd.coerceAtLeast(1)
             val markerByFrame=controller.animation.timeline.markers.associateBy{it.frame}
             val previewRange=controller.animation.timeline.preview
-            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(5.dp),state=listState){
+            androidx.compose.foundation.lazy.LazyRow(
+                Modifier.fillMaxWidth().padding(horizontal=5.dp, vertical=if(expanded) 5.dp else 2.dp)
+                    .height(if(expanded) 62.dp else 34.dp),
+                state=listState
+            ){
                 items(frameTotal,key={it+1}){index->
                     val frame=index+1
                     val key=frame in keyframes
@@ -817,25 +834,27 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     Box(if(inPreview)Modifier.background(PreviewRangeColor) else Modifier){
                         // tap: go to the frame; long press: key type / frame selection menu
                         Surface(
-                            Modifier.width(52.dp).height(54.dp).padding(2.dp).testTag("frame_$frame")
+                            Modifier.width(52.dp).height(if(expanded) 54.dp else 30.dp).padding(2.dp).testTag("frame_$frame")
                                 .border(if(selectedKey)2.dp else 0.dp,if(selectedKey)Color(0xFFFF8500) else Color.Transparent,RoundedCornerShape(8.dp))
                                 .pointerInput(frame){detectTapGestures(onTap={controller.selectFrame(frame);redraw()},onLongPress={menuFrame=frame})},
                             shape=RoundedCornerShape(8.dp),
                             tonalElevation=if(frame==controller.animation.currentFrame)5.dp else 0.dp
                         ){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
                             Text(frame.toString())
-                            if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
-                                Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
-                            } else Text("HOLD",fontSize=8.sp)
-                            if(marker!=null)Text(marker.name,fontSize=7.sp,maxLines=1,
-                                color=if(marker.selected)MarkerSelectedColor else Color.Unspecified,
-                                modifier=Modifier.testTag("markerLabel_$frame"))
+                            if(expanded) {
+                                if(key) Box(Modifier.background(keyTypeColor(type),RoundedCornerShape(3.dp)).padding(horizontal=3.dp).testTag("keyMark_${frame}_$type")){
+                                    Text(keyTypeMark(type),fontSize=8.sp,color=Color.Black)
+                                } else Text("HOLD",fontSize=8.sp)
+                                if(marker!=null)Text(marker.name,fontSize=7.sp,maxLines=1,
+                                    color=if(marker.selected)MarkerSelectedColor else Color.Unspecified,
+                                    modifier=Modifier.testTag("markerLabel_$frame"))
+                            }
                         }}
                         if(menuFrame==frame)KeyframeMenu(controller,frame,{menuFrame=-1},redraw)
                     }
                 }
                 item(key="add"){
-                    Surface(Modifier.width(64.dp).height(54.dp).padding(2.dp).clickable{
+                    Surface(Modifier.width(64.dp).height(if(expanded) 54.dp else 30.dp).padding(2.dp).clickable{
                         controller.createFrame((controller.animation.timelineEnd+1).coerceAtLeast(1));redraw()
                     },shape=RoundedCornerShape(8.dp)){
                         Box(contentAlignment=Alignment.Center){Text("+")}

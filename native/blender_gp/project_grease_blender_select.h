@@ -39,7 +39,7 @@ enum {
   PG_SEL_OP_XOR = 5,
 };
 
-/* Values of Blender's eGP_Selectmode. Segment mode is not ported yet. */
+/* Values of Blender's eGP_Selectmode currently supported by area selection. */
 enum {
   PG_SELECTMODE_POINT = 0,
   PG_SELECTMODE_STROKE = 1,

@@ -12,6 +12,7 @@ on:
       - "feature/project-grease-ui-real-integration"
       - "feature/project-grease-full-feature-work"
       - "fix/l1-blockers"
+      - "fix/l1-vertex-paint-regression-tests"
     paths:
       - "android/**"
       - "native/blender_gp/**"

@@ -526,8 +526,15 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
                                     arg_count);
       }
       if (command >= PG_EDIT_CMD_FIRST && command <= PG_EDIT_CMD_LAST) {
+        /* Blender's edit-selection operators iterate all editable strokes, not just the
+         * active layer. Keep layer-specific commands scoped above, but let pick/transform/
+         * delete operate on the complete current editable selection. */
+        bGPDlayer *edit_scope =
+            (command >= PG_EDIT_CMD_PICK && command <= PG_EDIT_CMD_DELETE_POINTS) ?
+                nullptr :
+                handle->backend.active_layer_data();
         const int changed = pg_gp_edit_dispatch(handle->backend.document_data(),
-                                                handle->backend.active_layer_data(),
+                                                edit_scope,
                                                 command,
                                                 args,
                                                 arg_count);
@@ -537,8 +544,10 @@ int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
         }
         return changed;
       }
+      /* Blender's area selection operators scan all editable layers; the active layer is
+       * not a restriction for lasso, box, circle, or select-all. */
       return pg_gp_select_dispatch(handle->backend.document_data(),
-                                   handle->backend.active_layer_data(),
+                                   nullptr,
                                    command,
                                    args,
                                    arg_count);
@@ -928,6 +937,11 @@ int project_grease_gp_material_count(const ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.material_count();
+}
+int project_grease_gp_material_used_by_strokes(const ProjectGreaseGPHandle *handle, int index)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.material_used_by_strokes(index) ? 1 : 0;
 }
 int project_grease_gp_create_material(ProjectGreaseGPHandle *handle)
 {

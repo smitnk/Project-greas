@@ -227,6 +227,7 @@ object GPNative {
     external fun nativeFxGet(handle: Long, layer: Int, index: Int): FloatArray?
     external fun nativeGetMaterialInfo(handle: Long, index: Int): FloatArray?
     external fun nativeMaterialCount(handle: Long): Int
+    external fun nativeMaterialUsedByStrokes(handle: Long, index: Int): Boolean
     external fun nativeCreateMaterial(handle: Long): Boolean
     external fun nativeSetMaterialColors(handle: Long, index: Int, stroke: FloatArray, fill: FloatArray): Boolean
     external fun nativeSetMaterialVisibility(handle: Long, index: Int, visible: Boolean): Boolean

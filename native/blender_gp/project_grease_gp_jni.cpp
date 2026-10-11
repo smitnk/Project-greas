@@ -968,6 +968,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaterialCount(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaterialUsedByStrokes(
+    JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_material_used_by_strokes(from_handle(handle), index) != 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateMaterial(
     JNIEnv *, jobject, jlong handle)
 {

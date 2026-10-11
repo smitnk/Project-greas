@@ -130,6 +130,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun setMaterialName(slot: Int, name: String) = handle != 0L && GPNative.nativeSetMaterialName(handle, slot, name)
     fun fillStroke(index: Int) = handle != 0L && GPNative.nativeFillStroke(handle, index)
     fun materialCount() = if (handle != 0L) GPNative.nativeMaterialCount(handle) else 0
+    fun materialUsedByStrokes(index: Int) = handle != 0L && GPNative.nativeMaterialUsedByStrokes(handle, index)
     fun createMaterial() = handle != 0L && GPNative.nativeCreateMaterial(handle)
     fun setMaterialColors(index:Int, stroke:FloatArray, fill:FloatArray) = handle != 0L && GPNative.nativeSetMaterialColors(handle,index,stroke,fill)
     fun setMaterialVisibility(index:Int, visible:Boolean) = handle != 0L && GPNative.nativeSetMaterialVisibility(handle,index,visible)
@@ -704,6 +705,11 @@ class EditorController {
     private val native = NativeEditorBridge()
     var selectedLayer = 0
         private set
+    /**
+     * Visibility before the current isolate operation. A second Isolate restores this snapshot;
+     * changing layer topology or visibility manually invalidates it so stale indices are never used.
+     */
+    private var layerIsolationSnapshot: Pair<Int, List<Boolean>>? = null
     val tools=ToolController()
     /** 3D reference scene for Line Art (Scene-lite): OBJ meshes + camera, previewed as a wireframe. */
     val reference=ReferenceScene()
@@ -777,6 +783,7 @@ class EditorController {
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
         setupTrace("resetDocument ok=$ok")
         if(ok){
+            layerIsolationSnapshot = null
             clearTextures()
             projectSettings = ProjectSettings()
             reapplyOnion()
@@ -1396,7 +1403,49 @@ class EditorController {
         }
         return ok
     }
-    fun isolateLayer() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LAYER_ISOLATE))
+    /**
+     * Isolates the active layer and toggles back to the exact visibility state that preceded it.
+     * If the user selects another layer while isolated, restore the original visibility first and
+     * isolate the newly selected layer. One user action creates one undo step.
+     */
+    fun isolateLayer(): Boolean {
+        val count = native.layerCount()
+        if (count <= 0 || selectedLayer !in 0 until count) return false
+
+        val previous = layerIsolationSnapshot
+        if (previous != null) {
+            val (previousActive, previousVisibility) = previous
+            if (previousVisibility.size == count) {
+                for (i in 0 until count) {
+                    if (!native.setLayerVisibility(i, previousVisibility[i])) return false
+                }
+                layerIsolationSnapshot = null
+                if (previousActive == selectedLayer) {
+                    history.markEdit()
+                    document.markDirty()
+                    render()
+                    return true
+                }
+            } else {
+                layerIsolationSnapshot = null
+            }
+        }
+
+        val visibility = (0 until count).map { i ->
+            layerState(i)?.visible ?: return false
+        }
+        for (i in 0 until count) {
+            if (!native.setLayerVisibility(i, i == selectedLayer)) {
+                for (restore in 0 until count) native.setLayerVisibility(restore, visibility[restore])
+                return false
+            }
+        }
+        layerIsolationSnapshot = selectedLayer to visibility
+        history.markEdit()
+        document.markDirty()
+        render()
+        return true
+    }
     fun lockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LOCK_ALL))
     fun unlockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_UNLOCK_ALL))
 
@@ -1589,6 +1638,7 @@ class EditorController {
         if (native.handle == 0L) return false
         val parsed = ProjectDocumentCodec.parse(raw) ?: return false
         if (!GPNative.nativeResetDocumentEgl(rendererHandle)) return false
+        layerIsolationSnapshot = null
         reapplyOnion()
         document.canvasWidth = (parsed.width ?: document.canvasWidth).coerceAtLeast(1)
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
@@ -1732,9 +1782,51 @@ class EditorController {
         return setMaterialColor(argb)
     }
 
+    /**
+     * Editing a material already used by strokes would recolour every old stroke that references it.
+     * For a colour-picker edit, fork the active material first when it is used by a stroke in the
+     * current editable frame. New strokes use the fork; existing strokes keep their original material.
+     */
+    private fun forkUsedMaterialForColorEdit(argb: Int): Boolean {
+        val source = materials.activeMaterial
+        val used = native.materialUsedByStrokes(source)
+        if (!used) return true
+        val record = materialRecord(source) ?: return false
+        val requested = colorToFloats(argb)
+        // Opacity controls also call setMaterialColor; don't create a new material when RGB is unchanged.
+        if ((0..2).all { kotlin.math.abs(record.stroke[it] - requested[it]) < (1f / 255f) }) return true
+        if (record.locked) return false
+        val target = native.materialCount()
+        if (!native.createMaterial()) return false
+        if (!native.setMaterialColors(target, record.stroke, record.fill) ||
+            !native.setMaterialFillEnabled(target, record.fillEnabled)) return false
+        native.setMaterialVisibility(target, record.visible)
+        native.setMaterialName(target, record.name.ifBlank { "Material ${source + 1}" }.removeSuffix(" Color") + " Color")
+        ProjectGreaseSelect.materialMode(target, record.mode, record.alignment, record.rotation)
+            ?.let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialPass(target, record.passIndex)
+            .let { native.applyEditCommand(it.id, it.args) }
+        ProjectGreaseSelect.materialOptions(target, record.strokeHoldout, record.fillHoldout, record.selfOverlap)
+            .let { native.applyEditCommand(it.id, it.args) }
+        /* Material textures are controller-owned; copy both stroke and fill texture state as well. */
+        for (isFill in listOf(false, true)) {
+            val fromKey = textureKey(source, isFill)
+            val toKey = textureKey(target, isFill)
+            materialTextures[fromKey]?.let { materialTextures[toKey] = it.copy() }
+            textureImages[fromKey]?.let { image ->
+                textureImages[toKey] = Triple(image.first.copyOf(), image.second, image.third)
+            }
+        }
+        reapplyTextureSettings()
+        reuploadTextures()
+        materials.select(target)
+        return true
+    }
+
     fun setMaterialColor(argb:Int):Boolean {
-        materials.setColor(argb)
         if (rendererHandle == 0L) return false
+        if (!forkUsedMaterialForColorEdit(argb)) return false
+        materials.setColor(argb)
         val c=colorToFloats(argb)
         val alpha=c[3]*materials.opacity
         val stroke=floatArrayOf(c[0],c[1],c[2],alpha)
@@ -1886,6 +1978,7 @@ class EditorController {
     fun applyLayerModifier(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.apply(native,layer,index))
 
     fun setLayerVisibility(index:Int, visible:Boolean):Boolean {
+        layerIsolationSnapshot = null
         val ok=native.setLayerVisibility(index,visible)
         if(ok){history.markEdit();document.markDirty();render()}
         return ok
@@ -1896,17 +1989,20 @@ class EditorController {
         return ok
     }
     fun moveLayer(from:Int,to:Int):Boolean {
+        layerIsolationSnapshot = null
         val ok=native.moveLayer(from,to)
         if(ok){selectedLayer=to;history.markEdit();document.markDirty();render()}
         return ok
     }
     fun duplicateLayer(index:Int=selectedLayer):Boolean {
+        layerIsolationSnapshot = null
         val ok=native.duplicateLayer(index)
         if(ok){selectedLayer=(index+1).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
         return ok
     }
     fun deleteLayer(index:Int=selectedLayer):Boolean {
         if(native.layerCount()<=1)return false
+        layerIsolationSnapshot = null
         val ok=native.deleteLayer(index)
         if(ok){selectedLayer=(index-1).coerceAtLeast(0).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
         return ok
@@ -1922,6 +2018,7 @@ class EditorController {
      * fps and the scene end frame. The top layer and material 0 end up active.
      */
     fun applyTemplate(template:GreaseTemplates.Template):Boolean {
+        layerIsolationSnapshot = null
         setupTrace("applyTemplate ${template.id} handle=${native.handle != 0L} layers=${native.layerCount()}")
         if (native.handle == 0L || template.layers.isEmpty()) return false
         if (native.layerCount() == 0) {
@@ -2127,6 +2224,7 @@ class EditorController {
     }
 
     fun createLayer(name:String):Boolean {
+        layerIsolationSnapshot = null
         val ok = native.createLayer(name)
         if (ok) {
             selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)

@@ -2500,7 +2500,7 @@ bool Backend::stroke_center(int index, float *x, float *y) const
 {
   // Reserved index -1: median of every selected point (pivot of selection-wide edits).
   if (index == -1 && x && y && impl_->gpd) {
-    return pg_gp_edit_selection_pivot(impl_->gpd, impl_->layer, x, y) != 0;
+    return pg_gp_edit_selection_pivot(impl_->gpd, nullptr, x, y) != 0;
   }
   if (!impl_->frame || index < 0 || !x || !y) {
     return false;
@@ -3600,6 +3600,33 @@ bool Backend::render() {
 int Backend::material_count() const
 {
   return impl_->gpd ? impl_->gpd->totcol : 0;
+}
+
+/* Scan every Legacy GP layer and keyframe: materials are shared document-wide, not per canvas. */
+bool Backend::material_used_by_strokes(int index) const
+{
+  if (!impl_->gpd || index < 0 || index >= impl_->gpd->totcol) {
+    return false;
+  }
+  for (const bGPDlayer *layer = static_cast<const bGPDlayer *>(impl_->gpd->layers.first);
+       layer;
+       layer = layer->next)
+  {
+    for (const bGPDframe *frame = static_cast<const bGPDframe *>(layer->frames.first);
+         frame;
+         frame = frame->next)
+    {
+      for (const bGPDstroke *stroke = static_cast<const bGPDstroke *>(frame->strokes.first);
+           stroke;
+           stroke = stroke->next)
+      {
+        if (stroke->mat_nr == index) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 bool Backend::create_material()

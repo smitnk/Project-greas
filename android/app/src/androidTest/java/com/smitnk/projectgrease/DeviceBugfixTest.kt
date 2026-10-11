@@ -458,6 +458,23 @@ class DeviceBugfixTest {
         assertTrue("active layer visible", darkRun(bmp, shown.first.toInt(), shown.second.toInt()) > 0)
     }
 
+    @Test fun isolateRestoresPreviousVisibilityOnSecondTap() {
+        assertTrue(onUi { controller.layerCount() } >= 2)
+        // Start with a deliberately non-default state: layer 0 visible, active layer 1 hidden.
+        onUi {
+            assertTrue(controller.setLayerVisibility(0, true))
+            assertTrue(controller.setLayerVisibility(1, false))
+            controller.selectLayer(1)
+        }
+        assertTrue("isolate applied", onUi { controller.isolateLayer() })
+        assertTrue("isolated active layer forced visible", onUi { controller.layerState(1)?.visible == true })
+        assertTrue("other layer hidden while isolated", onUi { controller.layerState(0)?.visible == false })
+
+        assertTrue("second isolate restores visibility", onUi { controller.isolateLayer() })
+        assertTrue("previous visible layer restored", onUi { controller.layerState(0)?.visible == true })
+        assertTrue("previously hidden active layer restored", onUi { controller.layerState(1)?.visible == false })
+    }
+
     // ---- batch 21 ----
     @Test fun guideSnapsDrawnStroke() {
         onUi { controller.view.setDrawingGuide(2, 640f, 360f, 0f, 40f); controller.render() } // parallel, horizontal

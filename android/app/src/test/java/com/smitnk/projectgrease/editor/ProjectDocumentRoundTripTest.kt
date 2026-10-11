@@ -522,7 +522,7 @@ class ProjectDocumentRoundTripTest {
         doc.applyMaterialRecord(0, MaterialRecord(floatArrayOf(0f, 0f, 1f, 1f), floatArrayOf(1f, 1f, 1f, 1f), true, false,
             name = "Blue dots", locked = true, mode = 1, alignment = 2, rotation = 0.5f, passIndex = 2))
         val raw = save(doc)
-        assertTrue(raw.contains("\"version\":6"))
+        assertTrue(raw.contains("\"version\":7"))
         val back = load(raw)
         assertEquals(ProjectGreaseSelect.KEY_BREAKDOWN, back.layers[0].frames.first { it.number == 4 }.keyType)
         assertEquals(0, back.layers[0].frames.first { it.number == 1 }.keyType)

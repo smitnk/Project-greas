@@ -93,7 +93,7 @@ private class FakeDocument : DocumentNative {
         val target = layers.getOrNull(index) ?: return false
         val name = if (record.name.isNotBlank()) record.name else target.record.name
         target.record = LayerRecord(name, record.visible, record.locked, record.opacity.coerceIn(0f, 1f),
-            record.blendMode, record.tint.copyOf(), record.lineChange, record.passIndex)
+            record.blendMode, record.tint.copyOf(), record.lineChange, record.passIndex, record.onionSkin)
         return true
     }
     override fun frameKeyTypes(): Map<Int, Int> = layers[layer].frames.associate { it.number to it.keyType }
@@ -163,7 +163,7 @@ class ProjectDocumentRoundTripTest {
         doc.createLayer("Inks")
         doc.createFrame(1)
         doc.addStroke(stroke(2, 1, 40f, true, 1f, floatArrayOf(1f, 1f, 1f, 1f)))
-        doc.applyLayerRecord(1, LayerRecord("Inks", false, true, 0.5f))
+        doc.applyLayerRecord(1, LayerRecord("Inks", false, true, 0.5f, onionSkin = false))
 
         doc.createLayer("Colors")
         doc.createFrame(2)
@@ -203,6 +203,7 @@ class ProjectDocumentRoundTripTest {
             assertEquals("layer $li visible", el.record.visible, al.record.visible)
             assertEquals("layer $li locked", el.record.locked, al.record.locked)
             assertEquals("layer $li opacity", el.record.opacity, al.record.opacity, 0f)
+            assertEquals("layer $li onion skin", el.record.onionSkin, al.record.onionSkin)
             assertEquals("layer $li frames", el.frames.map { it.number }, al.frames.map { it.number })
             assertEquals("layer $li use mask", el.useMask, al.useMask)
             assertEquals("layer $li masks", el.masks.map { Triple(it.name, it.hidden, it.inverted) },
@@ -511,7 +512,7 @@ class ProjectDocumentRoundTripTest {
     }
 
     @Test
-    fun version6KeepsKeyTypesLayerLookAndMaterialSettings() {
+    fun version7KeepsKeyTypesLayerLookAndMaterialSettings() {
         val doc = FakeDocument()
         doc.createFrame(1)
         doc.addStroke(StrokeRecord(listOf(floatArrayOf(0f, 0f, 0f, 1f, 1f, 0f), floatArrayOf(5f, 5f, 0f, 1f, 1f, 0f))))
@@ -521,7 +522,7 @@ class ProjectDocumentRoundTripTest {
         doc.applyMaterialRecord(0, MaterialRecord(floatArrayOf(0f, 0f, 1f, 1f), floatArrayOf(1f, 1f, 1f, 1f), true, false,
             name = "Blue dots", locked = true, mode = 1, alignment = 2, rotation = 0.5f, passIndex = 2))
         val raw = save(doc)
-        assertTrue(raw.contains("\"version\":6"))
+        assertTrue(raw.contains("\"version\":7"))
         val back = load(raw)
         assertEquals(ProjectGreaseSelect.KEY_BREAKDOWN, back.layers[0].frames.first { it.number == 4 }.keyType)
         assertEquals(0, back.layers[0].frames.first { it.number == 1 }.keyType)

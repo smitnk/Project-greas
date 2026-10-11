@@ -32,7 +32,9 @@ class LayerRecord(
     val name: String, val visible: Boolean, val locked: Boolean, val opacity: Float,
     /** eGPLayerBlendModes, tint rgb + factor (tintcolor), thickness offset (line_change), pass index. */
     val blendMode: Int = 0, val tint: FloatArray = floatArrayOf(0f, 0f, 0f, 0f), val lineChange: Int = 0,
-    val passIndex: Int = 0
+    val passIndex: Int = 0,
+    /** Blender GP_LAYER_ONIONSKIN flag. Older project files default to the native new-layer value. */
+    val onionSkin: Boolean = true
 )
 
 /** One entry of a layer's mask list: [name] is the mask layer (masks refer to layers by name). */
@@ -145,12 +147,13 @@ class ParsedDocument(
  * opacity) and the material palette; version 3 adds per-point vertex color (points may carry four
  * more values); version 4 adds the per-layer live modifier stack ("modifiers") and layer masks; version 5
  * adds the per-layer shader effect list ("effects"); version 6 adds keyframe types ("keyType"), layer
- * blend / tint / line change / pass and material name / lock / line type / alignment / pass. Older
+ * blend / tint / line change / pass and material name / lock / line type / alignment / pass; version 7 adds
+ * the per-layer onion-skin flag ("onionSkin"). Older
  * files still load: missing fields read as zero, which is "no vertex color", regular blending,
  * no tint, a plain line material and a Keyframe, and a missing stack or effect list is empty.
  */
 object ProjectDocumentCodec {
-    const val VERSION = 6
+    const val VERSION = 7
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0,
@@ -191,6 +194,7 @@ object ProjectDocumentCodec {
                 if (it.tint.any { v -> v != 0f }) layerJson.put("tint", floatsJson(it.tint))
                 if (it.lineChange != 0) layerJson.put("lineChange", it.lineChange)
                 if (it.passIndex != 0) layerJson.put("pass", it.passIndex)
+                if (!it.onionSkin) layerJson.put("onionSkin", false)
             }
             val keyTypes = native.frameKeyTypes()
             val frames = JSONArray()
@@ -304,7 +308,7 @@ object ProjectDocumentCodec {
         val frames = json.optJSONArray("frames")?.let { array ->
             (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::parseFrame) }
         } ?: emptyList()
-        val record = if (json.has("name") || json.has("visible") || json.has("locked") || json.has("opacity")) {
+        val record = if (json.has("name") || json.has("visible") || json.has("locked") || json.has("opacity") || json.has("onionSkin")) {
             LayerRecord(
                 name = json.optString("name", ""),
                 visible = json.optBoolean("visible", true),
@@ -313,7 +317,8 @@ object ProjectDocumentCodec {
                 blendMode = json.optInt("blend", 0).coerceIn(0, 5),
                 tint = floats(json.optJSONArray("tint"), 4),
                 lineChange = json.optInt("lineChange", 0),
-                passIndex = json.optInt("pass", 0)
+                passIndex = json.optInt("pass", 0),
+                onionSkin = json.optBoolean("onionSkin", true)
             )
         } else null
         val masks = json.optJSONArray("masks")?.let { array ->

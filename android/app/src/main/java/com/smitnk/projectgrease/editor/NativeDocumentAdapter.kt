@@ -9,9 +9,9 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         if (info.size < 3) return null
         val name = native.layerName(index) ?: ""
         val extra = native.docQuery(1, index.toFloat())
-        if (extra == null || extra.size < 7) return LayerRecord(name, info[0] != 0f, info[1] != 0f, info[2])
+        if (extra == null || extra.size < 7) return LayerRecord(name, info[0] != 0f, info[1] != 0f, info[2], onionSkin = info.getOrNull(3)?.let { it != 0f } ?: true)
         return LayerRecord(name, info[0] != 0f, info[1] != 0f, info[2], extra[0].toInt(),
-            extra.copyOfRange(1, 5), extra[5].toInt(), extra[6].toInt())
+            extra.copyOfRange(1, 5), extra[5].toInt(), extra[6].toInt(), info.getOrNull(3)?.let { it != 0f } ?: true)
     }
 
     override fun frameKeyTypes(): Map<Int, Int> {
@@ -90,7 +90,8 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
         if (record.name.isNotBlank() && !native.renameLayer(index, record.name)) return false
         val ok = native.setLayerVisibility(index, record.visible) &&
             native.setLayerLocked(index, record.locked) &&
-            native.setLayerOpacity(index, record.opacity)
+            native.setLayerOpacity(index, record.opacity) &&
+            native.setLayerOnionSkin(index, record.onionSkin)
         if (!ok) return false
         // edit commands report "changed"; applying the default is no change and not an error
         ProjectGreaseSelect.layerBlend(index, record.blendMode)?.let { native.applyEditCommand(it.id, it.args) }

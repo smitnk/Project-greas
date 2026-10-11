@@ -79,6 +79,7 @@ object GPNative {
     external fun nativeLayerCount(handle: Long): Int
     external fun nativeSetLayerVisibility(handle: Long, index: Int, visible: Boolean): Boolean
     external fun nativeSetLayerLocked(handle: Long, index: Int, locked: Boolean): Boolean
+    external fun nativeSetLayerOnionSkin(handle: Long, index: Int, enabled: Boolean): Boolean
     external fun nativeMoveLayer(handle: Long, fromIndex: Int, toIndex: Int): Boolean
     external fun nativeDuplicateLayer(handle: Long, index: Int): Boolean
     external fun nativeDeleteLayer(handle: Long, index: Int): Boolean

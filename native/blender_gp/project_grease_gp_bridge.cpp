@@ -208,6 +208,8 @@ int project_grease_gp_set_layer_visibility(ProjectGreaseGPHandle *handle, int in
 { return ensure_ready(handle) && handle->backend.set_layer_visibility(index, visible != 0) ? 1 : 0; }
 int project_grease_gp_set_layer_locked(ProjectGreaseGPHandle *handle, int index, int locked)
 { return ensure_ready(handle) && handle->backend.set_layer_locked(index, locked != 0) ? 1 : 0; }
+int project_grease_gp_set_layer_onion_skin(ProjectGreaseGPHandle *handle, int index, int enabled)
+{ return ensure_ready(handle) && handle->backend.set_layer_onion_skin(index, enabled != 0) ? 1 : 0; }
 int project_grease_gp_move_layer(ProjectGreaseGPHandle *handle, int from_index, int to_index)
 { return ensure_ready(handle) && handle->backend.move_layer(from_index, to_index) ? 1 : 0; }
 int project_grease_gp_duplicate_layer(ProjectGreaseGPHandle *handle, int index)

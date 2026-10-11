@@ -709,6 +709,32 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
     }
   }
   drw_state_set(pass_state);
+  if (trace_enabled()) {
+    static const char *names[] = {"gpThicknessScale", "gpThicknessWorldScale", "gpThicknessOffset",
+                                  "viewportSize", "gpLayerOpacity", "gpVertexColorOpacity", "gpStrokeIndexOffset"};
+    for (const char *n : names) {
+      const int loc = pg_gpu_shader_uniform(g->shader, n);
+      if (loc >= 0) {
+        float v[4] = {};
+        glGetUniformfv(prog, loc, v);
+        std::printf("[drw]     %s = %g %g\n", n, v[0], v[1]);
+      }
+    }
+    for (const PGUni &u : g->uniforms) {
+      if (u.kind == UNI_BUFTEX) {
+        GPUVertBuf *vb = (GPUVertBuf *)u.ptr;
+        const float *d = (const float *)GPU_vertbuf_get_data(vb);
+        const uint n = GPU_vertbuf_get_vertex_len(vb);
+        std::printf("[drw]     buffer texture unit %d: %u verts, stride %u\n", u.loc, n,
+                    GPU_vertbuf_get_format(vb)->stride);
+        for (uint i = 0; d && i < n && i < 5; i++) {
+          const float *r = d + i * (GPU_vertbuf_get_format(vb)->stride / 4);
+          std::printf("[drw]       v%u: %g %g %g %g | %08x %08x %08x %08x\n", i, r[0], r[1], r[2], r[3],
+                      ((const uint *)r)[4], ((const uint *)r)[5], ((const uint *)r)[6], ((const uint *)r)[7]);
+        }
+      }
+    }
+  }
   DRWState enabled = DRWState(0), disabled = DRWState(0);
   for (const PGCmd &cmd : g->cmds) {
     switch (cmd.kind) {

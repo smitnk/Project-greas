@@ -959,6 +959,41 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyEditCommand(
   return result != 0 ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeToolSamples(
+    JNIEnv *env, jobject, jlong handle, jint tool, jfloatArray samples, jint count, jint phase)
+{
+  // Each sample is four floats. Validate the packed array before pointer arithmetic.
+  if (count < 0 || !samples) return 0;
+
+  const jsize packed_len = env->GetArrayLength(samples);
+  constexpr jint stride = 4;  // PG_TOOL_SAMPLE_STRIDE
+  if (count > packed_len / stride) return 0;
+
+  const jsize sample_floats = count * stride;
+  jfloat *packed = nullptr;
+  if (packed_len > 0) {
+    packed = env->GetFloatArrayElements(samples, nullptr);
+    if (!packed) return 0;
+  }
+
+  const float *sample_ptr = (count > 0) ? packed : nullptr;
+  const float *param_ptr = nullptr;
+  int param_count = 0;
+
+  if (packed && phase == 0 && packed_len > sample_floats) { // PG_TOOL_PHASE_BEGIN
+    param_ptr = packed + sample_floats;
+    param_count = static_cast<int>(packed_len - sample_floats);
+  }
+
+  const int result = project_grease_gp_tool_samples(
+      from_handle(handle), tool, sample_ptr, count, phase, param_ptr, param_count);
+
+  if (packed) {
+    env->ReleaseFloatArrayElements(samples, packed, JNI_ABORT);
+  }
+  return result;
+}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeMaterialCount(

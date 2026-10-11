@@ -186,6 +186,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_rna_ranges_tests.sh
 
+      - name: Run native L5 tests (Blender 3.6.23 BKE colortools/curve; CurveMapping parity)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_l5_tests.sh
+
       - name: Install software GLES (Mesa EGL) for the render tests
         run: |
           sudo apt-get update

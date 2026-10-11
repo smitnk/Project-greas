@@ -231,6 +231,12 @@ jobs:
           PG_REQUIRE_GL: "1"
         run: bash tools/run_native_render_tests.sh
 
+      - name: Run L8 engine render tests (Blender 3.6.23 GP draw engine on the GLES 3.2 adapter, Mesa)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+          PG_REQUIRE_GL: "1"
+        run: bash tools/run_native_l8_render_tests.sh
+
       - name: Run native modifier stack tests
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

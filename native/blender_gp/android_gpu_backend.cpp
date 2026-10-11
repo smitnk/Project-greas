@@ -316,3 +316,36 @@ extern "C" int project_grease_android_gpu_draw_batch(GPUBatch *batch)
 }
 
 }  // namespace blender::gpu
+
+/* L8: what the GLES draw-manager adapter (gles/pg_drw_gles.cc) needs from these buffers: the GL
+ * buffer of a vertex buffer (uploaded) and the element buffer of a batch with its start / base, as
+ * GLBatch::draw uses them (index_start_get, index_base_get). */
+extern "C" unsigned int pg_android_vertbuf_gl(GPUVertBuf *vbo)
+{
+  if (vbo == nullptr) {
+    return 0;
+  }
+  auto *v = static_cast<blender::gpu::AndroidVertBuf *>(blender::gpu::unwrap(vbo));
+  v->bind();
+  return v->gl_handle();
+}
+
+extern "C" int pg_android_batch_elem(GPUBatch *batch,
+                                     unsigned int *r_ibo,
+                                     unsigned int *r_gl_type,
+                                     unsigned int *r_start,
+                                     unsigned int *r_base,
+                                     unsigned int *r_len)
+{
+  if (batch == nullptr || batch->elem == nullptr) {
+    return 0;
+  }
+  auto *ibo = static_cast<blender::gpu::AndroidIndexBuf *>(blender::gpu::unwrap(batch->elem));
+  ibo->bind();
+  *r_ibo = ibo->gl_handle();
+  *r_gl_type = ibo->gl_index_type();
+  *r_start = ibo->index_start_get();
+  *r_base = ibo->index_base_get();
+  *r_len = ibo->index_len_get();
+  return 1;
+}

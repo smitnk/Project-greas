@@ -35,6 +35,7 @@ for info in "${INFOS[@]}"; do
   fi
 done
 [[ $FAILED == 0 ]]
+python3 -I "$ROOT/tools/gles_shaders/embed.py" "$DEST" "${INFOS[@]}"
 if [[ $CHECK == 1 ]]; then
   diff -r "$COMMITTED" "$DEST" > "$OUT/gles_diff.txt" || {
     echo "ERROR: native/blender_gp/gles/generated differs from what Blender 3.6.23's shader code produces:" >&2

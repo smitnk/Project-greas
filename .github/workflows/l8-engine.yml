@@ -1,0 +1,39 @@
+name: L8 GP draw engine (GLES 3.2)
+# Short loop for the GLES 3.2 draw-engine adapter: only the L8 engine render test on Mesa.
+# The full workflow (android-shell.yml) runs the same test with everything else.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "feature/l8-*"
+    paths:
+      - "native/blender_gp/gles/**"
+      - "native/blender_gp/android_gpu_backend.cpp"
+      - "native/blender_gp/tests/test_l8_engine_render.cc"
+      - "tools/run_native_l8_render_tests.sh"
+      - ".github/workflows/l8-engine.yml"
+
+jobs:
+  l8-engine:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Project Grease
+        uses: actions/checkout@v4
+
+      - name: Import pinned Blender source
+        run: bash tools/import_blender_gp.sh
+
+      - name: Generate minimal Blender DNA metadata
+        run: bash tools/android_blender_gp_generate_dna.sh
+
+      - name: Install software GLES (Mesa EGL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libegl-dev libgles2 libgles-dev libegl-mesa0 libgl1-mesa-dri
+
+      - name: Run L8 engine render tests
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+          PG_REQUIRE_GL: "1"
+        run: bash tools/run_native_l8_render_tests.sh

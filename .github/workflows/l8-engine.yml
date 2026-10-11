@@ -36,4 +36,11 @@ jobs:
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
           PG_REQUIRE_GL: "1"
-        run: bash tools/run_native_l8_render_tests.sh
+        run: |
+          set -o pipefail
+          # Logs are not reachable from every client: the result also goes into an annotation.
+          if ! bash tools/run_native_l8_render_tests.sh 2>&1 | grep -v "pragma message\|malloc_usable_size\|^ *[0-9]* |\|^ *|\|In file included" | tee l8.txt; then
+            echo "::error title=L8 engine render test::$(tail -60 l8.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
+          echo "::notice title=L8 engine render test::$(tail -30 l8.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"

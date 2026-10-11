@@ -676,9 +676,11 @@ static void draw_command_once(DRWShadingGroup *g, const PGCmd &cmd)
   if (chunk >= 0) {
     glUniform1i(chunk, 0);
   }
+  /* draw_call_single_do draws with the resource index as first instance; without base-instance
+   * support the GL backend passes it as gpu_BaseInstance (resource_id = gpu_InstanceIndex). */
   const int base = pg_gpu_shader_uniform(sh, "gpu_BaseInstance");
   if (base >= 0) {
-    glUniform1i(base, 0);
+    glUniform1i(base, cmd.handle);
   }
   glBindVertexArray(c.vao);
   if (cmd.kind == CMD_PROCEDURAL) {

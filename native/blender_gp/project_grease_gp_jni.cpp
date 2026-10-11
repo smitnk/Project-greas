@@ -600,6 +600,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetLayerInfo(
   return result;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetLayerOnionSkin(
+    JNIEnv *, jobject, jlong handle, jint index, jboolean enabled)
+{
+  return project_grease_gp_set_layer_onion_skin(from_handle(handle), index, enabled ? 1 : 0) != 0;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetLayerName(
     JNIEnv *env, jobject, jlong handle, jint index)

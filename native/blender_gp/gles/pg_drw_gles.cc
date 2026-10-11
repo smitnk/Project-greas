@@ -403,14 +403,23 @@ void DRW_shgroup_clear_framebuffer(DRWShadingGroup *shgroup,
 /** \name Execution (draw_manager_exec.c, gl_state.cc)
  * \{ */
 
-static bool trace_enabled()
+static int trace_level()
 {
   static int t = -1;
   if (t < 0) {
     const char *e = getenv("PG_DRW_TRACE");
-    t = (e && e[0] == '1') ? 1 : 0;
+    t = (e && e[0] >= '1' && e[0] <= '9') ? e[0] - '0' : 0;
   }
-  return t == 1;
+  return t;
+}
+/* PG_DRW_TRACE=1: passes; 2: also groups, uniforms and vertex buffers. */
+static bool trace_enabled()
+{
+  return trace_level() >= 1;
+}
+static bool trace_detail()
+{
+  return trace_level() >= 2;
 }
 
 static void gl_blend(eGPUBlend value)
@@ -701,7 +710,7 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
   pg_gpu_uniformbuf_bind(c.matrices_ubo, pg_gpu_shader_block_binding(g->shader, "drw_matrices"));
   pg_gpu_uniformbuf_bind(c.infos_ubo, pg_gpu_shader_block_binding(g->shader, "drw_infos"));
   apply_uniforms(g);
-  if (trace_enabled()) {
+  if (trace_detail()) {
     std::printf("[drw]   group prog %u uniforms %zu cmds %zu\n", prog, g->uniforms.size(), g->cmds.size());
     for (const PGCmd &cmd : g->cmds) {
       if (cmd.kind == CMD_RANGE) {
@@ -710,7 +719,7 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
     }
   }
   drw_state_set(pass_state);
-  if (trace_enabled()) {
+  if (trace_detail()) {
     static const char *names[] = {"gpThicknessScale", "gpThicknessWorldScale", "gpThicknessOffset",
                                   "viewportSize", "gpLayerOpacity", "gpVertexColorOpacity", "gpStrokeIndexOffset"};
     for (const char *n : names) {

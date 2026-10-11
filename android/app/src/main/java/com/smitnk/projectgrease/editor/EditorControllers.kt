@@ -27,6 +27,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
     fun setLayerVisibility(index: Int, visible: Boolean) = handle != 0L && GPNative.nativeSetLayerVisibility(handle, index, visible)
     fun setLayerLocked(index: Int, locked: Boolean) = handle != 0L && GPNative.nativeSetLayerLocked(handle, index, locked)
+    fun setLayerOnionSkin(index: Int, enabled: Boolean) = handle != 0L && GPNative.nativeSetLayerOnionSkin(handle, index, enabled)
     fun moveLayer(from: Int, to: Int) = handle != 0L && GPNative.nativeMoveLayer(handle, from, to)
     fun duplicateLayer(index: Int) = handle != 0L && GPNative.nativeDuplicateLayer(handle, index)
     fun deleteLayer(index: Int) = handle != 0L && GPNative.nativeDeleteLayer(handle, index)

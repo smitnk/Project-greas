@@ -53,6 +53,7 @@ class Backend {
   int layer_count() const;
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);
+  bool set_layer_onion_skin(int index, bool enabled);
   bool move_layer(int from_index, int to_index);
   bool duplicate_layer(int index);
   bool delete_layer(int index);

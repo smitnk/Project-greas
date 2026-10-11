@@ -114,11 +114,20 @@ int main(void)
   {
     PGOutlinePoint p[3] = {{0, 0, 5}, {30, 0, 5}, {30, 30, 5}};
     Tris t = build(p, 3, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END);
-    CHECK(t.count == 4, "90 deg flat-capped: %d triangles, expected 4 (pure miter)", t.count);
+    CHECK(t.count == 5, "90 deg flat-capped: %d triangles, expected 5 (miter + outer wedge)", t.count);
     /* Consecutive outer edges meet: the outer corner vertex is shared by both quads. */
     int shared = 0;
     for (int i = 0; i < t.count * 3; i++) if (fabsf(t.xy[i * 2] - 35) < 1e-3f && fabsf(t.xy[i * 2 + 1] + 5) < 1e-3f) shared++;
     CHECK(shared >= 2, "outer miter corner (35,-5) not shared (%d)", shared);
+    /* The missing outer wedge is bounded by the original segment endpoints
+     * (30,-5), (35,0), and the miter intersection (35,-5). */
+    int has_outer_prev = 0, has_outer_next = 0;
+    for (int i = 0; i < t.count * 3; i++) {
+      const float x = t.xy[i * 2], y = t.xy[i * 2 + 1];
+      if (fabsf(x - 30) < 1e-3f && fabsf(y + 5) < 1e-3f) has_outer_prev = 1;
+      if (fabsf(x - 35) < 1e-3f && fabsf(y) < 1e-3f) has_outer_next = 1;
+    }
+    CHECK(has_outer_prev && has_outer_next, "outer wedge endpoints are missing");
     free(t.xy);
   }
   /* Variable pressure, many points (freehand curve like the device report). */
@@ -159,7 +168,7 @@ int main(void)
       }
     }
     Tris c = build(q, 16, PG_OUTLINE_CYCLIC);
-    CHECK(c.count == 32, "box: %d triangles, expected 32 (16 segments, pure miters)", c.count);
+    CHECK(c.count == 36, "box: %d triangles, expected 36 (16 segments + 4 outer wedges)", c.count);
     const float outer[4][2] = {{42, 22}, {158, 22}, {158, 98}, {42, 98}};
     const float inner[4][2] = {{58, 38}, {142, 38}, {142, 82}, {58, 82}};
     for (int i = 0; i < 4; i++) {
@@ -181,7 +190,7 @@ int main(void)
   {
     PGOutlinePoint p[5] = {{0, 0, 10}, {25, 0, 10}, {50, 0, 10}, {50, 25, 10}, {50, 50, 10}};
     Tris t = build(p, 5, PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END);
-    CHECK(t.count == 8, "90 deg primitive corner: %d triangles, expected 8", t.count);
+    CHECK(t.count == 9, "90 deg primitive corner: %d triangles, expected 9 (outer wedge)", t.count);
     CHECK(covered(&t, 59.5f, -9.5f), "90 deg outer corner not filled");
     CHECK(!covered(&t, 60.5f, -10.5f), "90 deg corner overshoots the miter");
     free(t.xy);

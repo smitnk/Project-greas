@@ -5,9 +5,9 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/native_host_closure.sh" "L7 modifier parity"
 GM="$BL/gpencil_modifiers_legacy"
 PF=(-funsigned-char -fno-strict-aliasing -ffp-contract=off)
-XI=(-I"$GM" -I"$GM/intern" -I"$BL/windowmanager" -I"$BL/editors/include" -I"$BL/blenfont" -I"$B/intern/clog"
+XI=(-I"$ROOT/native/blender_gp/tests/l7_fixture" -I"$GM" -I"$GM/intern" -I"$BL/windowmanager" -I"$BL/editors/include" -I"$BL/blenfont" -I"$B/intern/clog"
     -I"$BL/render" -I"$BL/makesrna" -I"$BL/depsgraph" -I"$ROOT/build/blender-dna/codegen")
-MODS=(noise subdiv simplify thick tint color opacity smooth offset length util)
+MODS=(noise subdiv simplify thick tint color opacity smooth offset length texture envelope mirror array multiply dash build util)
 objs=()
 for m in "${MODS[@]}"; do
   o="$OUT/MOD_$m.o"; gcc "${CF[@]}" "${PF[@]}" "${XI[@]}" "${INC[@]}" -c "$GM/intern/MOD_gpencil_legacy_$m.c" -o "$o"; objs+=("$o")

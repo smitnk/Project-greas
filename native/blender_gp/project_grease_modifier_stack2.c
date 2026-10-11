@@ -688,10 +688,12 @@ static int m2_envelope_deform(const PGModContext *ctx, const float *p, bGPDstrok
   const int spread = (int)p[PG_P_ENVELOPE_SPREAD];
   if (spread <= 0 || gps->totpoints < 2) return 0;
   const float line_change = ctx->gpl != NULL ? (float)ctx->gpl->line_change : 0.0f;
-  const float thick = (float)gps->thickness + line_change;
-  /* ADAPTED: Blender passes 1000 / ((thickness + line_change) * pixfactor) to turn metres into
-   * pressure; canvas units are pixels, so a point moved d px gains d / thickness of pressure. */
-  apply_stroke_envelope(gps, spread, -1, false, p[PG_P_ENVELOPE_THICKNESS], 1.0f / (thick > 1.0f ? thick : 1.0f));
+  /* ADAPTED: Blender's pressure per object unit is 1000 / ((thickness + line_change) * pixfactor)
+   * (MOD_gpencil_legacy_envelope.c deformStroke); PG moves points in canvas pixels, so per pixel it
+   * is that divided by PG_MOD_PIXELS_PER_UNIT. */
+  const float pixfactor = 1000.0f / (((float)gps->thickness + line_change) * ctx->gpd->pixfactor *
+                                     PG_MOD_PIXELS_PER_UNIT);
+  apply_stroke_envelope(gps, spread, -1, false, p[PG_P_ENVELOPE_THICKNESS], pixfactor);
   return 1;
 }
 

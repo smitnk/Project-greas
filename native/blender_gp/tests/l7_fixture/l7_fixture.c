@@ -16,6 +16,7 @@ struct Scene *pg_l7_scene = NULL;
 float DEG_get_ctime(const struct Depsgraph *depsgraph) { (void)depsgraph; return pg_l7_cfra; }
 struct ID *DEG_get_original_id(struct ID *id) { return id; }
 struct Scene *DEG_get_evaluated_scene(const struct Depsgraph *depsgraph) { (void)depsgraph; return pg_l7_scene; }
+int DEG_get_mode(const struct Depsgraph *depsgraph) { (void)depsgraph; return 0; /* DAG_EVAL_VIEWPORT */ }
 void BKE_scene_graph_update_for_newframe(struct Depsgraph *depsgraph) { (void)depsgraph; }
 
 /* UI: panelRegister callbacks only; unreachable from the harness. */
@@ -56,3 +57,14 @@ struct MaterialGPencilStyle *BKE_gpencil_material_settings(struct Object *ob, sh
 PG_L7_UI_UNREACHABLE(DEG_add_object_relation)
 PG_L7_UI_UNREACHABLE(uiTemplateColorRamp)
 PG_L7_UI_UNREACHABLE(uiItemS)
+/* Address-only UI references (see RNA_prototypes.h here). */
+char RNA_DashGpencilModifierSegment, RNA_TimeGpencilModifierSegment;
+PG_L7_UI_UNREACHABLE(uiItemO)
+PG_L7_UI_UNREACHABLE(uiItemEnumO_string)
+PG_L7_UI_UNREACHABLE(uiTemplateList)
+PG_L7_UI_UNREACHABLE(uiLayoutRowWithHeading)
+PG_L7_UI_UNREACHABLE(uiItemPointerR)
+PG_L7_UI_UNREACHABLE(WM_uilisttype_add)
+PG_L7_UI_UNREACHABLE(RNA_pointer_create)
+PG_L7_UI_UNREACHABLE(RNA_int_get)
+PG_L7_UI_UNREACHABLE(RNA_enum_set)

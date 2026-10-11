@@ -126,23 +126,10 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
 {
   switch (type) {
     case PG_MOD_BUILD:
-      p[PG_P_BUILD_MODE] = m2_int(p[PG_P_BUILD_MODE], 0, 2);
-      p[PG_P_BUILD_TRANSITION] = m2_int(p[PG_P_BUILD_TRANSITION], 0, 2);
-      p[PG_P_BUILD_TIME_ALIGN] = m2_int(p[PG_P_BUILD_TIME_ALIGN], 0, 1);
       p[PG_P_BUILD_USE_FADE] = m2_int(p[PG_P_BUILD_USE_FADE], 0, 1);
-      p[PG_P_BUILD_FADE_FAC] = m2_clamp(p[PG_P_BUILD_FADE_FAC], 0.0f, 1.0f);
-      p[PG_P_BUILD_FADE_THICKNESS] = m2_clamp(p[PG_P_BUILD_FADE_THICKNESS], 0.0f, 1.0f);
-      p[PG_P_BUILD_FADE_OPACITY] = m2_clamp(p[PG_P_BUILD_FADE_OPACITY], 0.0f, 1.0f);
-      p[PG_P_BUILD_START] = m2_clamp(p[PG_P_BUILD_START], 0.0f, 10000.0f);
-      p[PG_P_BUILD_LENGTH] = m2_clamp(p[PG_P_BUILD_LENGTH], 1.0f, 10000.0f);
       break;
     case PG_MOD_TIME:
-      p[PG_P_TIME_MODE] = m2_int(p[PG_P_TIME_MODE], 0, 3);
-      p[PG_P_TIME_OFFSET] = m2_int(p[PG_P_TIME_OFFSET], -100000, 100000);
-      p[PG_P_TIME_SCALE] = m2_clamp(p[PG_P_TIME_SCALE], 0.001f, 100.0f);
       p[PG_P_TIME_USE_RANGE] = m2_flag(p[PG_P_TIME_USE_RANGE]);
-      p[PG_P_TIME_SFRA] = m2_int(p[PG_P_TIME_SFRA], 0, 100000);
-      p[PG_P_TIME_EFRA] = m2_int(p[PG_P_TIME_EFRA], p[PG_P_TIME_SFRA], 100000);
       p[PG_P_TIME_LOOP] = m2_flag(p[PG_P_TIME_LOOP]);
       break;
     case PG_MOD_HOOK:
@@ -151,7 +138,6 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_HOOK_SCALE] = m2_clamp(p[PG_P_HOOK_SCALE], 0.0f, 100.0f);
       p[PG_P_HOOK_RADIUS] = m2_clamp(p[PG_P_HOOK_RADIUS], 0.0f, 100000.0f);
       p[PG_P_HOOK_FALLOFF] = m2_int(p[PG_P_HOOK_FALLOFF], 0, 2);
-      p[PG_P_HOOK_STRENGTH] = m2_clamp(p[PG_P_HOOK_STRENGTH], 0.0f, 1.0f);
       break;
     case PG_MOD_LATTICE:
       for (int i = PG_P_LATTICE_X0; i <= PG_P_LATTICE_Y1; i++) p[i] = m2_clamp(p[i], -100000.0f, 100000.0f);
@@ -159,42 +145,27 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       if (!(p[PG_P_LATTICE_Y1] > p[PG_P_LATTICE_Y0])) p[PG_P_LATTICE_Y1] = p[PG_P_LATTICE_Y0] + 1.0f;
       p[PG_P_LATTICE_NU] = m2_int(p[PG_P_LATTICE_NU], 2, PG_LATTICE_MAX);
       p[PG_P_LATTICE_NV] = m2_int(p[PG_P_LATTICE_NV], 2, PG_LATTICE_MAX);
-      p[PG_P_LATTICE_STRENGTH] = m2_clamp(p[PG_P_LATTICE_STRENGTH], 0.0f, 1.0f);
       for (int i = PG_P_LATTICE_OFFSETS; i < PG_P_LATTICE_COUNT; i++) p[i] = m2_clamp(p[i], -100000.0f, 100000.0f);
       break;
     case PG_MOD_ENVELOPE:
-      p[PG_P_ENVELOPE_MODE] = m2_int(p[PG_P_ENVELOPE_MODE], GP_ENVELOPE_DEFORM, GP_ENVELOPE_FILLS);
-      p[PG_P_ENVELOPE_SPREAD] = m2_int(p[PG_P_ENVELOPE_SPREAD], 1, 1000);
-      p[PG_P_ENVELOPE_SKIP] = m2_int(p[PG_P_ENVELOPE_SKIP], 0, 1000);
-      p[PG_P_ENVELOPE_THICKNESS] = m2_clamp(p[PG_P_ENVELOPE_THICKNESS], 0.0f, 100.0f);
-      p[PG_P_ENVELOPE_STRENGTH] = m2_clamp(p[PG_P_ENVELOPE_STRENGTH], 0.0f, 1.0f);
-      p[PG_P_ENVELOPE_MAT] = m2_int(p[PG_P_ENVELOPE_MAT], -1, 32767);
       break;
     case PG_MOD_WEIGHT_PROX:
       p[PG_P_WPROX_TARGET] = m2_int(p[PG_P_WPROX_TARGET], 0, 255);
       p[PG_P_WPROX_X] = m2_clamp(p[PG_P_WPROX_X], -100000.0f, 100000.0f);
       p[PG_P_WPROX_Y] = m2_clamp(p[PG_P_WPROX_Y], -100000.0f, 100000.0f);
-      p[PG_P_WPROX_DIST_START] = m2_clamp(p[PG_P_WPROX_DIST_START], 0.0f, 100000.0f);
       p[PG_P_WPROX_DIST_END] = m2_clamp(p[PG_P_WPROX_DIST_END], 0.0f, 100000.0f);
-      p[PG_P_WPROX_MIN_WEIGHT] = m2_clamp(p[PG_P_WPROX_MIN_WEIGHT], 0.0f, 1.0f);
       p[PG_P_WPROX_INVERT] = m2_flag(p[PG_P_WPROX_INVERT]);
       p[PG_P_WPROX_MULTIPLY] = m2_flag(p[PG_P_WPROX_MULTIPLY]);
       break;
     case PG_MOD_WEIGHT_ANGLE:
       p[PG_P_WANGLE_TARGET] = m2_int(p[PG_P_WANGLE_TARGET], 0, 255);
-      p[PG_P_WANGLE_ANGLE] = m2_clamp(p[PG_P_WANGLE_ANGLE], -(float)M_PI * 2, (float)M_PI * 2);
-      p[PG_P_WANGLE_MIN_WEIGHT] = m2_clamp(p[PG_P_WANGLE_MIN_WEIGHT], 0.0f, 1.0f);
       p[PG_P_WANGLE_INVERT] = m2_flag(p[PG_P_WANGLE_INVERT]);
       p[PG_P_WANGLE_MULTIPLY] = m2_flag(p[PG_P_WANGLE_MULTIPLY]);
       break;
     case PG_MOD_DASH:
-      p[PG_P_DASH_DASH] = m2_int(p[PG_P_DASH_DASH], 1, 1000);
-      p[PG_P_DASH_GAP] = m2_int(p[PG_P_DASH_GAP], 1, 1000);
-      p[PG_P_DASH_OFFSET] = m2_int(p[PG_P_DASH_OFFSET], -1000, 1000);
       break;
     case PG_MOD_OUTLINE:
       p[PG_P_OUTLINE_THICKNESS] = m2_int(p[PG_P_OUTLINE_THICKNESS], 1, 1000);
-      p[PG_P_OUTLINE_SUBDIV] = m2_int(p[PG_P_OUTLINE_SUBDIV], 1, 64);
       break;
     case PG_MOD_MIRROR:
       p[PG_P_MIRROR_X] = m2_flag(p[PG_P_MIRROR_X]);
@@ -203,24 +174,15 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_MIRROR_PY] = m2_clamp(p[PG_P_MIRROR_PY], -100000.0f, 100000.0f);
       break;
     case PG_MOD_ARRAY:
-      p[PG_P_ARRAY_COUNT_N] = m2_int(p[PG_P_ARRAY_COUNT_N], 2, 1000);
       p[PG_P_ARRAY_OX] = m2_clamp(p[PG_P_ARRAY_OX], -100000.0f, 100000.0f);
       p[PG_P_ARRAY_OY] = m2_clamp(p[PG_P_ARRAY_OY], -100000.0f, 100000.0f);
       break;
     case PG_MOD_MULTIPLY:
-      p[PG_P_MULTIPLY_DUPLICATIONS] = m2_int(p[PG_P_MULTIPLY_DUPLICATIONS], 1, 100);
       p[PG_P_MULTIPLY_DISTANCE] = m2_clamp(p[PG_P_MULTIPLY_DISTANCE], -10000.0f, 10000.0f);
       break;
     case PG_MOD_TEXTURE: /* rna_gpencil_legacy_modifier.c ranges */
-      p[PG_P_TEXTURE_MODE] = m2_int(p[PG_P_TEXTURE_MODE], 0, 2);
-      p[PG_P_TEXTURE_FIT] = m2_int(p[PG_P_TEXTURE_FIT], 0, 1);
-      p[PG_P_TEXTURE_UV_OFFSET] = m2_clamp(p[PG_P_TEXTURE_UV_OFFSET], -FLT_MAX, FLT_MAX);
-      p[PG_P_TEXTURE_UV_SCALE] = m2_clamp(p[PG_P_TEXTURE_UV_SCALE], 0.0f, FLT_MAX);
-      p[PG_P_TEXTURE_ALIGN_ROT] = m2_clamp(p[PG_P_TEXTURE_ALIGN_ROT], (float)(-M_PI_2), (float)M_PI_2); /* +-90 degrees */
-      p[PG_P_TEXTURE_FILL_ROT] = m2_clamp(p[PG_P_TEXTURE_FILL_ROT], -FLT_MAX, FLT_MAX);
       p[PG_P_TEXTURE_FILL_OFFSET_X] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_X], -FLT_MAX, FLT_MAX);
       p[PG_P_TEXTURE_FILL_OFFSET_Y] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_Y], -FLT_MAX, FLT_MAX);
-      p[PG_P_TEXTURE_FILL_SCALE] = m2_clamp(p[PG_P_TEXTURE_FILL_SCALE], 0.01f, 100.0f);
       break;
     default:
       break;

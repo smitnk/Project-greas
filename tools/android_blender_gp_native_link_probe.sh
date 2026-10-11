@@ -46,6 +46,8 @@ INCLUDES=(
   "$BLENDER/source/blender/blenlib"
   "$BLENDER/extern/wcwidth"
   "$BLENDER/extern/curve_fit_nd"
+  "$ROOT/third_party/zstd-1.5.0/lib"
+  "$ROOT/third_party/zlib-1.2.13"
   "$BLENDER/source/blender/gpu"
   "$BLENDER/source/blender/gpu/intern"
   "$BLENDER/source/blender/draw"
@@ -78,6 +80,9 @@ COMMON_FLAGS=(
   -D__ANDROID__
   -DNDEBUG
   -DWITH_OPENGL
+  -D_LARGEFILE_SOURCE
+  -D_FILE_OFFSET_BITS=64
+  -D_LARGEFILE64_SOURCE
   -fPIC
   -ffunction-sections
   -fdata-sections

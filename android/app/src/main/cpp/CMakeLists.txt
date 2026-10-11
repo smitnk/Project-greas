@@ -32,6 +32,8 @@ set(BLENDER_INCLUDE_DIRS
     "${BLENDER_SOURCE_DIR}/source/blender/blenlib"
     "${BLENDER_SOURCE_DIR}/extern/wcwidth"
     "${BLENDER_SOURCE_DIR}/extern/curve_fit_nd"
+    "${PROJECT_GREASE_ROOT}/third_party/zstd-1.5.0/lib"
+    "${PROJECT_GREASE_ROOT}/third_party/zlib-1.2.13"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu"
     "${BLENDER_SOURCE_DIR}/source/blender/gpu/intern"
     "${BLENDER_SOURCE_DIR}/source/blender/draw"
@@ -115,6 +117,10 @@ target_compile_definitions(projectgrease_jni PRIVATE
     __ANDROID__
     NDEBUG
     WITH_OPENGL
+    # Blender platform_unix.cmake: large-file API used by the L2 FileReaders (off64_t).
+    _LARGEFILE_SOURCE
+    _FILE_OFFSET_BITS=64
+    _LARGEFILE64_SOURCE
 )
 
 # Preserve Blender 3.6.23 C source language explicitly in this mixed target.

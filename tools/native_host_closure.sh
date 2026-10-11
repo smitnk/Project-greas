@@ -28,6 +28,9 @@ XF=(-std=gnu++17 -DNDEBUG -w -ffunction-sections -fdata-sections)
 C_SRC=(
   "$ROOT/native/blender_gp/project_grease_modifier_stack.c"
   "$ROOT/native/blender_gp/project_grease_modifier_stack2.c"
+  "$ROOT/native/blender_gp/rna/project_grease_rna.c"
+  "$ROOT/native/blender_gp/rna/project_grease_rna_gen.c"
+  "$ROOT/native/blender_gp/rna/project_grease_mod_rna.c"
   "$ROOT/native/blender_gp/project_grease_blender_build.c"
   "$ROOT/native/blender_gp/project_grease_blender_interp.c"
   "$ROOT/native/blender_gp/project_grease_blender_edit10.c"

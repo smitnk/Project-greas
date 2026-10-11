@@ -35,6 +35,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_modifier_stack.h"
+#include "rna/project_grease_rna.h"
 
 /* ---------------------------------------------------------------------------------------- */
 /* Type information                                                                          */
@@ -209,51 +210,29 @@ void pg_mod_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
   switch (type) {
     case PG_MOD_THICKNESS:
       p[PG_P_THICK_NORMALIZE] = pgm_flag(p[PG_P_THICK_NORMALIZE]);
-      p[PG_P_THICK_THICKNESS] = pgm_int(p[PG_P_THICK_THICKNESS], 0.0f, 32767.0f);
-      p[PG_P_THICK_FACTOR] = pgm_clamp(p[PG_P_THICK_FACTOR], 0.0f, 100.0f);
       p[PG_P_THICK_USE_VGROUP] = pgm_flag(p[PG_P_THICK_USE_VGROUP]);
       p[PG_P_THICK_VGROUP] = pgm_int(p[PG_P_THICK_VGROUP], 0.0f, 1023.0f);
       p[PG_P_THICK_INVERT_VGROUP] = pgm_flag(p[PG_P_THICK_INVERT_VGROUP]);
       break;
     case PG_MOD_OPACITY:
-      p[PG_P_OPACITY_MODIFY] = pgm_int(p[PG_P_OPACITY_MODIFY], PG_MODIFY_COLOR_BOTH, PG_MODIFY_COLOR_HARDNESS);
-      p[PG_P_OPACITY_FACTOR] = pgm_clamp(p[PG_P_OPACITY_FACTOR], 0.0f, 2.0f);
       p[PG_P_OPACITY_NORMALIZE] = pgm_flag(p[PG_P_OPACITY_NORMALIZE]);
-      p[PG_P_OPACITY_HARDNESS] = pgm_clamp(p[PG_P_OPACITY_HARDNESS], 0.0f, 1.0f);
       break;
     case PG_MOD_TINT:
-      p[PG_P_TINT_MODE] = pgm_int(p[PG_P_TINT_MODE], PG_PAINT_MODE_STROKE, PG_PAINT_MODE_BOTH);
-      p[PG_P_TINT_FACTOR] = pgm_clamp(p[PG_P_TINT_FACTOR], 0.0f, 2.0f);
       p[PG_P_TINT_R] = pgm_clamp(p[PG_P_TINT_R], 0.0f, 1.0f);
       p[PG_P_TINT_G] = pgm_clamp(p[PG_P_TINT_G], 0.0f, 1.0f);
       p[PG_P_TINT_B] = pgm_clamp(p[PG_P_TINT_B], 0.0f, 1.0f);
       break;
     case PG_MOD_COLOR:
-      p[PG_P_COLOR_MODIFY] = pgm_int(p[PG_P_COLOR_MODIFY], PG_MODIFY_COLOR_BOTH, PG_MODIFY_COLOR_FILL);
       p[PG_P_COLOR_H] = pgm_clamp(p[PG_P_COLOR_H], 0.0f, 1.0f);
       p[PG_P_COLOR_S] = pgm_clamp(p[PG_P_COLOR_S], 0.0f, 2.0f);
       p[PG_P_COLOR_V] = pgm_clamp(p[PG_P_COLOR_V], 0.0f, 2.0f);
       break;
     case PG_MOD_LENGTH:
-      p[PG_P_LENGTH_MODE] = pgm_int(p[PG_P_LENGTH_MODE], PG_LENGTH_RELATIVE, PG_LENGTH_ABSOLUTE);
-      p[PG_P_LENGTH_START] = pgm_clamp(p[PG_P_LENGTH_START], -100.0f, 100.0f);
-      p[PG_P_LENGTH_END] = pgm_clamp(p[PG_P_LENGTH_END], -100.0f, 100.0f);
-      p[PG_P_LENGTH_OVERSHOOT] = pgm_clamp(p[PG_P_LENGTH_OVERSHOOT], 0.0f, 1.0f);
       p[PG_P_LENGTH_USE_CURVATURE] = pgm_flag(p[PG_P_LENGTH_USE_CURVATURE]);
-      p[PG_P_LENGTH_POINT_DENSITY] = pgm_clamp(p[PG_P_LENGTH_POINT_DENSITY], 0.1f, 1000.0f);
-      p[PG_P_LENGTH_SEGMENT_INFLUENCE] = pgm_clamp(p[PG_P_LENGTH_SEGMENT_INFLUENCE], -2.0f, 3.0f);
-      p[PG_P_LENGTH_MAX_ANGLE] = pgm_clamp(p[PG_P_LENGTH_MAX_ANGLE], 0.0f, (float)M_PI);
       p[PG_P_LENGTH_INVERT_CURVATURE] = pgm_flag(p[PG_P_LENGTH_INVERT_CURVATURE]);
-      p[PG_P_LENGTH_RAND_START] = pgm_clamp(p[PG_P_LENGTH_RAND_START], -10.0f, 10.0f);
-      p[PG_P_LENGTH_RAND_END] = pgm_clamp(p[PG_P_LENGTH_RAND_END], -10.0f, 10.0f);
-      p[PG_P_LENGTH_RAND_OFFSET] = pgm_clamp(p[PG_P_LENGTH_RAND_OFFSET], -100000.0f, 100000.0f);
-      p[PG_P_LENGTH_SEED] = pgm_int(p[PG_P_LENGTH_SEED], 0.0f, 1000000.0f);
-      p[PG_P_LENGTH_STEP] = pgm_int(p[PG_P_LENGTH_STEP], 1.0f, 100.0f);
       p[PG_P_LENGTH_USE_RANDOM] = pgm_flag(p[PG_P_LENGTH_USE_RANDOM]);
       break;
     case PG_MOD_SMOOTH:
-      p[PG_P_SMOOTH_FACTOR] = pgm_clamp(p[PG_P_SMOOTH_FACTOR], 0.0f, 2.0f);
-      p[PG_P_SMOOTH_STEP] = pgm_int(p[PG_P_SMOOTH_STEP], 1.0f, 1000.0f);
       p[PG_P_SMOOTH_LOCATION] = pgm_flag(p[PG_P_SMOOTH_LOCATION]);
       p[PG_P_SMOOTH_STRENGTH] = pgm_flag(p[PG_P_SMOOTH_STRENGTH]);
       p[PG_P_SMOOTH_THICKNESS] = pgm_flag(p[PG_P_SMOOTH_THICKNESS]);
@@ -261,43 +240,23 @@ void pg_mod_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_SMOOTH_KEEP_SHAPE] = pgm_flag(p[PG_P_SMOOTH_KEEP_SHAPE]);
       break;
     case PG_MOD_SIMPLIFY:
-      p[PG_P_SIMPLIFY_MODE] = pgm_int(p[PG_P_SIMPLIFY_MODE], GP_SIMPLIFY_FIXED, GP_SIMPLIFY_MERGE);
-      p[PG_P_SIMPLIFY_STEP] = pgm_int(p[PG_P_SIMPLIFY_STEP], 1.0f, 100.0f);
-      p[PG_P_SIMPLIFY_FACTOR] = pgm_clamp(p[PG_P_SIMPLIFY_FACTOR], 0.0f, 100.0f);
-      p[PG_P_SIMPLIFY_LENGTH] = pgm_clamp(p[PG_P_SIMPLIFY_LENGTH], 0.0f, 100.0f);
-      p[PG_P_SIMPLIFY_SHARP_THRESHOLD] = pgm_clamp(p[PG_P_SIMPLIFY_SHARP_THRESHOLD], 0.0f, (float)M_PI);
-      p[PG_P_SIMPLIFY_DISTANCE] = pgm_clamp(p[PG_P_SIMPLIFY_DISTANCE], 0.0f, 100.0f);
       break;
     case PG_MOD_SUBDIV:
-      p[PG_P_SUBDIV_LEVEL] = pgm_int(p[PG_P_SUBDIV_LEVEL], 0.0f, 6.0f);
-      p[PG_P_SUBDIV_TYPE] = pgm_int(p[PG_P_SUBDIV_TYPE], GP_SUBDIV_CATMULL, GP_SUBDIV_SIMPLE);
       break;
     case PG_MOD_OFFSET:
-      p[PG_P_OFFSET_MODE] = pgm_int(p[PG_P_OFFSET_MODE], GP_OFFSET_RANDOM, GP_OFFSET_STROKE);
       for (int i = PG_P_OFFSET_LOC; i < PG_P_OFFSET_SEED; i++) {
         p[i] = pgm_clamp(p[i], -100000.0f, 100000.0f);
       }
-      p[PG_P_OFFSET_SEED] = pgm_int(p[PG_P_OFFSET_SEED], 0.0f, 32767.0f);
-      p[PG_P_OFFSET_STROKE_STEP] = pgm_int(p[PG_P_OFFSET_STROKE_STEP], 1.0f, 1000.0f);
-      p[PG_P_OFFSET_START_OFFSET] = pgm_int(p[PG_P_OFFSET_START_OFFSET], -1000.0f, 1000.0f);
       p[PG_P_OFFSET_UNIFORM_SCALE] = pgm_flag(p[PG_P_OFFSET_UNIFORM_SCALE]);
       break;
     case PG_MOD_NOISE:
-      p[PG_P_NOISE_FACTOR] = pgm_clamp(p[PG_P_NOISE_FACTOR], 0.0f, 1.0f);
-      p[PG_P_NOISE_STRENGTH] = pgm_clamp(p[PG_P_NOISE_STRENGTH], 0.0f, 1.0f);
-      p[PG_P_NOISE_THICKNESS] = pgm_clamp(p[PG_P_NOISE_THICKNESS], 0.0f, 1.0f);
-      p[PG_P_NOISE_UVS] = pgm_clamp(p[PG_P_NOISE_UVS], 0.0f, 1.0f);
-      p[PG_P_NOISE_SCALE] = pgm_clamp(p[PG_P_NOISE_SCALE], 0.0f, 1.0f);
-      p[PG_P_NOISE_OFFSET] = pgm_clamp(p[PG_P_NOISE_OFFSET], 0.0f, 100.0f);
-      p[PG_P_NOISE_SEED] = pgm_int(p[PG_P_NOISE_SEED], 0.0f, 32767.0f);
-      p[PG_P_NOISE_STEP] = pgm_int(p[PG_P_NOISE_STEP], 1.0f, 100.0f); /* >= 1: Noise divides by it */
       p[PG_P_NOISE_USE_RANDOM] = pgm_flag(p[PG_P_NOISE_USE_RANDOM]);
-      p[PG_P_NOISE_MODE] = pgm_int(p[PG_P_NOISE_MODE], GP_NOISE_RANDOM_STEP, GP_NOISE_RANDOM_KEYFRAME);
       break;
     default:
       break;
   }
   pg_mod2_sanitize(type, p); /* batch 21 types, curve and filter blocks */
+  pg_mod_rna_sanitize(type, p, def); /* L4: Blender 3.6.23 RNA limits for the mapped parameters */
 }
 
 void pg_mod_entry_init(PGModEntry *entry, int type)

@@ -117,3 +117,35 @@ C|third_party/blender/source/blender/blentranslation/intern/blt_translation.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn_guarded_impl.c
 C|third_party/blender/intern/guardedalloc/intern/mallocn_lockfree_impl.c
+# L2: .blend reader FileReaders + pinned zstd 1.5.0 / zlib 1.2.13 (decompression only).
+C|third_party/blender/source/blender/blenlib/intern/filereader_file.c
+C|third_party/blender/source/blender/blenlib/intern/filereader_gzip.c
+C|third_party/blender/source/blender/blenlib/intern/filereader_memory.c
+C|third_party/blender/source/blender/blenlib/intern/filereader_zstd.c
+C|third_party/blender/source/blender/blenlib/intern/BLI_mmap.c
+C|third_party/blender/source/blender/blenlib/intern/storage.c
+C|third_party/blender/source/blender/blenlib/intern/fileops.c
+C|third_party/zstd-1.5.0/lib/common/debug.c
+C|third_party/zstd-1.5.0/lib/common/entropy_common.c
+C|third_party/zstd-1.5.0/lib/common/error_private.c
+C|third_party/zstd-1.5.0/lib/common/fse_decompress.c
+C|third_party/zstd-1.5.0/lib/common/xxhash.c
+C|third_party/zstd-1.5.0/lib/common/zstd_common.c
+C|third_party/zstd-1.5.0/lib/decompress/huf_decompress.c
+C|third_party/zstd-1.5.0/lib/decompress/zstd_ddict.c
+C|third_party/zstd-1.5.0/lib/decompress/zstd_decompress.c
+C|third_party/zstd-1.5.0/lib/decompress/zstd_decompress_block.c
+C|third_party/zlib-1.2.13/adler32.c
+C|third_party/zlib-1.2.13/crc32.c
+C|third_party/zlib-1.2.13/inffast.c
+C|third_party/zlib-1.2.13/inflate.c
+C|third_party/zlib-1.2.13/inftrees.c
+C|third_party/zlib-1.2.13/zutil.c
+# L3: Blender 3.6.23 DNA defaults table (DNA_struct_default_get) and the userdef default data it references.
+C|third_party/blender/source/blender/makesdna/intern/dna_defaults.c
+C|third_party/blender/release/datafiles/userdef/userdef_default.c
+C|third_party/blender/release/datafiles/userdef/userdef_default_theme.c
+# L4: Blender 3.6.23 RNA property metadata (generated) and the modifier sanitize pass using it.
+C|native/blender_gp/rna/project_grease_rna.c
+C|native/blender_gp/rna/project_grease_rna_gen.c
+C|native/blender_gp/rna/project_grease_mod_rna.c

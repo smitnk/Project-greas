@@ -95,8 +95,8 @@ class FeatureRegistryTest {
     @Test
     fun batch21FeaturesAreWiredAndSayHowTheyWereChecked() {
         listOf(
-            FeatureId.MOD_BUILD, FeatureId.MOD_TIME_OFFSET, FeatureId.MOD_HOOK, FeatureId.MOD_LATTICE, FeatureId.MOD_ENVELOPE,
-            FeatureId.MOD_WEIGHT_PROXIMITY, FeatureId.MOD_WEIGHT_ANGLE, FeatureId.LIVE_GENERATORS, FeatureId.MODIFIER_INFLUENCE,
+            FeatureId.MOD_BUILD, FeatureId.MOD_TIME_OFFSET, FeatureId.MOD_ENVELOPE,
+            FeatureId.MOD_WEIGHT_ANGLE, FeatureId.LIVE_GENERATORS, FeatureId.MODIFIER_INFLUENCE,
             FeatureId.DRAWING_GUIDES, FeatureId.ONION_KEYTYPE_LOOP, FeatureId.KEYFRAME_TYPES, FeatureId.LAYER_BLEND,
             FeatureId.LAYER_TINT, FeatureId.MATERIAL_SLOTS, FeatureId.LINE_TYPES, FeatureId.BRUSH_PRESETS,
             FeatureId.PRIMITIVE_EDIT, FeatureId.CURVE_MAPPING, FeatureId.ELASTIC_EASING, FeatureId.INTERPOLATE_SEQUENCE,

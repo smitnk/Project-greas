@@ -76,18 +76,17 @@ class ModifierStackTest {
             ModifierType.COLOR to "COLOR", ModifierType.LENGTH to "LENGTH", ModifierType.SMOOTH to "SMOOTH",
             ModifierType.SIMPLIFY to "SIMPLIFY", ModifierType.SUBDIV to "SUBDIV", ModifierType.OFFSET to "OFFSET",
             ModifierType.NOISE to "NOISE", ModifierType.BUILD to "BUILD", ModifierType.TIME to "TIME",
-            ModifierType.HOOK to "HOOK", ModifierType.ENVELOPE to "ENVELOPE", ModifierType.WEIGHT_PROXIMITY to "WPROX",
+            ModifierType.ENVELOPE to "ENVELOPE",
             ModifierType.WEIGHT_ANGLE to "WANGLE", ModifierType.DASH to "DASH", ModifierType.OUTLINE to "OUTLINE",
             ModifierType.MIRROR to "MIRROR", ModifierType.ARRAY to "ARRAY", ModifierType.MULTIPLY to "MULTIPLY",
             ModifierType.TEXTURE to "TEXTURE"
         )
-        assertEquals(ModifierType.all.size, byType.size + 1) // + Lattice, whose count is an expression
+        assertEquals(ModifierType.all.size, byType.size)
         for ((type, key) in byType) {
             assertEquals("param count of $key", counts[key], ModifierSpecs.ownParamCount(type))
             assertEquals(ModifierType.MAX_PARAMS, ModifierSpecs.paramCount(type))
         }
-        assertTrue(header.contains("PG_P_LATTICE_COUNT = 7 + PG_LATTICE_MAX * PG_LATTICE_MAX * 2"))
-        assertTrue(header.contains("#define PG_LATTICE_MAX ${ModifierType.LATTICE_MAX}"))
+        for (excluded in listOf(13, 14, 16)) assertFalse(ModifierType.isValid(excluded)) // 3D-object modifiers
         assertTrue(header.contains("#define PG_P_CURVE_BASE ${ModifierType.CURVE_BASE}"))
         assertTrue(header.contains("#define PG_P_FILTER_BASE ${ModifierType.FILTER_BASE}"))
         for (type in ModifierType.all) assertTrue(ModifierSpecs.ownParamCount(type) <= ModifierType.CURVE_BASE)

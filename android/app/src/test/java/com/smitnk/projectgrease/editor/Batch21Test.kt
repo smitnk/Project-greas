@@ -88,16 +88,9 @@ class Batch21Test {
 
     @Test
     fun modifierCanvasHandlesMoveTheParameters() {
-        val hook = FloatArray(ModifierType.MAX_PARAMS).also { it[0] = 100f; it[1] = 50f; it[2] = 10f; it[3] = 0f }
-        assertEquals(listOf(100f to 50f, 110f to 50f), ModifierSpecs.canvasHandles(ModifierType.HOOK, hook))
-        val moved = ModifierSpecs.moveHandle(ModifierType.HOOK, hook, 0, 80f, 50f) // centre moves, target stays
-        assertEquals(listOf(80f to 50f, 110f to 50f), ModifierSpecs.canvasHandles(ModifierType.HOOK, moved))
-        val lat = FloatArray(ModifierType.MAX_PARAMS).also { it[2] = 200f; it[3] = 100f; it[4] = 3f; it[5] = 2f }
-        val nodes = ModifierSpecs.canvasHandles(ModifierType.LATTICE, lat)
-        assertEquals(6, nodes.size); assertEquals(100f to 0f, nodes[1]); assertEquals(200f to 100f, nodes[5])
-        val dragged = ModifierSpecs.moveHandle(ModifierType.LATTICE, lat, 4, 110f, 120f)
-        assertEquals(10f, dragged[ModifierSpecs.latticeOffsetIndex(3, 1, 1)], 0f)
-        assertEquals(20f, dragged[ModifierSpecs.latticeOffsetIndex(3, 1, 1) + 1], 0f)
+        val mirror = FloatArray(ModifierType.MAX_PARAMS).also { it[2] = 100f; it[3] = 50f }
+        assertEquals(listOf(100f to 50f), ModifierSpecs.canvasHandles(ModifierType.MIRROR, mirror))
+        assertEquals(listOf(80f to 40f), ModifierSpecs.canvasHandles(ModifierType.MIRROR, ModifierSpecs.moveHandle(ModifierType.MIRROR, mirror, 0, 80f, 40f)))
         val curve = ModifierSpecs.withCurve(FloatArray(ModifierType.MAX_PARAMS), true, listOf(0f to 0.2f, 1f to 1f))
         assertEquals(1f, curve[ModifierType.CURVE_BASE], 0f)
         assertEquals(listOf(0f to 0.2f, 1f to 1f), ModifierSpecs.curvePoints(curve))

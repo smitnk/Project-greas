@@ -22,10 +22,8 @@ object ModifierType {
     const val NOISE = 10
     const val BUILD = 11
     const val TIME = 12
-    const val HOOK = 13
-    const val LATTICE = 14
+    // 13 (Hook), 14 (Lattice), 16 (Vertex Weight Proximity): excluded, they need 3D objects in Blender
     const val ENVELOPE = 15
-    const val WEIGHT_PROXIMITY = 16
     const val WEIGHT_ANGLE = 17
     const val DASH = 18
     const val OUTLINE = 19
@@ -39,11 +37,10 @@ object ModifierType {
     /** PG_P_CURVE_BASE / PG_P_FILTER_BASE: the custom curve and influence filter blocks of every entry. */
     const val CURVE_BASE = 96
     const val FILTER_BASE = 112
-    const val LATTICE_MAX = 6
 
-    fun isValid(type: Int) = type in THICKNESS..LAST
-    /** Entries whose handles can be dragged on the canvas (centre / target / grid / point / pivot). */
-    fun hasCanvasHandles(type: Int) = type == HOOK || type == LATTICE || type == WEIGHT_PROXIMITY || type == MIRROR
+    fun isValid(type: Int) = type in THICKNESS..LAST && type != 13 && type != 14 && type != 16
+    /** Entries whose handles can be dragged on the canvas (the Mirror pivot). */
+    fun hasCanvasHandles(type: Int) = type == MIRROR
 
     fun name(type: Int) = when (type) {
         THICKNESS -> "Thickness"
@@ -58,10 +55,7 @@ object ModifierType {
         NOISE -> "Noise"
         BUILD -> "Build"
         TIME -> "Time Offset"
-        HOOK -> "Hook"
-        LATTICE -> "Lattice"
         ENVELOPE -> "Envelope"
-        WEIGHT_PROXIMITY -> "Vertex Weight Proximity"
         WEIGHT_ANGLE -> "Vertex Weight Angle"
         DASH -> "Dot Dash"
         OUTLINE -> "Outline"
@@ -72,7 +66,7 @@ object ModifierType {
         else -> "Modifier"
     }
 
-    val all: List<Int> = (THICKNESS..LAST).toList()
+    val all: List<Int> = (THICKNESS..LAST).filter { isValid(it) }
 }
 
 enum class ParamKind { FLOAT, INT, BOOL, ENUM }
@@ -108,16 +102,13 @@ object ModifierSpecs {
     fun ownParamCount(type: Int) = when (type) {
         ModifierType.BUILD -> 9
         ModifierType.TIME -> 7
-        ModifierType.HOOK -> 9
-        ModifierType.LATTICE -> 7 + ModifierType.LATTICE_MAX * ModifierType.LATTICE_MAX * 2
         ModifierType.ENVELOPE -> 6
-        ModifierType.WEIGHT_PROXIMITY -> 8
         ModifierType.WEIGHT_ANGLE -> 5
-        ModifierType.DASH -> 3
+        ModifierType.DASH -> 7
         ModifierType.OUTLINE -> 2
         ModifierType.MIRROR -> 4
-        ModifierType.ARRAY -> 3
-        ModifierType.MULTIPLY -> 2
+        ModifierType.ARRAY -> 15
+        ModifierType.MULTIPLY -> 7
         ModifierType.THICKNESS -> 6
         ModifierType.OPACITY -> 4
         ModifierType.TINT -> 5
@@ -201,34 +192,32 @@ object ModifierSpecs {
             f(2, "Frame scale", 0.1f, 10f), b(3, "Custom range"), n(4, "Start frame", 0f, 1000f),
             n(5, "End frame", 0f, 1000f), b(6, "Loop")
         )
-        ModifierType.HOOK -> listOf(
-            f(0, "Center X", -4000f, 4000f), f(1, "Center Y", -4000f, 4000f),
-            f(2, "Offset X", -2000f, 2000f), f(3, "Offset Y", -2000f, 2000f),
-            f(4, "Rotation", -3.1415927f, 3.1415927f, DEG), f(5, "Scale", 0f, 4f),
-            f(6, "Radius", 0f, 4000f), e(7, "Falloff", "Constant", "Smooth", "Linear"), f(8, "Strength", 0f, 1f)
-        )
-        ModifierType.LATTICE -> listOf(
-            f(0, "Left", -4000f, 4000f), f(1, "Top", -4000f, 4000f), f(2, "Right", -4000f, 4000f),
-            f(3, "Bottom", -4000f, 4000f), n(4, "Columns", 2f, 6f), n(5, "Rows", 2f, 6f), f(6, "Strength", 0f, 1f)
-        )
         ModifierType.ENVELOPE -> listOf(
             e(0, "Mode", "Deform", "Segments", "Fills"), n(1, "Spread", 1f, 100f), n(2, "Skip", 0f, 20f),
             f(3, "Thickness", 0f, 10f), f(4, "Strength", 0f, 1f), n(5, "Material (-1 same)", -1f, 64f)
-        )
-        ModifierType.WEIGHT_PROXIMITY -> listOf(
-            n(0, "Target vertex group", 0f, 255f), f(1, "Point X", -4000f, 4000f), f(2, "Point Y", -4000f, 4000f),
-            f(3, "Lowest distance", 0f, 4000f), f(4, "Highest distance", 0f, 4000f), f(5, "Minimum weight", 0f, 1f),
-            b(6, "Invert output"), b(7, "Multiply weights")
         )
         ModifierType.WEIGHT_ANGLE -> listOf(
             n(0, "Target vertex group", 0f, 255f), f(1, "Angle", -3.1415927f, 3.1415927f, DEG),
             f(2, "Minimum weight", 0f, 1f), b(3, "Invert output"), b(4, "Multiply weights")
         )
-        ModifierType.DASH -> listOf(n(0, "Dash", 1f, 50f), n(1, "Gap", 1f, 50f), n(2, "Offset", -50f, 50f))
+        ModifierType.DASH -> listOf(
+            n(0, "Dash", 1f, 50f), n(1, "Gap", 0f, 50f), n(2, "Offset", -50f, 50f), f(3, "Radius", 0f, 1f),
+            f(4, "Opacity", 0f, 1f), n(5, "Material (-1 same)", -1f, 64f), b(6, "Cyclic")
+        )
         ModifierType.OUTLINE -> listOf(n(0, "Thickness", 1f, 100f), n(1, "Cap segments", 1f, 32f))
         ModifierType.MIRROR -> listOf(b(0, "Axis X"), b(1, "Axis Y"), f(2, "Pivot X", -4000f, 4000f), f(3, "Pivot Y", -4000f, 4000f))
-        ModifierType.ARRAY -> listOf(n(0, "Count", 2f, 50f), f(1, "Offset X", -2000f, 2000f), f(2, "Offset Y", -2000f, 2000f))
-        ModifierType.MULTIPLY -> listOf(n(0, "Duplicates", 1f, 20f), f(1, "Distance", -200f, 200f))
+        ModifierType.ARRAY -> listOf(
+            n(0, "Count", 1f, 50f), b(3, "Constant offset"), f(1, "Offset X", -2000f, 2000f), f(2, "Offset Y", -2000f, 2000f),
+            b(4, "Relative offset"), f(5, "Relative X", -10f, 10f), f(6, "Relative Y (up)", -10f, 10f),
+            f(7, "Random offset X", -2000f, 2000f), f(8, "Random offset Y", -2000f, 2000f),
+            f(9, "Random rotation", -3.1415927f, 3.1415927f, DEG), f(10, "Random scale X", -1f, 1f),
+            f(11, "Random scale Y", -1f, 1f), b(12, "Uniform scale"), n(13, "Seed", 0f, 10000f),
+            n(14, "Material (0 same, slot+1)", 0f, 64f)
+        )
+        ModifierType.MULTIPLY -> listOf(
+            n(0, "Duplicates", 0f, 10f), f(1, "Distance", -200f, 200f), f(2, "Offset", -1f, 1f), b(3, "Fade"),
+            f(4, "Fade center", 0f, 1f), f(5, "Fade thickness", 0f, 1f), f(6, "Fade opacity", 0f, 1f)
+        )
         else -> emptyList()
     }
 
@@ -263,30 +252,10 @@ object ModifierSpecs {
         return out
     }
 
-    /** Lattice grid offsets: node (u, v) of an nu x nv grid is at index OFFSETS + (v * nu + u) * 2. */
-    fun latticeOffsetIndex(nu: Int, u: Int, v: Int) = 7 + (v * nu + u) * 2
-
-    /**
-     * Canvas handles of an entry: Hook centre and target (centre + offset), Lattice grid nodes (rect +
-     * offsets), Weight Proximity point, Mirror pivot.
-     */
+    /** Canvas handles of an entry: the Mirror pivot. */
     fun canvasHandles(type: Int, p: FloatArray): List<Pair<Float, Float>> {
         fun v(i: Int) = p.getOrElse(i) { 0f }
         return when (type) {
-            ModifierType.HOOK -> listOf(v(0) to v(1), (v(0) + v(2)) to (v(1) + v(3)))
-            ModifierType.LATTICE -> {
-                val nu = v(4).toInt().coerceIn(2, ModifierType.LATTICE_MAX)
-                val nv = v(5).toInt().coerceIn(2, ModifierType.LATTICE_MAX)
-                val out = ArrayList<Pair<Float, Float>>()
-                for (j in 0 until nv) for (i in 0 until nu) {
-                    val x = v(0) + (v(2) - v(0)) * i / (nu - 1)
-                    val y = v(1) + (v(3) - v(1)) * j / (nv - 1)
-                    val k = latticeOffsetIndex(nu, i, j)
-                    out += (x + v(k)) to (y + v(k + 1))
-                }
-                out
-            }
-            ModifierType.WEIGHT_PROXIMITY -> listOf(v(1) to v(2))
             ModifierType.MIRROR -> listOf(v(2) to v(3))
             else -> emptyList()
         }
@@ -296,22 +265,6 @@ object ModifierSpecs {
     fun moveHandle(type: Int, p: FloatArray, handle: Int, x: Float, y: Float): FloatArray {
         val out = p.copyOf(ModifierType.MAX_PARAMS)
         when (type) {
-            ModifierType.HOOK -> if (handle == 0) {
-                out[0] = x; out[1] = y          // the centre moves, the target keeps its place
-                out[2] = p[0] + p[2] - x; out[3] = p[1] + p[3] - y
-            } else { out[2] = x - p[0]; out[3] = y - p[1] }
-            ModifierType.LATTICE -> {
-                val nu = p[4].toInt().coerceIn(2, ModifierType.LATTICE_MAX)
-                val nv = p[5].toInt().coerceIn(2, ModifierType.LATTICE_MAX)
-                if (handle in 0 until nu * nv) {
-                    val i = handle % nu; val j = handle / nu
-                    val gx = p[0] + (p[2] - p[0]) * i / (nu - 1)
-                    val gy = p[1] + (p[3] - p[1]) * j / (nv - 1)
-                    val k = latticeOffsetIndex(nu, i, j)
-                    out[k] = x - gx; out[k + 1] = y - gy
-                }
-            }
-            ModifierType.WEIGHT_PROXIMITY -> { out[1] = x; out[2] = y }
             ModifierType.MIRROR -> { out[2] = x; out[3] = y }
         }
         return out

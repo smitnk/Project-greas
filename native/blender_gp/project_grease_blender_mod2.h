@@ -16,22 +16,11 @@ int pg_build_visible(const int *totpoints, int nstrokes, int mode, int transitio
  * Custom range [sfra, efra] with loop. */
 int pg_time_offset_frame(int mode, int cfra, int offset, float scale, int use_range, int sfra, int efra, int loop);
 
-/* Hook (2D): move points toward center+offset (and rotate/scale about center) with falloff.
- * falloff 0 none (constant), 1 smooth (3t^2-2t^3), 2 linear. Returns points moved. */
-int pg_hook_deform(struct bGPDstroke *gps, float cx, float cy, float dx, float dy, float angle,
-                   float scale, float radius, int falloff, float strength);
-
-/* Lattice (2D): nu x nv control grid over rect (x0,y0)-(x1,y1); offsets[(v*nu+u)*2] displace
- * the grid; points move by bilinear interpolation of the cell they fall in (outside: clamped). */
-int pg_lattice_deform(struct bGPDstroke *gps, float x0, float y0, float x1, float y1, int nu, int nv,
-                      const float *offsets, float strength);
-
 /* Envelope, segments mode (MOD_gpencil_legacy_envelope.c): number of segment strokes
  * point i -> i+spread (skip = points skipped between segments). Fills pairs[2*k] (indices). */
 int pg_envelope_segments(int totpoints, int cyclic, int spread, int skip, int *pairs, int max_pairs);
 
-/* Weight Proximity: weight from distance to a canvas point; Weight Angle: from segment angle. */
-float pg_weight_proximity(float px, float py, float ox, float oy, float dist_start, float dist_end, int invert);
+/* Weight Angle: weight from segment angle. */
 float pg_weight_angle(float ax, float ay, float bx, float by, float angle, int invert);
 
 /* Drawing guides (GP_GUIDE_*): project an input point onto the guide constraint.

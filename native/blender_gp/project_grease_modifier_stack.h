@@ -60,10 +60,9 @@ enum {
   /* Batch 21: generators and 2D deforms (project_grease_modifier_stack2.c) */
   PG_MOD_BUILD = 11,
   PG_MOD_TIME = 12,
-  PG_MOD_HOOK = 13,
-  PG_MOD_LATTICE = 14,
+  /* 13 (Hook) and 14 (Lattice) are excluded: Blender's versions deform by a 3D hook / lattice object */
   PG_MOD_ENVELOPE = 15,
-  PG_MOD_WEIGHT_PROX = 16,
+  /* 16 (Vertex Weight Proximity) is excluded: Blender measures to a 3D object */
   PG_MOD_WEIGHT_ANGLE = 17,
   PG_MOD_DASH = 18,
   PG_MOD_OUTLINE = 19,
@@ -131,36 +130,32 @@ enum { /* BUILD (MOD_gpencil_legacy_build.c): mode 0 sequential / 1 concurrent, 
 enum { /* TIME (MOD_gpencil_legacy_time.c): the layer shows frame pg_time_offset_frame() */
   PG_P_TIME_MODE = 0, PG_P_TIME_OFFSET = 1, PG_P_TIME_SCALE = 2, PG_P_TIME_USE_RANGE = 3,
   PG_P_TIME_SFRA = 4, PG_P_TIME_EFRA = 5, PG_P_TIME_LOOP = 6, PG_P_TIME_COUNT = 7 };
-enum { /* HOOK (2D, pg_hook_deform): canvas center, offset, rotation, scale, radius, falloff */
-  PG_P_HOOK_CX = 0, PG_P_HOOK_CY = 1, PG_P_HOOK_DX = 2, PG_P_HOOK_DY = 3, PG_P_HOOK_ANGLE = 4,
-  PG_P_HOOK_SCALE = 5, PG_P_HOOK_RADIUS = 6, PG_P_HOOK_FALLOFF = 7, PG_P_HOOK_STRENGTH = 8,
-  PG_P_HOOK_COUNT = 9 };
-#define PG_LATTICE_MAX 6
-enum { /* LATTICE (2D, pg_lattice_deform): rect, nu x nv grid (2..6), strength, grid offsets */
-  PG_P_LATTICE_X0 = 0, PG_P_LATTICE_Y0 = 1, PG_P_LATTICE_X1 = 2, PG_P_LATTICE_Y1 = 3,
-  PG_P_LATTICE_NU = 4, PG_P_LATTICE_NV = 5, PG_P_LATTICE_STRENGTH = 6, PG_P_LATTICE_OFFSETS = 7,
-  PG_P_LATTICE_COUNT = 7 + PG_LATTICE_MAX * PG_LATTICE_MAX * 2 };
 enum { /* ENVELOPE (MOD_gpencil_legacy_envelope.c): mode 0 deform / 1 segments / 2 fills */
   PG_P_ENVELOPE_MODE = 0, PG_P_ENVELOPE_SPREAD = 1, PG_P_ENVELOPE_SKIP = 2,
   PG_P_ENVELOPE_THICKNESS = 3, PG_P_ENVELOPE_STRENGTH = 4, PG_P_ENVELOPE_MAT = 5,
   PG_P_ENVELOPE_COUNT = 6 };
-enum { /* WEIGHT_PROX (MOD_gpencil_legacy_weight_proximity.c): target group, canvas point */
-  PG_P_WPROX_TARGET = 0, PG_P_WPROX_X = 1, PG_P_WPROX_Y = 2, PG_P_WPROX_DIST_START = 3,
-  PG_P_WPROX_DIST_END = 4, PG_P_WPROX_MIN_WEIGHT = 5, PG_P_WPROX_INVERT = 6, PG_P_WPROX_MULTIPLY = 7,
-  PG_P_WPROX_COUNT = 8 };
 enum { /* WEIGHT_ANGLE (MOD_gpencil_legacy_weight_angle.c): target group, reference angle */
   PG_P_WANGLE_TARGET = 0, PG_P_WANGLE_ANGLE = 1, PG_P_WANGLE_MIN_WEIGHT = 2, PG_P_WANGLE_INVERT = 3,
   PG_P_WANGLE_MULTIPLY = 4, PG_P_WANGLE_COUNT = 5 };
-enum { /* DASH (one segment: dash / gap points, offset) */
-  PG_P_DASH_DASH = 0, PG_P_DASH_GAP = 1, PG_P_DASH_OFFSET = 2, PG_P_DASH_COUNT = 3 };
+enum { /* DASH (MOD_gpencil_legacy_dash.c, one DashGpencilModifierSegment: dash / gap points, radius,
+        * opacity, material (-1 same), cyclic; dash_offset) */
+  PG_P_DASH_DASH = 0, PG_P_DASH_GAP = 1, PG_P_DASH_OFFSET = 2, PG_P_DASH_RADIUS = 3, PG_P_DASH_OPACITY = 4,
+  PG_P_DASH_MAT = 5, PG_P_DASH_CYCLIC = 6, PG_P_DASH_COUNT = 7 };
 enum { /* OUTLINE (thickness px, cap segments) */
   PG_P_OUTLINE_THICKNESS = 0, PG_P_OUTLINE_SUBDIV = 1, PG_P_OUTLINE_COUNT = 2 };
-enum { /* MIRROR (axes, canvas pivot) */
+enum { /* MIRROR (MOD_gpencil_legacy_mirror.c: axes; the canvas pivot is the mirror object, (0,0) none) */
   PG_P_MIRROR_X = 0, PG_P_MIRROR_Y = 1, PG_P_MIRROR_PX = 2, PG_P_MIRROR_PY = 3, PG_P_MIRROR_COUNT = 4 };
-enum { /* ARRAY (count, constant offset) */
-  PG_P_ARRAY_COUNT_N = 0, PG_P_ARRAY_OX = 1, PG_P_ARRAY_OY = 2, PG_P_ARRAY_COUNT = 3 };
-enum { /* MULTIPLY (duplications, distance) */
-  PG_P_MULTIPLY_DUPLICATIONS = 0, PG_P_MULTIPLY_DISTANCE = 1, PG_P_MULTIPLY_COUNT = 2 };
+enum { /* ARRAY (MOD_gpencil_legacy_array.c): count, constant offset px (use_constant_offset),
+        * relative offset (use_relative_offset, x bounds), random offset px / rotation (canvas plane) /
+        * scale, uniform random scale, seed, replace material (slot + 1, 0 off) */
+  PG_P_ARRAY_COUNT_N = 0, PG_P_ARRAY_OX = 1, PG_P_ARRAY_OY = 2, PG_P_ARRAY_USE_OFFSET = 3,
+  PG_P_ARRAY_USE_RELATIVE = 4, PG_P_ARRAY_SHIFT_X = 5, PG_P_ARRAY_SHIFT_Y = 6, PG_P_ARRAY_RND_OX = 7,
+  PG_P_ARRAY_RND_OY = 8, PG_P_ARRAY_RND_ROT = 9, PG_P_ARRAY_RND_SX = 10, PG_P_ARRAY_RND_SY = 11,
+  PG_P_ARRAY_UNIFORM = 12, PG_P_ARRAY_SEED = 13, PG_P_ARRAY_MAT_RPL = 14, PG_P_ARRAY_COUNT = 15 };
+enum { /* MULTIPLY (MOD_gpencil_legacy_multiply.c): duplications, distance px, offset, fading */
+  PG_P_MULTIPLY_DUPLICATIONS = 0, PG_P_MULTIPLY_DISTANCE = 1, PG_P_MULTIPLY_OFFSET = 2,
+  PG_P_MULTIPLY_FADE = 3, PG_P_MULTIPLY_FADE_CENTER = 4, PG_P_MULTIPLY_FADE_THICKNESS = 5,
+  PG_P_MULTIPLY_FADE_OPACITY = 6, PG_P_MULTIPLY_COUNT = 7 };
 enum { /* TEXTURE: mode STROKE 0 / FILL 1 / STROKE_AND_FILL 2, fit GP_TEX_FIT_STROKE 0 / GP_TEX_CONSTANT_LENGTH 1 */
   PG_P_TEXTURE_MODE = 0, PG_P_TEXTURE_FIT = 1, PG_P_TEXTURE_UV_OFFSET = 2, PG_P_TEXTURE_UV_SCALE = 3,
   PG_P_TEXTURE_ALIGN_ROT = 4, PG_P_TEXTURE_FILL_ROT = 5, PG_P_TEXTURE_FILL_OFFSET_X = 6,

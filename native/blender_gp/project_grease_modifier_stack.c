@@ -42,7 +42,8 @@
 
 int pg_mod_valid_type(int type)
 {
-  return type >= PG_MOD_THICKNESS && type <= PG_MOD_TYPE_LAST;
+  /* 13, 14, 16: excluded 3D-object modifiers (Hook, Lattice, Weight Proximity); old files drop them */
+  return type >= PG_MOD_THICKNESS && type <= PG_MOD_TYPE_LAST && type != 13 && type != 14 && type != 16;
 }
 
 int pg_mod_param_count(int type)
@@ -55,10 +56,7 @@ int pg_mod_own_param_count(int type)
   switch (type) {
     case PG_MOD_BUILD: return PG_P_BUILD_COUNT;
     case PG_MOD_TIME: return PG_P_TIME_COUNT;
-    case PG_MOD_HOOK: return PG_P_HOOK_COUNT;
-    case PG_MOD_LATTICE: return PG_P_LATTICE_COUNT;
     case PG_MOD_ENVELOPE: return PG_P_ENVELOPE_COUNT;
-    case PG_MOD_WEIGHT_PROX: return PG_P_WPROX_COUNT;
     case PG_MOD_WEIGHT_ANGLE: return PG_P_WANGLE_COUNT;
     case PG_MOD_DASH: return PG_P_DASH_COUNT;
     case PG_MOD_OUTLINE: return PG_P_OUTLINE_COUNT;
@@ -96,10 +94,7 @@ const char *pg_mod_name(int type)
     case PG_MOD_NOISE: return "Noise";
     case PG_MOD_BUILD: return "Build";
     case PG_MOD_TIME: return "Time Offset";
-    case PG_MOD_HOOK: return "Hook";
-    case PG_MOD_LATTICE: return "Lattice";
     case PG_MOD_ENVELOPE: return "Envelope";
-    case PG_MOD_WEIGHT_PROX: return "Vertex Weight Proximity";
     case PG_MOD_WEIGHT_ANGLE: return "Vertex Weight Angle";
     case PG_MOD_DASH: return "Dot Dash";
     case PG_MOD_OUTLINE: return "Outline";

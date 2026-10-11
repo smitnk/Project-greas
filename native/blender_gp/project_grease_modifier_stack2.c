@@ -1,14 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Batch 21 entries of the live modifier stack (see project_grease_modifier_stack.h):
- *   Build, Time Offset, Hook (2D), Lattice (2D), Envelope, Vertex Weight Proximity / Angle and the
- *   live generators Dot Dash, Outline, Mirror, Array, MultipleStrokes; the common influence filter
- *   block and the custom curve.
- * Build / Time / Hook / Lattice use the tested 2D functions of project_grease_blender_mod2.c.
+ *   Build, Time Offset, Envelope, Vertex Weight Angle and the live generators Dot Dash, Outline,
+ *   Mirror, Array, MultipleStrokes; the common influence filter block and the custom curve.
+ *   (Hook, Lattice and Vertex Weight Proximity are excluded: they need 3D objects.)
+ * Build / Time use the tested 2D functions of project_grease_blender_mod2.c.
  * Envelope carries the pinned MOD_gpencil_legacy_envelope.c functions as VERBATIM regions; the glue
  * (generate_geometry / deformStroke without Object, Depsgraph and the layer/material filters) is
- * ADAPTED. The generators reuse the baked operators of edit4 / edit6 / edit on the evaluated copy
- * through a one-layer view of the document whose active frame is the evaluated frame.
+ * ADAPTED. Dot Dash, Mirror, Array and Multiple Strokes are Blender's own code
+ * (project_grease_modifier_gen.c); Outline reuses the baked operator on the evaluated copy through
+ * a one-layer view of the document whose active frame is the evaluated frame.
  */
 
 #include <float.h>
@@ -41,6 +42,7 @@
 #include "project_grease_blender_mod2.h"
 #include "project_grease_curvemap.h"
 #include "project_grease_modifier_stack.h"
+#include "project_grease_modifier_gen.h"
 
 static float m2_clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static float m2_int(float v, float lo, float hi) { return m2_clamp(floorf(v + 0.5f), lo, hi); }
@@ -62,21 +64,6 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_TIME_EFRA] = 250.0f;
       p[PG_P_TIME_LOOP] = 1.0f;
       break;
-    case PG_MOD_HOOK: /* smooth falloff, force 0.5 (Blender); 2D: canvas centre, radius 200 px */
-      p[PG_P_HOOK_CX] = 640.0f;
-      p[PG_P_HOOK_CY] = 360.0f;
-      p[PG_P_HOOK_SCALE] = 1.0f;
-      p[PG_P_HOOK_RADIUS] = 200.0f;
-      p[PG_P_HOOK_FALLOFF] = 1.0f;
-      p[PG_P_HOOK_STRENGTH] = 0.5f;
-      break;
-    case PG_MOD_LATTICE: /* strength 1; 2D: 3x3 grid over the 1280x720 canvas */
-      p[PG_P_LATTICE_X1] = 1280.0f;
-      p[PG_P_LATTICE_Y1] = 720.0f;
-      p[PG_P_LATTICE_NU] = 3.0f;
-      p[PG_P_LATTICE_NV] = 3.0f;
-      p[PG_P_LATTICE_STRENGTH] = 1.0f;
-      break;
     case PG_MOD_ENVELOPE: /* spread 10, mode segments, mat_nr -1, thickness 1, strength 1, skip 0 */
       p[PG_P_ENVELOPE_MODE] = GP_ENVELOPE_SEGMENTS;
       p[PG_P_ENVELOPE_SPREAD] = 10.0f;
@@ -84,33 +71,36 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_ENVELOPE_STRENGTH] = 1.0f;
       p[PG_P_ENVELOPE_MAT] = -1.0f;
       break;
-    case PG_MOD_WEIGHT_PROX: /* dist_start 0, dist_end 20 (canvas px here) */
-      p[PG_P_WPROX_X] = 640.0f;
-      p[PG_P_WPROX_Y] = 360.0f;
-      p[PG_P_WPROX_DIST_END] = 20.0f;
-      break;
     case PG_MOD_WEIGHT_ANGLE:
       break;
-    case PG_MOD_DASH: /* one segment: dash 2, gap 1 (DashGpencilModifierSegment defaults) */
+    case PG_MOD_DASH: /* one segment: dash 2, gap 1, radius 1, opacity 1, mat_nr -1 */
       p[PG_P_DASH_DASH] = 2.0f;
       p[PG_P_DASH_GAP] = 1.0f;
+      p[PG_P_DASH_RADIUS] = 1.0f;
+      p[PG_P_DASH_OPACITY] = 1.0f;
+      p[PG_P_DASH_MAT] = -1.0f;
       break;
     case PG_MOD_OUTLINE: /* thickness 1, subdiv 3 */
       p[PG_P_OUTLINE_THICKNESS] = 1.0f;
       p[PG_P_OUTLINE_SUBDIV] = 3.0f;
       break;
-    case PG_MOD_MIRROR: /* GP_MIRROR_AXIS_X about the canvas centre */
+    case PG_MOD_MIRROR: /* GP_MIRROR_AXIS_X; 2D: the mirror object is the canvas centre */
       p[PG_P_MIRROR_X] = 1.0f;
       p[PG_P_MIRROR_PX] = 640.0f;
       p[PG_P_MIRROR_PY] = 360.0f;
       break;
-    case PG_MOD_ARRAY: /* count 2, relative shift 1 (here 100 px in x) */
+    case PG_MOD_ARRAY: /* count 2, GP_ARRAY_USE_RELATIVE, shift (1, 0, 0), seed 1 */
       p[PG_P_ARRAY_COUNT_N] = 2.0f;
-      p[PG_P_ARRAY_OX] = 100.0f;
+      p[PG_P_ARRAY_USE_RELATIVE] = 1.0f;
+      p[PG_P_ARRAY_SHIFT_X] = 1.0f;
+      p[PG_P_ARRAY_SEED] = 1.0f;
       break;
-    case PG_MOD_MULTIPLY: /* duplications 3, distance 0.1 (here 10 px) */
+    case PG_MOD_MULTIPLY: /* duplications 3, distance 0.1 (10 px), fading centre / thickness / opacity 0.5 */
       p[PG_P_MULTIPLY_DUPLICATIONS] = 3.0f;
       p[PG_P_MULTIPLY_DISTANCE] = 10.0f;
+      p[PG_P_MULTIPLY_FADE_CENTER] = 0.5f;
+      p[PG_P_MULTIPLY_FADE_THICKNESS] = 0.5f;
+      p[PG_P_MULTIPLY_FADE_OPACITY] = 0.5f;
       break;
     case PG_MOD_TEXTURE: /* uv_scale 1, fill_scale 1, fit GP_TEX_CONSTANT_LENGTH, mode STROKE */
       p[PG_P_TEXTURE_UV_SCALE] = 1.0f;
@@ -132,30 +122,7 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_TIME_USE_RANGE] = m2_flag(p[PG_P_TIME_USE_RANGE]);
       p[PG_P_TIME_LOOP] = m2_flag(p[PG_P_TIME_LOOP]);
       break;
-    case PG_MOD_HOOK:
-      for (int i = PG_P_HOOK_CX; i <= PG_P_HOOK_DY; i++) p[i] = m2_clamp(p[i], -100000.0f, 100000.0f);
-      p[PG_P_HOOK_ANGLE] = m2_clamp(p[PG_P_HOOK_ANGLE], -(float)M_PI * 4, (float)M_PI * 4);
-      p[PG_P_HOOK_SCALE] = m2_clamp(p[PG_P_HOOK_SCALE], 0.0f, 100.0f);
-      p[PG_P_HOOK_RADIUS] = m2_clamp(p[PG_P_HOOK_RADIUS], 0.0f, 100000.0f);
-      p[PG_P_HOOK_FALLOFF] = m2_int(p[PG_P_HOOK_FALLOFF], 0, 2);
-      break;
-    case PG_MOD_LATTICE:
-      for (int i = PG_P_LATTICE_X0; i <= PG_P_LATTICE_Y1; i++) p[i] = m2_clamp(p[i], -100000.0f, 100000.0f);
-      if (!(p[PG_P_LATTICE_X1] > p[PG_P_LATTICE_X0])) p[PG_P_LATTICE_X1] = p[PG_P_LATTICE_X0] + 1.0f;
-      if (!(p[PG_P_LATTICE_Y1] > p[PG_P_LATTICE_Y0])) p[PG_P_LATTICE_Y1] = p[PG_P_LATTICE_Y0] + 1.0f;
-      p[PG_P_LATTICE_NU] = m2_int(p[PG_P_LATTICE_NU], 2, PG_LATTICE_MAX);
-      p[PG_P_LATTICE_NV] = m2_int(p[PG_P_LATTICE_NV], 2, PG_LATTICE_MAX);
-      for (int i = PG_P_LATTICE_OFFSETS; i < PG_P_LATTICE_COUNT; i++) p[i] = m2_clamp(p[i], -100000.0f, 100000.0f);
-      break;
     case PG_MOD_ENVELOPE:
-      break;
-    case PG_MOD_WEIGHT_PROX:
-      p[PG_P_WPROX_TARGET] = m2_int(p[PG_P_WPROX_TARGET], 0, 255);
-      p[PG_P_WPROX_X] = m2_clamp(p[PG_P_WPROX_X], -100000.0f, 100000.0f);
-      p[PG_P_WPROX_Y] = m2_clamp(p[PG_P_WPROX_Y], -100000.0f, 100000.0f);
-      p[PG_P_WPROX_DIST_END] = m2_clamp(p[PG_P_WPROX_DIST_END], 0.0f, 100000.0f);
-      p[PG_P_WPROX_INVERT] = m2_flag(p[PG_P_WPROX_INVERT]);
-      p[PG_P_WPROX_MULTIPLY] = m2_flag(p[PG_P_WPROX_MULTIPLY]);
       break;
     case PG_MOD_WEIGHT_ANGLE:
       p[PG_P_WANGLE_TARGET] = m2_int(p[PG_P_WANGLE_TARGET], 0, 255);
@@ -163,6 +130,7 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_WANGLE_MULTIPLY] = m2_flag(p[PG_P_WANGLE_MULTIPLY]);
       break;
     case PG_MOD_DASH:
+      p[PG_P_DASH_CYCLIC] = m2_flag(p[PG_P_DASH_CYCLIC]);
       break;
     case PG_MOD_OUTLINE:
       p[PG_P_OUTLINE_THICKNESS] = m2_int(p[PG_P_OUTLINE_THICKNESS], 1, 1000);
@@ -174,11 +142,14 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_MIRROR_PY] = m2_clamp(p[PG_P_MIRROR_PY], -100000.0f, 100000.0f);
       break;
     case PG_MOD_ARRAY:
-      p[PG_P_ARRAY_OX] = m2_clamp(p[PG_P_ARRAY_OX], -100000.0f, 100000.0f);
-      p[PG_P_ARRAY_OY] = m2_clamp(p[PG_P_ARRAY_OY], -100000.0f, 100000.0f);
+      for (int i = PG_P_ARRAY_OX; i <= PG_P_ARRAY_RND_SY; i++) p[i] = m2_clamp(p[i], -100000.0f, 100000.0f);
+      p[PG_P_ARRAY_USE_OFFSET] = m2_flag(p[PG_P_ARRAY_USE_OFFSET]);
+      p[PG_P_ARRAY_USE_RELATIVE] = m2_flag(p[PG_P_ARRAY_USE_RELATIVE]);
+      p[PG_P_ARRAY_UNIFORM] = m2_flag(p[PG_P_ARRAY_UNIFORM]);
       break;
     case PG_MOD_MULTIPLY:
       p[PG_P_MULTIPLY_DISTANCE] = m2_clamp(p[PG_P_MULTIPLY_DISTANCE], -10000.0f, 10000.0f);
+      p[PG_P_MULTIPLY_FADE] = m2_flag(p[PG_P_MULTIPLY_FADE]);
       break;
     case PG_MOD_TEXTURE: /* rna_gpencil_legacy_modifier.c ranges */
       p[PG_P_TEXTURE_FILL_OFFSET_X] = m2_clamp(p[PG_P_TEXTURE_FILL_OFFSET_X], -FLT_MAX, FLT_MAX);
@@ -824,21 +795,8 @@ static int m2_generator(const PGModContext *ctx, const PGModEntry *e)
   const float *p = e->params;
   int changed = 0;
   switch (e->type) {
-    case PG_MOD_DASH:
-      changed = pg_gp_dash(&view, &layer, (int)p[PG_P_DASH_DASH], (int)p[PG_P_DASH_GAP], (int)p[PG_P_DASH_OFFSET]);
-      break;
     case PG_MOD_OUTLINE:
       changed = pg_gp_outline(&view, &layer, (int)p[PG_P_OUTLINE_THICKNESS], (int)p[PG_P_OUTLINE_SUBDIV]);
-      break;
-    case PG_MOD_MIRROR:
-      changed = pg_gp_mirror_copy(&view, &layer, p[PG_P_MIRROR_X] != 0.0f, p[PG_P_MIRROR_Y] != 0.0f,
-                                  p[PG_P_MIRROR_PX], p[PG_P_MIRROR_PY]);
-      break;
-    case PG_MOD_ARRAY:
-      changed = pg_gp_array(&view, &layer, (int)p[PG_P_ARRAY_COUNT_N], p[PG_P_ARRAY_OX], p[PG_P_ARRAY_OY]);
-      break;
-    case PG_MOD_MULTIPLY:
-      changed = pg_gp_multiply(&view, &layer, (int)p[PG_P_MULTIPLY_DUPLICATIONS], p[PG_P_MULTIPLY_DISTANCE]);
       break;
     default:
       break;
@@ -885,22 +843,11 @@ static void m2_assign_weight(MDeformVert *dv, int target, float w, const float *
 static int m2_weight_modifier(const PGModContext *ctx, const PGModEntry *e, bGPDstroke *gps)
 {
   const float *p = e->params;
-  const int target = e->type == PG_MOD_WEIGHT_PROX ? (int)p[PG_P_WPROX_TARGET] : (int)p[PG_P_WANGLE_TARGET];
+  const int target = (int)p[PG_P_WANGLE_TARGET];
   if (target < 0 || target >= BLI_listbase_count(&ctx->gpd->vertex_group_names)) return 0; /* target_def_nr == -1 */
   if (gps->dvert == NULL) {
     gps->dvert = MEM_callocN(sizeof(MDeformVert) * (size_t)gps->totpoints, "pg_m2_dvert"); /* BKE_gpencil_dvert_ensure */
     if (gps->dvert == NULL) return 0;
-  }
-  if (e->type == PG_MOD_WEIGHT_PROX) {
-    /* calc_point_weight_by_distance with min / max of start and end (pg_weight_proximity) */
-    const float ds = p[PG_P_WPROX_DIST_START], de = p[PG_P_WPROX_DIST_END];
-    for (int i = 0; i < gps->totpoints; i++) {
-      float w = pg_weight_proximity(gps->points[i].x, gps->points[i].y, p[PG_P_WPROX_X], p[PG_P_WPROX_Y],
-                                    MIN2(ds, de), MAX2(ds, de), 0);
-      if (p[PG_P_WPROX_INVERT] != 0.0f) w = 1.0f - w; /* GP_WEIGHT_INVERT_OUTPUT */
-      m2_assign_weight(&gps->dvert[i], target, w, p, PG_P_WPROX_MIN_WEIGHT, PG_P_WPROX_MULTIPLY);
-    }
-    return 1;
   }
   /* Weight Angle: 1 - sin(angle between the segment and the reference direction) about the view
    * axis (Blender: axis Z for a front view); canvas y points down, so the angle is mirrored. */
@@ -983,8 +930,10 @@ int pg_mod2_run_frame(const PGModContext *ctx, const PGModEntry *e)
         return any;
       }
       return m2_envelope_generate(ctx, e);
-    case PG_MOD_DASH: case PG_MOD_OUTLINE: case PG_MOD_MIRROR: case PG_MOD_ARRAY: case PG_MOD_MULTIPLY:
+    case PG_MOD_OUTLINE:
       return m2_generator(ctx, e);
+    case PG_MOD_DASH: case PG_MOD_MIRROR: case PG_MOD_ARRAY: case PG_MOD_MULTIPLY:
+      return pg_mod_gen_run(ctx, e);
     default:
       return 0;
   }
@@ -994,17 +943,8 @@ int pg_mod2_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstro
 {
   const float *p = e->params;
   switch (e->type) {
-    case PG_MOD_HOOK:
-      return pg_hook_deform(gps, p[PG_P_HOOK_CX], p[PG_P_HOOK_CY], p[PG_P_HOOK_DX], p[PG_P_HOOK_DY],
-                            p[PG_P_HOOK_ANGLE], p[PG_P_HOOK_SCALE], p[PG_P_HOOK_RADIUS],
-                            (int)p[PG_P_HOOK_FALLOFF], p[PG_P_HOOK_STRENGTH]) > 0;
-    case PG_MOD_LATTICE:
-      return pg_lattice_deform(gps, p[PG_P_LATTICE_X0], p[PG_P_LATTICE_Y0], p[PG_P_LATTICE_X1],
-                               p[PG_P_LATTICE_Y1], (int)p[PG_P_LATTICE_NU], (int)p[PG_P_LATTICE_NV],
-                               &p[PG_P_LATTICE_OFFSETS], p[PG_P_LATTICE_STRENGTH]) > 0;
     case PG_MOD_ENVELOPE:
       return (int)p[PG_P_ENVELOPE_MODE] == GP_ENVELOPE_DEFORM ? m2_envelope_deform(ctx, p, gps) : 0;
-    case PG_MOD_WEIGHT_PROX:
     case PG_MOD_WEIGHT_ANGLE:
       return m2_weight_modifier(ctx, e, gps);
     case PG_MOD_TEXTURE:

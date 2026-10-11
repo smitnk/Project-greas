@@ -151,10 +151,6 @@ static PGModEntry tuned(int type)
     case PG_MOD_OFFSET: p[PG_P_OFFSET_MODE] = 0; p[PG_P_OFFSET_RND_OFFSET] = 30; p[PG_P_OFFSET_RND_OFFSET + 1] = 30;
                         p[PG_P_OFFSET_RND_ROT + 2] = 0.3f; p[PG_P_OFFSET_SEED] = 7; break;
     case PG_MOD_NOISE: p[PG_P_NOISE_FACTOR] = 1.0f; p[PG_P_NOISE_SEED] = 3; break;
-    case PG_MOD_HOOK: p[PG_P_HOOK_CX] = 50; p[PG_P_HOOK_CY] = 80; p[PG_P_HOOK_DX] = 20; p[PG_P_HOOK_DY] = -10;
-                      p[PG_P_HOOK_STRENGTH] = 1.0f; break;
-    case PG_MOD_LATTICE: p[PG_P_LATTICE_X0] = 0; p[PG_P_LATTICE_Y0] = 0; p[PG_P_LATTICE_X1] = 200;
-                         p[PG_P_LATTICE_Y1] = 200; p[PG_P_LATTICE_OFFSETS + 8] = 15; break; /* centre node of 3x3 */
     case PG_MOD_TEXTURE: p[PG_P_TEXTURE_UV_SCALE] = 2.0f; p[PG_P_TEXTURE_ALIGN_ROT] = 0.3f; break;
   }
   return e;
@@ -163,12 +159,14 @@ static PGModEntry tuned(int type)
 static bool point_changing(int t)
 {
   /* Texture Mapping only changes uv data (test_texture_modifier) */
-  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_PROX && t != PG_MOD_WEIGHT_ANGLE && t != PG_MOD_TEXTURE;
+  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_ANGLE && t != PG_MOD_TEXTURE;
 }
 
 static void test_type_info()
 {
+  CHECK(!pg_mod_valid_type(13) && !pg_mod_valid_type(14) && !pg_mod_valid_type(16)); /* excluded 3D-object types */
   for (int t = PG_MOD_THICKNESS; t <= PG_MOD_TYPE_LAST; t++) {
+    if (t == 13 || t == 14 || t == 16) continue;
     CHECK(pg_mod_valid_type(t));
     CHECK(pg_mod_param_count(t) > 0 && pg_mod_param_count(t) <= PG_MOD_MAX_PARAMS);
     CHECK(pg_mod_name(t) != nullptr && pg_mod_name(t)[0] != 0);
@@ -186,7 +184,7 @@ static void test_type_info()
 static void test_originals_untouched_and_changed()
 {
   for (int t = PG_MOD_THICKNESS; t <= PG_MOD_TYPE_LAST; t++) {
-    if (!point_changing(t)) continue;
+    if (!pg_mod_valid_type(t) || !point_changing(t)) continue;
     Doc d = make_doc();
     const auto before = snapshot(d.f1);
     const PGModEntry e = tuned(t);
@@ -234,7 +232,7 @@ static void test_order()
 static void test_apply_equals_live()
 {
   for (int t = PG_MOD_THICKNESS; t <= PG_MOD_TYPE_LAST; t++) {
-    if (!point_changing(t)) continue;
+    if (!pg_mod_valid_type(t) || !point_changing(t)) continue;
     Doc d = make_doc();
     const PGModEntry e = tuned(t);
     const auto live = eval(d, &e, 1, 1);
@@ -445,42 +443,36 @@ static void test_batch21()
     CHECK(conc.size() == 2 && conc[0].size() == 5 && conc[1].size() == 5);
     free_doc(d);
   }
-  /* Vertex weight proximity / angle write the target group on the copies only */
+  /* Vertex weight angle writes the target group on the copies only */
   {
     Doc d = make_pair_doc(1);
     bDeformGroup *g = static_cast<bDeformGroup *>(MEM_callocN(sizeof(bDeformGroup), "g"));
     BLI_addtail(&d.gpd->vertex_group_names, g);
-    PGModEntry w = entry(PG_MOD_WEIGHT_PROX);
-    w.params[PG_P_WPROX_X] = 100; w.params[PG_P_WPROX_Y] = 200;
-    w.params[PG_P_WPROX_DIST_START] = 0; w.params[PG_P_WPROX_DIST_END] = 100;
     bGPDframe ev;
-    pg_mod_eval_frame(d.gpd, d.gpl, d.f1, &w, 1, 1, &ev);
-    const bGPDstroke *s = (const bGPDstroke *)ev.strokes.first;
-    CHECK(near(group_weight(s, 0, 0), 0.0f) && near(group_weight(s, 1, 0), 84.8528f / 100.0f, 1e-3f));
-    pg_mod_eval_free(&ev);
-    CHECK(((bGPDstroke *)d.f1->strokes.first)->dvert == nullptr); /* original untouched */
     PGModEntry a = entry(PG_MOD_WEIGHT_ANGLE);
     a.params[PG_P_WANGLE_ANGLE] = -0.78539816f; /* the 45 deg segment (canvas y down) */
     pg_mod_eval_frame(d.gpd, d.gpl, d.f1, &a, 1, 1, &ev);
-    s = (const bGPDstroke *)ev.strokes.first;
+    const bGPDstroke *s = (const bGPDstroke *)ev.strokes.first;
     CHECK(near(group_weight(s, 1, 0), 1.0f, 1e-3f));
     pg_mod_eval_free(&ev);
+    CHECK(((bGPDstroke *)d.f1->strokes.first)->dvert == nullptr); /* original untouched */
+    PGModEntry w = a;
     /* a later Thickness entry with the group sees the written weights */
     PGModEntry stack[2] = {w, entry(PG_MOD_THICKNESS)};
     stack[1].params[PG_P_THICK_FACTOR] = 3; stack[1].params[PG_P_THICK_USE_VGROUP] = 1; stack[1].params[PG_P_THICK_VGROUP] = 0;
     auto r = eval(d, stack, 2, 1);
-    CHECK(near(r[0][0].v[3], 1.0f) && r[0][1].v[3] > 2.0f);
+    CHECK(r[0][0].v[3] > 2.0f && r[0][1].v[3] > 2.0f); /* both weights 1: the full factor */
     BLI_freelistN(&d.gpd->vertex_group_names);
     free_doc(d);
   }
   /* Filters: a material filter that matches nothing leaves the strokes; invert selects all */
   {
     Doc d = make_doc();
-    PGModEntry h = tuned(PG_MOD_HOOK);
+    PGModEntry h = tuned(PG_MOD_NOISE);
     h.params[PG_P_FILTER_BASE + PG_P_FILTER_MATERIAL] = 3; /* slot 2 */
     CHECK(same(eval(d, &h, 1, 1), snapshot(d.f1)));
     h.params[PG_P_FILTER_BASE + PG_P_FILTER_INVERT_MATERIAL] = 1;
-    const PGModEntry plain = tuned(PG_MOD_HOOK);
+    const PGModEntry plain = tuned(PG_MOD_NOISE);
     CHECK(same(eval(d, &h, 1, 1), eval(d, &plain, 1, 1)));
     /* custom curve 0 -> 0: the first point keeps its place, the last moves fully */
     PGModEntry o = entry(PG_MOD_OFFSET);
@@ -503,7 +495,7 @@ static void test_batch21()
     PGModEntry mir = entry(PG_MOD_MIRROR); mir.params[PG_P_MIRROR_Y] = 1;
     CHECK(eval(d, &mir, 1, 1).size() == 2 + 2 * 3);
     PGModEntry mul = entry(PG_MOD_MULTIPLY);
-    CHECK(eval(d, &mul, 1, 1).size() == 2 * 4);
+    CHECK(eval(d, &mul, 1, 1).size() == 2 * 3); /* Blender: duplications 3 = the original + 2 copies */
     PGModEntry env = entry(PG_MOD_ENVELOPE); env.params[PG_P_ENVELOPE_SPREAD] = 2;
     CHECK(eval(d, &env, 1, 1).size() > 2);
     PGModEntry dash = entry(PG_MOD_DASH);
@@ -516,9 +508,9 @@ static void test_batch21()
   }
   /* old 24-float stacks: zero curve/filter blocks are no-ops and survive sanitize */
   float p[PG_MOD_MAX_PARAMS];
-  pg_mod_defaults(PG_MOD_HOOK, p);
-  pg_mod_sanitize(PG_MOD_HOOK, p);
-  CHECK(p[PG_P_CURVE_BASE] == 0 && p[PG_P_FILTER_BASE] == 0 && pg_mod_own_param_count(PG_MOD_HOOK) == PG_P_HOOK_COUNT);
+  pg_mod_defaults(PG_MOD_ENVELOPE, p);
+  pg_mod_sanitize(PG_MOD_ENVELOPE, p);
+  CHECK(p[PG_P_CURVE_BASE] == 0 && p[PG_P_FILTER_BASE] == 0 && pg_mod_own_param_count(PG_MOD_ENVELOPE) == PG_P_ENVELOPE_COUNT);
 }
 
 /* Build ported from MOD_gpencil_legacy_build.c: Additive keeps the previous key's strokes, Fade. */

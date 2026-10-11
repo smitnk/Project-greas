@@ -43,55 +43,6 @@ int pg_time_offset_frame(int mode, int cfra, int offset, float scale, int use_ra
   }
 }
 
-static float falloff_w(int type, float d, float r)
-{
-  if (type == 0) return 1.0f;
-  if (r <= 0 || d >= r) return 0.0f;
-  float t = 1.0f - d / r;
-  return type == 2 ? t : t * t * (3.0f - 2.0f * t);
-}
-
-int pg_hook_deform(bGPDstroke *gps, float cx, float cy, float dx, float dy, float angle, float scale,
-                   float radius, int falloff, float strength)
-{
-  if (gps == NULL || gps->points == NULL || !isfinite(dx) || !isfinite(dy) || !isfinite(angle) || !isfinite(scale)) return 0;
-  const float c = cosf(angle), s = sinf(angle);
-  int moved = 0;
-  for (int i = 0; i < gps->totpoints; i++) {
-    bGPDspoint *p = &gps->points[i];
-    float w = falloff_w(falloff, hypotf(p->x - cx, p->y - cy), radius) * strength;
-    if (w <= 0) continue;
-    float rx = p->x - cx, ry = p->y - cy;
-    float tx = cx + dx + (rx * c - ry * s) * scale, ty = cy + dy + (rx * s + ry * c) * scale;
-    p->x += (tx - p->x) * w; p->y += (ty - p->y) * w;
-    moved++;
-  }
-  return moved;
-}
-
-int pg_lattice_deform(bGPDstroke *gps, float x0, float y0, float x1, float y1, int nu, int nv,
-                      const float *off, float strength)
-{
-  if (gps == NULL || gps->points == NULL || off == NULL || nu < 2 || nv < 2 || !(x1 > x0) || !(y1 > y0)) return 0;
-  int moved = 0;
-  for (int i = 0; i < gps->totpoints; i++) {
-    bGPDspoint *p = &gps->points[i];
-    float u = clampf01((p->x - x0) / (x1 - x0)) * (nu - 1), v = clampf01((p->y - y0) / (y1 - y0)) * (nv - 1);
-    int iu = (int)u, iv = (int)v;
-    if (iu > nu - 2) iu = nu - 2;
-    if (iv > nv - 2) iv = nv - 2;
-    float fu = u - iu, fv = v - iv;
-    const float *a = &off[(iv * nu + iu) * 2], *b = &off[(iv * nu + iu + 1) * 2];
-    const float *c = &off[((iv + 1) * nu + iu) * 2], *d = &off[((iv + 1) * nu + iu + 1) * 2];
-    float ox = (a[0] * (1 - fu) + b[0] * fu) * (1 - fv) + (c[0] * (1 - fu) + d[0] * fu) * fv;
-    float oy = (a[1] * (1 - fu) + b[1] * fu) * (1 - fv) + (c[1] * (1 - fu) + d[1] * fu) * fv;
-    if (ox == 0 && oy == 0) continue;
-    p->x += ox * strength; p->y += oy * strength;
-    moved++;
-  }
-  return moved;
-}
-
 int pg_envelope_segments(int totpoints, int cyclic, int spread, int skip, int *pairs, int max_pairs)
 {
   if (totpoints < 2 || spread < 1 || skip < 0 || pairs == NULL || max_pairs <= 0) return 0;
@@ -102,13 +53,6 @@ int pg_envelope_segments(int totpoints, int cyclic, int spread, int skip, int *p
     pairs[2 * n] = i; pairs[2 * n + 1] = j; n++;
   }
   return n;
-}
-
-float pg_weight_proximity(float px, float py, float ox, float oy, float ds, float de, int invert)
-{
-  float d = hypotf(px - ox, py - oy);
-  float w = (de == ds) ? (d >= de ? 1.0f : 0.0f) : clampf01((d - ds) / (de - ds));
-  return invert ? 1.0f - w : w;
 }
 
 float pg_weight_angle(float ax, float ay, float bx, float by, float angle, int invert)

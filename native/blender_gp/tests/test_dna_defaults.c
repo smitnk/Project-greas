@@ -162,19 +162,6 @@ int main(void)
   cmp("Time.frame_end", p[PG_P_TIME_EFRA], tm->efra);
   cmp("Time.use_keep_loop", p[PG_P_TIME_LOOP], FLAG(tm->flag, GP_TIME_KEEP_LOOP));
 
-  const HookGpencilModifierData *ho = DNA_struct_default_get(HookGpencilModifierData);
-  mod(PG_MOD_HOOK, p);
-  cmp("Hook.strength", p[PG_P_HOOK_STRENGTH], ho->force);
-  /* PG's 2D hook encodes falloff as 0 none / 1 smooth / 2 linear (project_grease_blender_mod2.h). */
-  static const int pg_to_dna_falloff[3] = {eGPHook_Falloff_None, eGPHook_Falloff_Smooth, eGPHook_Falloff_Linear};
-  cmp("Hook.falloff_type", pg_to_dna_falloff[(int)p[PG_P_HOOK_FALLOFF]], ho->falloff_type);
-  skip("Hook center/offset/angle/scale/radius", "PG 2D hook has a canvas point instead of a hook object (canvas px)");
-
-  const LatticeGpencilModifierData *la = DNA_struct_default_get(LatticeGpencilModifierData);
-  mod(PG_MOD_LATTICE, p);
-  cmp("Lattice.strength", p[PG_P_LATTICE_STRENGTH], la->strength);
-  skip("Lattice rect/grid", "PG 2D lattice is a canvas grid instead of a lattice object");
-
   const EnvelopeGpencilModifierData *en = DNA_struct_default_get(EnvelopeGpencilModifierData);
   mod(PG_MOD_ENVELOPE, p);
   cmp("Envelope.mode", p[PG_P_ENVELOPE_MODE], en->mode);
@@ -183,14 +170,6 @@ int main(void)
   cmp("Envelope.thickness", p[PG_P_ENVELOPE_THICKNESS], en->thickness);
   cmp("Envelope.strength", p[PG_P_ENVELOPE_STRENGTH], en->strength);
   cmp("Envelope.mat_nr", p[PG_P_ENVELOPE_MAT], en->mat_nr);
-
-  const WeightProxGpencilModifierData *wp = DNA_struct_default_get(WeightProxGpencilModifierData);
-  mod(PG_MOD_WEIGHT_PROX, p);
-  cmp("WeightProx.distance_start", p[PG_P_WPROX_DIST_START], wp->dist_start);
-  cmp("WeightProx.minimum_weight", p[PG_P_WPROX_MIN_WEIGHT], wp->min_weight);
-  cmp("WeightProx.use_invert_output", p[PG_P_WPROX_INVERT], FLAG(wp->flag, GP_WEIGHT_INVERT_OUTPUT));
-  cmp("WeightProx.use_multiply", p[PG_P_WPROX_MULTIPLY], FLAG(wp->flag, GP_WEIGHT_MULTIPLY_DATA));
-  skip("WeightProx.distance_end, point", "PG measures to a canvas point in px (Blender: 20 units to an object)");
 
   const WeightAngleGpencilModifierData *wa = DNA_struct_default_get(WeightAngleGpencilModifierData);
   mod(PG_MOD_WEIGHT_ANGLE, p);
@@ -206,7 +185,11 @@ int main(void)
   cmp("DashSegment.gap", p[PG_P_DASH_GAP], ds->gap);
   const DashGpencilModifierData *dd = DNA_struct_default_get(DashGpencilModifierData);
   cmp("Dash.dash_offset", p[PG_P_DASH_OFFSET], dd->dash_offset);
-  skip("DashSegment.radius/opacity/mat_nr, multiple segments", "PG has one segment without per-segment radius/opacity/material");
+  cmp("DashSegment.radius", p[PG_P_DASH_RADIUS], ds->radius);
+  cmp("DashSegment.opacity", p[PG_P_DASH_OPACITY], ds->opacity);
+  cmp("DashSegment.mat_nr", p[PG_P_DASH_MAT], ds->mat_nr);
+  cmp("DashSegment.use_cyclic", p[PG_P_DASH_CYCLIC], FLAG(ds->flag, GP_DASH_USE_CYCLIC));
+  skip("Dash multiple segments", "PG has one segment");
 
   const OutlineGpencilModifierData *ou = DNA_struct_default_get(OutlineGpencilModifierData);
   mod(PG_MOD_OUTLINE, p);
@@ -222,12 +205,31 @@ int main(void)
   const ArrayGpencilModifierData *ar = DNA_struct_default_get(ArrayGpencilModifierData);
   mod(PG_MOD_ARRAY, p);
   cmp("Array.count", p[PG_P_ARRAY_COUNT_N], ar->count);
-  skip("Array offset", "PG constant px offset (Blender: relative offset 1 x bounds, GP_ARRAY_USE_RELATIVE)");
+  cmp("Array.use_constant_offset", p[PG_P_ARRAY_USE_OFFSET], FLAG(ar->flag, GP_ARRAY_USE_OFFSET));
+  cmp("Array.use_relative_offset", p[PG_P_ARRAY_USE_RELATIVE], FLAG(ar->flag, GP_ARRAY_USE_RELATIVE));
+  cmp("Array.use_uniform_random_scale", p[PG_P_ARRAY_UNIFORM], FLAG(ar->flag, GP_ARRAY_UNIFORM_RANDOM_SCALE));
+  cmp("Array.constant_offset[0] (px)", p[PG_P_ARRAY_OX], ar->offset[0] * PG_MOD_PIXELS_PER_UNIT);
+  cmp("Array.constant_offset[1] (px)", p[PG_P_ARRAY_OY], -ar->offset[1] * PG_MOD_PIXELS_PER_UNIT);
+  cmp("Array.relative_offset[0]", p[PG_P_ARRAY_SHIFT_X], ar->shift[0]);
+  cmp("Array.relative_offset[1]", p[PG_P_ARRAY_SHIFT_Y], ar->shift[1]);
+  cmp("Array.random_offset[0] (px)", p[PG_P_ARRAY_RND_OX], ar->rnd_offset[0] * PG_MOD_PIXELS_PER_UNIT);
+  cmp("Array.random_offset[1] (px)", p[PG_P_ARRAY_RND_OY], -ar->rnd_offset[1] * PG_MOD_PIXELS_PER_UNIT);
+  cmp("Array.random_rotation[2]", p[PG_P_ARRAY_RND_ROT], ar->rnd_rot[2]);
+  cmp("Array.random_scale[0]", p[PG_P_ARRAY_RND_SX], ar->rnd_scale[0]);
+  cmp("Array.random_scale[1]", p[PG_P_ARRAY_RND_SY], ar->rnd_scale[1]);
+  cmp("Array.seed", p[PG_P_ARRAY_SEED], ar->seed);
+  cmp("Array.replace_material", p[PG_P_ARRAY_MAT_RPL], ar->mat_rpl);
+  skip("Array z components, offset object", "2D canvas: no z, no objects");
 
   const MultiplyGpencilModifierData *mu = DNA_struct_default_get(MultiplyGpencilModifierData);
   mod(PG_MOD_MULTIPLY, p);
   cmp("Multiply.duplicates", p[PG_P_MULTIPLY_DUPLICATIONS], mu->duplications);
-  skip("Multiply.distance", "PG distance is in canvas px (Blender 0.1 units)");
+  cmp("Multiply.distance (px)", p[PG_P_MULTIPLY_DISTANCE], mu->distance * PG_MOD_PIXELS_PER_UNIT);
+  cmp("Multiply.offset", p[PG_P_MULTIPLY_OFFSET], mu->offset);
+  cmp("Multiply.use_fade", p[PG_P_MULTIPLY_FADE], FLAG(mu->flags, GP_MULTIPLY_ENABLE_FADING));
+  cmp("Multiply.fading_center", p[PG_P_MULTIPLY_FADE_CENTER], mu->fading_center);
+  cmp("Multiply.fading_thickness", p[PG_P_MULTIPLY_FADE_THICKNESS], mu->fading_thickness);
+  cmp("Multiply.fading_opacity", p[PG_P_MULTIPLY_FADE_OPACITY], mu->fading_opacity);
 
   const TextureGpencilModifierData *tx = DNA_struct_default_get(TextureGpencilModifierData);
   mod(PG_MOD_TEXTURE, p);

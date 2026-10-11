@@ -109,11 +109,6 @@ jobs:
       - name: Run native eraser tests
         run: bash tools/run_native_eraser_tests.sh
 
-      - name: Run native edit tests
-        env:
-          PG_REQUIRE_BLENDER_SOURCE: "1"
-        run: bash tools/run_native_edit_tests.sh
-
       - name: Run native annotation tests
         run: bash tools/run_native_annotation_tests.sh
 
@@ -140,6 +135,11 @@ jobs:
 
       - name: Generate minimal Blender DNA metadata
         run: bash tools/android_blender_gp_generate_dna.sh
+
+      - name: Run native edit tests (after DNA: colortools.c needs dna_type_offsets.h since L5)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_edit_tests.sh
 
       - name: Run native segment select / material / onion tests
         env:

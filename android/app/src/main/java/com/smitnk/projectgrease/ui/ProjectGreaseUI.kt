@@ -1,4 +1,3 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.smitnk.projectgrease.ui
 

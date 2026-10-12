@@ -98,7 +98,15 @@ class DeviceColorTest : SweepBase() {
         tap(600f, 300f)
         val afterTap = strokes().size
         // if the touch did not erase, does the controller call itself? (touch path vs native)
-        val direct = if (afterTap == 1) onUi { controller.eraseAt(600f, 300f, 30f / ppu) } else null
+        val pts = points(drawn[0])
+        val direct = if (afterTap == 1) onUi {
+            val h = controller.nativeHandle
+            val n0 = com.smitnk.projectgrease.nativebridge.GPNative.nativeStrokeCount(h)
+            val a = controller.eraseAt(600f, 300f, 30f / ppu)
+            val b = controller.eraseAt(pts[10][0].toFloat(), pts[10][1].toFloat(), 30f / ppu)
+            val c = controller.eraseAt(600f, 300f, 5000f)
+            "native strokes $n0, at(600,300) $a, at point10 (${pts[10][0]},${pts[10][1]}) $b, r5000 $c, ys ${pts.map { it[1].toInt() }}"
+        } else null
         val after = strokes()
         assertEquals("tap cuts (tool $tool, after tap $afterTap, direct call $direct -> ${after.size}, ppu $ppu, radius ${30f / ppu}, " +
             "points before ${xs.size}, after ${after.map { s -> points(s).map { it[0].toInt() } }})", 2, afterTap)

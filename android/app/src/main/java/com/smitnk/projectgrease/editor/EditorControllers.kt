@@ -702,6 +702,8 @@ class ToolController {
 
 class EditorController {
     private val native = NativeEditorBridge()
+    /** The native GP document handle (tests, diagnostics). */
+    val nativeHandle: Long get() = native.handle
     var selectedLayer = 0
         private set
     val tools=ToolController()

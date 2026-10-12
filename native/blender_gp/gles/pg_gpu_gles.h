@@ -46,6 +46,7 @@ typedef struct PGGpEngineView {
   float scale;                /* screen pixels per canvas pixel */
   float background[4];        /* linear, premultiplied clear colour of the viewport (the paper) */
   int data_changed;           /* the strokes changed since the last draw: rebuild the batch cache */
+  float rotation;             /* view rotation (radians, clockwise on screen) about the viewport centre */
 } PGGpEngineView;
 
 /* Runs Blender 3.6.23's GP draw engine (draw/engines/gpencil, unmodified) on \a gpd at frame

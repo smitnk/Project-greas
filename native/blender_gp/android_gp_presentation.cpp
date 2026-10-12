@@ -979,9 +979,9 @@ void draw_reference(int w,int h){
 
 bool engine_wanted(const bGPdata*gpd){
   if(!g_engine_enabled||g_engine_failed||g_export_mode||g_weight_group>=0||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
-  if(!engine_context_ok()||(g_view_rotation!=0.0f&&!g_export_mode))return false;
+  if(!engine_context_ok())return false;
+  // Onion skin and view rotation are drawn by the engine; shader effects are not yet.
   for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
-    if((gpd->flag&GP_DATA_SHOW_ONIONSKINS)&&(l->onion_flag&GP_LAYER_ONIONSKIN))return false;
     const PGFxEntry*fx=nullptr;
     if(g_fx_provider&&g_fx_provider(g_fx_provider_user,l,&fx)>0)return false;
   }
@@ -1030,7 +1030,9 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
                       {srgb_to_linear(g_paper_color[0]),srgb_to_linear(g_paper_color[1]),srgb_to_linear(g_paper_color[2]),1.0f},
                       changed?1:0};
   // A rotoscope reference shows through: the engine image is drawn with a clear background over it.
-  const bool over=reference_shown()&&pg_gp_engine_present_over;
+  const bool rotated=g_view_rotation!=0.0f;
+  const bool over=(reference_shown()||rotated)&&pg_gp_engine_present_over;
+  view.rotation=rotated?g_view_rotation:0.0f;
   if(over)for(float&c:view.background)c=0.0f;
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
   g_engine_batch_cache=copy.runtime.gpencil_cache;
@@ -1051,8 +1053,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
    * camera frame clips them in Blender). */
   const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));
   const int cw=int(std::ceil(float(g_canvas_width)*g_map_scale)), ch=int(std::ceil(float(g_canvas_height)*g_map_scale));
-  glEnable(GL_SCISSOR_TEST);
-  glScissor(x0,h-y1,cw,ch);
+  // rotated: the turned paper is already drawn, the engine image (clear background) goes over it
+  if(!rotated){glEnable(GL_SCISSOR_TEST);glScissor(x0,h-y1,cw,ch);}
   if(over)pg_gp_engine_present_over(w,h); else pg_gp_engine_present(w,h);
   glDisable(GL_SCISSOR_TEST);
   glViewport(0,0,w,h);

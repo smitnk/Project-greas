@@ -1044,10 +1044,20 @@ static void view_set(PGContext &c, const PGGpEngineView *v)
 {
   /* World = canvas pixels, y down. View: y flipped to Blender's y up. Window: orthographic, the
    * canvas at origin / scale in the viewport (as the Android presenter maps it). */
-  unit_m4(c.viewmat);
-  c.viewmat[1][1] = -1.0f;
-  invert_m4_m4(c.viewinv, c.viewmat);
   const float W = (float)v->viewport_w, H = (float)v->viewport_h;
+  /* Two-finger view rotation: a turn of the canvas about the canvas point at the viewport centre
+   * (screen y down, as the presenter), in the view matrix so the window matrix (stroke thickness,
+   * ProjectionMatrix[1][1]) is unchanged. */
+  const float cs = std::cos(v->rotation), sn = std::sin(v->rotation);
+  const float cx = (0.5f * W - v->origin_x) / v->scale, cy = (0.5f * H - v->origin_y) / v->scale;
+  unit_m4(c.viewmat);
+  c.viewmat[0][0] = cs;
+  c.viewmat[0][1] = -sn; /* row 1 is negated: the y flip to Blender's y up */
+  c.viewmat[1][0] = -sn;
+  c.viewmat[1][1] = -cs;
+  c.viewmat[3][0] = cx - (cs * cx - sn * cy);
+  c.viewmat[3][1] = -(cy - (sn * cx + cs * cy));
+  invert_m4_m4(c.viewinv, c.viewmat);
   unit_m4(c.winmat);
   c.winmat[0][0] = 2.0f * v->scale / W;
   c.winmat[1][1] = 2.0f * v->scale / H;
@@ -1108,6 +1118,14 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   }
   viewport_ensure(c, view->viewport_w, view->viewport_h);
   view_set(c, view);
+  /* Overlay "Onion Skins" (V3D_GP_SHOW_ONION_SKIN) follows the document's onion switch; the engine
+   * draws the ghosts itself (BKE_gpencil_visible_stroke_advanced_iter with do_onion). */
+  if (gpd->flag & GP_DATA_SHOW_ONIONSKINS) {
+    c.v3d.gp_flag |= V3D_GP_SHOW_ONION_SKIN;
+  }
+  else {
+    c.v3d.gp_flag &= ~V3D_GP_SHOW_ONION_SKIN;
+  }
   c.ob.data = gpd;
   c.ob.totcol = (short)gpd->totcol;
   /* Update tagging: the caller says when the strokes changed (document revision, frame, evaluated

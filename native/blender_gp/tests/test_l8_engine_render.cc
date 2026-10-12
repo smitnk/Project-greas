@@ -226,6 +226,49 @@ int main()
   dump("probe after tag", 25, 100);
   CHECK(px(25, 100)[0] < 0.1f);
 
+  /* Two-finger view rotation in the view matrix: a quarter turn about the viewport centre (100, 60)
+   * takes the line y = 30 to the column x = 130; the width stays 20 px. */
+  view.rotation = 1.5707964f;
+  view.data_changed = 1;
+  CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+  read_result();
+  dump("rotated line", 130, 100);
+  CHECK(px(130, 100)[0] < 0.1f);
+  CHECK(px(150, 30)[0] > 0.9f);
+  {
+    int dark = 0;
+    for (int x = 0; x < W; x++) dark += px(x, 100)[0] < 0.5f ? 1 : 0;
+    std::printf("  rotated line width at y=100: %d\n", dark);
+    CHECK(dark >= 19 && dark <= 21);
+  }
+  view.rotation = 0.0f;
+  /* Onion skin by the engine (BKE_gpencil_visible_stroke_advanced_iter, do_onion): at frame 2 the
+   * frame-1 line shows as a ghost, fainter than the frame's own stroke. */
+  {
+    bGPDframe *f2 = BKE_gpencil_frame_addnew(gpl, 2);
+    const float l2[2][2] = {{20, 10}, {60, 10}};
+    add_stroke(gpd, f2, 0, l2, 2, 6, false);
+    gpd->flag |= GP_DATA_SHOW_ONIONSKINS;
+    gpl->onion_flag |= GP_LAYER_ONIONSKIN;
+    gpd->onion_mode = GP_ONION_MODE_RELATIVE;
+    gpd->gstep = 1;
+    gpd->gstep_next = 1;
+    gpd->onion_factor = 0.5f;
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 2, &view) == 1);
+    read_result();
+    dump("frame 2 stroke", 40, 10);
+    dump("onion ghost of frame 1", 100, 30);
+    CHECK(px(40, 10)[0] < 0.1f);
+    CHECK(px(100, 30)[0] > 0.05f && px(100, 30)[0] < 0.95f);
+    gpd->flag &= ~GP_DATA_SHOW_ONIONSKINS;
+    BLI_remlink(&gpl->frames, f2);
+    BKE_gpencil_free_strokes(f2);
+    MEM_freeN(f2);
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+  }
+
   /* 7. Present: Standard view transform (linear 0.5 -> sRGB 0.735). */
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   CHECK(pg_gp_engine_present(W, H) == 1);

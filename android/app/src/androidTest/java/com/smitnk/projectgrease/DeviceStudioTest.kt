@@ -13,7 +13,11 @@ import org.junit.runner.RunWith
 /** The Studio layout: floating toolbar, option popup on a second tap, layer panel, frame strip. */
 @RunWith(AndroidJUnit4::class)
 class DeviceStudioTest : SweepBase() {
-    @org.junit.Before fun studio() { onUi { controller.classicLayout = false }; rule.waitForIdle() }
+    @org.junit.Before fun studio() {
+        onUi { controller.classicLayout = false }
+        rule.waitForIdle()
+        rule.waitUntil(15_000) { onUi { controller.rendererReady } }
+    }
 
     @Test fun toolbarSelectsToolsAndOpensOptions() {
         rule.onNodeWithTag("studioToolbar").assertIsDisplayed()

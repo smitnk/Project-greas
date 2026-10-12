@@ -58,6 +58,10 @@ abstract class SweepBase {
     @Before fun openNewProject() {
         // a system ANR dialog left by a slow emulator would own the focus and block event injection
         shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
+        // Canvas gestures at the left edge would land on the Studio toolbar, so the sweeps use the
+        // classic layout. Chosen before the editor opens: switching layouts remounts the canvas
+        // surface, which reloads the document and starts a new undo history.
+        onUi { controller.classicLayout = true }
         rule.onNodeWithContentDescription("New").performClick()
         rule.onNodeWithText("Create Project").performScrollTo().performClick()
         rule.waitUntil(15_000) { onUi { controller.rendererReady } }
@@ -65,8 +69,6 @@ abstract class SweepBase {
         onUi {
             // Sweeps check Material-mode semantics; DeviceColorTest covers the Vertex Color default.
             controller.setVertexColorMode(false)
-            // Canvas gestures at the left edge would land on the Studio toolbar; DeviceStudioTest switches back.
-            controller.classicLayout = true
             controller.setMaterialColor(0xFF000000.toInt())
             controller.setBrushStrength(1f)
             controller.brushes.setSize(8f)

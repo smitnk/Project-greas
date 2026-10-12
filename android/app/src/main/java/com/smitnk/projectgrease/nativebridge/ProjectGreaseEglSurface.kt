@@ -15,6 +15,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
 import com.smitnk.projectgrease.editor.EditorController
 
+/** Finger travel (px) and time (ms) under which a two / three finger touch is a tap (undo / redo). */
+private const val TAP_SLOP_PX = 24f
+private const val TAP_TIMEOUT_MS = 350L
+
 @Composable
 fun ProjectGreaseEglViewport(
     modifier: Modifier = Modifier,
@@ -80,7 +84,7 @@ private fun TransformOverlay(controller: EditorController, modifier: Modifier) {
         controller.overlayTick
         val doc = controller.document
         fun toView(x: Float, y: Float) = com.smitnk.projectgrease.editor.CanvasMapping.toView(
-            x, y, size.width, size.height, doc.canvasWidth, doc.canvasHeight, controller.view.zoom, controller.view.panX, controller.view.panY)
+            x, y, size.width, size.height, doc.canvasWidth, doc.canvasHeight, controller.view.zoom, controller.view.panX, controller.view.panY, controller.view.rotation)
         val ppu = com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(size.width, size.height, doc.canvasWidth, doc.canvasHeight, controller.view.zoom)
         if (settings.proportional) {
             val c = controller.selectionPivot()
@@ -138,6 +142,16 @@ internal class ProjectGreaseDrawingSurfaceView(
     /** Pinch during a proportional transform changes the proportional size (Blender: wheel / PageUp). */
     private var propPinch = false
     private var pinchStartPropSize = 1f
+    // Multi-finger gestures: two-finger zoom / pan / rotate; a quick two-finger tap undoes, three redoes.
+    private var multiMax = 0
+    private var multiStartMs = 0L
+    private var multiMoved = 0f
+    private var pinchStartAngle = 0f
+    private var pinchStartCx = 0f
+    private var pinchStartCy = 0f
+    private var pinchStartRot = 0f
+    private var pinchStartPanX = 0f
+    private var pinchStartPanY = 0f
 
     fun setRendererHandle(handle: Long) {
         rendererHandle = handle
@@ -181,7 +195,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                         controller.hitTestAndSelectStroke(start.first, start.second)
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
-                        controller.eraseAt(start.first, start.second, controller.eraserRadius(pixelsPerUnit()))
+                        // one undo step per erase gesture (endErase), so a second finger can still revert it
+                        if (controller.eraseAt(start.first, start.second, controller.eraserRadius(pixelsPerUnit()), false)) controller.render()
                         eraseLastX = start.first
                         eraseLastY = start.second
                     }
@@ -196,7 +211,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
                         controller.history.beginBatch()
-                        moveOpen = controller.hitTestAndSelectStroke(start.first, start.second)
+                        moveOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (moveOpen) {
                             lastMoveX = start.first
                             lastMoveY = start.second
@@ -206,9 +221,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
                         controller.history.beginBatch()
-                        rotateOpen = controller.hitTestAndSelectStroke(start.first, start.second)
+                        rotateOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (rotateOpen) {
-                            val center = controller.selectedStrokeCenter()
+                            val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
                                 rotateOpen = false
                             } else {
@@ -225,9 +240,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.SCALE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
                         controller.history.beginBatch()
-                        scaleOpen = controller.hitTestAndSelectStroke(start.first, start.second)
+                        scaleOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (scaleOpen) {
-                            val center = controller.selectedStrokeCenter()
+                            val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
                                 scaleOpen = false
                             } else {
@@ -246,9 +261,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
                         controller.history.beginBatch()
-                        mirrorOpen = controller.hitTestAndSelectStroke(start.first, start.second)
+                        mirrorOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (mirrorOpen) {
-                            val center = controller.selectedStrokeCenter()
+                            val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
                                 mirrorOpen = false
                             } else {
@@ -291,9 +306,20 @@ internal class ProjectGreaseDrawingSurfaceView(
                         strokeOpen = false
                     }
                     panOpen = false
+                    if (multiMax < 2) {
+                        // the first finger's erase was not meant: revert it before the gesture
+                        if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && controller.endErase()) controller.undo()
+                        multiStartMs = event.eventTime
+                    }
+                    multiMax = maxOf(multiMax, event.pointerCount)
                     pinchOpen = true
                     pinchStartDistance = pointerDistance(event).coerceAtLeast(1f)
                     pinchStartZoom = controller.view.zoom
+                    pinchStartAngle = pointerAngle(event)
+                    centroid(event).let { pinchStartCx = it.first; pinchStartCy = it.second }
+                    pinchStartRot = controller.view.rotation
+                    pinchStartPanX = controller.view.panX
+                    pinchStartPanY = controller.view.panY
                 }
                 return true
             }
@@ -305,14 +331,23 @@ internal class ProjectGreaseDrawingSurfaceView(
                 }
                 if (pinchOpen && event.pointerCount >= 2) {
                     val distance = pointerDistance(event)
-                    if (pinchStartDistance > 0f && distance > 0f) {
-                        controller.view.setZoom(
-                            pinchStartZoom * (distance / pinchStartDistance)
-                        )
+                    val (cx, cy) = centroid(event)
+                    var turn = pointerAngle(event) - pinchStartAngle
+                    if (turn > PI.toFloat()) turn -= 2f * PI.toFloat() else if (turn < -PI.toFloat()) turn += 2f * PI.toFloat()
+                    multiMoved = maxOf(multiMoved, abs(distance - pinchStartDistance) + hypot(cx - pinchStartCx, cy - pinchStartCy) +
+                        abs(turn) * pinchStartDistance * 0.5f)
+                    if (event.pointerCount == 2 && multiMoved > TAP_SLOP_PX && pinchStartDistance > 0f && distance > 0f) {
+                        controller.view.setZoom(pinchStartZoom * (distance / pinchStartDistance))
+                        controller.view.setRotation(pinchStartRot + turn)
+                        // the pan is applied before the view rotation: bring the finger delta into that frame
+                        val (px, py) = com.smitnk.projectgrease.editor.CanvasMapping.rotate(cx - pinchStartCx, cy - pinchStartCy, 0f, 0f, -controller.view.rotation)
+                        controller.view.setPan(pinchStartPanX + px, pinchStartPanY + py)
                         controller.render()
                     }
                     return true
                 }
+                // after a multi-finger gesture the remaining finger does not draw / erase
+                if (multiMax >= 2) return true
                 val pointerIndex = if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
                     event.findPointerIndex(activePointerId)
                 } else -1
@@ -434,6 +469,14 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                if (multiMax >= 2) {
+                    val tap = multiMoved <= TAP_SLOP_PX && event.eventTime - multiStartMs <= TAP_TIMEOUT_MS
+                    if (tap) { if (multiMax == 2) controller.undo() else controller.redo() }
+                    resetGestureState()
+                    controller.render()
+                    controller.onUiChanged?.invoke()
+                    return true
+                }
                 val pointerIndex = event.findPointerIndex(activePointerId)
                 if (sessionTool >= 0) {
                     if (pointerIndex >= 0) endSession(event, pointerIndex) else endSession(cancel = true)
@@ -504,6 +547,23 @@ internal class ProjectGreaseDrawingSurfaceView(
         return changed
     }
 
+    /** A Move / Rotate / Scale / Mirror touch on or near the lasso selection transforms that selection
+     *  (Blender: G / R / S act on what is selected) instead of re-selecting the stroke under the finger. */
+    private fun keepsSelection(p: Pair<Float, Float>): Boolean {
+        val b = controller.selectionBounds() ?: return false
+        val slop = 48f / pixelsPerUnit().coerceAtLeast(1e-3f)
+        return p.first in b[0] - slop..b[2] + slop && p.second in b[1] - slop..b[3] + slop
+    }
+
+    private fun pointerAngle(event: MotionEvent): Float =
+        if (event.pointerCount < 2) 0f else atan2(event.getY(1) - event.getY(0), event.getX(1) - event.getX(0))
+
+    private fun centroid(event: MotionEvent): Pair<Float, Float> {
+        var x = 0f; var y = 0f
+        for (i in 0 until event.pointerCount) { x += event.getX(i); y += event.getY(i) }
+        return x / event.pointerCount to y / event.pointerCount
+    }
+
     private fun pointerDistance(event: MotionEvent): Float {
         if (event.pointerCount < 2) return 0f
         val dx = event.getX(0) - event.getX(1)
@@ -515,7 +575,7 @@ internal class ProjectGreaseDrawingSurfaceView(
         com.smitnk.projectgrease.editor.CanvasMapping.toCanvas(
             rawX, rawY, width.toFloat(), height.toFloat(),
             controller.document.canvasWidth, controller.document.canvasHeight,
-            controller.view.zoom, controller.view.panX, controller.view.panY)
+            controller.view.zoom, controller.view.panX, controller.view.panY, rotation = controller.view.rotation)
 
     /** On-screen pixels per canvas unit: the brushes' pixel radius and hit tests use it. */
     private fun pixelsPerUnit():Float =
@@ -549,6 +609,8 @@ internal class ProjectGreaseDrawingSurfaceView(
 
     private fun resetGestureState() {
         propPinch = false
+        multiMax = 0
+        multiMoved = 0f
         controller.history.endBatch()
         moveOpen = false
         rotateOpen = false

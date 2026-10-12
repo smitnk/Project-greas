@@ -25,6 +25,7 @@ extern "C" void project_grease_android_present_reset(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
+extern "C" void project_grease_android_present_set_view_rotation(float radians);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
@@ -494,6 +495,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetViewTransform(
   project_grease_android_present_set_view_transform(
       std::max(0.1f, std::min(8.0f, zoom)), pan_x, pan_y);
   return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetViewRotation(
+    JNIEnv *, jobject, jlong handle, jfloat radians)
+{
+  if (from_handle(handle)) project_grease_android_present_set_view_rotation(radians);
 }
 
 /* group >= 0 tints the strokes by that vertex group's weights (Weight Paint mode), -1 is the normal view. */

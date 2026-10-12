@@ -212,25 +212,34 @@ object CanvasMapping {
 
     fun toCanvas(
         rawX: Float, rawY: Float, viewW: Float, viewH: Float, canvasW: Int, canvasH: Int,
-        zoom: Float, panX: Float, panY: Float, clamp: Boolean = true
+        zoom: Float, panX: Float, panY: Float, clamp: Boolean = true, rotation: Float = 0f
     ): Pair<Float, Float> {
         val cw = canvasW.coerceAtLeast(1)
         val ch = canvasH.coerceAtLeast(1)
         val fit = pixelsPerUnit(viewW, viewH, cw, ch, zoom)
+        val (rx, ry) = rotate(rawX, rawY, viewW, viewH, -rotation)
         val ox = (viewW - cw * fit) * 0.5f + panX
         val oy = (viewH - ch * fit) * 0.5f + panY
-        val x = (rawX - ox) / fit
-        val y = (rawY - oy) / fit
+        val x = (rx - ox) / fit
+        val y = (ry - oy) / fit
         return if (clamp) x.coerceIn(0f, cw.toFloat()) to y.coerceIn(0f, ch.toFloat()) else x to y
     }
 
     fun toView(
         canvasX: Float, canvasY: Float, viewW: Float, viewH: Float, canvasW: Int, canvasH: Int,
-        zoom: Float, panX: Float, panY: Float
+        zoom: Float, panX: Float, panY: Float, rotation: Float = 0f
     ): Pair<Float, Float> {
         val cw = canvasW.coerceAtLeast(1)
         val ch = canvasH.coerceAtLeast(1)
         val fit = pixelsPerUnit(viewW, viewH, cw, ch, zoom)
-        return (viewW - cw * fit) * 0.5f + panX + canvasX * fit to (viewH - ch * fit) * 0.5f + panY + canvasY * fit
+        return rotate((viewW - cw * fit) * 0.5f + panX + canvasX * fit, (viewH - ch * fit) * 0.5f + panY + canvasY * fit, viewW, viewH, rotation)
+    }
+
+    /** View rotation (two-finger rotate) about the viewport centre, as the presenter's ndc(). */
+    fun rotate(x: Float, y: Float, viewW: Float, viewH: Float, radians: Float): Pair<Float, Float> {
+        if (radians == 0f) return x to y
+        val c = kotlin.math.cos(radians); val s = kotlin.math.sin(radians)
+        val dx = x - viewW * 0.5f; val dy = y - viewH * 0.5f
+        return viewW * 0.5f + c * dx - s * dy to viewH * 0.5f + s * dx + c * dy
     }
 }

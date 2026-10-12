@@ -554,7 +554,11 @@ class ViewController {
     fun zoomBy(delta:Float){zoom=(zoom+delta).coerceIn(0.1f,8f)}
     fun setZoom(value:Float){zoom=value.coerceIn(0.1f,8f)}
     fun panBy(dx:Float,dy:Float){panX+=dx;panY+=dy}
-    fun reset(){zoom=1f;panX=0f;panY=0f}
+    /** Two-finger rotate (radians, clockwise on screen), about the viewport centre. */
+    var rotation=0f; private set
+    fun setRotation(radians:Float){ if(radians.isFinite()) rotation=radians }
+    fun setPan(x:Float,y:Float){ if(x.isFinite()&&y.isFinite()){panX=x;panY=y} }
+    fun reset(){zoom=1f;panX=0f;panY=0f;rotation=0f}
     /**
      * Fit canvas: the presenter (update_canvas_map) shows the canvas at 92% of the fitting scale
      * times the zoom, centered plus the pan, so zoom 1 without pan is the whole canvas in view with
@@ -1918,6 +1922,7 @@ class EditorController {
         if(rendererHandle!=0L){
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
+            GPNative.nativeSetViewRotation(rendererHandle,view.rotation)
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
@@ -2342,9 +2347,12 @@ class EditorController {
         }
         return ok
     }
-    fun endErase() {
-        if (eraseGestureChanged) history.markEdit()
+    /** Ends an erase gesture: one undo step when it changed the document; true then. */
+    fun endErase():Boolean {
+        val changed = eraseGestureChanged
+        if (changed) history.markEdit()
         eraseGestureChanged = false
+        return changed
     }
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
@@ -2413,6 +2421,35 @@ class EditorController {
     fun duplicateSelection() = runSelectCommand(ProjectGreaseSelect.duplicate())
     fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runSelectCommand(ProjectGreaseSelect.dissolve(type))
     fun splitSelection() = runSelectCommand(ProjectGreaseSelect.split())
+    // ---- Lasso actions: break off, cut, shear (TFM_SHEAR), perspective ----
+    /** Break off: the selected points become their own stroke (GPENCIL_OT_stroke_split), so moving
+     *  them no longer stretches the rest of the stroke. */
+    fun breakOffSelection() = splitSelection()
+    /** Cut: copy (GPENCIL_OT_copy) then delete the selected points; Paste brings them back. */
+    fun cutSelection():Boolean = copySelection() && deleteSelectedPoints()
+    fun selectionBounds():FloatArray? = if (native.handle != 0L) GPNative.nativeSelectedBounds(native.handle) else null
+    private fun transformSelection(m:FloatArray):Boolean {
+        val ok = native.handle != 0L && GPNative.nativeTransformSelected(native.handle, m)
+        if (ok) { history.markEdit(); document.markDirty(); render() }
+        return ok
+    }
+    /** Shear about the selection centre: x += fx * (y - cy), y += fy * (x - cx). */
+    fun shearSelection(fx:Float, fy:Float):Boolean {
+        val b = selectionBounds() ?: return false
+        val cx = (b[0] + b[2]) * 0.5f; val cy = (b[1] + b[3]) * 0.5f
+        return transformSelection(floatArrayOf(1f, fx, -fx * cy, fy, 1f, -fy * cx, 0f, 0f, 1f))
+    }
+    /** Perspective (not a Blender operator; added for touch): the selection box becomes a trapezoid,
+     *  kx > 0 narrows the top edge by kx of the width, ky > 0 the right edge by ky of the height. */
+    fun perspectiveSelection(kx:Float, ky:Float):Boolean {
+        val b = selectionBounds() ?: return false
+        val w = b[2] - b[0]; val h = b[3] - b[1]
+        if (w < 1f || h < 1f) return false
+        val src = floatArrayOf(b[0], b[1], b[2], b[1], b[2], b[3], b[0], b[3])
+        val dst = floatArrayOf(b[0] + kx * w * 0.5f, b[1], b[2] - kx * w * 0.5f, b[1] + ky * h * 0.5f,
+            b[2], b[3] - ky * h * 0.5f, b[0], b[3])
+        return transformSelection(Homography.fromQuads(src, dst) ?: return false)
+    }
     fun joinSelection(leaveGaps:Boolean=false) = runSelectCommand(ProjectGreaseSelect.join(leaveGaps))
     // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----
     var vertexPaintBrush = ProjectGreaseSelect.VPAINT_DRAW

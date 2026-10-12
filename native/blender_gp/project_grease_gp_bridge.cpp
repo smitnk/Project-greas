@@ -445,6 +445,16 @@ int project_grease_gp_active_layer(const ProjectGreaseGPHandle *handle)
   return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) ? handle->backend.active_layer_index() : -1;
 }
 
+int project_grease_gp_transform_selected(ProjectGreaseGPHandle *handle, const float m[9])
+{
+  return ensure_ready(handle) && handle->backend.transform_selected_points(m) ? 1 : 0;
+}
+
+int project_grease_gp_selected_bounds(const ProjectGreaseGPHandle *handle, float r_bounds[4])
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) && handle->backend.selected_points_bounds(r_bounds) ? 1 : 0;
+}
+
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness)
 {

@@ -478,6 +478,25 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetBrushVertexColor(
   project_grease_gp_set_brush_vertex_color(from_handle(handle), enabled ? 1 : 0, rgb, factor);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTransformSelected(JNIEnv *env, jobject, jlong handle, jfloatArray matrix)
+{
+  if (!matrix || env->GetArrayLength(matrix) < 9) return JNI_FALSE;
+  float m[9];
+  env->GetFloatArrayRegion(matrix, 0, 9, m);
+  return project_grease_gp_transform_selected(from_handle(handle), m) != 0;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectedBounds(JNIEnv *env, jobject, jlong handle)
+{
+  float b[4];
+  if (!project_grease_gp_selected_bounds(from_handle(handle), b)) return nullptr;
+  jfloatArray out = env->NewFloatArray(4);
+  if (out) env->SetFloatArrayRegion(out, 0, 4, b);
+  return out;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeActiveLayer(JNIEnv *, jobject, jlong handle)
 {

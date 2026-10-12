@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -411,13 +412,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             if(state.showTools&&!panelsHidden)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
                 viewport()
-                DrawingGuidesOverlay(controller)
-                LassoPathOverlay(controller)
-                ReferenceOverlay(controller,refresh)
-                CurveHandlesOverlay(controller,overlayTick,::redraw)
-                ShapeEditOverlay(controller,overlayTick,::redraw)
-                ModifierHandlesOverlay(controller,overlayTick,::redraw)
-                BoxSelectOverlay(controller,overlayTick)
+                Box(Modifier.fillMaxSize().graphicsLayer{rotationZ=Math.toDegrees(controller.view.rotation.toDouble()).toFloat()}){
+                    DrawingGuidesOverlay(controller)
+                    LassoPathOverlay(controller)
+                    ReferenceOverlay(controller,refresh)
+                    CurveHandlesOverlay(controller,overlayTick,::redraw)
+                    ShapeEditOverlay(controller,overlayTick,::redraw)
+                    ModifierHandlesOverlay(controller,overlayTick,::redraw)
+                    BoxSelectOverlay(controller,overlayTick)
+                }
                 IconButton(onClick={panelsHidden=!panelsHidden},Modifier.align(Alignment.TopEnd).padding(4.dp).testTag("togglePanels")){
                     Icon(if(panelsHidden)Icons.Default.Visibility else Icons.Default.VisibilityOff,if(panelsHidden)"Show panels" else "Hide panels")
                 }
@@ -1565,13 +1568,16 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
     var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
     Box(Modifier.fillMaxSize().background(CanvasBg).testTag("studioCanvas")){
         viewport()
-        DrawingGuidesOverlay(controller)
-        LassoPathOverlay(controller)
-        ReferenceOverlay(controller,refresh)
-        CurveHandlesOverlay(controller,overlayTick,redraw)
-        ShapeEditOverlay(controller,overlayTick,redraw)
-        ModifierHandlesOverlay(controller,overlayTick,redraw)
-        BoxSelectOverlay(controller,overlayTick)
+        // canvas overlays turn with the two-finger view rotation (about the viewport centre)
+        Box(Modifier.fillMaxSize().graphicsLayer{rotationZ=Math.toDegrees(controller.view.rotation.toDouble()).toFloat()}){
+            DrawingGuidesOverlay(controller)
+            LassoPathOverlay(controller)
+            ReferenceOverlay(controller,refresh)
+            CurveHandlesOverlay(controller,overlayTick,redraw)
+            ShapeEditOverlay(controller,overlayTick,redraw)
+            ModifierHandlesOverlay(controller,overlayTick,redraw)
+            BoxSelectOverlay(controller,overlayTick)
+        }
 
         // top: project menu, mode, more
         Row(Modifier.align(Alignment.TopCenter).padding(6.dp),verticalAlignment=Alignment.CenterVertically){
@@ -1682,8 +1688,17 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             "Scale" to {controller.selectTool(GreaseTool.SCALE)},
             "Flip H" to {controller.selectionPivot()?.let{controller.mirrorSelectedStrokeAround(true,false,it[0],it[1])}?:false},
             "Flip V" to {controller.selectionPivot()?.let{controller.mirrorSelectedStrokeAround(false,true,it[0],it[1])}?:false},
+            "Shear ←" to {controller.shearSelection(-0.15f,0f)},
+            "Shear →" to {controller.shearSelection(0.15f,0f)},
+            "Perspective +" to {controller.perspectiveSelection(0.15f,0f)},
+            "Perspective −" to {controller.perspectiveSelection(-0.15f,0f)},
+            "Perspective side" to {controller.perspectiveSelection(0f,0.15f)},
+            "Break off" to {controller.breakOffSelection()},
+            "Copy" to {controller.copySelection()},
+            "Cut" to {controller.cutSelection()},
+            "Paste" to {controller.pasteStrokes()},
             "Duplicate" to {controller.duplicateSelection()},
-            "Delete" to {controller.deleteSelectedStrokes()}
+            "Erase" to {controller.deleteSelectedPoints()}
         ).forEach{(label,action)->
             OutlinedButton(onClick={action();redraw()},Modifier.padding(2.dp).testTag("lasso_$label")){Text(label,fontSize=11.sp)}
         }

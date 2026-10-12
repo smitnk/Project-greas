@@ -5,7 +5,7 @@
 set -uo pipefail
 APK=android/app/build/outputs/apk/debug/app-debug.apk
 TAPK=android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-CLASSES="${PG_DEVICE_TESTS:-com.smitnk.projectgrease.DeviceColorTest,com.smitnk.projectgrease.DeviceStudioTest}"
+CLASSES="${PG_DEVICE_TESTS:-com.smitnk.projectgrease.DeviceColorTest,com.smitnk.projectgrease.DeviceStudioTest,com.smitnk.projectgrease.DeviceTouchTest}"
 adb wait-for-device
 adb install -r -g "$APK" && adb install -r -g "$TAPK" || exit 1
 adb shell am instrument -w -r -e class "$CLASSES" \

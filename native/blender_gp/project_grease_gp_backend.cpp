@@ -1008,6 +1008,54 @@ bool Backend::select_layer(int index) {
   return false;
 }
 
+// Selected points of the active frame through a 3x3 projective matrix (row major, canvas units):
+// shear (TFM_SHEAR) is its affine case; the perspective (keystone) of the lasso is the general one.
+bool Backend::transform_selected_points(const float m[9])
+{
+  if (!impl_->frame || !m) return false;
+  for (int i = 0; i < 9; i++) if (!std::isfinite(m[i])) return false;
+  bool any = false;
+  LISTBASE_FOREACH (bGPDstroke *, gps, &impl_->frame->strokes) {
+    bool changed = false;
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint &pt = gps->points[i];
+      if (!(pt.flag & GP_SPOINT_SELECT)) continue;
+      const float w = m[6] * pt.x + m[7] * pt.y + m[8];
+      if (std::fabs(w) < 1e-6f) continue;
+      const float x = (m[0] * pt.x + m[1] * pt.y + m[2]) / w;
+      const float y = (m[3] * pt.x + m[4] * pt.y + m[5]) / w;
+      pt.x = x;
+      pt.y = y;
+      changed = true;
+    }
+    if (changed) {
+      BKE_gpencil_stroke_geometry_update(impl_->gpd, gps);
+      any = true;
+    }
+  }
+  if (any) {
+    BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+    project_grease_gp_tag(impl_->gpd);
+  }
+  return any;
+}
+
+bool Backend::selected_points_bounds(float r_bounds[4]) const
+{
+  if (!impl_->frame || !r_bounds) return false;
+  bool any = false;
+  LISTBASE_FOREACH (const bGPDstroke *, gps, &impl_->frame->strokes) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      const bGPDspoint &pt = gps->points[i];
+      if (!(pt.flag & GP_SPOINT_SELECT)) continue;
+      if (!any) { r_bounds[0] = r_bounds[2] = pt.x; r_bounds[1] = r_bounds[3] = pt.y; any = true; }
+      r_bounds[0] = std::min(r_bounds[0], pt.x); r_bounds[1] = std::min(r_bounds[1], pt.y);
+      r_bounds[2] = std::max(r_bounds[2], pt.x); r_bounds[3] = std::max(r_bounds[3], pt.y);
+    }
+  }
+  return any;
+}
+
 int Backend::active_layer_index() const
 {
   if (!impl_->gpd || !impl_->layer) return -1;

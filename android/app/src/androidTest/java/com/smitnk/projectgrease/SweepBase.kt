@@ -97,7 +97,7 @@ abstract class SweepBase {
         val (w, h) = onUi { v.getLocationOnScreen(loc); v.width.toFloat() to v.height.toFloat() }
         val (x, y) = onUi {
             CanvasMapping.toView(cx, cy, w, h, controller.document.canvasWidth, controller.document.canvasHeight,
-                controller.view.zoom, controller.view.panX, controller.view.panY)
+                controller.view.zoom, controller.view.panX, controller.view.panY, controller.view.rotation)
         }
         return loc[0] + x to loc[1] + y
     }

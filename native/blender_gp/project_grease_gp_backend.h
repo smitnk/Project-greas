@@ -53,6 +53,10 @@ class Backend {
   int layer_count() const;
   // Index of the layer edits go to (impl layer), -1 without one.
   int active_layer_index() const;
+  // Selected points of the active frame through a projective 3x3 matrix (row major); false when
+  // nothing is selected. Bounds: xmin, ymin, xmax, ymax of the selected points.
+  bool transform_selected_points(const float m[9]);
+  bool selected_points_bounds(float r_bounds[4]) const;
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);
   bool move_layer(int from_index, int to_index);

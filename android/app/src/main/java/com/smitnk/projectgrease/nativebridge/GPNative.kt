@@ -35,6 +35,9 @@ object GPNative {
     external fun nativePickColorEglRenderer(handle: Long, x: Int, y: Int): Int
     external fun nativeSetCanvasSize(handle: Long, width: Int, height: Int): Boolean
     external fun nativeSetViewTransform(handle: Long, zoom: Float, panX: Float, panY: Float): Boolean
+    external fun nativeSetViewRotation(handle: Long, radians: Float)
+    external fun nativeTransformSelected(handle: Long, matrix: FloatArray): Boolean
+    external fun nativeSelectedBounds(handle: Long): FloatArray?
     /**
      * Native tool session (editor/ToolSession.kt): one input batch of [count] samples
      * (x, y, pressure, time) for [tool]; on PHASE_BEGIN the floats after the samples are the tool

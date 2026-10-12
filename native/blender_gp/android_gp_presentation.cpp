@@ -108,6 +108,9 @@ float g_map_scale=1.0f;
 float g_view_zoom=1.0f;
 float g_view_pan_x=0.0f;
 float g_view_pan_y=0.0f;
+/* Two-finger view rotation (radians) about the viewport centre; the engine path draws unrotated
+ * views only (shortcut: rotated views use this presenter, until the engine gets a view matrix). */
+float g_view_rotation=0.0f;
 void update_canvas_map(int w,int h){
   const float sx=float(w)/float(std::max(1,g_canvas_width));
   const float sy=float(h)/float(std::max(1,g_canvas_height));
@@ -322,7 +325,9 @@ bool ensure_mask_target(int w,int h){
   g_mask_w=w;g_mask_h=h;
   return complete;
 }
-inline Vertex ndc(float x,float y,int w,int h){(void)w;(void)h;const float sx=g_map_origin_x+x*g_map_scale;const float sy=g_map_origin_y+y*g_map_scale;return {2.0f*sx/float(std::max(1,w))-1.0f,1.0f-2.0f*sy/float(std::max(1,h))};}
+inline Vertex ndc(float x,float y,int w,int h){float sx=g_map_origin_x+x*g_map_scale;float sy=g_map_origin_y+y*g_map_scale;
+  if(g_view_rotation!=0.0f&&!g_export_mode){const float c=std::cos(g_view_rotation),sn=std::sin(g_view_rotation),dx=sx-0.5f*float(w),dy=sy-0.5f*float(h);sx=0.5f*float(w)+c*dx-sn*dy;sy=0.5f*float(h)+sn*dx+c*dy;}
+  return {2.0f*sx/float(std::max(1,w))-1.0f,1.0f-2.0f*sy/float(std::max(1,h))};}
 // A whole stroke as one band with miter / bevel+round joins and round caps
 // (project_grease_stroke_outline.h, after Blender's gpencil_vertex()); thickness is per point.
 void append_outline(std::vector<Vertex>&v,const std::vector<PGOutlinePoint>&pts,int flags,int w,int h){
@@ -488,7 +493,8 @@ void append_textured_stroke(std::vector<UVVertex>&out,const bGPDstroke*s,float p
   out.reserve(out.size()+tri.size());
   for(const Vertex&v:tri){
     // back from NDC to canvas units
-    const float sx=(v.x+1.0f)*0.5f*float(w),sy=(1.0f-v.y)*0.5f*float(h);
+    float sx=(v.x+1.0f)*0.5f*float(w),sy=(1.0f-v.y)*0.5f*float(h);
+    if(g_view_rotation!=0.0f&&!g_export_mode){const float c=std::cos(-g_view_rotation),sn=std::sin(-g_view_rotation),dx=sx-0.5f*float(w),dy=sy-0.5f*float(h);sx=0.5f*float(w)+c*dx-sn*dy;sy=0.5f*float(h)+sn*dx+c*dy;}
     const float cx=(sx-g_map_origin_x)/g_map_scale,cy=(sy-g_map_origin_y)/g_map_scale;
     float along,side;centerline_param(s,cx,cy,&along,&side);
     out.push_back({v.x,v.y,along*u_scale,0.5f+side/width});
@@ -845,13 +851,13 @@ struct OpenStrokeCache {
   GLuint tex=0, program=0, vbo=0;
   int w=0, h=0, frame=0;
   const bGPdata* gpd=nullptr;
-  float scale=0, ox=0, oy=0;
+  float scale=0, ox=0, oy=0, rot=0;
   bool valid=false;
 } g_open_cache;
 long g_open_cache_stores=0, g_open_cache_reuses=0;
 bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
   const OpenStrokeCache& c=g_open_cache;
-  return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y;
+  return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y&&c.rot==g_view_rotation;
 }
 bool open_cache_program(){
   OpenStrokeCache& c=g_open_cache;
@@ -888,7 +894,7 @@ void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
   glBindTexture(GL_TEXTURE_2D,0);
   c.valid=glGetError()==GL_NO_ERROR;
   if(c.valid)g_open_cache_stores++;
-  c.gpd=gpd;c.frame=frame;c.w=w;c.h=h;c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;
+  c.gpd=gpd;c.frame=frame;c.w=w;c.h=h;c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;c.rot=g_view_rotation;
 }
 bool open_cache_draw(){
   OpenStrokeCache& c=g_open_cache;
@@ -938,7 +944,7 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
 
 bool engine_wanted(const bGPdata*gpd){
   if(!g_engine_enabled||g_engine_failed||g_export_mode||g_weight_group>=0||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
-  if(!engine_context_ok())return false;
+  if(!engine_context_ok()||(g_view_rotation!=0.0f&&!g_export_mode))return false;
   for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
     if((gpd->flag&GP_DATA_SHOW_ONIONSKINS)&&(l->onion_flag&GP_LAYER_ONIONSKIN))return false;
     const PGFxEntry*fx=nullptr;
@@ -1388,6 +1394,7 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom,flo
   g_view_pan_x=pan_x;
   g_view_pan_y=pan_y;
 }
+extern "C" void project_grease_android_present_set_view_rotation(float radians){g_view_rotation=std::isfinite(radians)?radians:0.0f;}
 extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
 extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
   if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);

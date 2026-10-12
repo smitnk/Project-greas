@@ -63,6 +63,10 @@ abstract class SweepBase {
         rule.waitUntil(15_000) { onUi { controller.rendererReady } }
         rule.waitForIdle()
         onUi {
+            // Sweeps check Material-mode semantics; DeviceColorTest covers the Vertex Color default.
+            controller.setVertexColorMode(false)
+            // Canvas gestures at the left edge would land on the Studio toolbar; DeviceStudioTest switches back.
+            controller.classicLayout = true
             controller.setMaterialColor(0xFF000000.toInt())
             controller.setBrushStrength(1f)
             controller.brushes.setSize(8f)

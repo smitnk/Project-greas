@@ -1,10 +1,12 @@
 #include <jni.h>
+#include <cmath>
 
 #include <algorithm>
 #include <cstdint>
 #include <vector>
 
 #include "project_grease_gp_bridge.h"
+static void pg_rgb_s2l(float *rgb);
 #include "project_grease_modifier_stack.h"
 #include "project_grease_shader_fx.h"
 
@@ -467,6 +469,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSoftEraseAt(
              from_handle(handle), x, y, radius, strength) != 0;
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetBrushVertexColor(
+    JNIEnv *, jobject, jlong handle, jboolean enabled, jfloat r, jfloat g, jfloat b, jfloat factor)
+{
+  float rgb[3] = {r, g, b};
+  pg_rgb_s2l(rgb);
+  project_grease_gp_set_brush_vertex_color(from_handle(handle), enabled ? 1 : 0, rgb, factor);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeErase(
     JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius, jint mode,
@@ -523,6 +534,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPoint(
 //   point color   [r, g, b, a]  (bGPDspoint.vert_color; alpha 0 = no vertex color)
 //   layer info    [visible, locked, opacity]
 //   material info [strokeR, strokeG, strokeB, strokeA, fillR, fillG, fillB, fillA, visible, fillEnabled]
+// Colours cross this boundary as display sRGB (what the UI shows and project files store); the DNA
+// holds scene-linear colours like Blender (RNA PROP_COLOR: material, vertex and fill colours).
+static float pg_s2l(float c)  // srgb_to_linearrgb()
+{
+  return c < 0.04045f ? (c < 0.0f ? 0.0f : c * (1.0f / 12.92f)) : std::pow((c + 0.055f) * (1.0f / 1.055f), 2.4f);
+}
+static float pg_l2s(float c)  // linearrgb_to_srgb()
+{
+  return c < 0.0031308f ? (c < 0.0f ? 0.0f : c * 12.92f) : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+}
+static void pg_rgb_s2l(float *rgb) { for (int i = 0; i < 3; i++) rgb[i] = pg_s2l(rgb[i]); }
+static void pg_rgb_l2s(float *rgb) { for (int i = 0; i < 3; i++) rgb[i] = pg_l2s(rgb[i]); }
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetStrokeInfo(
     JNIEnv *env, jobject, jlong handle, jint stroke_index)
@@ -531,6 +554,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetStrokeInfo(
   if (!project_grease_gp_get_stroke_info(from_handle(handle), stroke_index, &info)) {
     return nullptr;
   }
+  pg_rgb_l2s(info.fill_color);
   const jfloat values[] = {
       static_cast<jfloat>(info.material_index), info.thickness,
       info.cyclic ? 1.0f : 0.0f, info.fill_opacity_fac,
@@ -575,6 +599,8 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(
   info.fill_color[3] = v[7];
   info.caps[0] = static_cast<int>(v[8]);
   info.caps[1] = static_cast<int>(v[9]);
+  pg_rgb_s2l(info.fill_color);
+  for (int i = 0; i < count; ++i) pg_rgb_s2l(&colors[static_cast<size_t>(i) * 4u]);
   return project_grease_gp_add_stroke(
              from_handle(handle), native_points.data(), colors.data(), count, &info) != 0;
 }
@@ -587,6 +613,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetPointColor(
   if (!project_grease_gp_get_point_color(from_handle(handle), stroke_index, point_index, rgba)) {
     return nullptr;
   }
+  pg_rgb_l2s(rgba);
   jfloatArray result = env->NewFloatArray(4);
   if (!result) return nullptr;
   env->SetFloatArrayRegion(result, 0, 4, rgba);
@@ -923,6 +950,8 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetMaterialInfo(
   if (!project_grease_gp_get_material_info(from_handle(handle), index, &info)) {
     return nullptr;
   }
+  pg_rgb_l2s(info.stroke_rgba);
+  pg_rgb_l2s(info.fill_rgba);
   const jfloat values[] = {
       info.stroke_rgba[0], info.stroke_rgba[1], info.stroke_rgba[2], info.stroke_rgba[3],
       info.fill_rgba[0], info.fill_rgba[1], info.fill_rgba[2], info.fill_rgba[3],
@@ -998,6 +1027,8 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialColors(
   jfloat fill_rgba[4];
   env->GetFloatArrayRegion(stroke, 0, 4, stroke_rgba);
   env->GetFloatArrayRegion(fill, 0, 4, fill_rgba);
+  pg_rgb_s2l(stroke_rgba);
+  pg_rgb_s2l(fill_rgba);
 
   return project_grease_gp_set_material_colors(
              from_handle(handle), index, stroke_rgba, fill_rgba) != 0;

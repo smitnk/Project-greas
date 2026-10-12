@@ -123,6 +123,7 @@ int project_grease_gp_generate_primitive_preview(int type, float x0, float y0, f
 int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic);
 int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius);
 int project_grease_gp_soft_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius, float strength);
+void project_grease_gp_set_brush_vertex_color(ProjectGreaseGPHandle *handle, int enabled, const float rgb_linear[3], float factor);
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness);
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);

@@ -163,6 +163,7 @@ object GPNative {
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean
+    external fun nativeSetBrushVertexColor(handle: Long, enabled: Boolean, r: Float, g: Float, b: Float, factor: Float)
     external fun nativeErase(handle: Long, x: Float, y: Float, radius: Float, mode: Int, drawStrength: Float,
                              pressure: Float, eraStrength: Float, eraThickness: Float): Boolean
     external fun nativeClearSelection(handle: Long)

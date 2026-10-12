@@ -7,14 +7,15 @@
  * points under the brush (gpencil_vertexpaint_select_stroke). Adapted (no bContext / depsgraph /
  * RNA): do_frame, apply_to_layers, brush_apply, init and exit. The view is the canvas plane
  * (project_grease_tool_util.c), matrices are identity, points are linked to themselves instead of
- * evaluated copies. Colors: the editor keeps material and vertex colors in sRGB, so the brush
- * color is used as given (Blender converts it to linear).
+ * evaluated copies. Colors: the brush color is sRGB and is converted to linear like
+ * gpencil_vertexpaint_brush_init (DNA vertex colors are scene linear).
  */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "BLI_math_color.h"
 #include "MEM_guardedalloc.h"
 
 #include "BLI_listbase.h"
@@ -1020,7 +1021,7 @@ PGVertexPaintSession *pg_vpaint_session_begin(bGPdata *gpd, const PGToolBrushPar
   brush->size = max_ii(1, (int)lroundf(params->radius * s->view.px_per_unit));
   s->settings.draw_strength = clamp_f(params->strength, 0.0f, 1.0f);
   copy_v3_v3(brush->rgb, params->rgb);
-  copy_v3_v3(gso->linear_color, params->rgb);
+  srgb_to_linearrgb_v3_v3(gso->linear_color, brush->rgb); /* gso->brush is set below */
 
   gso->brush = brush;
   gso->is_painting = false;

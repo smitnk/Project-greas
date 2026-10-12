@@ -33,6 +33,7 @@
 #include "BLI_listbase.h"
 #include "BLI_lasso_2d.h"
 #include "BLI_math_geom.h"
+#include "BLI_math_vector.h"
 
 #include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
@@ -265,6 +266,11 @@ struct Backend::Impl {
   bool layer_created = false;
   bool frame_created = false;
   bool stroke_open = false;
+  // Draw mode "Vertex Color" (GPPAINT_FLAG_USE_VERTEXCOLOR, vertex_mode Stroke & Fill): the brush
+  // color (scene linear) and brush vertex_factor, written into new strokes.
+  bool brush_vertex_color = false;
+  float brush_rgb[3] = {0.0f, 0.0f, 0.0f};
+  float brush_vertex_factor = 1.0f;
 
   std::vector<HistorySnapshot *> undo_history;
   float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
@@ -1600,7 +1606,29 @@ bool Backend::create_primitive(int type,
                       static_cast<float>(i)});
   }
 
-  return create_polyline(points.data(), static_cast<int>(points.size()), style, cyclic);
+  if (!create_polyline(points.data(), static_cast<int>(points.size()), style, cyclic)) return false;
+  apply_brush_vertex_color(impl_->stroke);
+  return true;
+}
+
+void Backend::set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor)
+{
+  impl_->brush_vertex_color = enabled;
+  if (rgb_linear) std::memcpy(impl_->brush_rgb, rgb_linear, sizeof(impl_->brush_rgb));
+  impl_->brush_vertex_factor = std::clamp(factor, 0.0f, 1.0f);
+}
+
+// ED_gpencil_point_vertex_color_set / ED_gpencil_fill_vertex_color_set with the brush in Vertex
+// Color mode (else the zero "no vertex color" the strokes already have).
+void Backend::apply_brush_vertex_color(bGPDstroke *gps)
+{
+  if (!gps || !impl_->brush_vertex_color) return;
+  for (int i = 0; i < gps->totpoints; i++) {
+    copy_v3_v3(gps->points[i].vert_color, impl_->brush_rgb);
+    gps->points[i].vert_color[3] = impl_->brush_vertex_factor;
+  }
+  copy_v3_v3(gps->vert_color_fill, impl_->brush_rgb);
+  gps->vert_color_fill[3] = impl_->brush_vertex_factor;
 }
 
 bool Backend::create_polyline(const StrokePoint *points,
@@ -3299,6 +3327,7 @@ bool Backend::end_stroke() {
     }
   }
 
+  apply_brush_vertex_color(impl_->stroke);
   BKE_gpencil_stroke_geometry_update(impl_->gpd, impl_->stroke);
 
   impl_->stroke_open = false;
@@ -4814,6 +4843,7 @@ bool Backend::fill_at_screen(const float* rgba,
                        true)) {
     return false;
   }
+  apply_brush_vertex_color(impl_->stroke);
 
   // gpencil_stroke_from_buffer(): per-point smooth in place, fill_simplylvl (brush default 1)
   // passes of BKE_gpencil_stroke_simplify_fixed, then the geometry update.

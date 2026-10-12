@@ -435,6 +435,11 @@ int project_grease_gp_soft_erase_at(ProjectGreaseGPHandle *handle, float x, floa
                  handle->backend.soft_erase_at(x, y, radius, strength) ? 1 : 0;
 }
 
+void project_grease_gp_set_brush_vertex_color(ProjectGreaseGPHandle *handle, int enabled, const float rgb_linear[3], float factor)
+{
+  if (ensure_ready(handle)) handle->backend.set_brush_vertex_color(enabled != 0, rgb_linear, factor);
+}
+
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness)
 {

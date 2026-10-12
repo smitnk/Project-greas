@@ -833,15 +833,15 @@ class EditorController {
         val b = (argb and 0xFF) / 255f
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
-                ToolSession.sculptTool(sculpt.brush), brushes.size.coerceAtLeast(0.5f),
-                brushes.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
+                ToolSession.sculptTool(sculpt.brush), sculptBrush.size / pxPerUnit.coerceAtLeast(1e-3f),
+                sculptBrush.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
                 selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), brushes.size.coerceAtLeast(0.5f), brushes.strength,
+                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), vertexBrush.size / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
                 curvePreset = paintCurvePreset)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
-                weightPaintBrush, brushes.size.coerceAtLeast(0.5f), brushes.strength, pxPerUnit,
+                weightPaintBrush, weightBrush.size / pxPerUnit.coerceAtLeast(1e-3f), weightBrush.strength, pxPerUnit,
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue,
                 curvePreset = paintCurvePreset)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
@@ -950,6 +950,41 @@ class EditorController {
     private var curveLastY = 0f
     /** Called when the curve handles change, so the UI can redraw its handle overlay. */
     var onOverlayChanged: (() -> Unit)? = null
+    /** The UI re-reads controller state (a colour picked on the canvas changes the swatch). */
+    var onUiChanged: (() -> Unit)? = null
+
+    /** Sculpt / Vertex Paint / Weight Paint brushes are Blender's own brushes, not the pen: size in
+     *  screen pixels and strength from BKE_gpencil_brush_preset_set (Smooth Stroke, Vertex Draw,
+     *  Weight Draw: size 25; strength 0.3, 0.8, 0.3). */
+    class ModeBrush(size:Float, strength:Float) {
+        var size = size; private set
+        var strength = strength; private set
+        fun setSize(v:Float) { size = v.coerceIn(1f, 500f) }
+        fun setStrength(v:Float) { strength = v.coerceIn(0f, 1f) }
+    }
+    val sculptBrush = ModeBrush(25f, 0.3f)
+    val vertexBrush = ModeBrush(25f, 0.8f)
+    val weightBrush = ModeBrush(25f, 0.3f)
+    /** The brush a canvas touch uses in this mode when it is not the pen, or null. */
+    fun activeModeBrush():ModeBrush? = when {
+        mode == GreaseMode.SCULPT || tools.activeTool == GreaseTool.SCULPT -> sculptBrush
+        mode == GreaseMode.VERTEX_PAINT -> vertexBrush
+        mode == GreaseMode.WEIGHT_PAINT -> weightBrush
+        tools.activeTool == GreaseTool.DRAW && drawTint -> vertexBrush
+        else -> null
+    }
+
+    /** Draw mode colour, Blender's Material / Vertex Color switch (GPPAINT_FLAG_USE_VERTEXCOLOR).
+     *  Vertex Color (default here): each new stroke takes the brush colour, earlier strokes keep
+     *  theirs. Material: strokes use the material colour, and editing it recolours every stroke
+     *  with that material, as in Blender. */
+    var vertexColorMode = true; private set
+    fun setVertexColorMode(on:Boolean) { vertexColorMode = on; pushBrushVertexColor() }
+    private fun pushBrushVertexColor() {
+        if (native.handle == 0L) return
+        val c = colorToFloats(materials.colorArgb)
+        GPNative.nativeSetBrushVertexColor(native.handle, vertexColorMode, c[0], c[1], c[2], 1f)
+    }
     /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
     fun curveHandles(): List<Pair<Float, Float>> = curve.handles()
     val curveEditing: Boolean get() = curve.phase == CurveSession.Phase.EDIT
@@ -1737,7 +1772,29 @@ class EditorController {
         if (rendererHandle == 0L) return false
         val argb = GPNative.nativePickColorEglRenderer(rendererHandle, x, y)
         if ((argb ushr 24) == 0) return false
-        return setMaterialColor(argb)
+        val ok = if (vertexColorMode) setMaterialColor(argb) else pickMaterial(argb)
+        onUiChanged?.invoke()
+        return ok
+    }
+    /** Eyedropper in Material mode (eyedropper_add_material): select the material with this stroke
+     *  colour, or add one, instead of recolouring the active material. */
+    private fun pickMaterial(argb:Int):Boolean {
+        val c = colorToFloats(argb)
+        val count = native.materialCount()
+        val match = (0 until count).firstOrNull { i ->
+            native.materialInfo(i)?.let { m -> (0..2).all { kotlin.math.abs(m[it] - c[it]) < 0.01f } } ?: false
+        }
+        val index = match ?: run {
+            if (!native.createMaterial()) return false
+            val rgba = floatArrayOf(c[0], c[1], c[2], 1f)
+            native.setMaterialColors(count, rgba, rgba)
+            history.markEdit(); document.markDirty()
+            count
+        }
+        materials.select(index)
+        materials.setColor(argb)
+        pushMaterialColor()
+        return true
     }
 
     fun setMaterialColor(argb:Int):Boolean {
@@ -1745,9 +1802,12 @@ class EditorController {
         if (rendererHandle == 0L) return false
         val c=colorToFloats(argb)
         val alpha=c[3]*materials.opacity
-        val stroke=floatArrayOf(c[0],c[1],c[2],alpha)
-        val fill=floatArrayOf(c[0],c[1],c[2],alpha)
         val before=native.materialInfo(materials.activeMaterial)
+        // Vertex Color mode: the brush colour changes, the material keeps its rgb (opacity still applies).
+        val rgb = if (vertexColorMode && before != null) before.copyOfRange(0, 3) else c.copyOfRange(0, 3)
+        val fillRgb = if (vertexColorMode && before != null) before.copyOfRange(4, 7) else c.copyOfRange(0, 3)
+        val stroke=floatArrayOf(rgb[0],rgb[1],rgb[2],alpha)
+        val fill=floatArrayOf(fillRgb[0],fillRgb[1],fillRgb[2],alpha)
         val ok=native.setMaterialColors(materials.activeMaterial,stroke,fill)
         if(ok) {
             pushMaterialColor()
@@ -1830,7 +1890,13 @@ class EditorController {
             rendererHandle,
             c[0], c[1], c[2], c[3] * materials.opacity
         )
+        pushBrushVertexColor()
     }
+    /** Display sRGB (UI, files) to the scene-linear rgb Blender's DNA holds (srgb_to_linearrgb). */
+    private fun linearRgb(argb:Int):FloatArray = floatArrayOf(
+        ColorSpace.srgbToLinear(((argb ushr 16) and 255)/255f),
+        ColorSpace.srgbToLinear(((argb ushr 8) and 255)/255f),
+        ColorSpace.srgbToLinear((argb and 255)/255f))
     private fun colorToFloats(argb:Int):FloatArray = floatArrayOf(
         ((argb ushr 16) and 255)/255f,
         ((argb ushr 8) and 255)/255f,
@@ -2321,11 +2387,8 @@ class EditorController {
         runSelectCommand(ProjectGreaseSelect.lengthModifier(start, end, mode))
     /** Tint the selected strokes toward the current color (vertex colors, like Blender's Tint). */
     fun applyTintModifier(factor:Float, mode:Int=ProjectGreaseSelect.PAINT_BOTH):Boolean {
-        val argb = materials.colorArgb
-        val r = ((argb shr 16) and 0xFF) / 255f
-        val g = ((argb shr 8) and 0xFF) / 255f
-        val b = (argb and 0xFF) / 255f
-        return runSelectCommand(ProjectGreaseSelect.tintModifier(mode, factor, r, g, b))
+        val c = linearRgb(materials.colorArgb)
+        return runSelectCommand(ProjectGreaseSelect.tintModifier(mode, factor, c[0], c[1], c[2]))
     }
     fun applyColorModifier(hue:Float=0.5f, saturation:Float=1f, value:Float=1f, mode:Int=ProjectGreaseSelect.MODIFY_BOTH) =
         runSelectCommand(ProjectGreaseSelect.colorModifier(mode, hue, saturation, value))
@@ -2353,6 +2416,8 @@ class EditorController {
     fun setVertexPaintTarget(target:Int) { if (target in ProjectGreaseSelect.PAINT_STROKE..ProjectGreaseSelect.PAINT_BOTH) vertexPaintTarget = target }
     /** Draw mode's Tint tool: paints vertex colour with the active colour instead of drawing. */
     var drawTint by androidx.compose.runtime.mutableStateOf(false)
+    /** Editor layout: false = Studio (full-screen canvas, floating controls), true = the classic panels. */
+    var classicLayout by androidx.compose.runtime.mutableStateOf(false)
     /** gpencil_selectmode_vertex (GP_VERTEX_MASK_SELECTMODE_*) and the paint brushes' falloff curve preset. */
     var vertexSelectMask = 0
     var paintCurvePreset = 0
@@ -2410,9 +2475,8 @@ class EditorController {
     fun applyThicknessModifierWithWeights(factor:Float, invert:Boolean=false) =
         runSelectCommand(ProjectGreaseSelect.thicknessModifierVGroup(weightPaintGroup, invert, factor))
     fun selectByVertexColor(threshold:Float=0.05f, extend:Boolean=false):Boolean {
-        val argb = materials.colorArgb
-        return runSelectCommand(ProjectGreaseSelect.selectVertexColor(((argb shr 16) and 0xFF)/255f,
-            ((argb shr 8) and 0xFF)/255f, (argb and 0xFF)/255f, threshold, extend))
+        val c = linearRgb(materials.colorArgb)
+        return runSelectCommand(ProjectGreaseSelect.selectVertexColor(c[0], c[1], c[2], threshold, extend))
     }
     fun normalizeSelection(mode:Int, value:Float) = runSelectCommand(ProjectGreaseSelect.normalize(mode, value))
     fun simplifySelectionFixed(steps:Int=1) = runSelectCommand(ProjectGreaseSelect.simplifyFixed(steps))
@@ -2423,15 +2487,14 @@ class EditorController {
     /** Insert a blank keyframe at the current frame, shifting later frames (GPENCIL_OT_blank_frame_add). */
     fun insertBlankFrame() = runSelectCommand(ProjectGreaseSelect.blankFrame(animation.currentFrame))
         .also { if (it) { animation.refreshFromNative(); render() } }
-    fun setFillColor(argb:Int) = runSelectCommand(ProjectGreaseSelect.fillColor(materials.activeMaterial,
-        ((argb shr 16) and 0xFF)/255f, ((argb shr 8) and 0xFF)/255f, (argb and 0xFF)/255f, ((argb ushr 24) and 0xFF)/255f))
+    fun setFillColor(argb:Int) = linearRgb(argb).let { c -> runSelectCommand(ProjectGreaseSelect.fillColor(materials.activeMaterial,
+        c[0], c[1], c[2], ((argb ushr 24) and 0xFF)/255f)) }
     fun cleanLoosePoints(limit:Int=1) = runSelectCommand(ProjectGreaseSelect.cleanLoose(limit))
     fun cleanDuplicateFrames() = runSelectCommand(ProjectGreaseSelect.cleanDuplicateFrames())
         .also { if (it) { animation.refreshFromNative(); render() } }
     fun setSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_STROKE):Boolean {
-        val argb = materials.colorArgb
-        return runSelectCommand(ProjectGreaseSelect.vcolorSet(mode, ((argb shr 16) and 0xFF)/255f,
-            ((argb shr 8) and 0xFF)/255f, (argb and 0xFF)/255f))
+        val c = linearRgb(materials.colorArgb)
+        return runSelectCommand(ProjectGreaseSelect.vcolorSet(mode, c[0], c[1], c[2]))
     }
     fun invertSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = runSelectCommand(ProjectGreaseSelect.vcolorInvert(mode))
     fun selectionVertexColorBrightnessContrast(b:Float, c:Float, mode:Int=ProjectGreaseSelect.PAINT_BOTH) =
@@ -2627,7 +2690,7 @@ class EditorController {
     fun setLayerBlend(mode:Int, layer:Int = selectedLayer):Boolean =
         ProjectGreaseSelect.layerBlend(layer, mode)?.let { docChanged(native.applyEditCommand(it.id, it.args)) } ?: false
     fun setLayerTint(argb:Int, factor:Float, layer:Int = selectedLayer):Boolean {
-        val c = colorToFloats(argb)
+        val c = linearRgb(argb)
         val cmd = ProjectGreaseSelect.layerTint(layer, c[0], c[1], c[2], factor.coerceIn(0f, 1f))
         return docChanged(native.applyEditCommand(cmd.id, cmd.args))
     }

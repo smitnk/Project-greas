@@ -66,3 +66,6 @@ g++ "${XF[@]}" -Wall "${INC[@]}" "$ROOT/native/blender_gp/tests/test_edit10.cc" 
 g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/test_backend_eraser.cc" \
   "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_backend_eraser"
 "$OUT/test_backend_eraser" 2>/dev/null
+g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/test_backend_color.cc" \
+  "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_backend_color"
+"$OUT/test_backend_color" 2>/dev/null

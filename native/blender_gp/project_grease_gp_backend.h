@@ -117,6 +117,9 @@ class Backend {
   // Blender 3.6.23 eraser (gpencil_stroke_doeraser) with the eraser brush settings; see the .cpp.
   bool erase(float x, float y, float radius, int mode, float draw_strength, float pressure,
              float era_strength, float era_thickness);
+  // Draw mode color: Material (false) or Vertex Color (true, the brush color in scene linear and
+  // the brush vertex factor), applied to strokes drawn, primitives and fills.
+  void set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor);
   void clear_selection();
   int lasso_select(const float* xy, int count, bool additive);
   // Bulk Legacy GP edit commands: selection, point editing and stroke ordering.
@@ -340,6 +343,7 @@ class Backend {
   struct Impl;
 
  private:
+  void apply_brush_vertex_color(bGPDstroke *gps);
   bool render_with_gpu_context();
   Impl* impl_;
 };

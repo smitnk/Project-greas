@@ -98,6 +98,8 @@ float g_force_layer_opacity=-1.0f;
 int g_guide_type=-1;
 float g_guide_cx=0,g_guide_cy=0,g_guide_angle=0,g_guide_spacing=0;
 float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
+/* linearrgb_to_srgb() (blenlib math_color.c) */
+static float pg_linear_to_srgb(float c){return c<0.0031308f?(c<0.0f?0.0f:c*12.92f):1.055f*std::pow(c,1.0f/2.4f)-0.055f;}
 int g_canvas_width=1280;
 int g_canvas_height=720;
 float g_map_origin_x=0.0f;
@@ -588,6 +590,9 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     }
     float color[4]={stroke_rgb[0],stroke_rgb[1],stroke_rgb[2],stroke_base_alpha*alpha_scale};
     float fill_color[4]={fill_rgb[0],fill_rgb[1],fill_rgb[2],fill_base_alpha*alpha_scale};
+    // DNA colours are scene linear (Blender); this presenter writes display values: Standard view
+    // transform per colour (the engine path transforms per pixel, after blending).
+    if(style){for(int c=0;c<3;c++){color[c]=pg_linear_to_srgb(color[c]);fill_color[c]=pg_linear_to_srgb(fill_color[c]);}}
     if(g_ghost_tint){for(int c=0;c<3;c++){color[c]=g_ghost_rgb[c];fill_color[c]=g_ghost_rgb[c];}}
     const MatTex*stroke_tex=style&&style->stroke_style==GP_MATERIAL_STROKE_STYLE_TEXTURE?material_texture(s->mat_nr,0):nullptr;
     const MatTex*fill_tex=style&&style->fill_style==GP_MATERIAL_FILL_STYLE_TEXTURE?material_texture(s->mat_nr,1):nullptr;
@@ -628,6 +633,7 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
         // gpencil_vert.glsl: gradient mode does not modulate alpha by the material (fill_col.a = 1)
         float base[3];pg_gp_mix_vertex_color(c1,s->vert_color_fill,PG_GP_VERTEX_COLOR_OPACITY,base);
         if(g_layer_tint[3]>0.0f)for(int c=0;c<3;c++)base[c]+=(g_layer_tint[c]-base[c])*g_layer_tint[3];
+        for(int c=0;c<3;c++){c1[c]=pg_linear_to_srgb(c1[c]);c2[c]=pg_linear_to_srgb(c2[c]);base[c]=pg_linear_to_srgb(base[c]);}
         const float gcol[4]={base[0],base[1],base[2],alpha_scale};
         std::vector<UVVertex> tv;append_gradient_fill(tv,s,style,w,h);
         draw_gradient(tv,c1,c2,gcol,1.0f-style->mix_factor,style->gradient_type==GP_MATERIAL_GRADIENT_RADIAL);

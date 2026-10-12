@@ -376,9 +376,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         return
     }
 
+    DisposableEffect(controller){
+        controller.onUiChanged={redraw()}
+        onDispose{controller.onUiChanged=null}
+    }
+    // Studio (default): full-screen canvas with floating controls. Classic: the panel layout.
     // Hide / unhide every panel around the canvas (mode bar, tool rail, properties, timeline).
     var panelsHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
-    Column(Modifier.fillMaxSize()){
+    if(!controller.classicLayout) StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},{controller.classicLayout=true},viewport)
+    else Column(Modifier.fillMaxSize()){
         Surface(tonalElevation=3.dp){
             // Scrolls so the last icons (fit, full canvas, more) stay reachable on narrow screens.
             Row(Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
@@ -397,6 +403,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 IconButton(onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
                 IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
                 IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
+                IconButton(onClick={controller.classicLayout=false},Modifier.testTag("studioLayout")){Icon(Icons.Default.Dashboard,"Studio layout")}
             }
         }
         if(!panelsHidden)ModeBrushBar(controller,::redraw)
@@ -683,19 +690,23 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=3.dp),
                 verticalAlignment=Alignment.CenterVertically
             ){
+                // Each tool's own brush, as in Blender: eraser, sculpt / vertex / weight brush, or the pen.
                 val erasing=controller.tools.activeTool==GreaseTool.ERASE
-                Text((if(erasing)"Eraser " else "Size ")+(if(erasing)controller.eraserSize else controller.brushes.size).toInt(),fontSize=10.sp,modifier=Modifier.width(58.dp))
+                val modeBrush=if(erasing)null else controller.activeModeBrush()
+                val size=when{erasing->controller.eraserSize;modeBrush!=null->modeBrush.size;else->controller.brushes.size}
+                Text((if(erasing)"Eraser " else "Size ")+size.toInt(),fontSize=10.sp,modifier=Modifier.width(58.dp).testTag("brushSizeLabel"))
                 Slider(
-                    value=if(erasing)controller.eraserSize else controller.brushes.size,
-                    onValueChange={if(erasing)controller.setEraserSize(it) else controller.brushes.setSize(it);redraw()},
+                    value=size,
+                    onValueChange={when{erasing->controller.setEraserSize(it);modeBrush!=null->modeBrush.setSize(it);else->controller.brushes.setSize(it)};redraw()},
                     valueRange=.5f..500f,
                     modifier=Modifier.weight(1f).padding(horizontal=4.dp)
                 )
-                Text("Strength "+(controller.brushes.strength*100).toInt()+"%",fontSize=10.sp,modifier=Modifier.width(76.dp))
+                val strength=modeBrush?.strength?:controller.brushes.strength
+                Text("Strength "+(strength*100).toInt()+"%",fontSize=10.sp,modifier=Modifier.width(76.dp))
                 Slider(
-                    value=controller.brushes.strength,
+                    value=strength,
                     onValueChange={
-                        controller.setBrushStrength(it)
+                        if(modeBrush!=null)modeBrush.setStrength(it) else controller.setBrushStrength(it)
                         redraw()
                     },
                     valueRange=0f..1f,
@@ -1537,6 +1548,216 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Text("Editor",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Button(onClick={controller.view.reset();controller.render()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Reset canvas view")}
             Button(onClick={controller.smoothSelectedStroke()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Smooth selected stroke")}
+        }
+    }
+}
+
+
+// ---- Studio layout: full-screen canvas, floating toolbar, layer panel, frame strip, option popups ----
+
+private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
+
+@NonSkippableComposable
+@Composable private fun StudioLayout(controller:EditorController,refresh:Int,overlayTick:Int,redraw:()->Unit,
+                                     onSheet:(Sheet)->Unit,onClassic:()->Unit,viewport:@Composable BoxScope.()->Unit){
+    var popup by remember{mutableStateOf(StudioPopup.NONE)}
+    var layersOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
+    var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
+    Box(Modifier.fillMaxSize().background(CanvasBg).testTag("studioCanvas")){
+        viewport()
+        DrawingGuidesOverlay(controller)
+        LassoPathOverlay(controller)
+        ReferenceOverlay(controller,refresh)
+        CurveHandlesOverlay(controller,overlayTick,redraw)
+        ShapeEditOverlay(controller,overlayTick,redraw)
+        ModifierHandlesOverlay(controller,overlayTick,redraw)
+        BoxSelectOverlay(controller,overlayTick)
+
+        // top: project menu, mode, more
+        Row(Modifier.align(Alignment.TopCenter).padding(6.dp),verticalAlignment=Alignment.CenterVertically){
+            FloatingIcon(Icons.Default.Menu,"Project"){onSheet(Sheet.PROJECT)}
+            Spacer(Modifier.width(6.dp))
+            Surface(shape=RoundedCornerShape(16.dp),tonalElevation=4.dp,shadowElevation=2.dp,
+                modifier=Modifier.clickable{popup=StudioPopup.MODE}.testTag("studioMode")){
+                Text(controller.mode.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()}+" ▾",
+                    Modifier.padding(horizontal=12.dp,vertical=6.dp),fontSize=12.sp)
+            }
+            Spacer(Modifier.width(6.dp))
+            FloatingIcon(Icons.Default.FitScreen,"Fit canvas"){controller.fitCanvas();redraw()}
+            FloatingIcon(Icons.Default.MoreHoriz,"More tools"){onSheet(Sheet.TOOLS)}
+            FloatingIcon(Icons.Default.ViewSidebar,"Classic layout"){onClassic()}
+        }
+
+        // floating toolbar
+        val tool=controller.tools.activeTool
+        Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp).testTag("studioToolbar"),
+            shape=RoundedCornerShape(24.dp),tonalElevation=6.dp,shadowElevation=4.dp){
+            Column(Modifier.padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                // Tap a tool to use it; tap the active tool again for its options.
+                fun pick(t:GreaseTool){ if(tool==t) popup=StudioPopup.OPTIONS else { controller.selectTool(t); popup=StudioPopup.NONE }; redraw() }
+                ToolbarButton(Icons.Default.Brush,"Brush",tool==GreaseTool.DRAW||tool==GreaseTool.SCULPT){pick(if(controller.mode==GreaseMode.SCULPT)GreaseTool.SCULPT else GreaseTool.DRAW)}
+                ToolbarButton(Icons.Default.Clear,"Eraser",tool==GreaseTool.ERASE){pick(GreaseTool.ERASE)}
+                ToolbarButton(Icons.Default.Gesture,"Lasso",tool==GreaseTool.LASSO){pick(GreaseTool.LASSO)}
+                ToolbarButton(Icons.Default.FormatColorFill,"Fill",tool==GreaseTool.FILL){pick(GreaseTool.FILL)}
+                Box(Modifier.padding(6.dp).size(30.dp).background(Color(controller.materials.colorArgb),CircleShape)
+                    .border(2.dp,MaterialTheme.colorScheme.outline,CircleShape)
+                    .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
+                ToolbarButton(Icons.Default.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
+                IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
+                IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
+                ToolbarButton(Icons.Default.Tune,"Options",popup==StudioPopup.OPTIONS){popup=if(popup==StudioPopup.OPTIONS)StudioPopup.NONE else StudioPopup.OPTIONS}
+            }
+        }
+
+        if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)})
+
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()){
+            Row(Modifier.align(Alignment.End).padding(end=6.dp)){
+                FloatingIcon(if(stripOpen)Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    if(stripOpen)"Hide timeline" else "Show timeline"){stripOpen=!stripOpen}
+            }
+            if(stripOpen) StudioFrameStrip(controller,redraw)
+        }
+
+        when(popup){
+            StudioPopup.OPTIONS->StudioCard({popup=StudioPopup.NONE}){
+                ModeBrushBar(controller,redraw)
+                if(tool==GreaseTool.LASSO||tool in com.smitnk.projectgrease.editor.SELECTION_TOOLS) LassoActions(controller,redraw)
+            }
+            StudioPopup.COLOR->StudioCard({popup=StudioPopup.NONE}){
+                Row(Modifier.padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
+                    Text("Color",fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=8.dp))
+                    FilterChip(selected=controller.vertexColorMode,onClick={controller.setVertexColorMode(true);redraw()},
+                        label={Text("Per stroke (Vertex Color)")},modifier=Modifier.padding(end=4.dp).testTag("colorModeVertex"))
+                    FilterChip(selected=!controller.vertexColorMode,onClick={controller.setVertexColorMode(false);redraw()},
+                        label={Text("Material")},modifier=Modifier.testTag("colorModeMaterial"))
+                }
+                BlenderColorPicker(controller.materials.colorArgb,{controller.setMaterialColor(it);redraw()})
+                TextButton(onClick={controller.selectTool(GreaseTool.EYEDROPPER);popup=StudioPopup.NONE;redraw()}){Text("Pick from canvas")}
+                TextButton(onClick={popup=StudioPopup.NONE;onSheet(Sheet.MATERIALS)}){Text("Materials…")}
+            }
+            StudioPopup.MODE->StudioCard({popup=StudioPopup.NONE}){
+                GreaseMode.entries.forEach{m->
+                    ListItem(headlineContent={Text(m.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()})},
+                        leadingContent={RadioButton(selected=controller.mode==m,onClick=null)},
+                        modifier=Modifier.clickable{if(controller.setMode(m))redraw();popup=StudioPopup.NONE}.testTag("studioMode_"+m.name))
+                }
+            }
+            StudioPopup.NONE->Unit
+        }
+    }
+}
+
+@Composable private fun FloatingIcon(icon:ImageVector,label:String,onClick:()->Unit){
+    Surface(shape=CircleShape,tonalElevation=4.dp,shadowElevation=2.dp,modifier=Modifier.padding(2.dp)){
+        IconButton(onClick=onClick,Modifier.size(40.dp)){Icon(icon,label)}
+    }
+}
+
+@Composable private fun ToolbarButton(icon:ImageVector,label:String,selected:Boolean,onClick:()->Unit){
+    Surface(shape=RoundedCornerShape(16.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        modifier=Modifier.padding(horizontal=4.dp,vertical=1.dp)){
+        IconButton(onClick=onClick,Modifier.size(44.dp).testTag("studioTool_$label")){Icon(icon,label)}
+    }
+}
+
+/** A small floating card for tool options (closes on outside tap). */
+@Composable private fun StudioCard(onDismiss:()->Unit,content:@Composable ColumnScope.()->Unit){
+    androidx.compose.ui.window.Popup(alignment=Alignment.CenterStart,offset=androidx.compose.ui.unit.IntOffset(170,0),
+        onDismissRequest=onDismiss,properties=androidx.compose.ui.window.PopupProperties(focusable=true)){
+        Surface(Modifier.widthIn(max=360.dp).heightIn(max=480.dp).testTag("studioPopup"),shape=RoundedCornerShape(16.dp),
+            tonalElevation=6.dp,shadowElevation=8.dp){
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical=8.dp),content=content)
+        }
+    }
+}
+
+/** Lasso / selection: transform and edit the selection (Blender's Edit menu on the selection). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun LassoActions(controller:EditorController,redraw:()->Unit){
+    FlowRow(Modifier.padding(horizontal=8.dp)){
+        listOf(
+            "Move" to {controller.selectTool(GreaseTool.MOVE)},
+            "Rotate" to {controller.selectTool(GreaseTool.ROTATE)},
+            "Scale" to {controller.selectTool(GreaseTool.SCALE)},
+            "Flip H" to {controller.selectionPivot()?.let{controller.mirrorSelectedStrokeAround(true,false,it[0],it[1])}?:false},
+            "Flip V" to {controller.selectionPivot()?.let{controller.mirrorSelectedStrokeAround(false,true,it[0],it[1])}?:false},
+            "Duplicate" to {controller.duplicateSelection()},
+            "Delete" to {controller.deleteSelectedStrokes()}
+        ).forEach{(label,action)->
+            OutlinedButton(onClick={action();redraw()},Modifier.padding(2.dp).testTag("lasso_$label")){Text(label,fontSize=11.sp)}
+        }
+    }
+}
+
+/** FlipaClip-style layers: top layer first, the active one highlighted, eye / lock per row. */
+@NonSkippableComposable
+@Composable private fun StudioLayerPanel(controller:EditorController,modifier:Modifier,redraw:()->Unit,onMore:()->Unit){
+    Surface(modifier.width(220.dp).heightIn(max=420.dp).testTag("studioLayers"),shape=RoundedCornerShape(16.dp),tonalElevation=6.dp,shadowElevation=4.dp){
+        Column(Modifier.padding(8.dp)){
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Text("Layers",fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                IconButton(onClick={controller.createLayer("Layer "+(controller.layerCount()+1));redraw()},Modifier.size(36.dp).testTag("layerAdd")){Icon(Icons.Default.Add,"Add layer")}
+                IconButton(onClick={controller.duplicateLayer();redraw()},Modifier.size(36.dp)){Icon(Icons.Default.ContentCopy,"Duplicate layer")}
+                IconButton(onClick={controller.deleteLayer();redraw()},enabled=controller.layerCount()>1,modifier=Modifier.size(36.dp)){Icon(Icons.Default.Delete,"Delete layer")}
+            }
+            Column(Modifier.weight(1f,fill=false).verticalScroll(rememberScrollState())){
+                for(i in controller.layerCount()-1 downTo 0){
+                    val st=controller.layerState(i)
+                    val active=i==controller.selectedLayer
+                    Surface(Modifier.fillMaxWidth().padding(vertical=2.dp).clickable{controller.selectLayer(i);redraw()}.testTag("layerRow_$i"),
+                        shape=RoundedCornerShape(10.dp),
+                        color=if(active)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        border=if(active)androidx.compose.foundation.BorderStroke(2.dp,Accent) else null){
+                        Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.padding(horizontal=4.dp)){
+                            IconButton(onClick={controller.setLayerVisibility(i,!(st?.visible?:true));redraw()},Modifier.size(34.dp)){
+                                Icon(if(st?.visible!=false)Icons.Default.Visibility else Icons.Default.VisibilityOff,"Visible")
+                            }
+                            Text((if(active)"● " else "")+(st?.name?.takeIf{it.isNotBlank()}?:"Layer "+(i+1)),
+                                Modifier.weight(1f),maxLines=1,fontWeight=if(active)FontWeight.Bold else FontWeight.Normal,fontSize=13.sp)
+                            IconButton(onClick={controller.setLayerLocked(i,!(st?.locked?:false));redraw()},Modifier.size(34.dp)){
+                                Icon(if(st?.locked==true)Icons.Default.Lock else Icons.Default.LockOpen,"Lock")
+                            }
+                        }
+                    }
+                }
+            }
+            Row{
+                TextButton(onClick={val i=controller.selectedLayer;if(i<controller.layerCount()-1){controller.moveLayer(i,i+1);redraw()}}){Text("Up")}
+                TextButton(onClick={val i=controller.selectedLayer;if(i>0){controller.moveLayer(i,i-1);redraw()}}){Text("Down")}
+                TextButton(onClick=onMore){Text("More…")}
+            }
+        }
+    }
+}
+
+/** FlipaClip-style frame strip: play, previous / next, frame cells (keys marked), add frame. */
+@NonSkippableComposable
+@Composable private fun StudioFrameStrip(controller:EditorController,redraw:()->Unit){
+    val anim=controller.animation
+    Surface(Modifier.fillMaxWidth().testTag("studioFrames"),tonalElevation=6.dp){
+        Row(verticalAlignment=Alignment.CenterVertically){
+            IconButton(onClick={anim.togglePlayback();redraw()}){Icon(if(anim.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
+            IconButton(onClick={controller.selectFrame(anim.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
+            IconButton(onClick={controller.selectFrame(anim.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
+            val keys=remember(anim.keyframes){anim.keyframes.toSet()}
+            val state=androidx.compose.foundation.lazy.rememberLazyListState()
+            androidx.compose.foundation.lazy.LazyRow(Modifier.weight(1f).padding(vertical=4.dp),state=state){
+                items(anim.timelineEnd.coerceAtLeast(1),key={it+1}){index->
+                    val frame=index+1
+                    val current=frame==anim.currentFrame
+                    Surface(Modifier.width(44.dp).height(48.dp).padding(2.dp).clickable{controller.selectFrame(frame);redraw()}.testTag("strip_$frame"),
+                        shape=RoundedCornerShape(8.dp),
+                        color=if(current)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        border=if(current)androidx.compose.foundation.BorderStroke(2.dp,Accent) else null){
+                        Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+                            Text(frame.toString(),fontSize=12.sp)
+                            Box(Modifier.size(8.dp).background(if(frame in keys)keyTypeColor(anim.keyTypes[frame]?:0) else Color.Transparent,CircleShape))
+                        }
+                    }
+                }
+            }
+            IconButton(onClick={val f=anim.currentFrame+1;controller.createFrame(f);controller.selectFrame(f);redraw()},Modifier.testTag("stripAdd")){Icon(Icons.Default.Add,"New frame")}
         }
     }
 }

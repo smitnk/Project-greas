@@ -52,8 +52,6 @@ class DeviceBugfixTest {
     @Before fun openNewProject() {
         rule.onNodeWithContentDescription("New").performClick()
         rule.onNodeWithText("Create Project").performScrollTo().performClick()
-        // these checks drive the classic panel layout; the Studio layout has its own test (DeviceStudioTest)
-        instrumentation.runOnMainSync { rule.activity.controller.classicLayout = true }
         rule.waitUntil(15_000) { onUi { controller.rendererReady } }
         rule.waitForIdle()
         onUi {

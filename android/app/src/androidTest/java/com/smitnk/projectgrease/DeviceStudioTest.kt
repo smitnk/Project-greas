@@ -3,6 +3,9 @@ package com.smitnk.projectgrease
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.smitnk.projectgrease.editor.GreaseTool
 import org.junit.Assert.assertEquals
@@ -13,11 +16,6 @@ import org.junit.runner.RunWith
 /** The Studio layout: floating toolbar, option popup on a second tap, layer panel, frame strip. */
 @RunWith(AndroidJUnit4::class)
 class DeviceStudioTest : SweepBase() {
-    @org.junit.Before fun studio() {
-        onUi { controller.classicLayout = false }
-        rule.waitForIdle()
-        rule.waitUntil(15_000) { onUi { controller.rendererReady } }
-    }
 
     @Test fun toolbarSelectsToolsAndOpensOptions() {
         rule.onNodeWithTag("studioToolbar").assertIsDisplayed()
@@ -51,6 +49,18 @@ class DeviceStudioTest : SweepBase() {
         rule.onNodeWithTag("layerAdvancedSheet").assertIsDisplayed()
         for (i in 0..5) rule.onNodeWithTag("advTab_$i").performClick()
         shot("studio_layer_advanced")
+    }
+
+    @Test fun oneMenuReachesEverySheet() {
+        for (tag in listOf("tools", "materials", "draw", "advanced", "layers", "onion", "timeline", "edit", "rotoscope", "reference", "project")) {
+            rule.onNodeWithTag("studioCanvas").assertExists()
+            rule.onNodeWithContentDescription("Menu").performClick()
+            rule.onNodeWithTag("menu_$tag").performScrollTo().performClick()
+            rule.waitForIdle()
+            onUi { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            rule.waitForIdle()
+        }
+        assertTrue("no classic panel layout", rule.onAllNodesWithTag("editorTopBar").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun frameStripAddsAndSelectsFrame() {

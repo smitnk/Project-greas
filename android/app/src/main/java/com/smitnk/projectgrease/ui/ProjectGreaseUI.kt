@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.smitnk.projectgrease.ui
 
@@ -47,7 +48,7 @@ import com.smitnk.projectgrease.editor.EraserMode
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 private val presets=listOf(
@@ -355,84 +356,16 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
     @Suppress("UNUSED_VARIABLE") val unused=refresh+savedTick
 
-    BackHandler(enabled=sheet!=Sheet.NONE || state.canvasFocus){
-        if(sheet!=Sheet.NONE) sheet=Sheet.NONE
-        else onState(state.copy(canvasFocus=false))
-    }
-
-    if(state.canvasFocus){
-        Box(Modifier.fillMaxSize().background(CanvasBg)){
-            viewport()
-            DrawingGuidesOverlay(controller)
-            LassoPathOverlay(controller)
-            ReferenceOverlay(controller,refresh)
-            CurveHandlesOverlay(controller,overlayTick,::redraw)
-            ShapeEditOverlay(controller,overlayTick,::redraw)
-            ModifierHandlesOverlay(controller,overlayTick,::redraw)
-            BoxSelectOverlay(controller,overlayTick)
-            IconButton(onClick={onState(state.copy(canvasFocus=false))},Modifier.align(Alignment.TopStart).padding(8.dp)){
-                Icon(Icons.Default.CloseFullscreen,"Exit canvas")
-            }
-            IconButton(onClick={controller.fitCanvas();redraw()},Modifier.align(Alignment.TopEnd).padding(8.dp)){
-                Icon(Icons.Default.FitScreen,"Fit canvas")
-            }
-        }
-        return
-    }
+    BackHandler(enabled=sheet!=Sheet.NONE){ sheet=Sheet.NONE }
 
     DisposableEffect(controller){
         controller.onUiChanged={redraw()}
         controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
         onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null}
     }
-    // Studio (default): full-screen canvas with floating controls. Classic: the panel layout.
-    // Hide / unhide every panel around the canvas (mode bar, tool rail, properties, timeline).
-    var panelsHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
-    if(!controller.classicLayout) StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},{controller.classicLayout=true},viewport)
-    else Column(Modifier.fillMaxSize()){
-        Surface(tonalElevation=3.dp){
-            // Scrolls so the last icons (fit, full canvas, more) stay reachable on narrow screens.
-            Row(Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
-                IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
-                Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=120.dp))
-                Spacer(Modifier.width(8.dp))
-                IconButton(onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
-                IconButton(onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
-                IconButton(onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
-                IconButton(onClick={
-                    persistProject()
-                    Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show()
-                }){Icon(Icons.Default.Save,"Save")}
-                IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
-                IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
-                IconButton(onClick={controller.fitCanvas();redraw()}){Icon(Icons.Default.FitScreen,"Fit canvas")}
-                IconButton(onClick={onState(state.copy(canvasFocus=true))}){Icon(Icons.Default.Fullscreen,"Canvas")}
-                IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
-                IconButton(onClick={controller.classicLayout=false},Modifier.testTag("studioLayout")){Icon(Icons.Default.Dashboard,"Studio layout")}
-            }
-        }
-        if(!panelsHidden)ModeBrushBar(controller,::redraw)
-        Row(Modifier.fillMaxWidth().weight(1f)){
-            if(state.showTools&&!panelsHidden)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
-            Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
-                viewport()
-                Box(Modifier.fillMaxSize().graphicsLayer{rotationZ=Math.toDegrees(controller.view.rotation.toDouble()).toFloat()}){
-                    DrawingGuidesOverlay(controller)
-                    LassoPathOverlay(controller)
-                    ReferenceOverlay(controller,refresh)
-                    CurveHandlesOverlay(controller,overlayTick,::redraw)
-                    ShapeEditOverlay(controller,overlayTick,::redraw)
-                    ModifierHandlesOverlay(controller,overlayTick,::redraw)
-                    BoxSelectOverlay(controller,overlayTick)
-                }
-                IconButton(onClick={panelsHidden=!panelsHidden},Modifier.align(Alignment.TopEnd).padding(4.dp).testTag("togglePanels")){
-                    Icon(if(panelsHidden)Icons.Default.Visibility else Icons.Default.VisibilityOff,if(panelsHidden)"Show panels" else "Hide panels")
-                }
-            }
-            if(state.showProperties&&!panelsHidden)Properties(controller,::redraw)
-        }
-        if(state.showTimeline&&!panelsHidden)Timeline(controller,::redraw,{fpsDialog=true})
-    }
+    // One UI: the full-screen canvas with the floating toolbar, option popups, the layer panel with
+    // each layer's Advanced panel, the frame strip, and one menu for everything else.
+    StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},viewport)
     if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
     when(sheet){
         Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject)
@@ -445,6 +378,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.REFERENCE->ReferenceSheet(controller,context,{sheet=Sheet.NONE},::redraw)
         Sheet.ROTOSCOPE->RotoscopeSheet(controller,context,{sheet=Sheet.NONE},::redraw)
         Sheet.LAYER_ADVANCED->LayerAdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
+        Sheet.MENU->StudioMenu(controller,{sheet=it},{persistProject();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();sheet=Sheet.NONE},onSettings,{sheet=Sheet.NONE})
+        Sheet.DRAW_SETTINGS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Properties(controller,::redraw)}
+        Sheet.TIMELINE->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Timeline(controller,::redraw,{fpsDialog=true})}
         Sheet.NONE->Unit
     }
 }
@@ -455,9 +391,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var renameOpen by remember{mutableStateOf(false)}
     var renameText by remember{mutableStateOf("")}
     val groups=controller.vertexGroups()
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-        verticalAlignment=Alignment.CenterVertically
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+         itemVerticalAlignment=Alignment.CenterVertically
     ){
         Text("Brush",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         listOf(
@@ -485,9 +421,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         TextButton(onClick={controller.removeVertexGroup(controller.weightPaintGroup);redraw()},enabled=groups.size>1){Text("Remove",fontSize=11.sp)}
     }
     // Vertex-group operators on the selected points, active group (Blender's Vertex Groups panel).
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-        verticalAlignment=Alignment.CenterVertically
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+         itemVerticalAlignment=Alignment.CenterVertically
     ){
         Text("Selection",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         TextButton(onClick={controller.assignSelectionToGroup(controller.weightPaintValue);redraw()},enabled=groups.isNotEmpty()){Text("Assign",fontSize=11.sp)}
@@ -524,9 +460,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun AnnotationBar(controller:EditorController,redraw:()->Unit){
     val style=controller.annotationStyle()
     var thickness by remember{mutableFloatStateOf(style[4])}
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-        verticalAlignment=Alignment.CenterVertically
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+         itemVerticalAlignment=Alignment.CenterVertically
     ){
         Text("Annotate",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         FilterChip(selected=!controller.annotationEraser,onClick={controller.setAnnotationEraser(false);redraw()},label={Text("Draw",fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
@@ -547,9 +483,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 /** Fill tool options: Blender's fill Leak Size, Dilate (negative contracts) and boundary mode. */
 @NonSkippableComposable
 @Composable private fun FillBar(controller:EditorController,redraw:()->Unit){
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-        verticalAlignment=Alignment.CenterVertically
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+         itemVerticalAlignment=Alignment.CenterVertically
     ){
         Text("Fill",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         listOf(
@@ -580,11 +516,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun ModeBrushBar(controller:EditorController,redraw:()->Unit){
     Surface(tonalElevation=2.dp){
         Column(Modifier.fillMaxWidth()){
-            Row(
+            FlowRow(
                 Modifier.fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                    
                     .padding(horizontal=8.dp,vertical=5.dp),
-                verticalAlignment=Alignment.CenterVertically
+                 itemVerticalAlignment=Alignment.CenterVertically
             ){
                 Text("Mode",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
                 GreaseMode.entries.forEach{mode->
@@ -615,9 +551,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 }
             }
             if (controller.mode == GreaseMode.VERTEX_PAINT) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-                    verticalAlignment=Alignment.CenterVertically
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+                     itemVerticalAlignment=Alignment.CenterVertically
                 ) {
                     Text("Paint",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
                     listOf(
@@ -658,9 +594,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             if (controller.mode == GreaseMode.DRAW || controller.mode == GreaseMode.VERTEX_PAINT) VertexPaletteBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ANNOTATE) AnnotationBar(controller,redraw)
             if (controller.mode == GreaseMode.EDIT) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-                    verticalAlignment=Alignment.CenterVertically
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+                     itemVerticalAlignment=Alignment.CenterVertically
                 ) {
                     Text("Select",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
                     listOf(
@@ -680,9 +616,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             if (controller.mode == GreaseMode.EDIT || controller.tools.activeTool in com.smitnk.projectgrease.editor.SELECTION_TOOLS) SelectOperatorsBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.FILL) FillBar(controller,redraw)
             if (controller.tools.activeTool == GreaseTool.ERASE) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp,vertical=2.dp),
-                    verticalAlignment=Alignment.CenterVertically
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
+                     itemVerticalAlignment=Alignment.CenterVertically
                 ) {
                     Text("Eraser",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
                     EraserMode.entries.forEach { mode ->
@@ -726,32 +662,6 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     }
 }
 
-@NonSkippableComposable
-@Composable private fun ToolRail(controller:EditorController,onState:()->Unit,onTools:()->Unit){
-    val groups=listOf(
-        "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.CURVE,GreaseTool.PAN),
-        "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.BOX_SELECT,GreaseTool.CIRCLE_SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
-        "NOTES" to listOf(GreaseTool.ANNOTATE)
-    )
-    Column(Modifier.width(86.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){
-        groups.forEach{(title,group)->
-            Text(title,fontSize=9.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=6.dp,bottom=2.dp))
-            group.forEach{tool->
-                val entry=tools.first{it.tool==tool}
-                val capability=FeatureRegistry.capability(entry.feature)
-                val enabled=capability.state!=FeatureState.NOT_IMPLEMENTED
-                val selected=controller.tools.activeTool==tool
-                Column(Modifier.fillMaxWidth().clickable(enabled){controller.selectTool(tool);onState()}.padding(horizontal=4.dp,vertical=2.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                    Surface(shape=RoundedCornerShape(18.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent){
-                        Icon(entry.icon,entry.label,Modifier.padding(8.dp),tint=if(enabled)MaterialTheme.colorScheme.onSurface else Color.Gray)
-                    }
-                    Text(entry.label,fontSize=9.sp,maxLines=1)
-                }
-            }
-        }
-        IconButton(onClick=onTools){Icon(Icons.Default.Apps,"Tools")}
-    }
-}
 @NonSkippableComposable
 @Composable private fun Properties(controller:EditorController,redraw:()->Unit){
     var opacity by remember{mutableFloatStateOf(controller.materials.opacity)}
@@ -986,7 +896,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     masks.forEachIndexed{index,mask->
         Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=3.dp)){
             Text(mask.name,fontWeight=FontWeight.Bold)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+            FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment=Alignment.CenterVertically){
                 Text("Invert",Modifier.padding(end=6.dp));Switch(checked=mask.inverted,onCheckedChange={changed(controller.setLayerMaskFlags(index,mask.hidden,it,layer))})
                 Spacer(Modifier.width(10.dp))
                 Text("Hide",Modifier.padding(end=6.dp));Switch(checked=mask.hidden,onCheckedChange={changed(controller.setLayerMaskFlags(index,it,mask.inverted,layer))})
@@ -1026,14 +936,14 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text(com.smitnk.projectgrease.editor.FxType.name(effect.type),Modifier.weight(1f).clickable{expanded=if(open)expanded-index else expanded+index},fontWeight=FontWeight.Bold)
                 Switch(checked=effect.enabled,onCheckedChange={changed(controller.setEffectEnabled(index,it))})
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+            FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment=Alignment.CenterVertically){
                 TextButton(onClick={expanded=if(open)expanded-index else expanded+index}){Text(if(open)"Hide" else "Edit")}
                 TextButton(onClick={changed(controller.moveEffect(index,-1))},enabled=index>0){Text("Up")}
                 TextButton(onClick={changed(controller.moveEffect(index,1))},enabled=index<effects.size-1){Text("Down")}
                 TextButton(onClick={expanded=emptySet();changed(controller.removeEffect(index))}){Text("Remove")}
             }
             // Target: whole layer (Blender), strokes only or fills only.
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+            FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment=Alignment.CenterVertically){
                 Text("Applies to",fontSize=11.sp,modifier=Modifier.padding(end=6.dp))
                 listOf(com.smitnk.projectgrease.editor.FxTarget.LAYER,com.smitnk.projectgrease.editor.FxTarget.STROKES,com.smitnk.projectgrease.editor.FxTarget.FILLS).forEach{t->
                     FilterChip(selected=effect.target==t,onClick={changed(controller.setEffectTarget(index,t))},
@@ -1106,7 +1016,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Button(onClick={renameOpen=true}){Text("Rename")}
         }
         // Layer operators (gpencil_layer_merge / isolate / lock all): native state is re-read afterwards.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+        FlowRow(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
             OutlinedButton(onClick={if(controller.mergeLayerDown()){opTick++;redraw()}},enabled=controller.selectedLayer>0,
                 modifier=Modifier.testTag("layerMergeDown")){Text("Merge down")}
             OutlinedButton(onClick={if(controller.isolateLayer()){opTick++;redraw()}},modifier=Modifier.testTag("layerIsolate")){Text("Isolate")}
@@ -1129,7 +1039,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         TransformOptionsSection(controller,redraw)
         DashSegmentsSection(controller,redraw)
         Text("Move selection to layer",Modifier.padding(horizontal=12.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
+        FlowRow(Modifier.fillMaxWidth().padding(horizontal=12.dp)){
             (0 until controller.layerCount()).filter{it!=controller.selectedLayer}.forEach{index->
                 TextButton(onClick={if(controller.moveSelectionToLayer(index))redraw()}){Text("Move selection here: "+controller.layerName(index))}
             }
@@ -1175,7 +1085,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){
             Text("Brush & Materials",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
             Text("Stroke color",Modifier.padding(horizontal=20.dp))
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+            FlowRow(Modifier.padding(20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
                 palette.forEach{color->
                     Box(
                         Modifier.size(38.dp).background(color,CircleShape)
@@ -1273,7 +1183,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text(com.smitnk.projectgrease.editor.ModifierType.name(modifier.type),Modifier.weight(1f).clickable{expanded=if(open)expanded-index else expanded+index},fontWeight=FontWeight.Bold)
                 Switch(checked=modifier.enabled,onCheckedChange={changed(controller.setModifierEnabled(index,it))})
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically){
+            FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment=Alignment.CenterVertically){
                 TextButton(onClick={expanded=if(open)expanded-index else expanded+index}){Text(if(open)"Hide" else "Edit")}
                 TextButton(onClick={changed(controller.moveModifier(index,-1))},enabled=index>0){Text("Up")}
                 TextButton(onClick={changed(controller.moveModifier(index,1))},enabled=index<stack.size-1){Text("Down")}
@@ -1529,7 +1439,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Button(onClick={controller.animation.togglePlayback()},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text(if(controller.animation.playing)"Pause" else "Play")}
             Text("In-between easing",Modifier.padding(horizontal=16.dp,vertical=4.dp),fontWeight=FontWeight.Bold)
             var easingTick by remember{mutableStateOf(0)}
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal=12.dp)){
                 listOf("Linear","Quad","Cubic","Quart","Quint","Sine","Expo","Circ","Back","Bounce","Elastic").forEachIndexed{type,label->
                     FilterChip(
                         selected=controller.animation.easingType==type,
@@ -1539,7 +1449,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     )
                 }
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)){
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal=12.dp)){
                 listOf("In","Out","In-Out").forEachIndexed{mode,label->
                     FilterChip(
                         selected=controller.animation.easingMode==mode,
@@ -1575,7 +1485,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
 @NonSkippableComposable
 @Composable private fun StudioLayout(controller:EditorController,refresh:Int,overlayTick:Int,redraw:()->Unit,
-                                     onSheet:(Sheet)->Unit,onClassic:()->Unit,viewport:@Composable BoxScope.()->Unit){
+                                     onSheet:(Sheet)->Unit,viewport:@Composable BoxScope.()->Unit){
     var popup by remember{mutableStateOf(StudioPopup.NONE)}
     var layersOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
@@ -1594,7 +1504,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
         // top: project menu, mode, more
         Row(Modifier.align(Alignment.TopCenter).padding(6.dp),verticalAlignment=Alignment.CenterVertically){
-            FloatingIcon(Icons.Default.Menu,"Project"){onSheet(Sheet.PROJECT)}
+            FloatingIcon(Icons.Default.Menu,"Menu"){onSheet(Sheet.MENU)}
             Spacer(Modifier.width(6.dp))
             Surface(shape=RoundedCornerShape(16.dp),tonalElevation=4.dp,shadowElevation=2.dp,
                 modifier=Modifier.clickable{popup=StudioPopup.MODE}.testTag("studioMode")){
@@ -1603,8 +1513,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
             Spacer(Modifier.width(6.dp))
             FloatingIcon(Icons.Default.FitScreen,"Fit canvas"){controller.fitCanvas();redraw()}
-            FloatingIcon(Icons.Default.MoreHoriz,"More tools"){onSheet(Sheet.TOOLS)}
-            FloatingIcon(Icons.Default.ViewSidebar,"Classic layout"){onClassic()}
+            FloatingIcon(Icons.Default.Apps,"All tools"){onSheet(Sheet.TOOLS)}
         }
 
         // floating toolbar
@@ -1636,7 +1545,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 FloatingIcon(if(stripOpen)Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                     if(stripOpen)"Hide timeline" else "Show timeline"){stripOpen=!stripOpen}
             }
-            if(stripOpen) StudioFrameStrip(controller,redraw)
+            if(stripOpen) StudioFrameStrip(controller,redraw,{onSheet(Sheet.TIMELINE)})
         }
 
         when(popup){
@@ -1771,7 +1680,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
 /** FlipaClip-style frame strip: play, previous / next, frame cells (keys marked), add frame. */
 @NonSkippableComposable
-@Composable private fun StudioFrameStrip(controller:EditorController,redraw:()->Unit){
+@Composable private fun StudioFrameStrip(controller:EditorController,redraw:()->Unit,onTimeline:()->Unit){
     val anim=controller.animation
     Surface(Modifier.fillMaxWidth().testTag("studioFrames"),tonalElevation=6.dp){
         Row(verticalAlignment=Alignment.CenterVertically){
@@ -1796,6 +1705,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 }
             }
             IconButton(onClick={val f=anim.currentFrame+1;controller.createFrame(f);controller.selectFrame(f);redraw()},Modifier.testTag("stripAdd")){Icon(Icons.Default.Add,"New frame")}
+            IconButton(onClick=onTimeline,Modifier.testTag("stripMore")){Icon(Icons.Default.MoreHoriz,"Timeline tools")}
         }
     }
 }
@@ -1846,6 +1756,33 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     Slider(controller.sculptBrush.strength,{controller.sculptBrush.setStrength(it);tick++},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
                 }
             }
+        }
+    }
+}
+
+
+/** The one menu: everything that is not on the toolbar, in the option popups or a layer's panel. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun StudioMenu(controller:EditorController,onSheet:(Sheet)->Unit,onSave:()->Unit,onSettings:()->Unit,onDismiss:()->Unit){
+    ModalBottomSheet(onDismissRequest=onDismiss,modifier=Modifier.testTag("studioMenu")){
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){
+            Text(controller.document.projectName,Modifier.padding(horizontal=20.dp,vertical=8.dp),style=MaterialTheme.typography.titleLarge)
+            @Composable fun item(icon:ImageVector,label:String,detail:String,tag:String,action:()->Unit)=
+                ListItem(headlineContent={Text(label)},supportingContent={Text(detail)},leadingContent={Icon(icon,null)},
+                    modifier=Modifier.clickable(onClick=action).testTag("menu_$tag"))
+            item(Icons.Default.Save,"Save","Save the project now","save",onSave)
+            item(Icons.Default.Folder,"Project","Export, import, project settings, close","project"){onSheet(Sheet.PROJECT)}
+            item(Icons.Default.Apps,"All tools","Primitives, select, transform, annotate, pan","tools"){onSheet(Sheet.TOOLS)}
+            item(Icons.Default.Palette,"Materials","Material slots, fill, textures","materials"){onSheet(Sheet.MATERIALS)}
+            item(Icons.Default.Brush,"Drawing settings","Thickness, opacity, stabilizer, spacing, grid, snapping","draw"){onSheet(Sheet.DRAW_SETTINGS)}
+            item(Icons.Default.Tune,"Advanced drawing","Stabilization, brush curves, guides, sculpt brushes","advanced"){onSheet(Sheet.ADVANCED)}
+            item(Icons.Default.Layers,"Layers (all settings)","Merge, isolate, lock all, transform options","layers"){onSheet(Sheet.LAYERS)}
+            item(Icons.Default.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
+            item(Icons.Default.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
+            item(Icons.Default.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
+            item(Icons.Default.Image,"Rotoscope reference","Image, image sequence or video under the drawing","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
+            item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
+            item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
         }
     }
 }

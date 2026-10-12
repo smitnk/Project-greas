@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.smitnk.projectgrease.ui
 
@@ -112,7 +113,7 @@ fun ShapeEditOverlay(controller: EditorController, tick: Int, redraw: () -> Unit
             val m = OverlayMap(size.width, size.height, controller)
             handles.forEach { h -> drawCircle(Color.Black, 12f, m.screen(h)); drawCircle(Color.White, 9f, m.screen(h)) }
         }
-        Row(Modifier.align(Alignment.BottomCenter).padding(8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             // Confirm / Cancel first so they stay on screen on narrow devices.
             Button(onClick = { controller.confirmShape(); redraw() }, modifier = Modifier.testTag("shapeConfirm")) { Text("Confirm") }
             OutlinedButton(onClick = { controller.cancelShape(); redraw() }) { Text("Cancel") }
@@ -161,8 +162,8 @@ fun BoxSelectOverlay(controller: EditorController, tick: Int) {
 /** Edit-mode selection operators that had no button (Blender's Select menu) and the point-pick switch. */
 @Composable
 fun SelectOperatorsBar(controller: EditorController, redraw: () -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+         itemVerticalAlignment = Alignment.CenterVertically) {
         Text("Select", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
         listOf(
             "All" to { controller.selectAll() }, "None" to { controller.deselectAll() }, "Invert" to { controller.invertSelection() },
@@ -241,7 +242,7 @@ fun LayerLookSection(controller: EditorController, layerKey: Any, redraw: () -> 
     var line by remember(layerKey) { mutableFloatStateOf(r.lineChange.toFloat()) }
     fun changed(ok: Boolean) { if (ok) { tick++; redraw() } }
     Text("Blend", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         ProjectGreaseSelect.BLEND_LABELS.forEachIndexed { mode, label ->
             FilterChip(selected = r.blendMode == mode, onClick = { changed(controller.setLayerBlend(mode)) }, label = { Text(label, fontSize = 10.sp) },
                 modifier = Modifier.padding(end = 4.dp).testTag("blend_$mode"))
@@ -249,7 +250,7 @@ fun LayerLookSection(controller: EditorController, layerKey: Any, redraw: () -> 
     }
     Text("Tint", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
     val tintArgb = (0xFF shl 24) or ((r.tint[0] * 255).toInt() shl 16) or ((r.tint[1] * 255).toInt() shl 8) or (r.tint[2] * 255).toInt()
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
         listOf(Color.Black, Color.White, Color(0xFFE53935), Color(0xFFFF9800), Color(0xFFFFEB3B), Color(0xFF4CAF50), Color(0xFF2196F3), Color(0xFF9C27B0)).forEach { c ->
             Box(Modifier.size(28.dp).background(c, CircleShape).border(2.dp, if (c.toArgb() == tintArgb) Accent21 else Color.Gray, CircleShape)
                 .clickable { changed(controller.setLayerTint(c.toArgb(), factor)) })
@@ -296,14 +297,14 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
                 Text(controller.materialName(slot), Modifier.weight(1f).padding(start = 8.dp).clickable { controller.selectMaterial(slot); changed(true) }, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
                 TextButton(onClick = onRename) { Text("Rename", fontSize = 11.sp) }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier,  itemVerticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { changed(controller.moveMaterial(slot, -1)) }, enabled = slot > 0) { Text("Up", fontSize = 11.sp) }
                 TextButton(onClick = { changed(controller.moveMaterial(slot, 1)) }, enabled = slot < count - 1) { Text("Down", fontSize = 11.sp) }
                 FilterChip(selected = rec.locked, onClick = { changed(controller.setMaterialLocked(slot, !rec.locked)) }, label = { Text("Lock", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
                 FilterChip(selected = !rec.visible, onClick = { changed(controller.setMaterialHidden(slot, rec.visible)) }, label = { Text("Hide", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
                 TextButton(onClick = { changed(controller.soloMaterial(slot)) }) { Text("Solo", fontSize = 11.sp) }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier,  itemVerticalAlignment = Alignment.CenterVertically) {
                 Text("Line type", fontSize = 10.sp, modifier = Modifier.padding(end = 4.dp))
                 ProjectGreaseSelect.LINE_TYPE_LABELS.forEachIndexed { mode, label ->
                     FilterChip(selected = rec.mode == mode, onClick = { changed(controller.setMaterialLineType(mode, rec.alignment, rec.rotation, slot)) },
@@ -323,7 +324,7 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
                 Slider(rot, { rot = it }, onValueChangeFinished = { changed(controller.setMaterialLineType(rec.mode, rec.alignment, rot, slot)) },
                     valueRange = -3.1415927f..3.1415927f)
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier,  itemVerticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = rec.strokeHoldout, onClick = { changed(controller.setMaterialOptions(slot, !rec.strokeHoldout, rec.fillHoldout, rec.selfOverlap)) },
                     label = { Text("Stroke holdout", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("strokeHoldout_$slot"))
                 FilterChip(selected = rec.fillHoldout, onClick = { changed(controller.setMaterialOptions(slot, rec.strokeHoldout, !rec.fillHoldout, rec.selfOverlap)) },
@@ -346,7 +347,7 @@ private fun MaterialSlotRow(controller: EditorController, slot: Int, count: Int,
 private fun MaterialGradientRow(controller: EditorController, slot: Int, rec: com.smitnk.projectgrease.editor.MaterialRecord, tick: Int,
                                 changed: (Boolean) -> Unit) {
     val g = rec.gradient
-    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(Modifier,  itemVerticalAlignment = Alignment.CenterVertically) {
         Text("Fill gradient", fontSize = 10.sp, modifier = Modifier.padding(end = 4.dp))
         FilterChip(selected = g == null, onClick = { changed(controller.setMaterialGradient(slot, null)) },
             label = { Text("Off", fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
@@ -388,7 +389,7 @@ fun OnionFilterSection(controller: EditorController, redraw: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     @Suppress("UNUSED_VARIABLE") val t = tick
     Text("Filter by type", Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         (listOf(-1 to "All") + ProjectGreaseSelect.KEY_TYPE_LABELS.mapIndexed { i, l -> i to l }).forEach { (type, label) ->
             FilterChip(selected = controller.onion.keyTypeFilter == type, onClick = { controller.setOnionFilter(keyType = type); tick++; redraw() },
                 label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 4.dp))
@@ -407,7 +408,7 @@ fun DrawingGuideSection(controller: EditorController, redraw: () -> Unit) {
     @Suppress("UNUSED_VARIABLE") val t = tick
     val v = controller.view
     Text("Drawing guide (Draw tool, strokes snap to it)", Modifier.padding(horizontal = 20.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         listOf(-1 to "Off", 0 to "Circular", 1 to "Radial", 2 to "Parallel", 3 to "Grid", 4 to "Isometric").forEach { (type, label) ->
             FilterChip(selected = v.guideType == type, onClick = { v.setDrawingGuide(type); controller.render(); tick++; redraw() },
                 label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 4.dp).testTag("guide_$type"))
@@ -559,7 +560,7 @@ fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     key(tick) {
         Text("Auto-masking", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+        FlowRow(Modifier.padding(horizontal = 20.dp)) {
             listOf(
                 com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_STROKE to "Stroke",
                 com.smitnk.projectgrease.editor.ToolSession.AUTOMASK_LAYER_STROKE to "Layer (stroke)",
@@ -572,7 +573,7 @@ fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
             }
         }
         Text("Selection mask", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+        FlowRow(Modifier.padding(horizontal = 20.dp)) {
             listOf(0 to "Off", com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
                 com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_STROKE to "Strokes",
                 com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_SEGMENT to "Segments").forEach { (m, label) ->
@@ -581,7 +582,7 @@ fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
             }
         }
         Text("Falloff curve", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+        FlowRow(Modifier.padding(horizontal = 20.dp)) {
             com.smitnk.projectgrease.editor.ToolSession.CURVE_PRESETS.forEach { (preset, label) ->
                 FilterChip(selected = sc.curvePreset == preset, onClick = { sc.setCurvePreset(preset); tick++; redraw() },
                     label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp))
@@ -595,7 +596,7 @@ fun SculptMaskingSection(controller: EditorController, redraw: () -> Unit) {
 fun InterpolationOptionsSection(anim: com.smitnk.projectgrease.editor.AnimationController) {
     var tick by remember { mutableIntStateOf(0) }
     key(tick) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        FlowRow(Modifier.padding(horizontal = 16.dp)) {
             ProjectGreaseSelect.INTERP_FLIP_LABELS.forEachIndexed { mode, label ->
                 FilterChip(selected = anim.interpolateFlip == mode, onClick = { anim.interpolateFlip = mode; tick++ },
                     label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("interpFlip_$mode"))
@@ -624,7 +625,7 @@ fun InterpolationOptionsSection(anim: com.smitnk.projectgrease.editor.AnimationC
 fun PaintOptionsBar(controller: EditorController, redraw: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     key(tick) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(Modifier.fillMaxWidth().padding(horizontal = 8.dp),  itemVerticalAlignment = Alignment.CenterVertically) {
             if (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.VERTEX_PAINT) {
                 Text("Mask", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
                 listOf(0 to "Off", com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
@@ -646,7 +647,7 @@ fun PaintOptionsBar(controller: EditorController, redraw: () -> Unit) {
 /** Draw-mode Tint tool toggle and the vertex colour palette (Paint.palette swatches). */
 @Composable
 fun VertexPaletteBar(controller: EditorController, redraw: () -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 8.dp),  itemVerticalAlignment = Alignment.CenterVertically) {
         if (controller.mode == com.smitnk.projectgrease.editor.GreaseMode.DRAW) {
             FilterChip(selected = controller.drawTint, onClick = { controller.drawTint = !controller.drawTint; redraw() },
                 label = { Text("Tint", fontSize = 10.sp) }, modifier = Modifier.padding(end = 6.dp).testTag("drawTint"))

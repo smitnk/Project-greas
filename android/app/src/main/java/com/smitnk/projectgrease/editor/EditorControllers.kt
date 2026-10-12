@@ -2489,8 +2489,6 @@ class EditorController {
     fun setVertexPaintTarget(target:Int) { if (target in ProjectGreaseSelect.PAINT_STROKE..ProjectGreaseSelect.PAINT_BOTH) vertexPaintTarget = target }
     /** Draw mode's Tint tool: paints vertex colour with the active colour instead of drawing. */
     var drawTint by androidx.compose.runtime.mutableStateOf(false)
-    /** Editor layout: false = Studio (full-screen canvas, floating controls), true = the classic panels. */
-    var classicLayout by androidx.compose.runtime.mutableStateOf(false)
     /** gpencil_selectmode_vertex (GP_VERTEX_MASK_SELECTMODE_*) and the paint brushes' falloff curve preset. */
     var vertexSelectMask = 0
     var paintCurvePreset = 0

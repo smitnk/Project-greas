@@ -478,6 +478,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetBrushVertexColor(
   project_grease_gp_set_brush_vertex_color(from_handle(handle), enabled ? 1 : 0, rgb, factor);
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeActiveLayer(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_active_layer(from_handle(handle));
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeErase(
     JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius, jint mode,

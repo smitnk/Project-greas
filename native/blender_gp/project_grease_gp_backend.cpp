@@ -1008,6 +1008,16 @@ bool Backend::select_layer(int index) {
   return false;
 }
 
+int Backend::active_layer_index() const
+{
+  if (!impl_->gpd || !impl_->layer) return -1;
+  int i = 0;
+  for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first); layer; layer = layer->next, ++i) {
+    if (layer == impl_->layer) return i;
+  }
+  return -1;
+}
+
 int Backend::layer_count() const {
   if (!impl_->gpd) {
     return 0;

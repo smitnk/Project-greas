@@ -51,6 +51,8 @@ class Backend {
   bool create_layer(const char* name);
   bool select_layer(int index);
   int layer_count() const;
+  // Index of the layer edits go to (impl layer), -1 without one.
+  int active_layer_index() const;
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);
   bool move_layer(int from_index, int to_index);

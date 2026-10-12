@@ -25,6 +25,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun historyCanRedo() = handle != 0L && GPNative.nativeHistoryCanRedo(handle)
     fun detach() { handle = 0L }
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
+    fun activeLayer() = if (handle != 0L) GPNative.nativeActiveLayer(handle) else -1
     fun setLayerVisibility(index: Int, visible: Boolean) = handle != 0L && GPNative.nativeSetLayerVisibility(handle, index, visible)
     fun setLayerLocked(index: Int, locked: Boolean) = handle != 0L && GPNative.nativeSetLayerLocked(handle, index, locked)
     fun moveLayer(from: Int, to: Int) = handle != 0L && GPNative.nativeMoveLayer(handle, from, to)
@@ -748,6 +749,7 @@ class EditorController {
             // starts from an empty "Layer 1" document: restore the document as it was at detach.
             setupTrace("attach pending=${pending != null} snapshot=${snapshot != null} layers=${native.layerCount()}")
             if (pending != null) pending() else if (snapshot != null) loadDocumentJson(snapshot)
+            native.activeLayer().takeIf { it >= 0 }?.let { selectedLayer = it }
         }
     }
     /** The document saved when the surface went away (app in background, surface recreated). */
@@ -1587,7 +1589,9 @@ class EditorController {
     }
     fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false, options:VectorExportOptions = VectorExportOptions()):List<VectorPage> {
         if (native.handle == 0L || frames.isEmpty()) return emptyList()
-        val originalLayer = selectedLayer
+        // Restore the layer edits go to (the native active layer), not a possibly stale index.
+        val originalLayer = native.activeLayer().takeIf { it >= 0 } ?: selectedLayer
+        selectedLayer = originalLayer
         val originalFrame = animation.currentFrame
         var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames, options)
         if (includeAnnotations) {
@@ -1608,7 +1612,9 @@ class EditorController {
 
     fun saveDocumentJson():String? {
         if (native.handle == 0L) return null
-        val originalLayer = selectedLayer
+        // Restore the layer edits go to (the native active layer), not a possibly stale index.
+        val originalLayer = native.activeLayer().takeIf { it >= 0 } ?: selectedLayer
+        selectedLayer = originalLayer
         val originalFrame = animation.currentFrame
         val json = ProjectDocumentCodec.encode(
             NativeDocumentAdapter(native),
@@ -1658,6 +1664,7 @@ class EditorController {
             notes.style?.let { GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_STYLE, it) }
             GPNative.nativeAnnotationLoad(native.handle, notes.dump)
         }
+        native.activeLayer().takeIf { it >= 0 }?.let { selectedLayer = it }
         if (parsed.layers == null) return true
         syncActiveMaterial(parsed.materials.firstOrNull())
         val targetFrame = parsed.frame.coerceAtLeast(1)

@@ -164,6 +164,7 @@ object GPNative {
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean
     external fun nativeSetBrushVertexColor(handle: Long, enabled: Boolean, r: Float, g: Float, b: Float, factor: Float)
+    external fun nativeActiveLayer(handle: Long): Int
     external fun nativeErase(handle: Long, x: Float, y: Float, radius: Float, mode: Int, drawStrength: Float,
                              pressure: Float, eraStrength: Float, eraThickness: Float): Boolean
     external fun nativeClearSelection(handle: Long)

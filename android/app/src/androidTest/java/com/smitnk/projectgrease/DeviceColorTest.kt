@@ -89,6 +89,9 @@ class DeviceColorTest : SweepBase() {
         val countAfterDraw = nativeCount()
         val drawn = strokes()
         val countAfterSave = nativeCount()
+        // Reported: autosave (saveDocumentJson every 5 s) switched edits to another layer, so the eraser
+        // and later strokes went to a layer the user was not on.
+        assertEquals("saving keeps the layer and frame edits go to", countAfterDraw, countAfterSave)
         val where = onUi { "layers ${controller.layerCount()} selected ${controller.selectedLayer} frame ${controller.animation.currentFrame}" }
         assertEquals("one stroke drawn with the 150 pen", 1, drawn.size)
         val xs = points(drawn[0]).map { it[0].toInt() }

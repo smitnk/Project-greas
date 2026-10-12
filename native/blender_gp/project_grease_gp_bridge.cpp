@@ -440,6 +440,11 @@ void project_grease_gp_set_brush_vertex_color(ProjectGreaseGPHandle *handle, int
   if (ensure_ready(handle)) handle->backend.set_brush_vertex_color(enabled != 0, rgb_linear, factor);
 }
 
+int project_grease_gp_active_layer(const ProjectGreaseGPHandle *handle)
+{
+  return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) ? handle->backend.active_layer_index() : -1;
+}
+
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness)
 {

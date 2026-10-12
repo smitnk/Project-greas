@@ -322,7 +322,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
 }
 
-@Composable private fun Editor(controller:EditorController,state:GreaseUiState,onState:(GreaseUiState)->Unit,onExit:()->Unit,onSettings:()->Unit,viewport:@Composable BoxScope.()->Unit){
+@Composable private fun Editor(controller:EditorController,state:GreaseUiState,onState:(GreaseUiState)->Unit,onExit:()->Unit,onSettings:()->Unit,viewportContent:@Composable BoxScope.()->Unit){
+    // One canvas surface for every layout: moving it keeps the EGL surface, document and undo history
+    // (a remount would detach the renderer and reload the document).
+    val viewport=remember{movableContentWithReceiverOf<BoxScope>{viewportContent()}}
     var sheet by remember{mutableStateOf(Sheet.NONE)}
     var refresh by remember{mutableIntStateOf(0)}
     var fpsDialog by remember{mutableStateOf(false)}

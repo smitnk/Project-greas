@@ -57,7 +57,9 @@ class DeviceStudioTest : SweepBase() {
             rule.onNodeWithContentDescription("Menu").performClick()
             rule.onNodeWithTag("menu_$tag").performScrollTo().performClick()
             rule.waitForIdle()
+            android.os.SystemClock.sleep(700) // the sheet's window opens with an animation
             onUi { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            android.os.SystemClock.sleep(700) // ... and closes with one; touches before that miss
             rule.waitForIdle()
         }
         assertTrue("no classic panel layout", rule.onAllNodesWithTag("editorTopBar").fetchSemanticsNodes().isEmpty())

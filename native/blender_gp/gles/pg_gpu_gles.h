@@ -12,6 +12,7 @@ struct GPUUniformBuf;
 struct GPUVertBuf;
 struct GPUBatch;
 struct bGPdata;
+struct ListBase;
 
 /* Last error of the GLES layer (shader compile / link, incomplete frame-buffer), or "". */
 const char *pg_gpu_gles_last_error(void);
@@ -47,6 +48,11 @@ typedef struct PGGpEngineView {
   float background[4];        /* linear, premultiplied clear colour of the viewport (the paper) */
   int data_changed;           /* the strokes changed since the last draw: rebuild the batch cache */
   float rotation;             /* view rotation (radians, clockwise on screen) about the viewport centre */
+  /* The drawing's shader effects (ShaderFxData list, Blender's object effect stack) and Rendered
+   * viewport shading: Blender shows effects only in the Rendered view (simplify_fx otherwise), and
+   * there onion skin only with "Always" (GP_ONION_GHOST_ALWAYS). */
+  const struct ListBase *shader_fx;
+  int rendered;
 } PGGpEngineView;
 
 /* Runs Blender 3.6.23's GP draw engine (draw/engines/gpencil, unmodified) on \a gpd at frame

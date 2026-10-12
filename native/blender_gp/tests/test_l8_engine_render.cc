@@ -22,6 +22,7 @@
 #include "BLI_listbase.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
+#include "DNA_shader_fx_types.h"
 #include "MEM_guardedalloc.h"
 
 #include "gles/pg_gpu_gles.h"
@@ -267,6 +268,33 @@ int main()
     MEM_freeN(f2);
     view.data_changed = 1;
     CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+  }
+
+  /* Shader effects by the engine (gpencil_shader_fx.c) in the Rendered viewport: a Colorize
+   * Grayscale effect on the drawing turns the red fill grey; without Rendered they are skipped
+   * (simplify_fx), as in Blender's Material Preview. */
+  {
+    ColorizeShaderFxData *fx = static_cast<ColorizeShaderFxData *>(MEM_callocN(sizeof(ColorizeShaderFxData), "fx"));
+    fx->shaderfx.type = eShaderFxType_Colorize;
+    fx->shaderfx.mode = eShaderFxMode_Realtime | eShaderFxMode_Render | eShaderFxMode_Editmode;
+    fx->mode = eShaderFxColorizeMode_GrayScale;
+    fx->factor = 1.0f;
+    ListBase list = {nullptr, nullptr};
+    BLI_addtail(&list, fx);
+    view.shader_fx = &list;
+    view.rendered = 1;
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+    read_result();
+    dump("fill under grayscale", 70, 85);
+    const float *g = px(70, 85);
+    CHECK(std::fabs(g[0] - g[1]) < 0.02f && std::fabs(g[1] - g[2]) < 0.02f && g[0] < 0.9f);
+    view.rendered = 0;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+    read_result();
+    CHECK(near4(px(70, 85), 1, 0, 0, 1)); /* Material Preview: no effects */
+    view.shader_fx = nullptr;
+    MEM_freeN(fx);
   }
 
   /* 7. Present: Standard view transform (linear 0.5 -> sRGB 0.735). */

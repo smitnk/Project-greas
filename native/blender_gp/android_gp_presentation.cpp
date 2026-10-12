@@ -26,6 +26,10 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_color.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_modifier_stack.h"
+#include "DNA_shader_fx_types.h"
+#include "DNA_object_types.h"
+#include "BLI_math_matrix.h"
 #include "project_grease_stroke_outline.h"
 #include "project_grease_blender_edit5.h"
 #include "project_grease_blender_edit6.h"
@@ -980,12 +984,69 @@ void draw_reference(int w,int h){
 bool engine_wanted(const bGPdata*gpd){
   if(!g_engine_enabled||g_engine_failed||g_export_mode||g_weight_group>=0||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
   if(!engine_context_ok())return false;
-  // Onion skin and view rotation are drawn by the engine; shader effects are not yet.
-  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
-    const PGFxEntry*fx=nullptr;
-    if(g_fx_provider&&g_fx_provider(g_fx_provider_user,l,&fx)>0)return false;
-  }
+  // Onion skin, view rotation and the shader effects are drawn by the engine.
+  (void)gpd;
   return true;
+}
+
+/* The drawing's effect stack as Blender ShaderFxData (one stack for the object, as in Blender): the
+ * effects of every layer, bottom layer first. Pixel parameters are canvas pixels, Blender's are
+ * world units at GPENCIL_PIXEL_FACTOR: x PG_MOD_PIXELS_PER_UNIT. Colours are scene linear. */
+struct EngineFx{ListBase list{nullptr,nullptr};std::vector<void*> blocks;
+  ~EngineFx(){for(void*b:blocks)MEM_freeN(b);}};
+static void build_engine_fx(const bGPdata*gpd,EngineFx&out){
+  if(!g_fx_provider)return;
+  const float U=PG_MOD_PIXELS_PER_UNIT;
+  auto lin=[](float c){return srgb_to_linear(c);};
+  auto pivot=[&](float fx_,float fy_)->Object*{
+    Object*o=static_cast<Object*>(MEM_callocN(sizeof(Object),"pg fx pivot"));out.blocks.push_back(o);
+    unit_m4(o->object_to_world);o->object_to_world[3][0]=fx_*float(g_canvas_width);o->object_to_world[3][1]=fy_*float(g_canvas_height);
+    return o;};
+  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
+    const PGFxEntry*e=nullptr;const int n=g_fx_provider(g_fx_provider_user,l,&e);
+    for(int i=0;i<n;i++){
+      if(!e[i].enabled)continue;
+      const float*p=e[i].params;ShaderFxData*fx=nullptr;
+      auto alloc=[&](size_t size)->void*{void*b=MEM_callocN(size,"pg fx");out.blocks.push_back(b);return b;};
+      switch(e[i].type){
+        case PG_FX_BLUR:{auto*f=static_cast<BlurShaderFxData*>(alloc(sizeof(BlurShaderFxData)));
+          f->radius[0]=p[PG_FXP_BLUR_RADIUS_X]*U;f->radius[1]=p[PG_FXP_BLUR_RADIUS_Y]*U;f->samples=int(p[PG_FXP_BLUR_SAMPLES]);f->rotation=p[PG_FXP_BLUR_ROTATION];fx=&f->shaderfx;break;}
+        case PG_FX_COLORIZE:{auto*f=static_cast<ColorizeShaderFxData*>(alloc(sizeof(ColorizeShaderFxData)));
+          f->mode=int(p[PG_FXP_COLORIZE_MODE]);for(int c=0;c<3;c++){f->low_color[c]=lin(p[PG_FXP_COLORIZE_LOW+c]);f->high_color[c]=lin(p[PG_FXP_COLORIZE_HIGH+c]);}
+          f->low_color[3]=f->high_color[3]=1.0f;f->factor=p[PG_FXP_COLORIZE_FACTOR];fx=&f->shaderfx;break;}
+        case PG_FX_FLIP:{auto*f=static_cast<FlipShaderFxData*>(alloc(sizeof(FlipShaderFxData)));
+          f->flag=(p[PG_FXP_FLIP_HORIZONTAL]!=0.0f?FX_FLIP_HORIZONTAL:0)|(p[PG_FXP_FLIP_VERTICAL]!=0.0f?FX_FLIP_VERTICAL:0);fx=&f->shaderfx;break;}
+        case PG_FX_GLOW:{auto*f=static_cast<GlowShaderFxData*>(alloc(sizeof(GlowShaderFxData)));
+          for(int c=0;c<3;c++){f->glow_color[c]=lin(p[PG_FXP_GLOW_COLOR+c]);f->select_color[c]=lin(p[PG_FXP_GLOW_SELECT+c]);}
+          f->glow_color[3]=p[PG_FXP_GLOW_COLOR+3];f->threshold=p[PG_FXP_GLOW_THRESHOLD];f->mode=int(p[PG_FXP_GLOW_MODE]);
+          f->blur[0]=p[PG_FXP_GLOW_BLUR_X]*U;f->blur[1]=p[PG_FXP_GLOW_BLUR_Y]*U;f->samples=int(p[PG_FXP_GLOW_SAMPLES]);
+          f->rotation=p[PG_FXP_GLOW_ROTATION];f->blend_mode=int(p[PG_FXP_GLOW_BLEND]);f->flag=p[PG_FXP_GLOW_USE_ALPHA]!=0.0f?FX_GLOW_USE_ALPHA:0;fx=&f->shaderfx;break;}
+        case PG_FX_PIXEL:{auto*f=static_cast<PixelShaderFxData*>(alloc(sizeof(PixelShaderFxData)));
+          f->size[0]=int(p[PG_FXP_PIXEL_SIZE_X]*U);f->size[1]=int(p[PG_FXP_PIXEL_SIZE_Y]*U);f->size[2]=1;
+          f->flag=p[PG_FXP_PIXEL_NEAREST]!=0.0f?FX_PIXEL_FILTER_NEAREST:0;fx=&f->shaderfx;break;}
+        case PG_FX_RIM:{auto*f=static_cast<RimShaderFxData*>(alloc(sizeof(RimShaderFxData)));
+          f->offset[0]=int(p[PG_FXP_RIM_OFFSET_X]*U);f->offset[1]=int(p[PG_FXP_RIM_OFFSET_Y]*U);
+          for(int c=0;c<3;c++){f->rim_rgb[c]=lin(p[PG_FXP_RIM_COLOR+c]);f->mask_rgb[c]=lin(p[PG_FXP_RIM_MASK+c]);}
+          f->mode=int(p[PG_FXP_RIM_MODE]);f->blur[0]=int(p[PG_FXP_RIM_BLUR_X]*U);f->blur[1]=int(p[PG_FXP_RIM_BLUR_Y]*U);f->samples=int(p[PG_FXP_RIM_SAMPLES]);fx=&f->shaderfx;break;}
+        case PG_FX_SHADOW:{auto*f=static_cast<ShadowShaderFxData*>(alloc(sizeof(ShadowShaderFxData)));
+          f->offset[0]=int(p[PG_FXP_SHADOW_OFFSET_X]*U);f->offset[1]=int(p[PG_FXP_SHADOW_OFFSET_Y]*U);
+          for(int c=0;c<3;c++)f->shadow_rgba[c]=lin(p[PG_FXP_SHADOW_COLOR+c]);f->shadow_rgba[3]=p[PG_FXP_SHADOW_COLOR+3];
+          f->flag=FX_SHADOW_USE_OBJECT|(p[PG_FXP_SHADOW_USE_WAVE]!=0.0f?FX_SHADOW_USE_WAVE:0);f->object=pivot(0.5f,0.5f); /* pivot: the canvas centre */
+          f->amplitude=p[PG_FXP_SHADOW_AMPLITUDE]*U;f->period=p[PG_FXP_SHADOW_PERIOD]*U;f->phase=p[PG_FXP_SHADOW_PHASE];
+          f->orientation=int(p[PG_FXP_SHADOW_ORIENTATION]);f->scale[0]=p[PG_FXP_SHADOW_SCALE_X];f->scale[1]=p[PG_FXP_SHADOW_SCALE_Y];
+          f->rotation=p[PG_FXP_SHADOW_ROTATION];f->blur[0]=int(p[PG_FXP_SHADOW_BLUR_X]*U);f->blur[1]=int(p[PG_FXP_SHADOW_BLUR_Y]*U);f->samples=int(p[PG_FXP_SHADOW_SAMPLES]);fx=&f->shaderfx;break;}
+        case PG_FX_SWIRL:{auto*f=static_cast<SwirlShaderFxData*>(alloc(sizeof(SwirlShaderFxData)));
+          f->object=pivot(p[PG_FXP_SWIRL_CENTER_X],p[PG_FXP_SWIRL_CENTER_Y]);f->radius=int(p[PG_FXP_SWIRL_RADIUS]*U);f->angle=p[PG_FXP_SWIRL_ANGLE];fx=&f->shaderfx;break;}
+        case PG_FX_WAVE:{auto*f=static_cast<WaveShaderFxData*>(alloc(sizeof(WaveShaderFxData)));
+          f->amplitude=p[PG_FXP_WAVE_AMPLITUDE]*U;f->period=p[PG_FXP_WAVE_PERIOD]*U;f->phase=p[PG_FXP_WAVE_PHASE];f->orientation=int(p[PG_FXP_WAVE_ORIENTATION]);fx=&f->shaderfx;break;}
+        default:break;
+      }
+      if(!fx)continue;
+      fx->type=e[i].type; /* PG_FX_* are eShaderFxType values */
+      fx->mode=eShaderFxMode_Realtime|eShaderFxMode_Render|eShaderFxMode_Editmode;
+      BLI_addtail(&out.list,fx);
+    }
+  }
 }
 
 bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
@@ -1033,6 +1094,9 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   const bool rotated=g_view_rotation!=0.0f;
   const bool over=(reference_shown()||rotated)&&pg_gp_engine_present_over;
   view.rotation=rotated?g_view_rotation:0.0f;
+  EngineFx fx;build_engine_fx(gpd,fx);
+  view.shader_fx=&fx.list;
+  view.rendered=fx.list.first!=nullptr;
   if(over)for(float&c:view.background)c=0.0f;
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
   g_engine_batch_cache=copy.runtime.gpencil_cache;

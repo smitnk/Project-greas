@@ -1120,6 +1120,8 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   view_set(c, view);
   /* Overlay "Onion Skins" (V3D_GP_SHOW_ONION_SKIN) follows the document's onion switch; the engine
    * draws the ghosts itself (BKE_gpencil_visible_stroke_advanced_iter with do_onion). */
+  c.v3d.shading.type = view->rendered ? OB_RENDER : OB_MATERIAL;
+  c.ob.shader_fx = view->shader_fx ? *view->shader_fx : ListBase{nullptr, nullptr};
   if (gpd->flag & GP_DATA_SHOW_ONIONSKINS) {
     c.v3d.gp_flag |= V3D_GP_SHOW_ONION_SKIN;
   }

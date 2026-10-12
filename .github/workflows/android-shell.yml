@@ -255,7 +255,13 @@ jobs:
 
       - name: Run Android unit tests
         working-directory: android
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
+        run: |
+          set -o pipefail
+          # compile errors and failed tests as annotations (the job log is not always readable)
+          if ! ./gradlew :app:testDebugUnitTest --no-daemon 2>&1 | tee ut.txt; then
+            grep -E "^e: |FAILED|AssertionError|Exception" ut.txt | head -30 | sed 's/^/::error title=unit tests::/'
+            exit 1
+          fi
 
       - name: Build Android GP application
         working-directory: android

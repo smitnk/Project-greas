@@ -181,7 +181,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                         controller.hitTestAndSelectStroke(start.first, start.second)
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
-                        controller.eraseAt(start.first, start.second)
+                        controller.eraseAt(start.first, start.second, controller.eraserRadius(pixelsPerUnit()))
                         eraseLastX = start.first
                         eraseLastY = start.second
                     }
@@ -484,7 +484,7 @@ internal class ProjectGreaseDrawingSurfaceView(
     }
 
     private fun eraseAlongPath(x: Float, y: Float): Boolean {
-        val radius = controller.eraserRadius().coerceAtLeast(1f)
+        val radius = controller.eraserRadius(pixelsPerUnit())
         val sx = if (eraseLastX.isNaN()) x else eraseLastX
         val sy = if (eraseLastY.isNaN()) y else eraseLastY
         val dx = x - sx

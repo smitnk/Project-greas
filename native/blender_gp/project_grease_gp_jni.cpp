@@ -467,6 +467,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSoftEraseAt(
              from_handle(handle), x, y, radius, strength) != 0;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeErase(
+    JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat radius, jint mode,
+    jfloat draw_strength, jfloat pressure, jfloat era_strength, jfloat era_thickness)
+{
+  return project_grease_gp_erase(from_handle(handle), x, y, radius, mode, draw_strength, pressure,
+                                 era_strength, era_thickness) != 0;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearSelection(
     JNIEnv *, jobject, jlong handle)

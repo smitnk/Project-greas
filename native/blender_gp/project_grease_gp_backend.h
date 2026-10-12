@@ -114,6 +114,9 @@ class Backend {
   bool create_polyline(const StrokePoint* points, int count, const StrokeStyle& style, bool cyclic);
   bool erase_at(float x, float y, float radius);
   bool soft_erase_at(float x, float y, float radius, float strength);
+  // Blender 3.6.23 eraser (gpencil_stroke_doeraser) with the eraser brush settings; see the .cpp.
+  bool erase(float x, float y, float radius, int mode, float draw_strength, float pressure,
+             float era_strength, float era_thickness);
   void clear_selection();
   int lasso_select(const float* xy, int count, bool additive);
   // Bulk Legacy GP edit commands: selection, point editing and stroke ordering.

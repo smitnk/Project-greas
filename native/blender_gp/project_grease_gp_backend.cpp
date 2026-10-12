@@ -1664,17 +1664,37 @@ bool Backend::create_polyline(const StrokePoint *points,
 
 bool Backend::erase_at(float x, float y, float radius)
 {
-  if (!impl_->frame || radius <= 0.0f ||
-      !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(radius)) {
+  return erase(x, y, radius, 0, 1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+bool Backend::soft_erase_at(float x, float y, float radius, float strength)
+{
+  const float s = std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : strength;
+  return erase(x, y, radius, 1, 1.0f, 1.0f, s, s);
+}
+
+// gpencil_stroke_doeraser() on the active frame: mode 0 = GP_BRUSH_ERASER_HARD (Point),
+// 1 = GP_BRUSH_ERASER_SOFT, 2 = GP_BRUSH_ERASER_STROKE. radius is the eraser size in canvas units
+// (the caller converts Blender's screen-pixel size and applies the pressure scale); pressure is the
+// influence pressure (1 when the brush does not use pressure); era_* are era_strength_f / 100 and
+// era_thickness_f / 100.
+bool Backend::erase(float x, float y, float radius, int mode, float draw_strength, float pressure,
+                    float era_strength, float era_thickness)
+{
+  if (!impl_->frame || radius <= 0.0f || mode < 0 || mode > 2 || !std::isfinite(x) ||
+      !std::isfinite(y) || !std::isfinite(radius) || !std::isfinite(draw_strength) ||
+      !std::isfinite(pressure) || !std::isfinite(era_strength) || !std::isfinite(era_thickness)) {
     impl_->last_error = "invalid eraser";
     return false;
   }
 
   legacy_gp_eraser::Settings settings{};
-  settings.draw_strength = 1.0f;
-  settings.pointer_pressure = 1.0f;
-  settings.soft = false;
-  settings.stroke_eraser = false;
+  settings.draw_strength = draw_strength;
+  settings.pointer_pressure = pressure;
+  settings.soft = mode == 1;
+  settings.soft_strength = era_strength;
+  settings.soft_thickness = era_thickness;
+  settings.stroke_eraser = mode == 2;
 
   bool changed = false;
   for (bGPDstroke *stroke =
@@ -1688,44 +1708,6 @@ bool Backend::erase_at(float x, float y, float radius)
 
   if (!changed) {
     impl_->last_error = "eraser did not hit a stroke";
-    return false;
-  }
-
-  impl_->stroke = nullptr;
-  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
-  project_grease_gp_tag(impl_->gpd);
-  impl_->last_error.clear();
-  return true;
-}
-
-bool Backend::soft_erase_at(float x, float y, float radius, float strength)
-{
-  if (!impl_->frame || radius <= 0.0f || !std::isfinite(x) || !std::isfinite(y) ||
-      !std::isfinite(radius) || !std::isfinite(strength)) {
-    impl_->last_error = "invalid soft eraser";
-    return false;
-  }
-
-  legacy_gp_eraser::Settings settings{};
-  settings.draw_strength = 1.0f;
-  settings.pointer_pressure = 1.0f;
-  settings.soft = true;
-  settings.soft_strength = std::clamp(strength, 0.0f, 1.0f);
-  settings.soft_thickness = std::clamp(strength, 0.0f, 1.0f);
-  settings.stroke_eraser = false;
-
-  bool changed = false;
-  for (bGPDstroke *stroke =
-           static_cast<bGPDstroke *>(impl_->frame->strokes.first);
-       stroke != nullptr;) {
-    bGPDstroke *next = stroke->next;
-    changed |= legacy_gp_eraser::process_stroke(
-        impl_->gpd, impl_->frame, stroke, x, y, static_cast<int>(radius), settings);
-    stroke = next;
-  }
-
-  if (!changed) {
-    impl_->last_error = "soft eraser did not hit a stroke";
     return false;
   }
 

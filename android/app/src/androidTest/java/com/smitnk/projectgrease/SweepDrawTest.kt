@@ -109,7 +109,7 @@ class SweepDrawTest : SweepBase() {
     // ---- eraser ----
     private fun eraserCase(mode: EraserMode, name: String, check: (Int) -> Unit) {
         line(300f)
-        onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(mode); controller.brushes.setSize(30f) }
+        onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(mode); controller.setEraserSize(30f) }
         undoableGesture("erase $name") { drag(600f to 200f, 600f to 400f) }
         check(strokes().size)
         shot("eraser_$name")

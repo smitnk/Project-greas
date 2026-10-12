@@ -61,3 +61,8 @@ g++ "${XF[@]}" -Wall "${INC[@]}" "$ROOT/native/blender_gp/tests/test_edit10.cc" 
   -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_edit10"
 "$OUT/test_edit10"
 "$OUT/test_edit8"
+
+# Eraser end to end through Backend::erase (the app's eraser path) with Blender's preset settings.
+g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/test_backend_eraser.cc" \
+  "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_backend_eraser"
+"$OUT/test_backend_eraser" 2>/dev/null

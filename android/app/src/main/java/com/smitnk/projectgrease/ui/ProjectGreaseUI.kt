@@ -683,10 +683,11 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=3.dp),
                 verticalAlignment=Alignment.CenterVertically
             ){
-                Text("Size "+controller.brushes.size.toInt(),fontSize=10.sp,modifier=Modifier.width(58.dp))
+                val erasing=controller.tools.activeTool==GreaseTool.ERASE
+                Text((if(erasing)"Eraser " else "Size ")+(if(erasing)controller.eraserSize else controller.brushes.size).toInt(),fontSize=10.sp,modifier=Modifier.width(58.dp))
                 Slider(
-                    value=controller.brushes.size,
-                    onValueChange={controller.brushes.setSize(it);redraw()},
+                    value=if(erasing)controller.eraserSize else controller.brushes.size,
+                    onValueChange={if(erasing)controller.setEraserSize(it) else controller.brushes.setSize(it);redraw()},
                     valueRange=.5f..500f,
                     modifier=Modifier.weight(1f).padding(horizontal=4.dp)
                 )

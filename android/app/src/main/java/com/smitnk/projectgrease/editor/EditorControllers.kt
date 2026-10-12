@@ -902,6 +902,8 @@ class EditorController {
 
     /** Blender's preset brushes also pick their tool: Fill Area the fill tool, the erasers Erase. */
     fun selectBrush(preset:BrushPreset) {
+        // Blender's eraser presets are their own brush: they never change the drawing brush.
+        if (preset.kind == BrushPreset.Kind.ERASE) { selectEraserPreset(preset); selectTool(GreaseTool.ERASE); return }
         brushes.select(preset)
         when (preset.kind) {
             BrushPreset.Kind.FILL -> { selectTool(GreaseTool.FILL); setFillOptions(dilate = 1) }
@@ -2224,19 +2226,32 @@ class EditorController {
         private set
     private var eraseGestureChanged = false
     fun setEraserMode(value:EraserMode) { eraserMode = value }
-    /** Eraser radius in canvas units: the brush Size, as Blender's eraser brush size. */
-    fun eraserRadius():Float = brushes.size.coerceAtLeast(0.5f)
+    /** The eraser brush (BKE_gpencil_brush_preset_set erasers), separate from the drawing brush as in
+     *  Blender: size in screen pixels, draw_strength, GP_BRUSH_USE_PRESSURE, era_strength_f / 100 and
+     *  era_thickness_f / 100. Defaults are Eraser Point's size with Eraser Hard's soft settings. */
+    var eraserSize = 30f; private set
+    var eraserDrawStrength = 1f; private set
+    var eraserUsePressure = false; private set
+    var eraStrength = 1f; private set
+    var eraThickness = 0.5f; private set
+    fun setEraserSize(value:Float) { eraserSize = value.coerceIn(1f, 500f) }
+    fun selectEraserPreset(preset:BrushPreset) {
+        eraserSize = preset.size
+        eraserDrawStrength = preset.strength
+        eraserUsePressure = preset.usePressure
+        eraStrength = 1f // era_strength_f 100 in both soft presets
+        eraThickness = if (preset == BrushPreset.ERASER_SOFT) 0.1f else 0.5f
+        preset.eraser?.let { setEraserMode(it) }
+    }
+    /** Eraser radius in canvas units: Blender's eraser size is screen pixels (p->radius = eraser->size). */
+    fun eraserRadius(pxPerUnit:Float):Float = eraserSize / pxPerUnit.coerceAtLeast(1e-3f)
 
-    fun eraseAt(x:Float, y:Float, radius:Float = eraserRadius(), recordHistory:Boolean = true):Boolean {
-        val ok = when (eraserMode) {
-            EraserMode.HARD -> native.eraseAt(x, y, radius)
-            EraserMode.SOFT -> native.handle != 0L &&
-                GPNative.nativeSoftEraseAt(native.handle, x, y, radius, brushes.strength)
-            EraserMode.STROKE -> {
-                val index = native.hitTestStroke(x, y, radius)
-                index >= 0 && native.deleteStroke(index)
-            }
-        }
+    /** gpencil_stroke_doeraser() at canvas (x, y); [pressure] is the touch pressure (finger: 1). */
+    fun eraseAt(x:Float, y:Float, radius:Float, recordHistory:Boolean = true, pressure:Float = 1f):Boolean {
+        val press = if (eraserUsePressure) pressure.coerceIn(0.01f, 1f) else 1f
+        val mode = when (eraserMode) { EraserMode.HARD -> 0; EraserMode.SOFT -> 1; EraserMode.STROKE -> 2 }
+        val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode,
+            eraserDrawStrength, press, eraStrength, eraThickness)
         if (ok) {
             selection.clear()
             eraseGestureChanged = true

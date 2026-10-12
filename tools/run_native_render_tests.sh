@@ -15,4 +15,11 @@ g++ "${XF[@]}" -D__ANDROID__ "${INC[@]}" -c "$ROOT/native/blender_gp/android_gp_
 gcc -std=gnu11 -O1 "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_stroke_outline.c" -o "$OUT/stroke_outline.o"
 g++ "${XF[@]}" -Wall "${INC[@]}" "$ROOT/native/blender_gp/tests/test_render.cc" "$OUT/presentation.o" "$OUT/shader_fx.o" "$OUT/stroke_outline.o" "${OBJS[@]}" \
   -Wl,--gc-sections -lEGL -lGLESv2 -ldl -lpthread -lm -o "$OUT/test_render"
-EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 "$OUT/test_render"
+set +e
+EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 "$OUT/test_render" > "$OUT/render.log" 2>&1
+rc=$?
+set -e
+cat "$OUT/render.log"
+# failures as GitHub annotations (the job log is not always readable)
+if [[ $rc != 0 ]]; then grep -E "FAIL|fail|Assert|error" "$OUT/render.log" | head -40 | sed 's/^/::error title=render test::/'; fi
+exit $rc

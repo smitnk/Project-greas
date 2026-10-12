@@ -12,6 +12,9 @@ on:
       - "native/blender_gp/android_gpu_backend.cpp"
       - "native/blender_gp/tests/test_l8_engine_render.cc"
       - "tools/run_native_l8_render_tests.sh"
+      - "tools/run_native_render_tests.sh"
+      - "native/blender_gp/android_gp_presentation.cpp"
+      - "native/blender_gp/tests/test_render.cc"
       - ".github/workflows/l8-engine.yml"
 
 jobs:
@@ -44,3 +47,15 @@ jobs:
             exit 1
           fi
           echo "::notice title=L8 engine render test::$(tail -30 l8.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+
+      - name: Run native render tests (presenter, software GLES2)
+        if: always()
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+          PG_REQUIRE_GL: "1"
+        run: |
+          set -o pipefail
+          if ! bash tools/run_native_render_tests.sh 2>&1 | grep -v "pragma message\|malloc_usable_size\|^ *[0-9]* |\|^ *|\|In file included" | tee r.txt; then
+            echo "::error title=render test::$(grep -i 'fail' r.txt | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi

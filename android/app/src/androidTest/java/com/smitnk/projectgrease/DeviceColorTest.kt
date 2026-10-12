@@ -82,9 +82,9 @@ class DeviceColorTest : SweepBase() {
     @Test fun eraserUsesItsOwnSize() {
         // The reported bug: with a big pen (Marker 150) a tap erased the whole stroke.
         onUi { controller.brushes.setSize(150f) }
-        line(300f, 100f, 1100f)
+        line(300f)
         val drawn = strokes()
-        assertEquals("one stroke drawn", 1, drawn.size)
+        assertEquals("one stroke drawn with the 150 pen", 1, drawn.size)
         val xs = points(drawn[0]).map { it[0].toInt() }
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(EraserMode.HARD) }
         assertEquals(30f, onUi { controller.eraserSize }, 1e-3f)

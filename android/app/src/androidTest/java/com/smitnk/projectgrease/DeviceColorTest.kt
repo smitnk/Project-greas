@@ -85,7 +85,11 @@ class DeviceColorTest : SweepBase() {
         // The reported bug: with a big pen (Marker 150) a tap erased the whole stroke.
         onUi { controller.brushes.setSize(150f) }
         line(300f)
+        fun nativeCount() = onUi { com.smitnk.projectgrease.nativebridge.GPNative.nativeStrokeCount(controller.nativeHandle) }
+        val countAfterDraw = nativeCount()
         val drawn = strokes()
+        val countAfterSave = nativeCount()
+        val where = onUi { "layers ${controller.layerCount()} selected ${controller.selectedLayer} frame ${controller.animation.currentFrame}" }
         assertEquals("one stroke drawn with the 150 pen", 1, drawn.size)
         val xs = points(drawn[0]).map { it[0].toInt() }
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(EraserMode.HARD) }
@@ -108,7 +112,7 @@ class DeviceColorTest : SweepBase() {
             "native strokes $n0, at(600,300) $a, at point10 (${pts[10][0]},${pts[10][1]}) $b, r5000 $c, ys ${pts.map { it[1].toInt() }}"
         } else null
         val after = strokes()
-        assertEquals("tap cuts (tool $tool, after tap $afterTap, direct call $direct -> ${after.size}, ppu $ppu, radius ${30f / ppu}, " +
+        assertEquals("tap cuts (active-frame strokes after draw $countAfterDraw, after save $countAfterSave, $where, tool $tool, after tap $afterTap, direct call $direct -> ${after.size}, ppu $ppu, radius ${30f / ppu}, " +
             "points before ${xs.size}, after ${after.map { s -> points(s).map { it[0].toInt() } }})", 2, afterTap)
         assertEquals("pen size unchanged by the eraser", 150f, onUi { controller.brushes.size }, 1e-3f)
     }

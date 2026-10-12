@@ -88,7 +88,8 @@ class DeviceColorTest : SweepBase() {
         val xs = points(drawn[0]).map { it[0].toInt() }
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(EraserMode.HARD) }
         assertEquals(30f, onUi { controller.eraserSize }, 1e-3f)
-        val ppu = onUi { com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(surface().width.toFloat(), surface().height.toFloat(),
+        val view = surface()
+        val ppu = onUi { com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(view.width.toFloat(), view.height.toFloat(),
             controller.document.canvasWidth, controller.document.canvasHeight, controller.view.zoom) }
         tap(600f, 300f)
         val after = strokes()

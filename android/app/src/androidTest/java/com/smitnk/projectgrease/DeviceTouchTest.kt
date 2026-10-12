@@ -70,8 +70,9 @@ class DeviceTouchTest : SweepBase() {
         assertEquals("view turns with the fingers", 0.5236f, v.second, 0.08f)
         assertTrue("view pans with the fingers (${v.third})", abs(v.third) > 20f)
         assertEquals("a view gesture draws nothing", 0, strokes().size)
-        // drawing still lands where the finger is on the rotated view
-        line(300f)
+        // drawing still lands where the finger is on the rotated view (near the centre: the zoomed
+        // canvas edges are off screen)
+        line(340f, 540f, 760f)
         val p = points(strokes().single())
         assertEquals(300.0, p[p.size / 2][1], 6.0)
         shot("touch_rotated_view")

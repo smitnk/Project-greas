@@ -384,6 +384,7 @@ jobs:
           api-level: 30
           arch: x86_64
           target: google_apis
+          profile: pixel_5
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash tools/run_device_tests.sh

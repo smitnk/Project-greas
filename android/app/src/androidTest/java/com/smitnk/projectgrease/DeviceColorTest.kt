@@ -22,7 +22,7 @@ class DeviceColorTest : SweepBase() {
         abs(Color.red(a) - Color.red(b)) <= tol && abs(Color.green(a) - Color.green(b)) <= tol && abs(Color.blue(a) - Color.blue(b)) <= tol
 
     @Test fun secondColourDoesNotRecolourFirstStroke() {
-        onUi { controller.setVertexColorMode(true); controller.setMaterialColor(0xFF000000.toInt()) }
+        onUi { controller.setVertexColorMode(true); controller.setMaterialColor(0xFF000000.toInt()); controller.brushes.setSize(30f) }
         line(300f)
         onUi { controller.setMaterialColor(0xFFFF0000.toInt()) }
         line(500f)
@@ -39,7 +39,7 @@ class DeviceColorTest : SweepBase() {
 
     @Test fun materialModeRecoloursLikeBlender() {
         // Blender design: the colour belongs to the material, editing it recolours its strokes.
-        onUi { controller.setVertexColorMode(false); controller.setMaterialColor(0xFF000000.toInt()) }
+        onUi { controller.setVertexColorMode(false); controller.setMaterialColor(0xFF000000.toInt()); controller.brushes.setSize(30f) }
         line(300f)
         onUi { controller.setMaterialColor(0xFF0000FF.toInt()) }
         val bmp = shot("color_material_mode")

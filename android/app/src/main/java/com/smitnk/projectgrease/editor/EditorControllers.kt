@@ -1814,6 +1814,8 @@ class EditorController {
             // A material colour change is its own undo step (Blender pushes one per property edit);
             // unrecorded, the next operation's undo would also revert it.
             if (before == null || !before.copyOfRange(0, 8).contentEquals(stroke + fill)) { history.markEdit(); document.markDirty() }
+            // the canvas shows the new material colour now, not on the next stroke
+            render()
         }
         return ok
     }

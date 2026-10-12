@@ -11,6 +11,10 @@ adb install -r -g "$APK" && adb install -r -g "$TAPK" || exit 1
 adb shell am instrument -w -r -e class "$CLASSES" \
   com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee device-tests.txt
 mkdir -p android/device-shots
+adb logcat -d > android/device-shots/logcat.txt 2>/dev/null || true
+# native / renderer start-up lines in one annotation (the job log is not always readable)
+grep -iE "ProjectGrease|PGSweep|pg_|egl|GLES|FATAL|AndroidRuntime|libc  " android/device-shots/logcat.txt \
+  | grep -v "RESULT" | tail -60 | sed 's/%/%25/g' | awk 'BEGIN{printf "::notice title=device logcat::"}{printf "%s%%0A", $0}END{print ""}'
 adb pull /data/local/tmp/pg_screenshots/sweep android/device-shots/ >/dev/null 2>&1 || true
 python3 - <<'PY'
 import re,sys

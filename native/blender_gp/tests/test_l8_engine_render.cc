@@ -247,7 +247,7 @@ int main()
     glReadPixels(int(ox + 100 * sc), H - 1 - int(oy + 30 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
     std::printf("  presenter line centre = %d %d %d\n", c[0], c[1], c[2]);
     CHECK(c[0] < 40);
-    glReadPixels(int(ox + 150 * sc), H - 1 - int(oy + 100 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+    glReadPixels(int(ox + 130 * sc), H - 1 - int(oy + 50 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
     std::printf("  presenter paper = %d %d %d (expected 245)\n", c[0], c[1], c[2]);
     CHECK(std::abs(c[0] - 245) <= 3);
   }

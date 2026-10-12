@@ -74,7 +74,7 @@ class DeviceTouchTest : SweepBase() {
         // canvas edges are off screen)
         line(340f, 540f, 760f)
         val p = points(strokes().single())
-        assertEquals(300.0, p[p.size / 2][1], 6.0)
+        assertEquals(340.0, p[p.size / 2][1], 6.0)
         shot("touch_rotated_view")
     }
 

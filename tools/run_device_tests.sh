@@ -8,8 +8,17 @@ TAPK=android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 CLASSES="${PG_DEVICE_TESTS:-com.smitnk.projectgrease.DeviceColorTest,com.smitnk.projectgrease.DeviceStudioTest,com.smitnk.projectgrease.DeviceTouchTest}"
 adb wait-for-device
 adb install -r -g "$APK" && adb install -r -g "$TAPK" || exit 1
-adb shell am instrument -w -r -e class "$CLASSES" \
-  com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee device-tests.txt
+# A system dialog on a fresh CI emulator ("System UI isn't responding") takes the focus and blocks
+# event injection (SecurityException INJECT_EVENTS): dismiss dialogs first, rerun once if it happened.
+dismiss() { adb shell settings put global window_animation_scale 0 >/dev/null 2>&1
+  adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1
+  adb shell input keyevent KEYCODE_WAKEUP; adb shell input keyevent 82; sleep 5; }
+adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
+dismiss
+run() { adb shell am instrument -w -r -e class "$CLASSES" \
+  com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee device-tests.txt; }
+run
+if grep -q "INJECT_EVENTS" device-tests.txt; then echo "::warning title=device tests::system dialog blocked input, rerunning"; dismiss; run; fi
 mkdir -p android/device-shots
 adb logcat -d > android/device-shots/logcat.txt 2>/dev/null || true
 # native / renderer start-up lines in one annotation (the job log is not always readable)

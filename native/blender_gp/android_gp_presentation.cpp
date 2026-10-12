@@ -941,6 +941,9 @@ bool engine_context_ok(){
     const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
     int maj=0,min=0;
     ok=(v&&std::sscanf(v,"OpenGL ES %d.%d",&maj,&min)==2&&(maj>3||(maj==3&&min>=2)))?1:0;
+#ifdef PG_HAVE_ANDROID_LOG
+    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","GL_VERSION %s: Blender GP draw engine %s",v?v:"?",ok?"on":"off (needs OpenGL ES 3.2)");
+#endif
   }
   return ok==1;
 }

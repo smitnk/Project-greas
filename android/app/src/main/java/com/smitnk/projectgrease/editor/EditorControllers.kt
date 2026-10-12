@@ -2320,6 +2320,7 @@ class EditorController {
         val mode = when (eraserMode) { EraserMode.HARD -> 0; EraserMode.SOFT -> 1; EraserMode.STROKE -> 2 }
         val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode,
             eraserDrawStrength, press, eraStrength, eraThickness)
+        android.util.Log.d("PGErase", "erase x=$x y=$y r=${radius * press} mode=$mode -> $ok")
         if (ok) {
             selection.clear()
             eraseGestureChanged = true

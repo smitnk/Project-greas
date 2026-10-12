@@ -94,10 +94,14 @@ class DeviceColorTest : SweepBase() {
         val view = surface()
         val ppu = onUi { com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(view.width.toFloat(), view.height.toFloat(),
             controller.document.canvasWidth, controller.document.canvasHeight, controller.view.zoom) }
+        val tool = onUi { controller.tools.activeTool }
         tap(600f, 300f)
+        val afterTap = strokes().size
+        // if the touch did not erase, does the controller call itself? (touch path vs native)
+        val direct = if (afterTap == 1) onUi { controller.eraseAt(600f, 300f, 30f / ppu) } else null
         val after = strokes()
-        assertEquals("tap cuts the stroke in two, it does not delete it (ppu $ppu, radius ${30f / ppu}, " +
-            "points before ${xs.size} x=$xs, after ${after.map { s -> points(s).map { it[0].toInt() } }})", 2, after.size)
+        assertEquals("tap cuts (tool $tool, after tap $afterTap, direct call $direct -> ${after.size}, ppu $ppu, radius ${30f / ppu}, " +
+            "points before ${xs.size}, after ${after.map { s -> points(s).map { it[0].toInt() } }})", 2, afterTap)
         assertEquals("pen size unchanged by the eraser", 150f, onUi { controller.brushes.size }, 1e-3f)
     }
 }

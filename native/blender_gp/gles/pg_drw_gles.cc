@@ -1167,6 +1167,16 @@ unsigned int pg_gp_engine_result_texture(void)
   return G_pg ? pg_gpu_texture_gl(G_pg->dtxl.color) : 0;
 }
 
+static bool g_present_over = false;
+/* As pg_gp_engine_present, blended (premultiplied) over what the frame-buffer holds. */
+int pg_gp_engine_present_over(int target_w, int target_h)
+{
+  g_present_over = true;
+  const int ok = pg_gp_engine_present(target_w, target_h);
+  g_present_over = false;
+  return ok;
+}
+
 int pg_gp_engine_present(int target_w, int target_h)
 {
   PGContext &c = pgc();
@@ -1206,7 +1216,13 @@ int pg_gp_engine_present(int target_w, int target_h)
     }
   }
   glViewport(0, 0, target_w, target_h);
-  glDisable(GL_BLEND);
+  if (g_present_over) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  }
+  else {
+    glDisable(GL_BLEND);
+  }
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_STENCIL_TEST);
   glUseProgram(c.present_prog);

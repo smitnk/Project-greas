@@ -786,6 +786,7 @@ class EditorController {
         setupTrace("resetDocument ok=$ok")
         if(ok){
             clearTextures()
+            rotoscope.clear()
             projectSettings = ProjectSettings()
             reapplyOnion()
             selectedLayer=0
@@ -958,6 +959,26 @@ class EditorController {
     private var curveLastY = 0f
     /** Called when the curve handles change, so the UI can redraw its handle overlay. */
     var onOverlayChanged: (() -> Unit)? = null
+    // ---- Rotoscope reference (Image Empty as reference, under the strokes, following the timeline) ----
+    val rotoscope = Rotoscope()
+    /** Decodes reference frames; set by the UI (needs a Context). */
+    var rotoscopeLoader: com.smitnk.projectgrease.ui.RotoscopeLoader? = null
+    private var rotoscopeShown = ""
+    fun rotoscopeChanged() { rotoscopeShown = ""; document.markDirty(); render() }
+    fun fitTimelineToRotoscope() { if (rotoscope.frames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.frames - 1) }
+    /** Uploads the reference image of the current frame when it changed. */
+    private fun syncRotoscope() {
+        if (rendererHandle == 0L) return
+        val n = if (rotoscope.visible) rotoscope.imageFrame(animation.currentFrame) else 0
+        val key = if (n == 0) "" else rotoscope.kind.name + rotoscope.uris.hashCode() + ":" + n
+        if (key != rotoscopeShown) {
+            val img = if (n == 0) null else rotoscopeLoader?.frame(rotoscope, n)
+            GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
+            rotoscopeShown = if (img == null) "" else key
+        }
+        GPNative.nativeSetReferenceStyleEglRenderer(rendererHandle, n != 0 && rotoscopeShown.isNotEmpty(), rotoscope.opacity)
+    }
+
     /** The UI re-reads controller state (a colour picked on the canvas changes the swatch). */
     var onUiChanged: (() -> Unit)? = null
 
@@ -1635,6 +1656,7 @@ class EditorController {
             val obj = org.json.JSONObject(json)
             obj.put("settings", org.json.JSONObject(projectSettings.toJson()))
             if (materialTextures.isNotEmpty()) obj.put("textures", texturesJson())
+            if (!rotoscope.isEmpty) obj.put("rotoscope", rotoscope.toJson())
             AnnotationData.toJson(annotationDump(), annotationStyle())?.let { obj.put("annotations", it) }
             obj.toString()
         }.getOrDefault(json)
@@ -1663,6 +1685,7 @@ class EditorController {
             animation.setFps(projectSettings.fps); animation.setSceneEnd(projectSettings.frameEnd)
         }
         loadTexturesJson(rawJson?.optJSONArray("textures"))
+        rotoscope.fromJson(rawJson?.optJSONObject("rotoscope")); rotoscopeShown = ""
         val notes = AnnotationData.fromJson(runCatching { org.json.JSONObject(raw).optJSONObject("annotations") }.getOrNull())
         if (notes != null) {
             notes.style?.let { GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_STYLE, it) }
@@ -1923,6 +1946,7 @@ class EditorController {
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
             GPNative.nativeSetViewRotation(rendererHandle,view.rotation)
+            syncRotoscope()
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:

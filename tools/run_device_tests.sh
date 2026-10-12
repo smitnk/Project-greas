@@ -5,7 +5,7 @@
 set -uo pipefail
 APK=android/app/build/outputs/apk/debug/app-debug.apk
 TAPK=android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-CLASSES="${PG_DEVICE_TESTS:-com.smitnk.projectgrease.DeviceColorTest,com.smitnk.projectgrease.DeviceStudioTest,com.smitnk.projectgrease.DeviceTouchTest}"
+CLASSES="${PG_DEVICE_TESTS:-com.smitnk.projectgrease.DeviceColorTest,com.smitnk.projectgrease.DeviceStudioTest,com.smitnk.projectgrease.DeviceTouchTest,com.smitnk.projectgrease.DeviceRotoTest}"
 adb wait-for-device
 adb install -r -g "$APK" && adb install -r -g "$TAPK" || exit 1
 # A system dialog on a fresh CI emulator ("System UI isn't responding") takes the focus and blocks

@@ -57,6 +57,8 @@ unsigned int pg_gp_engine_result_texture(void);
 /* Draws the last result over the bound frame-buffer as Blender's "Standard" view transform
  * (linear -> sRGB), replacing its colour. */
 int pg_gp_engine_present(int target_w, int target_h);
+/* The same, blended (premultiplied) over the bound frame-buffer (a reference image under the strokes). */
+int pg_gp_engine_present_over(int target_w, int target_h);
 /* Frees every GL object of the engine (context loss). */
 void pg_gp_engine_reset(void);
 

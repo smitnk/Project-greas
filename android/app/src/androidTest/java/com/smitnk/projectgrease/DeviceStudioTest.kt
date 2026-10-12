@@ -45,6 +45,14 @@ class DeviceStudioTest : SweepBase() {
         shot("studio_layers")
     }
 
+    @Test fun layerAdvancedPanelHoldsTheBlenderSettings() {
+        rule.onNodeWithTag("studioTool_Layers").performClick()
+        rule.onNodeWithTag("layerAdvanced_0").performClick()
+        rule.onNodeWithTag("layerAdvancedSheet").assertIsDisplayed()
+        for (i in 0..5) rule.onNodeWithTag("advTab_$i").performClick()
+        shot("studio_layer_advanced")
+    }
+
     @Test fun frameStripAddsAndSelectsFrame() {
         val f = onUi { controller.animation.currentFrame }
         rule.onNodeWithTag("stripAdd").performClick()

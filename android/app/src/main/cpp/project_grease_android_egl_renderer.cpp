@@ -26,6 +26,8 @@ extern "C" void project_grease_android_present_set_color(float r, float g, float
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
 extern "C" void project_grease_android_present_set_view_rotation(float radians);
+extern "C" int project_grease_android_present_set_reference(const unsigned char *rgba, int w, int h);
+extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
@@ -733,6 +735,36 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillPrecisionEglRen
 
 /* Material texture image (stroke: fill = false, fill: true) of slot `slot` as ARGB pixels, top row
  * first; null pixels remove it. Needs the GL context: textures live with the presenter. */
+/* Rotoscope reference image (ARGB, null clears) and its visibility / opacity. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceImageEglRenderer(
+    JNIEnv *env, jobject, jlong handle, jintArray argb, jint width, jint height)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || renderer->display == EGL_NO_DISPLAY || renderer->surface == EGL_NO_SURFACE ||
+      renderer->context == EGL_NO_CONTEXT) return JNI_FALSE;
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE)
+    return JNI_FALSE;
+  if (!argb || width <= 0 || height <= 0) return project_grease_android_present_set_reference(nullptr, 0, 0) ? JNI_TRUE : JNI_FALSE;
+  const jsize n = env->GetArrayLength(argb);
+  if (n < width * height) return JNI_FALSE;
+  std::vector<jint> px(static_cast<size_t>(n));
+  env->GetIntArrayRegion(argb, 0, n, px.data());
+  std::vector<unsigned char> rgba(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+  for (size_t i = 0; i < static_cast<size_t>(width) * static_cast<size_t>(height); ++i) {
+    const uint32_t c = static_cast<uint32_t>(px[i]);
+    rgba[i * 4] = (c >> 16) & 255; rgba[i * 4 + 1] = (c >> 8) & 255; rgba[i * 4 + 2] = c & 255; rgba[i * 4 + 3] = (c >> 24) & 255;
+  }
+  return project_grease_android_present_set_reference(rgba.data(), width, height) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceStyleEglRenderer(
+    JNIEnv *, jobject, jlong handle, jboolean visible, jfloat opacity)
+{
+  if (from_handle(handle)) project_grease_android_present_set_reference_style(visible ? 1 : 0, opacity);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialTextureEglRenderer(
     JNIEnv *env, jobject, jlong handle, jint slot, jboolean fill, jintArray argb, jint width, jint height)

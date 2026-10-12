@@ -47,7 +47,7 @@ import com.smitnk.projectgrease.editor.EraserMode
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 private val presets=listOf(
@@ -382,7 +382,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     DisposableEffect(controller){
         controller.onUiChanged={redraw()}
-        onDispose{controller.onUiChanged=null}
+        controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
+        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null}
     }
     // Studio (default): full-screen canvas with floating controls. Classic: the panel layout.
     // Hide / unhide every panel around the canvas (mode bar, tool rail, properties, timeline).
@@ -442,6 +443,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.ADVANCED->AdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MORE->MoreSheet(controller,{sheet=Sheet.NONE},onSettings,::redraw,{sheet=Sheet.REFERENCE})
         Sheet.REFERENCE->ReferenceSheet(controller,context,{sheet=Sheet.NONE},::redraw)
+        Sheet.ROTOSCOPE->RotoscopeSheet(controller,context,{sheet=Sheet.NONE},::redraw)
+        Sheet.LAYER_ADVANCED->LayerAdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.NONE->Unit
     }
 }
@@ -1209,8 +1212,15 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @OptIn(ExperimentalMaterial3Api::class)
 @NonSkippableComposable
 @Composable private fun OnionSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
+    ModalBottomSheet(onDismissRequest=onDismiss){Column(Modifier.verticalScroll(rememberScrollState())){OnionContent(controller,redraw)
+        Text("Layers can opt out in Layers > Use onion skinning.",Modifier.padding(horizontal=20.dp),fontSize=11.sp);Spacer(Modifier.height(20.dp))}}
+}
+
+/** Blender's Onion Skinning panel (data settings shared by the layers). */
+@NonSkippableComposable
+@Composable private fun OnionContent(controller:EditorController,redraw:()->Unit){
     var opacity by remember{mutableFloatStateOf(controller.onion.opacity)}
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Onion Skin",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+    Text("Onion Skin",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){Text("Enable",Modifier.weight(1f));Switch(checked=controller.onion.enabled,onCheckedChange={controller.setOnionSkin(it,controller.onion.beforeFrames,controller.onion.afterFrames,controller.onion.opacity);redraw()})}
         Text("Previous "+controller.onion.beforeFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.beforeFrames.toFloat(), {val v=it.toInt();controller.setOnionSkin(controller.onion.enabled,v,controller.onion.afterFrames,controller.onion.opacity);redraw()}, valueRange = 0f..12f)
         Text("Next "+controller.onion.afterFrames,Modifier.padding(horizontal=20.dp));Slider(controller.onion.afterFrames.toFloat(), {val v=it.toInt();controller.setOnionSkin(controller.onion.enabled,controller.onion.beforeFrames,v,controller.onion.opacity);redraw()}, valueRange = 0f..12f)
@@ -1239,7 +1249,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Switch(checked=controller.onion.useNextColor,onCheckedChange={controller.setOnionStyle(useNextColor=it);redraw()})
         }
         OnionFilterSection(controller,redraw)
-        Text("Layers can opt out in Layers > Use onion skinning.",Modifier.padding(horizontal=20.dp),fontSize=11.sp);Spacer(Modifier.height(20.dp))}
+        
 }
 
 /**
@@ -1618,7 +1628,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
         }
 
-        if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)})
+        if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)},
+            {onSheet(Sheet.LAYER_ADVANCED)},{onSheet(Sheet.ROTOSCOPE)})
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()){
             Row(Modifier.align(Alignment.End).padding(end=6.dp)){
@@ -1710,7 +1721,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
 /** FlipaClip-style layers: top layer first, the active one highlighted, eye / lock per row. */
 @NonSkippableComposable
-@Composable private fun StudioLayerPanel(controller:EditorController,modifier:Modifier,redraw:()->Unit,onMore:()->Unit){
+@Composable private fun StudioLayerPanel(controller:EditorController,modifier:Modifier,redraw:()->Unit,onMore:()->Unit,
+                                          onAdvanced:()->Unit,onReference:()->Unit){
     Surface(modifier.width(220.dp).heightIn(max=420.dp).testTag("studioLayers"),shape=RoundedCornerShape(16.dp),tonalElevation=6.dp,shadowElevation=4.dp){
         Column(Modifier.padding(8.dp)){
             Row(verticalAlignment=Alignment.CenterVertically){
@@ -1736,6 +1748,10 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                             IconButton(onClick={controller.setLayerLocked(i,!(st?.locked?:false));redraw()},Modifier.size(34.dp)){
                                 Icon(if(st?.locked==true)Icons.Default.Lock else Icons.Default.LockOpen,"Lock")
                             }
+                            // the layer's Advanced panel: modifiers, effects, onion skin, masks, look
+                            IconButton(onClick={controller.selectLayer(i);redraw();onAdvanced()},Modifier.size(34.dp).testTag("layerAdvanced_$i")){
+                                Icon(Icons.Default.Tune,"Advanced")
+                            }
                         }
                     }
                 }
@@ -1744,6 +1760,10 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 TextButton(onClick={val i=controller.selectedLayer;if(i<controller.layerCount()-1){controller.moveLayer(i,i+1);redraw()}}){Text("Up")}
                 TextButton(onClick={val i=controller.selectedLayer;if(i>0){controller.moveLayer(i,i-1);redraw()}}){Text("Down")}
                 TextButton(onClick=onMore){Text("More…")}
+            }
+            OutlinedButton(onClick=onReference,Modifier.fillMaxWidth().testTag("rotoscopeOpen")){
+                Icon(Icons.Default.Image,null);Spacer(Modifier.width(6.dp))
+                Text(if(controller.rotoscope.isEmpty)"Reference (rotoscope)…" else "Reference: "+controller.rotoscope.kind.name.lowercase())
             }
         }
     }
@@ -1776,6 +1796,56 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 }
             }
             IconButton(onClick={val f=anim.currentFrame+1;controller.createFrame(f);controller.selectFrame(f);redraw()},Modifier.testTag("stripAdd")){Icon(Icons.Default.Add,"New frame")}
+        }
+    }
+}
+
+
+/**
+ * One layer's Advanced panel, laid out like Blender 3.6.23's Properties editor for a GP object:
+ * Modifiers and Visual Effects tabs (Blender keeps them per object; here each layer has its own
+ * stack), the layer's Onion Skinning switch with the shared Onion Skinning settings, Masks and
+ * Adjustments (blend, tint, stroke thickness). Sculpt is a mode in Blender, not a layer setting:
+ * its brushes are listed here for reach.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@NonSkippableComposable
+@Composable private fun LayerAdvancedSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
+    var tab by androidx.compose.runtime.saveable.rememberSaveable{mutableIntStateOf(0)}
+    var tick by remember{mutableIntStateOf(0)}
+    @Suppress("UNUSED_VARIABLE") val observed=tick
+    val layer=controller.selectedLayer
+    ModalBottomSheet(onDismissRequest=onDismiss,modifier=Modifier.testTag("layerAdvancedSheet")){
+        Text("Advanced · "+controller.layerName(layer),Modifier.padding(horizontal=20.dp,vertical=8.dp),style=MaterialTheme.typography.titleLarge)
+        val tabs=listOf("Modifiers","Effects","Onion skin","Masks","Adjustments","Sculpt")
+        ScrollableTabRow(selectedTabIndex=tab,edgePadding=8.dp){
+            tabs.forEachIndexed{i,t->Tab(selected=tab==i,onClick={tab=i},text={Text(t)},modifier=Modifier.testTag("advTab_$i"))}
+        }
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=24.dp)){
+            when(tab){
+                0->ModifierStackSection(controller,redraw)
+                1->LayerEffectsSection(controller,redraw)
+                2->{
+                    Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                        Text("Show this layer's onion skin",Modifier.weight(1f))
+                        Switch(checked=controller.layerOnion(),onCheckedChange={controller.setLayerOnion(layer,it);tick++;redraw()})
+                    }
+                    OnionContent(controller,redraw)
+                }
+                3->LayerMaskSection(controller,redraw)
+                4->LayerLookSection(controller,Triple(layer,controller.layerCount(),tick),redraw)
+                5->{
+                    Text("Sculpt brushes (Sculpt mode)",Modifier.padding(horizontal=20.dp,vertical=6.dp),fontWeight=FontWeight.Bold)
+                    com.smitnk.projectgrease.editor.SculptBrush.entries.forEach{b->
+                        FilterChip(selected=controller.sculpt.brush==b,onClick={controller.sculpt.select(b);controller.setMode(GreaseMode.SCULPT);tick++;redraw()},
+                            label={Text(b.name.lowercase().replaceFirstChar{it.uppercase()})},modifier=Modifier.padding(horizontal=20.dp))
+                    }
+                    Text("Size "+controller.sculptBrush.size.toInt()+" px",Modifier.padding(horizontal=20.dp))
+                    Slider(controller.sculptBrush.size,{controller.sculptBrush.setSize(it);tick++},valueRange=1f..500f,modifier=Modifier.padding(horizontal=20.dp))
+                    Text("Strength "+(controller.sculptBrush.strength*100).toInt()+"%",Modifier.padding(horizontal=20.dp))
+                    Slider(controller.sculptBrush.strength,{controller.sculptBrush.setStrength(it);tick++},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
+                }
+            }
         }
     }
 }

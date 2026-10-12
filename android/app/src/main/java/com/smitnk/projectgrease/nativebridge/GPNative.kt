@@ -36,6 +36,8 @@ object GPNative {
     external fun nativeSetCanvasSize(handle: Long, width: Int, height: Int): Boolean
     external fun nativeSetViewTransform(handle: Long, zoom: Float, panX: Float, panY: Float): Boolean
     external fun nativeSetViewRotation(handle: Long, radians: Float)
+    external fun nativeSetReferenceImageEglRenderer(handle: Long, argb: IntArray?, width: Int, height: Int): Boolean
+    external fun nativeSetReferenceStyleEglRenderer(handle: Long, visible: Boolean, opacity: Float)
     external fun nativeTransformSelected(handle: Long, matrix: FloatArray): Boolean
     external fun nativeSelectedBounds(handle: Long): FloatArray?
     /**

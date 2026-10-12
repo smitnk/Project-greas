@@ -36,6 +36,7 @@
 /* L9: the GLES 3.2 GP draw engine (gles/). Weak so the GLES2-only presenter tests link without it. */
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
+extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
 
 namespace {
 struct Vertex { float x; float y; };
@@ -942,6 +943,40 @@ bool engine_context_ok(){
 
 float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.055f,2.4f);}
 
+/* Rotoscope reference (an Image Empty used as reference in Blender, depth "Back"): one image per
+ * timeline frame, fitted inside the canvas, drawn over the paper and under the strokes with its
+ * opacity. Not in exports (empties do not render). */
+GLuint g_ref_tex=0, g_ref_prog=0, g_ref_vbo=0;
+int g_ref_w=0, g_ref_h=0, g_ref_visible=0;
+float g_ref_opacity=0.5f;
+bool reference_shown(){return g_ref_visible&&g_ref_tex&&g_ref_w>0&&g_ref_h>0&&!g_export_mode;}
+void draw_reference(int w,int h){
+  if(!g_ref_prog){
+    GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec4 a_p; varying vec2 v_uv; void main(){v_uv=a_p.zw;gl_Position=vec4(a_p.xy,0.0,1.0);}");
+    GLuint fs=compile_shader(GL_FRAGMENT_SHADER,"precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; uniform float u_a;"
+        "void main(){vec4 c=texture2D(u_tex,v_uv);gl_FragColor=vec4(c.rgb,c.a*u_a);}");
+    if(!vs||!fs)return;
+    g_ref_prog=glCreateProgram();glAttachShader(g_ref_prog,vs);glAttachShader(g_ref_prog,fs);
+    glBindAttribLocation(g_ref_prog,0,"a_p");glLinkProgram(g_ref_prog);glDeleteShader(vs);glDeleteShader(fs);
+  }
+  if(!g_ref_vbo)glGenBuffers(1,&g_ref_vbo);
+  // aspect fit inside the canvas, centred
+  const float cw=float(g_canvas_width),ch=float(g_canvas_height);
+  const float k=std::min(cw/float(g_ref_w),ch/float(g_ref_h));
+  const float iw=float(g_ref_w)*k,ih=float(g_ref_h)*k,x0=(cw-iw)*0.5f,y0=(ch-ih)*0.5f;
+  const Vertex a=ndc(x0,y0,w,h),b=ndc(x0+iw,y0,w,h),c=ndc(x0+iw,y0+ih,w,h),d=ndc(x0,y0+ih,w,h);
+  const float q[24]={a.x,a.y,0,0, b.x,b.y,1,0, c.x,c.y,1,1, a.x,a.y,0,0, c.x,c.y,1,1, d.x,d.y,0,1};
+  glUseProgram(g_ref_prog);
+  glBindBuffer(GL_ARRAY_BUFFER,g_ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
+  glEnableVertexAttribArray(0);glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,0,nullptr);
+  glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_ref_tex);
+  glUniform1i(glGetUniformLocation(g_ref_prog,"u_tex"),0);
+  glUniform1f(glGetUniformLocation(g_ref_prog,"u_a"),g_ref_opacity);
+  glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+  glDrawArrays(GL_TRIANGLES,0,6);
+  glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,0);glUseProgram(0);
+}
+
 bool engine_wanted(const bGPdata*gpd){
   if(!g_engine_enabled||g_engine_failed||g_export_mode||g_weight_group>=0||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
   if(!engine_context_ok()||(g_view_rotation!=0.0f&&!g_export_mode))return false;
@@ -994,6 +1029,9 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   PGGpEngineView view{w,h,g_map_origin_x,g_map_origin_y,g_map_scale,
                       {srgb_to_linear(g_paper_color[0]),srgb_to_linear(g_paper_color[1]),srgb_to_linear(g_paper_color[2]),1.0f},
                       changed?1:0};
+  // A rotoscope reference shows through: the engine image is drawn with a clear background over it.
+  const bool over=reference_shown()&&pg_gp_engine_present_over;
+  if(over)for(float&c:view.background)c=0.0f;
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
   g_engine_batch_cache=copy.runtime.gpencil_cache;
   MEM_freeN(frames);
@@ -1015,7 +1053,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   const int cw=int(std::ceil(float(g_canvas_width)*g_map_scale)), ch=int(std::ceil(float(g_canvas_height)*g_map_scale));
   glEnable(GL_SCISSOR_TEST);
   glScissor(x0,h-y1,cw,ch);
-  pg_gp_engine_present(w,h);
+  if(over)pg_gp_engine_present_over(w,h); else pg_gp_engine_present(w,h);
   glDisable(GL_SCISSOR_TEST);
   glViewport(0,0,w,h);
   return true;
@@ -1046,6 +1084,7 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
       ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
   });
   if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:g_paper_color,false);
+  if(reference_shown())draw_reference(w,h);
   (void)x0; (void)y0; (void)x1; (void)y1;
   const bool by_engine=engine_wanted(gpd)&&engine_draw_canvas(gpd,frame_number,w,h);
   if(by_engine){
@@ -1373,6 +1412,19 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
   t.w=w;t.h=h;g_mat_tex[key]=t;
   return glGetError()==GL_NO_ERROR?1:0;
 }
+extern "C" int project_grease_android_present_set_reference(const unsigned char*rgba,int w,int h){
+  if(!rgba||w<=0||h<=0){if(g_ref_tex)glDeleteTextures(1,&g_ref_tex);g_ref_tex=0;g_ref_w=g_ref_h=0;return 1;}
+  if(!g_ref_tex)glGenTextures(1,&g_ref_tex);
+  glBindTexture(GL_TEXTURE_2D,g_ref_tex);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D,0);
+  g_ref_w=w;g_ref_h=h;
+  return glGetError()==GL_NO_ERROR?1:0;
+}
+extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
+  g_ref_visible=visible?1:0;g_ref_opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}

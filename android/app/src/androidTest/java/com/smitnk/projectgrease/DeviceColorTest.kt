@@ -83,10 +83,17 @@ class DeviceColorTest : SweepBase() {
         // The reported bug: with a big pen (Marker 150) a tap erased the whole stroke.
         onUi { controller.brushes.setSize(150f) }
         line(300f, 100f, 1100f)
+        val drawn = strokes()
+        assertEquals("one stroke drawn", 1, drawn.size)
+        val xs = points(drawn[0]).map { it[0].toInt() }
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(EraserMode.HARD) }
         assertEquals(30f, onUi { controller.eraserSize }, 1e-3f)
+        val ppu = onUi { com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(surface().width.toFloat(), surface().height.toFloat(),
+            controller.document.canvasWidth, controller.document.canvasHeight, controller.view.zoom) }
         tap(600f, 300f)
-        assertEquals("tap cuts the stroke in two, it does not delete it", 2, strokes().size)
+        val after = strokes()
+        assertEquals("tap cuts the stroke in two, it does not delete it (ppu $ppu, radius ${30f / ppu}, " +
+            "points before ${xs.size} x=$xs, after ${after.map { s -> points(s).map { it[0].toInt() } }})", 2, after.size)
         assertEquals("pen size unchanged by the eraser", 150f, onUi { controller.brushes.size }, 1e-3f)
     }
 }

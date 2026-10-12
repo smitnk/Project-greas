@@ -27,6 +27,10 @@ cx "$BL/draw/intern/draw_cache_impl_gpencil.cc"
 cx "$ROOT/native/blender_gp/android_gpu_backend.cpp"
 cx "$ROOT/native/blender_gp/gles/pg_gpu_gles.cc"
 cx "$ROOT/native/blender_gp/gles/pg_drw_gles.cc"
+# The Android presenter (engine path on GLES 3.2) as run_native_render_tests.sh builds it.
+o="$OUT/l8_presentation.o"; g++ "${XF[@]}" -D__ANDROID__ -DWITH_OPENGL "${INC[@]}" -c "$ROOT/native/blender_gp/android_gp_presentation.cpp" -o "$o"; objs+=("$o")
+o="$OUT/l8_shader_fx.o"; g++ "${XF[@]}" -D__ANDROID__ "${INC[@]}" -c "$ROOT/native/blender_gp/android_gp_shader_fx.cpp" -o "$o"; objs+=("$o")
+o="$OUT/l8_stroke_outline.o"; gcc -std=gnu11 -O1 "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_stroke_outline.c" -o "$o"; objs+=("$o")
 g++ "${XF[@]}" -Wall "${INC[@]}" "${LI[@]}" -I"$ROOT/native/blender_gp" "$ROOT/native/blender_gp/tests/test_l8_engine_render.cc" "${objs[@]}" "${OBJS[@]}" \
   -Wl,--gc-sections -lEGL -lGLESv2 -ldl -lpthread -lm -o "$OUT/test_l8_render" > "$OUT/link.txt" 2>&1 || {
   cat "$OUT/link.txt" | grep -v "pragma\|note:" | head -20

@@ -376,12 +376,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         return
     }
 
+    // Hide / unhide every panel around the canvas (mode bar, tool rail, properties, timeline).
+    var panelsHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     Column(Modifier.fillMaxSize()){
         Surface(tonalElevation=3.dp){
-            Row(Modifier.fillMaxWidth().height(56.dp).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
+            // Scrolls so the last icons (fit, full canvas, more) stay reachable on narrow screens.
+            Row(Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).testTag("editorTopBar"),verticalAlignment=Alignment.CenterVertically){
                 IconButton(onClick={sheet=Sheet.PROJECT}){Icon(Icons.Default.Menu,"Project")}
                 Text(controller.document.projectName,maxLines=1,modifier=Modifier.widthIn(max=120.dp))
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
                 IconButton(onClick={sheet=Sheet.LAYERS}){Icon(Icons.Default.Layers,"Layers")}
                 IconButton(onClick={sheet=Sheet.MATERIALS}){Icon(Icons.Default.Palette,"Materials")}
                 IconButton(onClick={sheet=Sheet.ADVANCED}){Icon(Icons.Default.Tune,"Advanced")}
@@ -396,9 +399,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 IconButton(onClick={sheet=Sheet.MORE}){Icon(Icons.Default.MoreVert,"More")}
             }
         }
-        ModeBrushBar(controller,::redraw)
+        if(!panelsHidden)ModeBrushBar(controller,::redraw)
         Row(Modifier.fillMaxWidth().weight(1f)){
-            if(state.showTools)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
+            if(state.showTools&&!panelsHidden)ToolRail(controller,{onState(state.copy())},{sheet=Sheet.TOOLS})
             Box(Modifier.weight(1f).fillMaxHeight().background(CanvasBg),contentAlignment=Alignment.Center){
                 viewport()
                 DrawingGuidesOverlay(controller)
@@ -408,10 +411,13 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 ShapeEditOverlay(controller,overlayTick,::redraw)
                 ModifierHandlesOverlay(controller,overlayTick,::redraw)
                 BoxSelectOverlay(controller,overlayTick)
+                IconButton(onClick={panelsHidden=!panelsHidden},Modifier.align(Alignment.TopEnd).padding(4.dp).testTag("togglePanels")){
+                    Icon(if(panelsHidden)Icons.Default.Visibility else Icons.Default.VisibilityOff,if(panelsHidden)"Show panels" else "Hide panels")
+                }
             }
-            if(state.showProperties)Properties(controller,::redraw)
+            if(state.showProperties&&!panelsHidden)Properties(controller,::redraw)
         }
-        if(state.showTimeline)Timeline(controller,::redraw,{fpsDialog=true})
+        if(state.showTimeline&&!panelsHidden)Timeline(controller,::redraw,{fpsDialog=true})
     }
     if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
     when(sheet){
@@ -704,7 +710,6 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     val groups=listOf(
         "DRAW" to listOf(GreaseTool.DRAW,GreaseTool.ERASE,GreaseTool.FILL,GreaseTool.EYEDROPPER,GreaseTool.LINE,GreaseTool.RECTANGLE,GreaseTool.CIRCLE,GreaseTool.ARC,GreaseTool.POLYLINE,GreaseTool.CURVE,GreaseTool.PAN),
         "EDIT" to listOf(GreaseTool.SELECT,GreaseTool.BOX_SELECT,GreaseTool.CIRCLE_SELECT,GreaseTool.LASSO,GreaseTool.MOVE,GreaseTool.ROTATE,GreaseTool.SCALE,GreaseTool.MIRROR),
-        "SCULPT" to listOf(GreaseTool.SCULPT),
         "NOTES" to listOf(GreaseTool.ANNOTATE)
     )
     Column(Modifier.width(86.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally){

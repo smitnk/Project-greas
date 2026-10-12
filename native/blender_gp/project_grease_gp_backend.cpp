@@ -58,6 +58,7 @@ extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, 
 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
+extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
 extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 typedef const bGPDframe *(*ProjectGreaseGPFrameEvaluator)(void *user, const bGPDlayer *layer,
@@ -3447,6 +3448,8 @@ bool Backend::render_with_gpu_context()
   }
   project_grease_android_set_frame_evaluator(eval_frame_trampoline, this);
   project_grease_android_set_fx_provider(fx_provider_trampoline, this);
+  // The engine's batch cache is rebuilt when either revision moves (edits, undo / redo, stacks).
+  project_grease_android_present_set_data_revision(g_gp_data_revision * 0x9E3779B97F4A7C15ull ^ impl_->stack_revision);
   bool presented =
       project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
   // Annotations are drawn over every layer, in screen-space thickness.

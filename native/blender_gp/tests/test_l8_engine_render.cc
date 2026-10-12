@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -24,6 +25,11 @@
 #include "MEM_guardedalloc.h"
 
 #include "gles/pg_gpu_gles.h"
+
+extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
+extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
+extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
+extern "C" int project_grease_android_present_engine_active();
 
 static const int W = 200, H = 120;
 static int failures = 0;
@@ -147,7 +153,7 @@ int main()
     return 1;
   }
   const float paper[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  PGGpEngineView view = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}};
+  PGGpEngineView view = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
 
   bGPdata *gpd = make_doc();
   bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "Lines", true, false);
@@ -206,6 +212,20 @@ int main()
   dump("half blue", 160, 80);
   CHECK(near4(px(160, 80), 0.5f, 0.5f, 1.0f, 1.0f, 0.03f));
 
+  /* Update tagging: without data_changed the batch cache is kept (a new stroke is not drawn yet);
+   * with it the cache is rebuilt. */
+  const float probe[2][2] = {{20, 100}, {30, 100}};
+  add_stroke(gpd, f, 0, probe, 2, 10, false);
+  view.data_changed = 0;
+  CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+  read_result();
+  CHECK(px(25, 100)[0] > 0.9f); /* cached: not there yet */
+  view.data_changed = 1;
+  CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+  read_result();
+  dump("probe after tag", 25, 100);
+  CHECK(px(25, 100)[0] < 0.1f);
+
   /* 7. Present: Standard view transform (linear 0.5 -> sRGB 0.735). */
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   CHECK(pg_gp_engine_present(W, H) == 1);
@@ -213,6 +233,24 @@ int main()
   glReadPixels(160, H - 1 - 80, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
   std::printf("  presented half blue = %d %d %d %d (expected ~188 188 255 255)\n", rgba[0], rgba[1], rgba[2], rgba[3]);
   CHECK(std::abs(rgba[0] - 188) <= 4 && rgba[2] >= 250);
+
+  /* 8. The Android presenter switches its canvas to the engine on a GLES 3.2 context. */
+  project_grease_android_present_set_canvas_size(W, H);
+  project_grease_android_present_set_data_revision(42);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glViewport(0, 0, W, H);
+  CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+  CHECK(project_grease_android_present_engine_active() == 1);
+  {
+    const float sc = 0.92f, ox = (W - W * sc) * 0.5f, oy = (H - H * sc) * 0.5f;
+    unsigned char c[4] = {};
+    glReadPixels(int(ox + 100 * sc), H - 1 - int(oy + 30 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+    std::printf("  presenter line centre = %d %d %d\n", c[0], c[1], c[2]);
+    CHECK(c[0] < 40);
+    glReadPixels(int(ox + 150 * sc), H - 1 - int(oy + 100 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+    std::printf("  presenter paper = %d %d %d (expected 245)\n", c[0], c[1], c[2]);
+    CHECK(std::abs(c[0] - 245) <= 3);
+  }
 
   CHECK(glGetError() == GL_NO_ERROR);
   std::printf(failures ? "%d FAILURES\n" : "L8 engine render tests passed\n", failures);

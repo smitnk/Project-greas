@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <map>
 #include <cmath>
 #include <vector>
@@ -11,6 +14,8 @@
 #endif
 #endif
 
+#include "BLI_listbase.h"
+#include "MEM_guardedalloc.h"
 #include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
 #include "ED_gpencil_legacy.h"
@@ -26,6 +31,11 @@
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_fill.h"
 #include "project_grease_blender_mod2.h"
+#include "gles/pg_gpu_gles.h"
+
+/* L9: the GLES 3.2 GP draw engine (gles/). Weak so the GLES2-only presenter tests link without it. */
+extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
+extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 
 namespace {
 struct Vertex { float x; float y; };
@@ -896,6 +906,113 @@ extern "C" void project_grease_android_present_cache_stats(long* stores,long* re
   if(reuses)*reuses=g_open_cache_reuses;
 }
 
+/* ---- L9: canvas drawn by Blender's GP draw engine (gles/pg_drw_gles.cc) ----------------------
+ * Used when the context is OpenGL ES 3.2 and the frame needs nothing the engine path does not
+ * carry yet (onion skin, shader effects, the weight view, exports): those keep this presenter.
+ * The engine draws a copy of the document whose layers hold only the frame shown (the evaluated
+ * modifier frame), over the paper; overlays (selection, guides, the open stroke) stay here. */
+int g_engine_enabled=1;      // project_grease_android_present_set_engine
+int g_engine_failed=0;       // a shader failed in this context: stay on the presenter
+uint64_t g_engine_revision=0, g_engine_drawn_revision=~0ull;
+int g_engine_drawn_frame=-1;
+void* g_engine_batch_cache=nullptr; // the copy's GpencilBatchCache, kept between frames
+std::vector<const bGPDframe*> g_engine_drawn_frames;
+
+bool engine_context_ok(){
+  static int ok=-1;
+  if(ok<0){
+    const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    int maj=0,min=0;
+    ok=(v&&std::sscanf(v,"OpenGL ES %d.%d",&maj,&min)==2&&(maj>3||(maj==3&&min>=2)))?1:0;
+  }
+  return ok==1;
+}
+
+float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.055f,2.4f);}
+
+bool engine_wanted(const bGPdata*gpd){
+  if(!g_engine_enabled||g_engine_failed||g_export_mode||g_weight_group>=0||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
+  if(!engine_context_ok())return false;
+  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
+    if((gpd->flag&GP_DATA_SHOW_ONIONSKINS)&&(l->onion_flag&GP_LAYER_ONIONSKIN))return false;
+    const PGFxEntry*fx=nullptr;
+    if(g_fx_provider&&g_fx_provider(g_fx_provider_user,l,&fx)>0)return false;
+  }
+  return true;
+}
+
+bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
+  /* Shallow copies (DNA structs are copied as bytes; strokes stay shared). */
+  bGPdata&copy=*static_cast<bGPdata*>(MEM_mallocN(sizeof(bGPdata),"pg engine gpd"));
+  std::memcpy(&copy,gpd,sizeof(bGPdata));
+  BLI_listbase_clear(&copy.layers);
+  int n=0;
+  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next)n++;
+  bGPDlayer*layers=static_cast<bGPDlayer*>(MEM_calloc_arrayN(size_t(std::max(n,1)),sizeof(bGPDlayer),"pg engine layers"));
+  bGPDframe*frames=static_cast<bGPDframe*>(MEM_calloc_arrayN(size_t(std::max(n,1)),sizeof(bGPDframe),"pg engine frames"));
+  int li=0,fi=0;
+  std::vector<const bGPDframe*> shown_frames;
+  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
+    bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(l),frame_number,GP_GETFRAME_USE_PREV);
+    bGPDlayer&cl=layers[li++];
+    std::memcpy(&cl,l,sizeof(bGPDlayer));
+    cl.next=cl.prev=nullptr;
+    BLI_listbase_clear(&cl.frames);
+    cl.actframe=nullptr;
+    if(current){
+      const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,l,current,frame_number):current;
+      bGPDframe&cf=frames[fi++];
+      std::memcpy(&cf,shown?shown:current,sizeof(bGPDframe));
+      cf.next=cf.prev=nullptr;
+      cf.framenum=current->framenum;
+      BLI_addtail(&cl.frames,&cf);
+      cl.actframe=&cf;
+      shown_frames.push_back(shown?shown:current);
+    }
+    BLI_addtail(&copy.layers,&cl);
+  }
+  /* Update tagging: the batch cache (draw_cache_impl_gpencil.cc) is rebuilt only when the document
+   * or modifier revision, the frame or the evaluated frames changed (GP_DATA_CACHE_IS_DIRTY). */
+  const bool changed=g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
+                     shown_frames!=g_engine_drawn_frames;
+  copy.flag&=~GP_DATA_CACHE_IS_DIRTY;
+  if(changed)copy.flag|=GP_DATA_CACHE_IS_DIRTY;
+  copy.runtime.gpencil_cache=static_cast<GpencilBatchCache*>(g_engine_batch_cache);
+  copy.runtime.sbuffer_used=0;
+  PGGpEngineView view{w,h,g_map_origin_x,g_map_origin_y,g_map_scale,
+                      {srgb_to_linear(g_paper_color[0]),srgb_to_linear(g_paper_color[1]),srgb_to_linear(g_paper_color[2]),1.0f},
+                      changed?1:0};
+  const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
+  g_engine_batch_cache=copy.runtime.gpencil_cache;
+  MEM_freeN(frames);
+  MEM_freeN(layers);
+  MEM_freeN(&copy);
+  if(!ok){
+    g_engine_failed=1;
+#ifdef PG_HAVE_ANDROID_LOG
+    __android_log_print(ANDROID_LOG_ERROR,"ProjectGrease","GP draw engine failed, using the presenter: %s",pg_gpu_gles_last_error());
+#endif
+    return false;
+  }
+  g_engine_drawn_revision=g_engine_revision;
+  g_engine_drawn_frame=frame_number;
+  g_engine_drawn_frames=shown_frames;
+  /* The engine image replaces the paper rectangle only (strokes are clipped to the canvas, as the
+   * camera frame clips them in Blender). */
+  const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));
+  const int cw=int(std::ceil(float(g_canvas_width)*g_map_scale)), ch=int(std::ceil(float(g_canvas_height)*g_map_scale));
+  glEnable(GL_SCISSOR_TEST);
+  glScissor(x0,h-y1,cw,ch);
+  pg_gp_engine_present(w,h);
+  glDisable(GL_SCISSOR_TEST);
+  glViewport(0,0,w,h);
+  return true;
+}
+
+extern "C" void project_grease_android_present_set_engine(int enabled){g_engine_enabled=enabled?1:0;}
+extern "C" void project_grease_android_present_set_data_revision(uint64_t revision){g_engine_revision=revision;}
+extern "C" int project_grease_android_present_engine_active(){return g_engine_drawn_frame>=0&&!g_engine_failed;}
+
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
@@ -918,7 +1035,15 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int
   });
   if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:g_paper_color,false);
   (void)x0; (void)y0; (void)x1; (void)y1;
-  for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
+  const bool by_engine=engine_wanted(gpd)&&engine_draw_canvas(gpd,frame_number,w,h);
+  if(by_engine){
+    for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
+      if(layer->flag&GP_LAYER_HIDE)continue;
+      bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(layer),frame_number,GP_GETFRAME_USE_PREV);
+      if(current&&g_selection_overlay&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
+    }
+  }
+  for(const bGPDlayer*layer=by_engine?nullptr:static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
     if(layer->flag&GP_LAYER_HIDE)continue;
     bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(layer),frame_number,GP_GETFRAME_USE_PREV);
     if(!current)continue;

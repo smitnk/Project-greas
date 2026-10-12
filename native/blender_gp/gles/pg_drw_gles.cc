@@ -1110,11 +1110,13 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   view_set(c, view);
   c.ob.data = gpd;
   c.ob.totcol = (short)gpd->totcol;
-  /* shortcut: the document does not tag GP_DATA_CACHE_IS_DIRTY on every edit yet, so the batch
-   * cache (draw_cache_impl_gpencil.cc) and the bound box are rebuilt every frame. Tag edits in
-   * the backend (DRW_gpencil_batch_cache_dirty_tag) and drop this when drawing gets slow. */
-  gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
-  MEM_SAFE_FREE(c.ob.runtime.bb);
+  /* Update tagging: the caller says when the strokes changed (document revision, frame, evaluated
+   * frames); the batch cache and the bound box are rebuilt only then, as Blender's depsgraph tags
+   * them (GP_DATA_CACHE_IS_DIRTY). */
+  if (view->data_changed) {
+    gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+    MEM_SAFE_FREE(c.ob.runtime.bb);
+  }
   /* The background pass of the viewport: paper colour, depth 1. */
   GPU_framebuffer_bind(c.dfbl.default_fb);
   GPU_framebuffer_clear(c.dfbl.default_fb, (eGPUFrameBufferBits)(GPU_COLOR_BIT | GPU_DEPTH_BIT | GPU_STENCIL_BIT),

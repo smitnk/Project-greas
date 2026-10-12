@@ -798,6 +798,9 @@ class EditorController {
             if (curve.phase == CurveSession.Phase.EDIT) confirmCurve() else cancelCurve()
         }
         if (tool != tools.activeTool && shapeEdit.isActive) confirmShape()
+        // Sculpt is one thing: the Sculpt tool is Sculpt mode, and any other tool leaves it.
+        if (tool == GreaseTool.SCULPT) mode = GreaseMode.SCULPT
+        else if (mode == GreaseMode.SCULPT) mode = GreaseMode.DRAW
         // Re-render so the edit overlay follows the tool at once.
         return tools.select(tool).also { if (it) render() }
     }
@@ -920,6 +923,9 @@ class EditorController {
         }
         if (!supported) return false
         mode = value
+        // The mode chip and the sculpt tool are the same switch (the chip alone used to leave Draw active).
+        if (value == GreaseMode.SCULPT) tools.select(GreaseTool.SCULPT)
+        else if (tools.activeTool == GreaseTool.SCULPT) tools.select(if (value == GreaseMode.EDIT) GreaseTool.SELECT else GreaseTool.DRAW)
         if (value == GreaseMode.WEIGHT_PAINT) syncWeightPaintGroup()
         if (value == GreaseMode.EDIT && tools.activeTool == GreaseTool.DRAW) {
             tools.select(GreaseTool.SELECT)

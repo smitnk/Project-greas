@@ -955,7 +955,8 @@ static void test_batch21_layer_state()
   CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
   l->tintcolor[3] = 0.5f;
   present(d);
-  CHECK(near_rgb(pixel_at_canvas(100, 60), 128, 0, 128, 8));
+  /* the tint mixes in scene linear (gpencil_vert.glsl): linear 0.5 shows as sRGB 188 */
+  CHECK(near_rgb(pixel_at_canvas(100, 60), 188, 0, 188, 8));
   l->tintcolor[3] = 0.0f;
   present(d);
   CHECK(near_rgb(pixel_at_canvas(100, 60 + 10), 245, 245, 245)); /* 10 px bar: 10 below is canvas */

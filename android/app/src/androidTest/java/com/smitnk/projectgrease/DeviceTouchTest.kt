@@ -47,8 +47,10 @@ class DeviceTouchTest : SweepBase() {
         line(300f)
         assertEquals(1, strokes().size)
         val a = screen(500f, 500f); val b = screen(700f, 500f); val c = screen(600f, 600f)
+        val canUndo = onUi { controller.history.canUndo }
         fingers(listOf(a, b))
-        assertEquals("two-finger tap undoes the stroke", 0, strokes().size)
+        val log = onUi { "canUndo before $canUndo after ${controller.history.canUndo} redo ${controller.history.canRedo} view ${controller.view.zoom} ${controller.view.rotation}" }
+        assertEquals("two-finger tap undoes the stroke ($log)", 0, strokes().size)
         fingers(listOf(a, b, c))
         assertEquals("three-finger tap redoes it", 1, strokes().size)
     }
@@ -77,9 +79,12 @@ class DeviceTouchTest : SweepBase() {
 
     @Test fun lassoBreakOffCopyCutPaste() {
         line(300f)
-        onUi { controller.selectBox(500f, 250f, 700f, 350f) }
-        assertTrue("break off", onUi { controller.breakOffSelection() })
-        assertTrue("the selected part is its own stroke now: ${strokes().size}", strokes().size >= 2)
+        val boxed = onUi { controller.selectBox(500f, 250f, 700f, 350f) }
+        val selected = onUi { com.smitnk.projectgrease.nativebridge.GPNative.nativeSelectedPointCount(controller.nativeHandle) }
+        val split = onUi { controller.breakOffSelection() }
+        val native = onUi { com.smitnk.projectgrease.nativebridge.GPNative.nativeStrokeCount(controller.nativeHandle) }
+        assertTrue("the selected part is its own stroke now: doc ${strokes().size}, native $native, box $boxed, selected $selected, split $split",
+            strokes().size >= 2)
         val before = strokes().size
         onUi { controller.selectAll() }
         assertTrue("cut", onUi { controller.cutSelection() })

@@ -53,6 +53,8 @@ typedef struct PGGpEngineView {
    * there onion skin only with "Always" (GP_ONION_GHOST_ALWAYS). */
   const struct ListBase *shader_fx;
   int rendered;
+  /* Weight Paint view: the vertex group whose weights the overlay shows, or -1. */
+  int weight_group;
 } PGGpEngineView;
 
 /* Runs Blender 3.6.23's GP draw engine (draw/engines/gpencil, unmodified) on \a gpd at frame

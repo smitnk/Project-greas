@@ -982,7 +982,7 @@ void draw_reference(int w,int h){
 }
 
 bool engine_wanted(const bGPdata*gpd){
-  if(!g_engine_enabled||g_engine_failed||g_export_mode||g_weight_group>=0||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
+  if(!g_engine_enabled||g_engine_failed||g_export_mode||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
   if(!engine_context_ok())return false;
   // Onion skin, view rotation and the shader effects are drawn by the engine.
   (void)gpd;
@@ -1081,7 +1081,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   }
   /* Update tagging: the batch cache (draw_cache_impl_gpencil.cc) is rebuilt only when the document
    * or modifier revision, the frame or the evaluated frames changed (GP_DATA_CACHE_IS_DIRTY). */
-  const bool changed=g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
+  static int drawn_weight=-2; /* the overlay's vertex group (its edit batch) */
+  const bool changed=drawn_weight!=g_weight_group||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
                      shown_frames!=g_engine_drawn_frames;
   copy.flag&=~GP_DATA_CACHE_IS_DIRTY;
   if(changed)copy.flag|=GP_DATA_CACHE_IS_DIRTY;
@@ -1097,6 +1098,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   EngineFx fx;build_engine_fx(gpd,fx);
   view.shader_fx=&fx.list;
   view.rendered=fx.list.first!=nullptr;
+  view.weight_group=g_weight_group;
   if(over)for(float&c:view.background)c=0.0f;
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
   g_engine_batch_cache=copy.runtime.gpencil_cache;
@@ -1113,6 +1115,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   g_engine_drawn_revision=g_engine_revision;
   g_engine_drawn_frame=frame_number;
   g_engine_drawn_frames=shown_frames;
+  drawn_weight=g_weight_group;
   /* The engine image replaces the paper rectangle only (strokes are clipped to the canvas, as the
    * camera frame clips them in Blender). */
   const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));

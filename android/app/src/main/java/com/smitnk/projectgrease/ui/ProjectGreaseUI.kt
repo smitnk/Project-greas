@@ -47,7 +47,7 @@ import com.smitnk.projectgrease.editor.EraserMode
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 private val presets=listOf(
@@ -379,6 +379,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.LAYER_ADVANCED->LayerAdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MENU->StudioMenu(controller,{sheet=it},{persistProject();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();sheet=Sheet.NONE},onSettings,{sheet=Sheet.NONE})
         Sheet.DRAW_SETTINGS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Properties(controller,::redraw)}
+        Sheet.EFFECTS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){LayerEffectsSection(controller,::redraw)}}
         Sheet.TIMELINE->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Timeline(controller,::redraw,{fpsDialog=true})}
         Sheet.NONE->Unit
     }
@@ -919,33 +920,34 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
  * Sizes are canvas pixels; the strokes are never changed.
  */
 @NonSkippableComposable
-@Composable private fun LayerEffectsSection(controller:EditorController,redraw:()->Unit){
-    val layer=controller.selectedLayer
+@Composable private fun LayerEffectsSection(controller:EditorController,redraw:()->Unit,layer:Int=0){
+    // Blender: effects belong to the whole drawing (the object); they are kept on the bottom layer's
+    // slot and every layer's effects run together as one stack on the whole drawing.
     var tick by remember{mutableStateOf(0)}
     var addMenu by remember{mutableStateOf(false)}
     var expanded by remember(layer){mutableStateOf(setOf<Int>())}
     val effects=remember(tick,layer){controller.effects(layer)}
     fun changed(ok:Boolean){if(ok){tick++;redraw()}}
     Text("Effects",Modifier.padding(horizontal=12.dp,vertical=8.dp),fontWeight=FontWeight.Bold)
-    if(effects.isEmpty())Text("No effects. Effects are drawn live over this layer; the strokes stay untouched. Sizes are canvas pixels.",Modifier.padding(horizontal=12.dp))
+    if(effects.isEmpty())Text("No effects. Effects are drawn live over the whole drawing (Blender's Rendered view); the strokes stay untouched. Sizes are canvas pixels.",Modifier.padding(horizontal=12.dp))
     effects.forEachIndexed{index,effect->
         val open=index in expanded
         Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp).border(1.dp,MaterialTheme.colorScheme.outline,RoundedCornerShape(8.dp)).padding(8.dp)){
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                 Text(com.smitnk.projectgrease.editor.FxType.name(effect.type),Modifier.weight(1f).clickable{expanded=if(open)expanded-index else expanded+index},fontWeight=FontWeight.Bold)
-                Switch(checked=effect.enabled,onCheckedChange={changed(controller.setEffectEnabled(index,it))})
+                Switch(checked=effect.enabled,onCheckedChange={changed(controller.setEffectEnabled(index,it,layer=layer))})
             }
             FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment=Alignment.CenterVertically){
                 TextButton(onClick={expanded=if(open)expanded-index else expanded+index}){Text(if(open)"Hide" else "Edit")}
-                TextButton(onClick={changed(controller.moveEffect(index,-1))},enabled=index>0){Text("Up")}
-                TextButton(onClick={changed(controller.moveEffect(index,1))},enabled=index<effects.size-1){Text("Down")}
-                TextButton(onClick={expanded=emptySet();changed(controller.removeEffect(index))}){Text("Remove")}
+                TextButton(onClick={changed(controller.moveEffect(index,-1,layer=layer))},enabled=index>0){Text("Up")}
+                TextButton(onClick={changed(controller.moveEffect(index,1,layer=layer))},enabled=index<effects.size-1){Text("Down")}
+                TextButton(onClick={expanded=emptySet();changed(controller.removeEffect(index,layer=layer))}){Text("Remove")}
             }
             // Target: whole layer (Blender), strokes only or fills only.
             FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment=Alignment.CenterVertically){
                 Text("Applies to",fontSize=11.sp,modifier=Modifier.padding(end=6.dp))
                 listOf(com.smitnk.projectgrease.editor.FxTarget.LAYER,com.smitnk.projectgrease.editor.FxTarget.STROKES,com.smitnk.projectgrease.editor.FxTarget.FILLS).forEach{t->
-                    FilterChip(selected=effect.target==t,onClick={changed(controller.setEffectTarget(index,t))},
+                    FilterChip(selected=effect.target==t,onClick={changed(controller.setEffectTarget(index,t,layer=layer))},
                         label={Text(com.smitnk.projectgrease.editor.FxTarget.label(t),fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
                 }
             }
@@ -954,10 +956,10 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     val value=effect.params.getOrElse(spec.index){0f}
                     when(spec.kind){
                         com.smitnk.projectgrease.editor.ParamKind.BOOL->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-                            Text(spec.label,Modifier.weight(1f));Switch(checked=value!=0f,onCheckedChange={changed(controller.setEffectParam(index,spec.index,if(it)1f else 0f))})
+                            Text(spec.label,Modifier.weight(1f));Switch(checked=value!=0f,onCheckedChange={changed(controller.setEffectParam(index,spec.index,if(it)1f else 0f,layer=layer))})
                         }
                         com.smitnk.projectgrease.editor.ParamKind.ENUM->OutlinedButton(
-                            onClick={changed(controller.setEffectParam(index,spec.index,((value.toInt()+1)%spec.options.size).toFloat()))},
+                            onClick={changed(controller.setEffectParam(index,spec.index,((value.toInt()+1)%spec.options.size).toFloat(),layer=layer))},
                             modifier=Modifier.fillMaxWidth()
                         ){Text(spec.label+": "+spec.options.getOrElse(value.toInt()){"?"})}
                         else->{
@@ -965,7 +967,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                             Text(spec.label+" "+(if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)shown.toInt().toString() else "%.2f".format(shown)))
                             Slider(
                                 value=value.coerceIn(spec.min,spec.max),
-                                onValueChange={changed(controller.setEffectParam(index,spec.index,if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)Math.round(it).toFloat() else it,commit=false))},
+                                onValueChange={changed(controller.setEffectParam(index,spec.index,if(spec.kind==com.smitnk.projectgrease.editor.ParamKind.INT)Math.round(it).toFloat() else it,commit=false,layer=layer))},
                                 onValueChangeFinished={controller.commitEffectEdit()},
                                 valueRange=spec.min..spec.max
                             )
@@ -981,7 +983,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Button(onClick={addMenu=true},enabled=effects.size<com.smitnk.projectgrease.editor.FxType.MAX_STACK,modifier=Modifier.fillMaxWidth()){Text("Add effect")}
         DropdownMenu(expanded=addMenu,onDismissRequest={addMenu=false}){
             com.smitnk.projectgrease.editor.FxType.all.forEach{type->
-                DropdownMenuItem(text={Text(com.smitnk.projectgrease.editor.FxType.name(type))},onClick={addMenu=false;changed(controller.addEffect(type))})
+                DropdownMenuItem(text={Text(com.smitnk.projectgrease.editor.FxType.name(type))},onClick={addMenu=false;changed(controller.addEffect(type,layer=layer))})
             }
         }
     }
@@ -1044,7 +1046,6 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             }
         }
         LayerMaskSection(controller,redraw)
-        LayerEffectsSection(controller,redraw)
         Spacer(Modifier.height(20.dp))
       }
     }
@@ -1726,24 +1727,23 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
     val layer=controller.selectedLayer
     ModalBottomSheet(onDismissRequest=onDismiss,modifier=Modifier.testTag("layerAdvancedSheet")){
         Text("Advanced · "+controller.layerName(layer),Modifier.padding(horizontal=20.dp,vertical=8.dp),style=MaterialTheme.typography.titleLarge)
-        val tabs=listOf("Modifiers","Effects","Onion skin","Masks","Adjustments","Sculpt")
+        val tabs=listOf("Modifiers","Onion skin","Masks","Adjustments","Sculpt")
         ScrollableTabRow(selectedTabIndex=tab,edgePadding=8.dp){
             tabs.forEachIndexed{i,t->Tab(selected=tab==i,onClick={tab=i},text={Text(t)},modifier=Modifier.testTag("advTab_$i"))}
         }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=24.dp)){
             when(tab){
                 0->ModifierStackSection(controller,redraw)
-                1->LayerEffectsSection(controller,redraw)
-                2->{
+                1->{
                     Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
                         Text("Show this layer's onion skin",Modifier.weight(1f))
                         Switch(checked=controller.layerOnion(),onCheckedChange={controller.setLayerOnion(layer,it);tick++;redraw()})
                     }
                     OnionContent(controller,redraw)
                 }
-                3->LayerMaskSection(controller,redraw)
-                4->LayerLookSection(controller,Triple(layer,controller.layerCount(),tick),redraw)
-                5->{
+                2->LayerMaskSection(controller,redraw)
+                3->LayerLookSection(controller,Triple(layer,controller.layerCount(),tick),redraw)
+                4->{
                     Text("Sculpt brushes (Sculpt mode)",Modifier.padding(horizontal=20.dp,vertical=6.dp),fontWeight=FontWeight.Bold)
                     com.smitnk.projectgrease.editor.SculptBrush.entries.forEach{b->
                         FilterChip(selected=controller.sculpt.brush==b,onClick={controller.sculpt.select(b);controller.setMode(GreaseMode.SCULPT);tick++;redraw()},
@@ -1776,6 +1776,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Brush,"Drawing settings","Thickness, opacity, stabilizer, spacing, grid, snapping","draw"){onSheet(Sheet.DRAW_SETTINGS)}
             item(Icons.Default.Tune,"Advanced drawing","Stabilization, brush curves, guides, sculpt brushes","advanced"){onSheet(Sheet.ADVANCED)}
             item(Icons.Default.Layers,"Layers (all settings)","Merge, isolate, lock all, transform options","layers"){onSheet(Sheet.LAYERS)}
+            item(Icons.Default.AutoAwesome,"Effects (whole drawing)","Blur, colorize, glow, shadow, … shown in the Rendered view","effects"){onSheet(Sheet.EFFECTS)}
             item(Icons.Default.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
             item(Icons.Default.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
             item(Icons.Default.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}

@@ -350,6 +350,7 @@ class Backend {
 
  private:
   void apply_brush_vertex_color(bGPDstroke *gps);
+  void keep_drawing_fx(int index);
   bool render_with_gpu_context();
   Impl* impl_;
 };

@@ -52,6 +52,9 @@
 #include "draw_cache_impl.h"
 #include "draw_shader_shared.h"
 #include "draw_view_data.h"
+#include "BLI_math_color.h"
+#include "BKE_colorband.h"
+#include "DNA_userdef_types.h"
 
 #include "pg_gpu_gles.h"
 #include "project_grease_modifier_stack.h"
@@ -1097,6 +1100,115 @@ static void frame_end(PGContext &c)
   c.state = DRWState(~0u);
 }
 
+
+/* ---- Weight Paint view: Blender's overlay (overlay_gpencil.cc) edit lines and points in weight
+ * colours (doWeightColor), drawn over the engine image with Blender's overlay_edit_gpencil shaders. */
+
+/* BEGIN VERBATIM source/blender/draw/intern/draw_common.c (the default ramp branch) */
+static void DRW_evaluate_weight_to_color(const float weight, float result[4])
+{
+  if (U.flag & USER_CUSTOM_RANGE) {
+    BKE_colorband_evaluate(&U.coba_weight, weight, result);
+  }
+  else {
+    /* Use gamma correction to even out the color bands:
+     * increasing widens yellow/cyan vs red/green/blue.
+     * Gamma 1.0 produces the original 2.79 color ramp. */
+    const float gamma = 1.5f;
+    const float hsv[3] = {(2.0f / 3.0f) * (1.0f - weight), 1.0f, pow(0.5f + 0.5f * weight, gamma)};
+
+    hsv_to_rgb_v(hsv, result);
+
+    for (int i = 0; i < 3; i++) {
+      result[i] = pow(result[i], 1.0f / gamma);
+    }
+  }
+}
+/* END VERBATIM */
+
+static void draw_weight_overlay(PGContext &c, bGPdata *gpd, int cfra, int group)
+{
+  static GPUTexture *ramp = nullptr;
+  static GPUUniformBuf *globals = nullptr;
+  if (ramp == nullptr) {
+    /* ADAPTED: DRW_create_weight_colorramp_texture is GPU_SRGB8_A8 1D: here the decoded (linear)
+     * values in a 256x1 2D texture, sampled the same. */
+    float pixels[256][4];
+    for (int i = 0; i < 256; i++) {
+      DRW_evaluate_weight_to_color(i / 255.0f, pixels[i]);
+      for (int k = 0; k < 3; k++) pixels[i][k] = srgb_to_linearrgb(pixels[i][k]);
+      pixels[i][3] = 1.0f;
+    }
+    ramp = GPU_texture_create_2d("weight_color_ramp", 256, 1, 1, GPU_RGBA16F, GPU_TEXTURE_USAGE_SHADER_READ, pixels[0]);
+    /* ADAPTED: DRW_globals_update without the theme API: the default theme's gp_vertex (black),
+     * gp_vertex_select (0xff8500) and gp_vertex_size 3, at U.pixelsize 2 for a touch screen. */
+    GlobalsUboStorage gb;
+    std::memset(&gb, 0, sizeof(gb));
+    const float vert[4] = {0, 0, 0, 1}, sel[4] = {1.0f, 0x85 / 255.0f, 0, 1};
+    std::memcpy(&gb.color_gpencil_vertex, vert, sizeof(vert));
+    std::memcpy(&gb.color_gpencil_vertex_select, sel, sizeof(sel));
+    gb.size_vertex_gpencil = 2.0f * 3.0f;
+    globals = GPU_uniformbuf_create_ex(sizeof(gb), &gb, "globalsBlock");
+  }
+  const short active = gpd->vertex_group_active_index;
+  gpd->vertex_group_active_index = (short)(group + 1);
+  GPUBatch *lines = DRW_cache_gpencil_edit_lines_get(&c.ob, cfra);
+  GPUBatch *points = DRW_cache_gpencil_edit_points_get(&c.ob, cfra);
+  gpd->vertex_group_active_index = active;
+  GpencilBatchCache *cache = static_cast<GpencilBatchCache *>(gpd->runtime.gpencil_cache);
+  (void)cache;
+  if (lines == nullptr || points == nullptr || lines->verts[0] == nullptr || lines->verts[1] == nullptr) return;
+  const int vert_len = (int)GPU_vertbuf_get_vertex_len(lines->verts[0]);
+  if (vert_len <= 0) return;
+  GPU_framebuffer_bind(c.dfbl.default_fb);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  static GLuint vao = 0;
+  if (!vao) glGenVertexArrays(1, &vao);
+  glBindVertexArray(vao);
+  /* gpencil_stroke_format: pos vec4, ma ivec4, uv vec4; gpencil_edit_stroke_format: vflag, weight */
+  glBindBuffer(GL_ARRAY_BUFFER, pg_android_vertbuf_gl(lines->verts[0]));
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 48, (const void *)0);
+  glEnableVertexAttribArray(1);
+  glVertexAttribIPointer(1, 1, GL_INT, 48, (const void *)16);
+  glBindBuffer(GL_ARRAY_BUFFER, pg_android_vertbuf_gl(lines->verts[1]));
+  glEnableVertexAttribArray(2);
+  glVertexAttribIPointer(2, 1, GL_UNSIGNED_INT, 8, (const void *)0);
+  glEnableVertexAttribArray(3);
+  glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 8, (const void *)4);
+  const bool show_lines = (c.v3d.gp_flag & V3D_GP_SHOW_EDIT_LINES) != 0;
+  for (int pass = show_lines ? 0 : 1; pass < 2; pass++) {
+    GPUShader *sh = GPU_shader_create_from_info_name(pass == 0 ? "overlay_edit_gpencil_wire" : "overlay_edit_gpencil_point");
+    if (sh == nullptr) { c.failed = true; break; }
+    glUseProgram(pg_gpu_shader_program(sh));
+    pg_gpu_uniformbuf_bind(c.view_ubo, pg_gpu_shader_block_binding(sh, "drw_view_"));
+    pg_gpu_uniformbuf_bind(c.matrices_ubo, pg_gpu_shader_block_binding(sh, "drw_matrices"));
+    pg_gpu_uniformbuf_bind(c.infos_ubo, pg_gpu_shader_block_binding(sh, "drw_infos"));
+    pg_gpu_uniformbuf_bind(globals, pg_gpu_shader_block_binding(sh, "globalsBlock"));
+    pg_gpu_texture_bind(ramp, pg_gpu_shader_sampler_unit(sh, "weightTex"));
+    auto i1 = [&](const char *n, int v) { const int l = pg_gpu_shader_uniform(sh, n); if (l >= 0) glUniform1i(l, v); };
+    auto f1 = [&](const char *n, float v) { const int l = pg_gpu_shader_uniform(sh, n); if (l >= 0) glUniform1f(l, v); };
+    i1("doMultiframe", 0);
+    i1("doStrokeEndpoints", 0);
+    i1("hideSelect", 0);
+    i1("doWeightColor", 1);
+    i1("drw_ResourceID", 0);
+    i1("drw_resourceChunk", 0);
+    i1("gpu_BaseInstance", 0);
+    f1("gpEditOpacity", c.v3d.vertex_opacity);
+    const int col = pg_gpu_shader_uniform(sh, "gpEditColor");
+    if (col >= 0) glUniform4fv(col, 1, gpd->line_color);
+    glDrawArrays(pass == 0 ? GL_LINE_STRIP : GL_POINTS, 0, vert_len);
+  }
+  for (int a = 0; a < 4; a++) glDisableVertexAttribArray(a);
+  glBindVertexArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glUseProgram(0);
+  c.state = DRWState(~0u);
+}
+
 int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
 {
   PGContext &c = pgc();
@@ -1170,6 +1282,9 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   e.cache_finish(vedata);
   GPU_framebuffer_bind(c.dfbl.default_fb);
   e.draw_scene(vedata);
+  if (view->weight_group >= 0) {
+    draw_weight_overlay(c, gpd, cfra, view->weight_group);
+  }
   gpd->runtime.sbuffer_used = sbuffer_used;
   gpd->pixfactor = pixfactor;
   size_t li = 0;

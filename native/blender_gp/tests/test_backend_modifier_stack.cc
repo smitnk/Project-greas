@@ -443,13 +443,14 @@ int main()
     CHECK(b.fx_add(2, PG_FX_GLOW) == 1 && b.fx_count(0) == 1); /* independent of the source layer */
     CHECK(b.history_reset());
     CHECK(b.delete_layer(0));
-    CHECK(b.layer_count() == 2 && b.fx_count(0) == 2 && b.fx_count(1) == 2);
+    /* effects are the drawing's: the deleted bottom layer's effect moves to the new bottom slot */
+    CHECK(b.layer_count() == 2 && b.fx_count(0) == 3 && b.fx_count(1) == 2);
     CHECK(b.history_record());
-    CHECK(b.fx_remove(0, 0) && b.fx_count(0) == 1 && !b.fx_remove(0, 3));
+    CHECK(b.fx_remove(0, 0) && b.fx_count(0) == 2 && !b.fx_remove(0, 3));
     CHECK(b.history_record());
-    CHECK(b.history_undo() && b.fx_count(0) == 2); /* undo restores the effect */
+    CHECK(b.history_undo() && b.fx_count(0) == 3); /* undo restores the effect */
     CHECK(b.history_undo() && b.layer_count() == 3 && b.fx_count(0) == 1 && b.fx_count(2) == 2);
-    CHECK(b.history_redo() && b.layer_count() == 2 && b.fx_count(0) == 2);
+    CHECK(b.history_redo() && b.layer_count() == 2 && b.fx_count(0) == 3);
     /* effects never touch strokes and never invalidate the modifier cache */
     const uint64_t evals = b.modifier_eval_count();
     CHECK(b.fx_add(0, PG_FX_WAVE) >= 0 && b.modifier_eval_count() == evals);

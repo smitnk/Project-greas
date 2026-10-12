@@ -27,9 +27,14 @@ g++ "$G"/*.cc.o "${DOBJ[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -
 mkdir -p "$DEST"; FAILED=0
 INFOS=(gpencil_geometry gpencil_layer_blend gpencil_mask_invert gpencil_depth_merge gpencil_antialiasing_stage_0
        gpencil_antialiasing_stage_1 gpencil_antialiasing_stage_2 gpencil_fx_composite gpencil_fx_colorize
-       gpencil_fx_blur gpencil_fx_transform gpencil_fx_glow gpencil_fx_rim gpencil_fx_shadow gpencil_fx_pixelize)
+       gpencil_fx_blur gpencil_fx_transform gpencil_fx_glow gpencil_fx_rim gpencil_fx_shadow gpencil_fx_pixelize
+       overlay_edit_gpencil_wire overlay_edit_gpencil_point)
 for info in "${INFOS[@]}"; do
   "$G/pg_gles_shader_gen" "$info" "$DEST/$info.vert.glsl" "$DEST/$info.frag.glsl"
+  # ADAPTED: OpenGL ES has no 1D textures; the weight ramp (G_draw.weight_ramp, 256x1) is a 2D texture.
+  if [[ "$info" == overlay_edit_gpencil_* ]]; then
+    sed -i 's/uniform sampler1D weightTex;/uniform sampler2D weightTex;/; s/texture(weightTex, t)/texture(weightTex, vec2(t, 0.5))/' "$DEST/$info.vert.glsl" "$DEST/$info.frag.glsl"
+  fi
   if [[ -n "${GLSLANG:-}" ]]; then
     if "$GLSLANG" -S vert "$DEST/$info.vert.glsl" > "$G/$info.v.txt" 2>&1 && "$GLSLANG" -S frag "$DEST/$info.frag.glsl" > "$G/$info.f.txt" 2>&1; then echo "GLES 3.20 OK: $info"; else echo "GLES 3.20 FAIL: $info"; grep -h ERROR "$G/$info.v.txt" "$G/$info.f.txt" | head -3; FAILED=1; fi
   fi

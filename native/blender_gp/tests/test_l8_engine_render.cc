@@ -23,6 +23,8 @@
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
 #include "DNA_shader_fx_types.h"
+#include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
 #include "MEM_guardedalloc.h"
 
 #include "gles/pg_gpu_gles.h"
@@ -155,6 +157,7 @@ int main()
   }
   const float paper[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   PGGpEngineView view = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
+  view.weight_group = -1;
 
   bGPdata *gpd = make_doc();
   bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "Lines", true, false);
@@ -295,6 +298,35 @@ int main()
     CHECK(near4(px(70, 85), 1, 0, 0, 1)); /* Material Preview: no effects */
     view.shader_fx = nullptr;
     MEM_freeN(fx);
+  }
+
+  /* Weight Paint view: Blender's overlay edit lines / points in weight colours (overlay_gpencil.cc,
+   * doWeightColor): weight 1 is red on Blender's default ramp. */
+  {
+    bDeformGroup *dg = static_cast<bDeformGroup *>(MEM_callocN(sizeof(bDeformGroup), "dg"));
+    std::strcpy(dg->name, "Group");
+    BLI_addtail(&gpd->vertex_group_names, dg);
+    bGPDstroke *gps = static_cast<bGPDstroke *>(f->strokes.first); /* the line y = 30 */
+    gps->dvert = static_cast<MDeformVert *>(MEM_callocN(sizeof(MDeformVert) * gps->totpoints, "dvert"));
+    for (int i = 0; i < gps->totpoints; i++) {
+      gps->dvert[i].dw = static_cast<MDeformWeight *>(MEM_callocN(sizeof(MDeformWeight), "dw"));
+      gps->dvert[i].totweight = 1;
+      gps->dvert[i].dw[0].def_nr = 0;
+      gps->dvert[i].dw[0].weight = 1.0f;
+    }
+    view.weight_group = 0;
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+    if (glGetError() != GL_NO_ERROR) std::printf("  GL error after the weight overlay\n");
+    read_result();
+    dump("weight 1 point (overlay)", 20, 30);
+    dump("weight 1 edit line", 100, 30);
+    CHECK(px(100, 30)[0] > 0.5f && px(100, 30)[1] < 0.3f && px(100, 30)[2] < 0.3f);
+    view.weight_group = -1;
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+    read_result();
+    CHECK(near4(px(100, 30), 0, 0, 0, 1)); /* normal view again */
   }
 
   /* 7. Present: Standard view transform (linear 0.5 -> sRGB 0.735). */

@@ -1159,6 +1159,18 @@ bool Backend::duplicate_layer(int index)
   return true;
 }
 
+// Effects are the drawing's (Blender's object stack, kept on the bottom layer's slot): a removed
+// layer's effects stay, on the slot that is the bottom one afterwards.
+void Backend::keep_drawing_fx(int index)
+{
+  std::vector<PGFxEntry> removed = std::move(impl_->fx_stacks[static_cast<size_t>(index)]);
+  impl_->fx_stacks.erase(impl_->fx_stacks.begin() + index);
+  if (removed.empty() || impl_->fx_stacks.empty()) return;
+  std::vector<PGFxEntry> &bottom = impl_->fx_stacks.front();
+  if (index == 0) bottom.insert(bottom.begin(), removed.begin(), removed.end());
+  else bottom.insert(bottom.end(), removed.begin(), removed.end());
+}
+
 bool Backend::delete_layer(int index)
 {
   bGPDlayer *layer = layer_at(impl_->gpd, index);
@@ -1168,7 +1180,7 @@ bool Backend::delete_layer(int index)
     impl_->stacks.erase(impl_->stacks.begin() + index);
   }
   if (layer_fx(impl_, index) != nullptr) {
-    impl_->fx_stacks.erase(impl_->fx_stacks.begin() + index);
+    keep_drawing_fx(index);
   }
   impl_->stack_revision++;
   BKE_gpencil_layer_delete(impl_->gpd, layer);
@@ -1193,7 +1205,7 @@ bool Backend::merge_layer_down()
   }
   /* the merged layer is gone: drop its modifier / effect lists (Blender merges the strokes only) */
   if (layer_stack(impl_, index) != nullptr) impl_->stacks.erase(impl_->stacks.begin() + index);
-  if (layer_fx(impl_, index) != nullptr) impl_->fx_stacks.erase(impl_->fx_stacks.begin() + index);
+  if (layer_fx(impl_, index) != nullptr) keep_drawing_fx(index);
   impl_->stack_revision++;
   eval_cache_clear(impl_);
   BKE_gpencil_layer_active_set(impl_->gpd, below);

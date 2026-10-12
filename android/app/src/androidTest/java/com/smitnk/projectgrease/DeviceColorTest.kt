@@ -60,6 +60,7 @@ class DeviceColorTest : SweepBase() {
         onUi { controller.setVertexColorMode(true); controller.setMaterialColor(chosen); controller.brushes.setSize(30f) }
         line(300f)
         onUi { controller.setMaterialColor(0xFF000000.toInt()); controller.selectTool(GreaseTool.EYEDROPPER) }
+        rule.waitForIdle()
         tap(600f, 300f)
         val picked = onUi { controller.materials.colorArgb }
         assertTrue("picked ${Integer.toHexString(picked)} for ${Integer.toHexString(chosen)}", near(picked, chosen, 14))
@@ -69,6 +70,7 @@ class DeviceColorTest : SweepBase() {
         onUi { controller.setVertexColorMode(false); controller.brushes.setSize(30f) }
         line(300f)
         onUi { controller.setMode(GreaseMode.VERTEX_PAINT); controller.setMaterialColor(0xFFFF0000.toInt()); controller.selectTool(GreaseTool.DRAW) }
+        rule.waitForIdle()
         // vertex brush: Blender's Vertex Draw (25 px, strength 0.8), not the pen size
         assertEquals(25f, onUi { controller.vertexBrush.size }, 1e-3f)
         for (i in 0 until 4) drag(500f to 300f, 700f to 300f)
@@ -88,6 +90,7 @@ class DeviceColorTest : SweepBase() {
         val xs = points(drawn[0]).map { it[0].toInt() }
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(EraserMode.HARD) }
         assertEquals(30f, onUi { controller.eraserSize }, 1e-3f)
+        rule.waitForIdle() // the eraser option row moves the canvas: map the tap after layout
         val view = surface()
         val ppu = onUi { com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(view.width.toFloat(), view.height.toFloat(),
             controller.document.canvasWidth, controller.document.canvasHeight, controller.view.zoom) }

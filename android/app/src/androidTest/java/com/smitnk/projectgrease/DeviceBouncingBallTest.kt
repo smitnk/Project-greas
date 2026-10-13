@@ -173,7 +173,7 @@ class DeviceBouncingBallTest : SweepBase() {
             shell("cp ${f.absolutePath} $SHOT_DIR/bouncing_ball.gif")
             check("export ok, $frames frames", ok && frames == 7)
         }
-        assertTrue("bouncing ball found ${failures.size} problem(s):\n" + failures.joinToString("\n"), failures.isEmpty())
+        assertTrue("bouncing ball found ${failures.size} problem(s): " + failures.joinToString(" || "), failures.isEmpty())
     }
 
     private fun androidx.compose.ui.test.junit4.AndroidComposeTestRule<*, *>.onNodeWithTagExists(tag: String): Boolean {

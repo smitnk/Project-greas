@@ -34,7 +34,7 @@ import re,sys
 t=open("device-tests.txt",errors="replace").read()
 fails=re.findall(r"INSTRUMENTATION_STATUS: class=(\S+)\nINSTRUMENTATION_STATUS: current=\d+\nINSTRUMENTATION_STATUS: id=\S+\nINSTRUMENTATION_STATUS: numtests=\d+\nINSTRUMENTATION_STATUS: stack=(.*?)\nINSTRUMENTATION_STATUS: stream=",t,re.S)
 for cls,stack in fails:
-    print("::error title=device test %s::%s" % (cls.split('.')[-1], stack.strip().splitlines()[0][:400]))
+    print("::error title=device test %s::%s" % (cls.split('.')[-1], stack.strip().splitlines()[0][:1500]))
 for m in re.finditer(r"INSTRUMENTATION_STATUS: test=(\S+)\nINSTRUMENTATION_STATUS_CODE: (-?\d)",t):
     print("::notice title=device::%s %s" % (m.group(1), {"0":"PASS","-2":"FAIL","-1":"ERROR"}.get(m.group(2),m.group(2))))
 ok=re.search(r"^OK \(\d+ tests?\)",t,re.M) is not None

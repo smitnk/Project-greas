@@ -18,6 +18,7 @@
 #include "MEM_guardedalloc.h"
 #include "BKE_deform.h"
 #include "BKE_gpencil_legacy.h"
+#include "BKE_gpencil_geom_legacy.h"
 #include "ED_gpencil_legacy.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"

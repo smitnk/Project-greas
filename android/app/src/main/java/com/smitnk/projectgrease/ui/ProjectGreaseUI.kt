@@ -359,6 +359,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     DisposableEffect(controller){
         controller.onUiChanged={redraw()}
+        controller.onMessage={toast(context,it)}
         controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
         onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null}
     }
@@ -1715,7 +1716,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
             val context=LocalContext.current
             var crash by remember{mutableStateOf<String?>(null)}
-            item(Icons.Default.BugReport,"Last crash report","The error of the last crash, to share","crash"){crash=com.smitnk.projectgrease.CrashLog.read(context)?:"No crash recorded."}
+            item(Icons.Default.BugReport,"Last crash report","The error of the last crash, to share","crash"){crash="Renderer: "+controller.rendererInfo()+"\n\n"+(com.smitnk.projectgrease.CrashLog.read(context)?:"No crash recorded.")}
             crash?.let{text->
                 AlertDialog(onDismissRequest={crash=null},title={Text("Last crash report")},
                     text={Text(text,fontSize=11.sp,modifier=Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState()))},

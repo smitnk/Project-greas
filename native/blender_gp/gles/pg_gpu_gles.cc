@@ -113,13 +113,17 @@ int pg_gles_api(void)
   if (g_api >= 0) return g_api;
   const char *v = reinterpret_cast<const char *>(glGetString(GL_VERSION));
   int maj = 0, min = 0;
-  if (!v || std::sscanf(v, "OpenGL ES %d.%d", &maj, &min) != 2) return g_api = 0;
+  // no current context yet: answer 0 but do not remember it (a cached 0 kept the engine off)
+  if (!v) return 0;
+  if (std::sscanf(v, "OpenGL ES %d.%d", &maj, &min) != 2) return g_api = 0;
   const char *force = std::getenv("PG_FORCE_GLES31");
   const bool es32 = (maj > 3 || (maj == 3 && min >= 2)) && !(force && force[0] == '1');
   if (es32) {
-    g_tex_buffer = reinterpret_cast<PFN_TexBuffer>(eglGetProcAddress("glTexBuffer"));
-    g_draw_base_vertex = reinterpret_cast<PFN_DrawElementsBaseVertex>(eglGetProcAddress("glDrawElementsBaseVertex"));
-    return g_api = (g_tex_buffer && g_draw_base_vertex) ? 32 : 0;
+    // core ES 3.2 entry points, linked from libGLESv3 as before the 3.1 path; some drivers return
+    // NULL from eglGetProcAddress for core functions, which switched the engine off (reported)
+    g_tex_buffer = glTexBuffer;
+    g_draw_base_vertex = glDrawElementsBaseVertex;
+    return g_api = 32;
   }
   if (maj < 3 || (maj == 3 && min < 1) || !has_ext("GL_EXT_shader_implicit_conversions")) return g_api = 0;
   if (has_ext("GL_EXT_shader_io_blocks")) g_ioblock_ext = "GL_EXT_shader_io_blocks";

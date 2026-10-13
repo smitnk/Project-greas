@@ -948,6 +948,7 @@ bool engine_context_ok(){
   static int ok=-1;
   if(ok<0){
     const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    if(!v)return false; // no current context yet: ask again next frame instead of keeping "off"
     // OpenGL ES 3.2, or 3.1 with the texture buffer / base vertex / implicit conversion extensions
     ok=(pg_gles_api&&pg_gles_api()!=0)?1:0;
 #ifdef PG_HAVE_ANDROID_LOG
@@ -1552,3 +1553,12 @@ extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(
   project_grease_fx_reset();}
 
 extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_overlay_unselected=show?1:0;}
+
+/* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
+extern "C" const char* project_grease_android_present_renderer_info(){
+  static char buf[256];
+  const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  std::snprintf(buf,sizeof buf,"%s; Blender GP engine %s (GLES API %d)%s",v?v:"no GL context",
+                project_grease_android_present_engine_active()?"on":"off",pg_gles_api?pg_gles_api():0,g_engine_failed?", engine failed":"");
+  return buf;
+}

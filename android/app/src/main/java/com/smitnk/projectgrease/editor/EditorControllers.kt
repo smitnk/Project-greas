@@ -891,6 +891,10 @@ class EditorController {
             // and paint brushes skip non-editable layers (BKE_gpencil_layer_is_editable).
             if (!activeLayerEditable()) { sessionTool = -1; return 0 }
             if (tool == ToolSession.TOOL_WEIGHT_PAINT) syncWeightPaintGroup()
+            // Blender paints only selected points while a selection mask is on: with nothing
+            // selected that looks like Vertex Paint is broken, so say why
+            if (tool == ToolSession.TOOL_VERTEX_PAINT && mode == GreaseMode.VERTEX_PAINT && vertexSelectMask != 0 && native.selectedPointCount() == 0)
+                onMessage?.invoke("Selection mask is on: select points first (Lasso), or set the mask to Off")
             sessionTool = tool
             sessionGestureChanged = false
         } else if (tool != sessionTool) {
@@ -1000,6 +1004,10 @@ class EditorController {
 
     /** The UI re-reads controller state (a colour picked on the canvas changes the swatch). */
     var onUiChanged: (() -> Unit)? = null
+    /** A short message for the user (a toast). */
+    var onMessage: ((String) -> Unit)? = null
+    /** GL version and whether Blender's draw engine renders (diagnostics). */
+    fun rendererInfo(): String = if (rendererHandle != 0L) GPNative.nativeRendererInfo(rendererHandle) else "no renderer"
 
     /** Sculpt / Vertex Paint / Weight Paint brushes are Blender's own brushes, not the pen: size in
      *  screen pixels and strength from BKE_gpencil_brush_preset_set (Smooth Stroke, Vertex Draw,

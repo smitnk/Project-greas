@@ -34,6 +34,8 @@ extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, in
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
 extern "C" int project_grease_android_present_engine_active();
+extern "C" int project_grease_android_present_set_reference(const unsigned char *rgba, int w, int h);
+extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 
 static const int W = 200, H = 120;
 static int failures = 0;
@@ -337,6 +339,30 @@ int main()
     CHECK(near4(px(100, 30), 0, 0, 0, 1)); /* normal view again */
   }
 
+  /* 6b. Vertex colour (Draw mode "Per stroke" colour): a red vertex colour over the black material
+   * shows red at Vertex Paint Opacity 1, and the material black at opacity 0 (overlay
+   * gpencil_vertex_paint_opacity, gpencil_cache_utils.c vert_col_opacity). */
+  {
+    bGPDstroke *vs = static_cast<bGPDstroke *>(f->strokes.first);
+    for (int i = 0; i < vs->totpoints; i++) {
+      vs->points[i].vert_color[0] = 1; vs->points[i].vert_color[1] = 0; vs->points[i].vert_color[2] = 0;
+      vs->points[i].vert_color[3] = 1;
+    }
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+    read_result();
+    dump("vertex colour red", 100, 30);
+    CHECK(px(100, 30)[0] > 0.8f && px(100, 30)[1] < 0.2f && px(100, 30)[2] < 0.2f);
+    view.vertex_opacity = 0.0f;
+    view.data_changed = 1;
+    CHECK(pg_gp_engine_draw(gpd, 1, &view) == 1);
+    read_result();
+    CHECK(near4(px(100, 30), 0, 0, 0, 1));
+    view.vertex_opacity = 1.0f;
+    for (int i = 0; i < vs->totpoints; i++) vs->points[i].vert_color[3] = 0;
+    view.data_changed = 1;
+  }
+
   /* 7. Present: Standard view transform (linear 0.5 -> sRGB 0.735). */
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   CHECK(pg_gp_engine_present(W, H) == 1);
@@ -361,6 +387,27 @@ int main()
     glReadPixels(int(ox + 130 * sc), H - 1 - int(oy + 50 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
     std::printf("  presenter paper = %d %d %d (expected 245)\n", c[0], c[1], c[2]);
     CHECK(std::abs(c[0] - 245) <= 3);
+  }
+
+  /* 9. A photo reference on the engine path (reported: imported photos never showed): a red image
+   * at full opacity covers the paper, the engine drawing (clear background) stays on top. */
+  {
+    const unsigned char red[4 * 4] = {255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255};
+    CHECK(project_grease_android_present_set_reference(red, 2, 2) == 1);
+    project_grease_android_present_set_reference_style(1, 1.0f);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, W, H);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    CHECK(project_grease_android_present_engine_active() == 1);
+    const float sc = 0.92f, ox = (W - W * sc) * 0.5f, oy = (H - H * sc) * 0.5f;
+    unsigned char c[4] = {};
+    glReadPixels(int(ox + 130 * sc), H - 1 - int(oy + 50 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+    std::printf("  reference under the drawing = %d %d %d (expected red)\n", c[0], c[1], c[2]);
+    CHECK(c[0] > 200 && c[1] < 60 && c[2] < 60);
+    glReadPixels(int(ox + 100 * sc), H - 1 - int(oy + 30 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+    std::printf("  line over the reference = %d %d %d (expected black)\n", c[0], c[1], c[2]);
+    CHECK(c[0] < 60);
+    project_grease_android_present_set_reference(nullptr, 0, 0);
   }
 
   CHECK(glGetError() == GL_NO_ERROR);

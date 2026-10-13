@@ -31,6 +31,7 @@ extern "C" void project_grease_android_present_set_reference_style(int visible, 
 extern "C" void project_grease_android_present_set_reference_transform(float dx, float dy, float scale, float rot);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_overlay_unselected(int show);
+extern "C" const char *project_grease_android_present_renderer_info();
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_vertex_opacity(float opacity);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
@@ -989,4 +990,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetOverlayUnselected(JNIEnv *, jobject, jlong handle, jboolean show)
 {
   if (from_handle(handle)) project_grease_android_present_set_overlay_unselected(show ? 1 : 0);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRendererInfo(JNIEnv *env, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || renderer->display == EGL_NO_DISPLAY || renderer->context == EGL_NO_CONTEXT) return env->NewStringUTF("no renderer");
+  if (renderer->surface != EGL_NO_SURFACE) eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context);
+  return env->NewStringUTF(project_grease_android_present_renderer_info());
 }

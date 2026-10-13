@@ -1797,12 +1797,12 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             FlowRow(itemVerticalAlignment=Alignment.CenterVertically){
                 Text("Mode",fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=6.dp))
                 listOf(0 to "Stroke",1 to "Fill",2 to "Both").forEach{(m,l)->
-                    FilterChip(selected=controller.vertexPaintTarget==m,onClick={controller.updateVertexPaintTarget(m);tick++;redraw()},
+                    FilterChip(selected=controller.drawVertexTarget==m,onClick={controller.updateDrawVertexTarget(m);tick++;redraw()},
                         label={Text(l)},modifier=Modifier.padding(end=4.dp).testTag("vertexTarget_$m"))
                 }
             }
         }
-        if(controller.mode==GreaseMode.DRAW&&controller.vertexColorMode||controller.mode==GreaseMode.VERTEX_PAINT){
+        if(controller.mode==GreaseMode.DRAW&&controller.vertexColorMode){
             Text("Mix Factor ${"%.2f".format(controller.vertexFactor)}")
             Slider(controller.vertexFactor,{controller.updateVertexFactor(it);tick++},onValueChangeFinished=redraw,
                 modifier=Modifier.testTag("vertexMixFactor"))

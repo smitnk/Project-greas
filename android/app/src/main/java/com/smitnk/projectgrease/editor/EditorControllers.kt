@@ -1013,12 +1013,12 @@ class EditorController {
     var vertexFactor = 1f; private set
     fun updateVertexFactor(f:Float) { vertexFactor = f.coerceIn(0f,1f); pushBrushVertexColor() }
     /** Paint mode for new strokes: 0 Stroke, 1 Fill, 2 Both (GPPAINT_MODE_STROKE / FILL / BOTH). */
-    var vertexPaintTarget = 2; private set
-    fun updateVertexPaintTarget(m:Int) { vertexPaintTarget = m.coerceIn(0,2); pushBrushVertexColor() }
+    var drawVertexTarget = 2; private set
+    fun updateDrawVertexTarget(m:Int) { drawVertexTarget = m.coerceIn(0,2); pushBrushVertexColor() }
     private fun pushBrushVertexColor() {
         if (native.handle == 0L) return
         val c = colorToFloats(materials.colorArgb)
-        GPNative.nativeSetBrushVertexColor(native.handle, vertexColorMode, c[0], c[1], c[2], vertexFactor, vertexPaintTarget)
+        GPNative.nativeSetBrushVertexColor(native.handle, vertexColorMode, c[0], c[1], c[2], vertexFactor, drawVertexTarget)
     }
     /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
     fun curveHandles(): List<Pair<Float, Float>> = curve.handles()

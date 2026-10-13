@@ -51,7 +51,7 @@ object GPNative {
     external fun nativeSetSelectionOverlay(handle: Long, enabled: Boolean): Boolean
     /** Fill tool options: leak (px; 0 = Blender ceil(3 x fill_factor)), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
     external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
-    external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float, mode: Int): Boolean
+    external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float): Boolean
     /** Fill precision (brush fill_factor, 0.05..8) and the Extend Lines stroke collision check. */
     external fun nativeSetFillPrecisionEglRenderer(handle: Long, factor: Float, collide: Boolean): Boolean
     /** Stroke (fill = false) or fill texture image of a material slot, ARGB top row first; null removes. */
@@ -168,7 +168,7 @@ object GPNative {
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean
-    external fun nativeSetBrushVertexColor(handle: Long, enabled: Boolean, r: Float, g: Float, b: Float, factor: Float)
+    external fun nativeSetBrushVertexColor(handle: Long, enabled: Boolean, r: Float, g: Float, b: Float, factor: Float, mode: Int)
     external fun nativeActiveLayer(handle: Long): Int
     external fun nativeErase(handle: Long, x: Float, y: Float, radius: Float, mode: Int, drawStrength: Float,
                              pressure: Float, eraStrength: Float, eraThickness: Float): Boolean

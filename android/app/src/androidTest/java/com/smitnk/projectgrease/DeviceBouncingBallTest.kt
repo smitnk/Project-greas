@@ -101,9 +101,14 @@ class DeviceBouncingBallTest : SweepBase() {
             onUi { controller.endWarp(true) }
             shot("ball_f4_squash")
             // (no selectAll here: selecting is an undo step of its own and would drop the redo)
-            check("undo restores the round ball", onUi { controller.undo() } &&
-                onUi { controller.selectionBounds() }!!.let { kotlin.math.abs((it[3] - it[1]) - (b0[3] - b0[1])) < 2f })
-            check("redo squashes again", onUi { controller.redo() })
+            // measured on the ball's points: undo does not keep the selection
+            fun ballHeight() = strokes().flatMap { points(it) }.filter { kotlin.math.abs(it[0] - cx) < r + 40 && kotlin.math.abs(it[1] - cy) < r + 40 }
+                .let { pts -> (pts.maxOfOrNull { it[1] } ?: 0.0) - (pts.minOfOrNull { it[1] } ?: 0.0) }
+            val squashed = ballHeight()
+            check("undo", onUi { controller.undo() })
+            val round = ballHeight()
+            check("undo restores the round ball: $squashed -> $round (was ${b0[3] - b0[1]})", kotlin.math.abs(round - (b0[3] - b0[1])) < 3.0)
+            check("redo squashes again", onUi { controller.redo() } && kotlin.math.abs(ballHeight() - squashed) < 3.0)
         }
         step("warp cancel restores") {
             goTo(5); onUi { controller.selectAll() }

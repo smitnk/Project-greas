@@ -43,7 +43,6 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun render() = handle != 0L && GPNative.nativeRender(handle)
     fun duplicateFrame(sourceFrame:Int,targetFrame:Int)=handle != 0L && GPNative.nativeDuplicateFrame(handle,sourceFrame,targetFrame)
     fun deleteFrame(frameNumber:Int)=handle != 0L && GPNative.nativeDeleteFrame(handle,frameNumber)
-    fun resetDocument() = handle != 0L && GPNative.nativeResetDocument(handle)
     fun createFrame(frame: Int) = handle != 0L && GPNative.nativeCreateFrame(handle, frame)
     fun beginStroke(material:Int, thickness:Float) = handle != 0L && GPNative.nativeBeginStroke(handle, material, thickness)
     fun addPoint(point:FloatArray) = handle != 0L && GPNative.nativeAddPoint(handle, point[0], point[1], point[2], point[3], point[4], point[5])

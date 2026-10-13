@@ -92,7 +92,6 @@ object GPNative {
     external fun nativeDocQuery(handle: Long, what: Int, args: FloatArray?): FloatArray?
     external fun nativeMaterialName(handle: Long, slot: Int): String?
     external fun nativeSetMaterialName(handle: Long, slot: Int, name: String): Boolean
-    external fun nativeResetDocument(handle: Long): Boolean
     external fun nativeCreateFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeSelectFrame(handle: Long, frameNumber: Int): Boolean
     external fun nativeFrameCount(handle: Long): Int

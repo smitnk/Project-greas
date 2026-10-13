@@ -194,6 +194,49 @@ const char *pg_gles_shader_source(const char *info_name, int fragment)
   return nullptr;
 }
 
+/* Diagnostics: compiles and links every engine shader and lists each failure (driver log), so one
+ * report from a phone shows every shader its driver rejects, not only the first. */
+std::string pg_gles_check_all_shaders()
+{
+  std::string out;
+  int failed = 0;
+  for (const PGGlesShaderSource &src : pg_gles_shader_sources) {
+    std::string log;
+    GLuint v = compile(GL_VERTEX_SHADER, src.vert, src.info, log);
+    GLuint f = v ? compile(GL_FRAGMENT_SHADER, src.frag, src.info, log) : 0;
+    if (v && f) {
+      GLuint p = glCreateProgram();
+      glAttachShader(p, v);
+      glAttachShader(p, f);
+      glLinkProgram(p);
+      GLint ok = GL_FALSE;
+      glGetProgramiv(p, GL_LINK_STATUS, &ok);
+      if (!ok) {
+        char buf[512] = {};
+        glGetProgramInfoLog(p, sizeof(buf) - 1, nullptr, buf);
+        log = std::string(src.info) + " link: " + buf;
+      }
+      glDeleteProgram(p);
+    }
+    if (v) glDeleteShader(v);
+    if (f) glDeleteShader(f);
+    if (!log.empty()) {
+      failed++;
+      if (log.size() > 300) log.resize(300);
+      out += "\n- " + log;
+    }
+  }
+  const int total = int(sizeof(pg_gles_shader_sources) / sizeof(pg_gles_shader_sources[0]));
+  return std::to_string(total - failed) + "/" + std::to_string(total) + " shaders compile" + out;
+}
+
+extern "C" const char *pg_gles_shader_report(void)
+{
+  static std::string r;
+  r = pg_gles_check_all_shaders();
+  return r.c_str();
+}
+
 GPUShader *GPU_shader_create_from_info_name(const char *info_name)
 {
   GPUShader *sh = new GPUShader();

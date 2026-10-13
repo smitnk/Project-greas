@@ -207,6 +207,7 @@ object GPNative {
     external fun nativeSetVertexOpacity(handle: Long, opacity: Float): Boolean
     external fun nativeSetMaterialStrokeEnabled(handle: Long, index: Int, enabled: Boolean): Boolean
     external fun nativeRendererInfo(handle: Long): String
+    external fun nativeInstallCrashHandler(path: String)
     external fun nativeSetOverlayUnselected(handle: Long, show: Boolean)
     external fun nativeSetReferenceTransform(handle: Long, dx: Float, dy: Float, scale: Float, rot: Float)
     external fun nativeLatticeBegin(handle: Long): FloatArray?

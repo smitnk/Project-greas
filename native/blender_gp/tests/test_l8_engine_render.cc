@@ -410,6 +410,11 @@ int main()
     project_grease_android_present_set_reference(nullptr, 0, 0);
   }
 
+  {
+    const char *rep = pg_gles_shader_report();
+    std::printf("  shader report: %s\n", rep);
+    CHECK(std::strncmp(rep, "17/17 shaders compile", 21) == 0);
+  }
   CHECK(glGetError() == GL_NO_ERROR);
   std::printf(failures ? "%d FAILURES\n" : "L8 engine render tests passed\n", failures);
   return failures ? 1 : 0;

@@ -28,7 +28,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -1975,7 +1974,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -3960,7 +3958,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -4049,7 +4046,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -4211,7 +4207,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -4295,7 +4290,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -4375,7 +4369,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -4946,7 +4939,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -5520,7 +5512,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -7142,7 +7133,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -8791,7 +8781,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -10414,7 +10403,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -12064,7 +12052,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -13691,7 +13678,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -15356,7 +15342,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -15444,7 +15429,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -15881,7 +15865,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -15972,7 +15955,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -16412,7 +16394,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -16501,7 +16482,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -16939,7 +16919,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -17033,7 +17012,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -17476,7 +17454,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -17570,7 +17547,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -18013,7 +17989,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -18107,7 +18082,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -18550,7 +18524,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -18647,7 +18620,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -19093,7 +19065,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -19184,7 +19155,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -19624,7 +19594,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -21069,7 +21038,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -22012,7 +21980,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */
@@ -23458,7 +23425,6 @@ uniform int gpu_BaseInstance;
 #ifdef GPU_ARB_texture_cube_map_array
 #  define textureLod_cubemapArray(tex, co, lod) textureLod(tex, co, lod)
 #else
-#  define samplerCubeArray sampler2DArray
 #endif
 
 /* Texture format tokens -- Type explicitness required by other Graphics APIs. */

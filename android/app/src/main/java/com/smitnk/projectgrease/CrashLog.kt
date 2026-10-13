@@ -11,6 +11,8 @@ object CrashLog {
 
     fun install(context: Context) {
         val app = context.applicationContext
+        // native (C/C++) crashes land in the same file
+        runCatching { com.smitnk.projectgrease.nativebridge.GPNative.nativeInstallCrashHandler(file(app).absolutePath) }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching {

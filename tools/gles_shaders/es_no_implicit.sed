@@ -7,3 +7,7 @@ s/(v\.\([xyzw]\) >= 0)/(v.\1 >= 0.0)/g
 s/(ma\.x == -1 \&\& x == -1)/(ma.x == -1 \&\& x == -1.0)/
 s/(ma3\.x == -1 \&\& x == 1)/(ma3.x == -1 \&\& x == 1.0)/
 s/    float fill_opacity = fcol1\.a - (fcol_decode\.a \* 10);/    float fill_opacity = fcol1.a - (fcol_decode.a * 10.0);/
+# ADAPTED: samplerCubeArray is a reserved type in ESSL 3.20; Blender's desktop fallback
+# '#define samplerCubeArray sampler2DArray' is rejected by ARM Mali ("Invalid identifier"). The GP
+# shaders use no cube maps, so the fallback goes.
+/^#  define samplerCubeArray sampler2DArray$/d

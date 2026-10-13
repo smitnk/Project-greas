@@ -206,6 +206,7 @@ object GPNative {
     // Weight Paint view of the renderer: group >= 0 tints strokes by that group's weights, -1 = normal.
     external fun nativeSetWeightView(handle: Long, group: Int): Boolean
     external fun nativeSetVertexOpacity(handle: Long, opacity: Float): Boolean
+    external fun nativeSetReferenceTransform(handle: Long, dx: Float, dy: Float, scale: Float, rot: Float)
     external fun nativeLatticeBegin(handle: Long): FloatArray?
     external fun nativeLatticeUpdate(handle: Long, nu: Int, nv: Int, ctrl: FloatArray, interp: Int): Boolean
     external fun nativeLatticeEnd(handle: Long, keep: Boolean)

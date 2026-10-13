@@ -20,11 +20,19 @@ class Rotoscope {
     var start = 1
     var offset = 0
     var cyclic = false
+    /** Placement like a Blender Image Empty: offset from the fitted centre (canvas px), size (1 = fit
+     *  inside the canvas) and rotation (radians). */
+    var dx = 0f; var dy = 0f; var scale = 1f; var rotation = 0f
+    fun resetPlacement() { dx = 0f; dy = 0f; scale = 1f; rotation = 0f }
+    fun moveBy(x: Float, y: Float, zoom: Float = 1f, turn: Float = 0f) {
+        if (!(x.isFinite() && y.isFinite() && zoom.isFinite() && turn.isFinite())) return
+        dx += x; dy += y; scale = (scale * zoom).coerceIn(0.05f, 20f); rotation += turn
+    }
     val isEmpty get() = uris.isEmpty() || frames <= 0
 
     fun set(kind: Kind, uris: List<String>, frames: Int) {
         this.kind = kind; this.uris = uris; this.frames = frames.coerceAtLeast(if (uris.isEmpty()) 0 else 1)
-        start = 1; offset = 0
+        start = 1; offset = 0; resetPlacement()
     }
     fun clear() { uris = emptyList(); frames = 0 }
     fun setOpacity(v: Float) { if (v.isFinite()) opacity = v.coerceIn(0f, 1f) }
@@ -39,6 +47,7 @@ class Rotoscope {
 
     fun toJson(): JSONObject = JSONObject().put("kind", kind.name).put("uris", JSONArray(uris)).put("frames", frames)
         .put("visible", visible).put("opacity", opacity.toDouble()).put("start", start).put("offset", offset).put("cyclic", cyclic)
+        .put("dx", dx.toDouble()).put("dy", dy.toDouble()).put("scale", scale.toDouble()).put("rotation", rotation.toDouble())
 
     fun fromJson(o: JSONObject?) {
         if (o == null) { clear(); return }
@@ -46,6 +55,8 @@ class Rotoscope {
         set(runCatching { Kind.valueOf(o.optString("kind")) }.getOrDefault(Kind.IMAGE), list, o.optInt("frames", list.size))
         visible = o.optBoolean("visible", true); setOpacity(o.optDouble("opacity", 0.5).toFloat())
         start = o.optInt("start", 1); offset = o.optInt("offset", 0); cyclic = o.optBoolean("cyclic", false)
+        dx = o.optDouble("dx", 0.0).toFloat(); dy = o.optDouble("dy", 0.0).toFloat()
+        scale = o.optDouble("scale", 1.0).toFloat().coerceIn(0.05f, 20f); rotation = o.optDouble("rotation", 0.0).toFloat()
     }
 
     companion object {

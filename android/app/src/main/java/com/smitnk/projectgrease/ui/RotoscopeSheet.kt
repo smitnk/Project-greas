@@ -28,16 +28,30 @@ class RotoscopeLoader(private val context: Context) {
     private var retriever: MediaMetadataRetriever? = null
     private var retrieverUri: String? = null
 
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val pending = java.util.Collections.synchronizedSet(HashSet<String>())
+    private fun key(r: Rotoscope, n: Int) = r.kind.name + "|" + r.uris.firstOrNull() + "|" + n
+
+    fun cached(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = synchronized(cache) { cache[key(r, n)] }
+
+    /** Decodes frame [n] off the UI thread, then runs [done] on it. */
+    fun decodeAsync(r: Rotoscope, n: Int, done: () -> Unit = {}) {
+        if (n < 1 || n > r.frames || cached(r, n) != null || !pending.add(key(r, n))) return
+        worker.execute { try { frame(r, n) } finally { pending.remove(key(r, n)) }; main.post(done) }
+    }
+    fun prefetch(r: Rotoscope, from: Int, count: Int) { for (n in from until from + count) decodeAsync(r, n) }
+
     fun frame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? {
         if (n < 1) return null
-        val key = r.kind.name + "|" + r.uris.firstOrNull() + "|" + n
-        cache[key]?.let { return it }
+        val key = key(r, n)
+        cached(r, n)?.let { return it }
         val img = when (r.kind) {
             Rotoscope.Kind.IMAGE -> decodeTextureImage(context, Uri.parse(r.uris[0]))
             Rotoscope.Kind.SEQUENCE -> r.uris.getOrNull(n - 1)?.let { decodeTextureImage(context, Uri.parse(it)) }
             Rotoscope.Kind.MOVIE -> movieFrame(r.uris[0], n)
         } ?: return null
-        cache[key] = img
+        synchronized(cache) { cache[key] = img }
         return img
     }
 
@@ -70,7 +84,7 @@ class RotoscopeLoader(private val context: Context) {
         } finally { mr.release() }
     }.getOrDefault(0)
 
-    fun clearCache() { cache.clear() }
+    fun clearCache() { synchronized(cache) { cache.clear() } }
 }
 
 /** Rotoscope reference: import, opacity, visibility and the timeline mapping (start, offset, cyclic). */
@@ -102,7 +116,7 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("Rotoscope reference", style = MaterialTheme.typography.headlineSmall)
+            Text("Photo / video reference", style = MaterialTheme.typography.headlineSmall)
             Text(if (r.isEmpty) "No reference" else "${r.kind.name.lowercase()} · ${r.frames} frame(s)", Modifier.padding(vertical = 6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(onClick = { image.launch(arrayOf("image/*")) }, Modifier.testTag("rotoImage")) { Text("Image") }
@@ -112,6 +126,15 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
             if (!r.isEmpty) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Show", Modifier.weight(1f)); Switch(r.visible, { r.visible = it; changed() })
+                }
+                Text("Placement", style = MaterialTheme.typography.titleSmall)
+                Text("Size ${(r.scale * 100).toInt()}%")
+                Slider(r.scale, { r.scale = it; changed() }, valueRange = 0.1f..4f, modifier = Modifier.testTag("rotoScale"))
+                Text("Rotation ${Math.toDegrees(r.rotation.toDouble()).toInt()}°")
+                Slider(r.rotation, { r.rotation = it; changed() }, valueRange = -3.1416f..3.1416f)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = { controller.referenceAdjusting = true; onDismiss() }, Modifier.testTag("rotoAdjust")) { Text("Move / resize on canvas") }
+                    OutlinedButton(onClick = { r.resetPlacement(); changed() }) { Text("Reset") }
                 }
                 Text("Opacity ${(r.opacity * 100).toInt()}%")
                 Slider(r.opacity, { r.setOpacity(it); changed() }, valueRange = 0f..1f, modifier = Modifier.testTag("rotoOpacity"))

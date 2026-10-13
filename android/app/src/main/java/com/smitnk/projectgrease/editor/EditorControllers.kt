@@ -968,6 +968,8 @@ class EditorController {
     /** Decodes reference frames; set by the UI (needs a Context). */
     var rotoscopeLoader: com.smitnk.projectgrease.ui.RotoscopeLoader? = null
     private var rotoscopeShown = ""
+    /** On-canvas placement of the reference: drag moves it, pinch resizes and turns it. */
+    var referenceAdjusting by androidx.compose.runtime.mutableStateOf(false)
     fun rotoscopeChanged() { rotoscopeShown = ""; document.markDirty(); render() }
     fun fitTimelineToRotoscope() { if (rotoscope.frames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.frames - 1) }
     /** Uploads the reference image of the current frame when it changed. */
@@ -976,10 +978,23 @@ class EditorController {
         val n = if (rotoscope.visible) rotoscope.imageFrame(animation.currentFrame) else 0
         val key = if (n == 0) "" else rotoscope.kind.name + rotoscope.uris.hashCode() + ":" + n
         if (key != rotoscopeShown) {
-            val img = if (n == 0) null else rotoscopeLoader?.frame(rotoscope, n)
-            GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
-            rotoscopeShown = if (img == null) "" else key
+            // a still decodes at once; video frames decode in the background (the last frame stays
+            // up meanwhile) so scrubbing and playback never wait on the decoder
+            val loader = rotoscopeLoader
+            val img = when {
+                n == 0 || loader == null -> null
+                rotoscope.kind == Rotoscope.Kind.IMAGE -> loader.frame(rotoscope, n)
+                else -> loader.cached(rotoscope, n).also {
+                    if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown != key) render() }
+                    loader.prefetch(rotoscope, n + 1, 3)
+                }
+            }
+            if (img != null || n == 0) {
+                GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
+                rotoscopeShown = if (img == null) "" else key
+            }
         }
+        GPNative.nativeSetReferenceTransform(rendererHandle, rotoscope.dx, rotoscope.dy, rotoscope.scale, rotoscope.rotation)
         GPNative.nativeSetReferenceStyleEglRenderer(rendererHandle, n != 0 && rotoscopeShown.isNotEmpty(), rotoscope.opacity)
     }
 
@@ -1081,8 +1096,9 @@ class EditorController {
 
     fun setStabilizer(enabled:Boolean, factor:Float=stabilizerFactor, radius:Float=stabilizerRadius) {
         legacyLazyEnabled=enabled
-        legacyLazyFactor=factor.coerceIn(0f,1f)
-        legacyLazyRadius=radius.coerceAtLeast(0f)
+        // Blender's RNA ranges (smooth_stroke_factor, smooth_stroke_radius px)
+        legacyLazyFactor=factor.coerceIn(0.5f,0.99f)
+        legacyLazyRadius=radius.coerceIn(10f,200f)
         stabilizerEnabled=enabled
         stabilizerFactor=legacyLazyFactor
         stabilizerRadius=legacyLazyRadius

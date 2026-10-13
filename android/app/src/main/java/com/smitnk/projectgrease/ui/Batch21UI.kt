@@ -146,6 +146,26 @@ fun ModifierHandlesOverlay(controller: EditorController, tick: Int, redraw: () -
     }
 }
 
+/** Reference placement on the canvas: one finger moves the image, two fingers resize and turn it. */
+@Composable
+fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
+    if (!controller.referenceAdjusting) return
+    Box(Modifier.fillMaxSize().testTag("referenceAdjust").pointerInput(Unit) {
+        androidx.compose.foundation.gestures.detectTransformGestures { _, pan, zoom, rotation ->
+            val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+            controller.rotoscope.moveBy(pan.x / m.scale(), pan.y / m.scale(), zoom, Math.toRadians(rotation.toDouble()).toFloat())
+            controller.rotoscopeChanged()
+        }
+    }) {
+        Text("Drag to move the reference, pinch to resize and turn it", Modifier.align(Alignment.TopCenter).padding(top = 56.dp)
+            .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White)
+        Row(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { controller.referenceAdjusting = false; redraw() }, Modifier.testTag("referenceAdjustDone")) { Text("Done") }
+            OutlinedButton(onClick = { controller.rotoscope.resetPlacement(); controller.rotoscopeChanged() }) { Text("Reset") }
+        }
+    }
+}
+
 /** Lasso warp: the lattice over the selection (Blender lattice deform). Drag a point to bend the
  *  strokes, drag inside the cage to move it all; 2 x 2 is a free-distort box, 3 x 3 / 4 x 4 a mesh. */
 @Composable

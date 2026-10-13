@@ -286,6 +286,11 @@ jobs:
           test -f android/app/build/outputs/apk/debug/app-debug.apk
           file android/app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Verify every native method has its JNI symbol in the APK
+        run: |
+          NM="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          python3 tools/verify_jni_symbols.py android/app/build/outputs/apk/debug/app-debug.apk "$NM"
+
       - name: Verify Vertex Paint chip is enabled in the built APK
         run: |
           python3 - <<'PY'
@@ -378,16 +383,19 @@ jobs:
       # Device-style tests: the instrumented tests of each reported bug (colour isolation, picked
       # colour, Vertex Paint, eraser size) and the Studio layout, on an x86_64 emulator.
       - name: Build device test APK
+        if: false # emulator tests switched off on request
         working-directory: android
         run: ./gradlew :app:assembleDebugAndroidTest --no-daemon
 
       - name: Enable KVM for the emulator
+        if: false # emulator tests switched off on request
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Run device tests on the emulator
+        if: false # emulator tests switched off on request
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -399,7 +407,7 @@ jobs:
           script: bash tools/run_device_tests.sh
 
       - name: Upload device test screenshots
-        if: always()
+        if: false # emulator tests switched off on request
         uses: actions/upload-artifact@v4
         with:
           name: device-test-screenshots

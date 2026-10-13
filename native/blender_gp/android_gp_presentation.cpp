@@ -959,6 +959,8 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
 GLuint g_ref_tex=0, g_ref_prog=0, g_ref_vbo=0;
 int g_ref_w=0, g_ref_h=0, g_ref_visible=0;
 float g_ref_opacity=0.5f;
+// Image Empty offset (canvas px from the fitted centre), size (x the fit) and rotation (radians)
+float g_ref_dx=0.0f,g_ref_dy=0.0f,g_ref_scale=1.0f,g_ref_rot=0.0f;
 bool reference_shown(){return g_ref_visible&&g_ref_tex&&g_ref_w>0&&g_ref_h>0&&!g_export_mode;}
 void draw_reference(int w,int h){
   if(!g_ref_prog){
@@ -973,8 +975,10 @@ void draw_reference(int w,int h){
   // aspect fit inside the canvas, centred
   const float cw=float(g_canvas_width),ch=float(g_canvas_height);
   const float k=std::min(cw/float(g_ref_w),ch/float(g_ref_h));
-  const float iw=float(g_ref_w)*k,ih=float(g_ref_h)*k,x0=(cw-iw)*0.5f,y0=(ch-ih)*0.5f;
-  const Vertex a=ndc(x0,y0,w,h),b=ndc(x0+iw,y0,w,h),c=ndc(x0+iw,y0+ih,w,h),d=ndc(x0,y0+ih,w,h);
+  const float hw=float(g_ref_w)*k*g_ref_scale*0.5f,hh=float(g_ref_h)*k*g_ref_scale*0.5f;
+  const float mx=cw*0.5f+g_ref_dx,my=ch*0.5f+g_ref_dy,cs=std::cos(g_ref_rot),sn=std::sin(g_ref_rot);
+  auto corner=[&](float u,float v){return ndc(mx+cs*u-sn*v,my+sn*u+cs*v,w,h);};
+  const Vertex a=corner(-hw,-hh),b=corner(hw,-hh),c=corner(hw,hh),d=corner(-hw,hh);
   const float q[24]={a.x,a.y,0,0, b.x,b.y,1,0, c.x,c.y,1,1, a.x,a.y,0,0, c.x,c.y,1,1, d.x,d.y,0,1};
   glUseProgram(g_ref_prog);
   glBindBuffer(GL_ARRAY_BUFFER,g_ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
@@ -1502,6 +1506,9 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char*
   g_ref_w=w;g_ref_h=h;
   return glGetError()==GL_NO_ERROR?1:0;
 }
+extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot){
+  if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(scale)||!std::isfinite(rot))return;
+  g_ref_dx=dx;g_ref_dy=dy;g_ref_scale=std::clamp(scale,0.05f,20.0f);g_ref_rot=rot;}
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
   g_ref_visible=visible?1:0;g_ref_opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}

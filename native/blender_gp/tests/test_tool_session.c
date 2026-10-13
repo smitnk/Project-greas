@@ -370,6 +370,27 @@ static void test_draw_guide_and_curve(PGToolSession *ts)
   CHECK(off_line, "no guide: the wavy input is kept");
 }
 
+/* Reported: stabilizer factor 100% drew every stroke as a dot. The session clamps the lazy factor
+ * and radius to Blender's RNA ranges (0.5..0.99, 10..200 px), so the line follows the finger. */
+static void test_stabilizer_full_factor(PGToolSession *ts)
+{
+  SinkXY k;
+  memset(&k, 0, sizeof k);
+  const PGToolDrawSink sink = {&k, kxy_begin, kxy_add, kxy_end, NULL};
+  float p[PG_DRAW_P_COUNT];
+  memset(p, 0, sizeof p);
+  p[PG_DRAW_P_THICKNESS] = 3; p[PG_DRAW_P_STRENGTH] = 1; p[PG_DRAW_P_PRESSURE_CURVE] = 1; p[PG_DRAW_P_STRENGTH_CURVE] = 1;
+  p[PG_DRAW_P_MANHATTAN] = 1; p[PG_DRAW_P_EUCLIDEAN] = 1; p[PG_DRAW_P_PX_PER_UNIT] = 1;
+  p[PG_DRAW_P_LAZY] = 1; p[PG_DRAW_P_LAZY_FACTOR] = 1.0f; p[PG_DRAW_P_LAZY_RADIUS] = 12;
+  float smp[40 * 4];
+  for (int i = 0; i < 40; i++) { smp[i * 4] = 20.0f * i; smp[i * 4 + 1] = 100; smp[i * 4 + 2] = 1; smp[i * 4 + 3] = 0.01f * i; }
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, smp, 40, PG_TOOL_PHASE_BEGIN, p, PG_DRAW_P_COUNT, &sink);
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, NULL, 0, PG_TOOL_PHASE_END, NULL, 0, &sink);
+  float span = 0;
+  for (int i = 0; i < k.n; i++) span = fmaxf(span, k.x[i] - k.x[0]);
+  CHECK(k.n > 3 && span > 100.0f, "stabilizer 100%% still draws a line (%d points, %.0f long)", k.n, span);
+}
+
 /* Clone (gpencil_brush_clone_add / adjust): the clipboard is pasted centred on the brush, then
  * dragged by the brush influence; without a clipboard the session does not start. */
 static void test_clone(PGToolSession *ts)
@@ -473,6 +494,7 @@ int main(void)
   test_weight_paint(ts);
   test_draw(ts);
   test_draw_guide_and_curve(ts);
+  test_stabilizer_full_factor(ts);
   pg_tool_session_free(ts);
   if (failures) { fprintf(stderr, "%d tool session check(s) failed\n", failures); return 1; }
   printf("tool session tests passed\n");

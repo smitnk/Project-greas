@@ -28,4 +28,15 @@ class RotoscopeTest {
         r.offset = 5
         assertEquals("offset past the end: none", 0, r.imageFrame(2))
     }
+    @Test fun placementIsSavedAndClamped() {
+        val r = Rotoscope(); r.set(Rotoscope.Kind.IMAGE, listOf("content://x"), 1)
+        r.moveBy(40f, -10f, 2f, 0.5f); r.moveBy(0f, 0f, 100f)
+        assertEquals(20f, r.scale, 1e-4f)
+        val back = Rotoscope(); back.fromJson(r.toJson())
+        assertEquals(40f, back.dx, 1e-4f); assertEquals(-10f, back.dy, 1e-4f)
+        assertEquals(20f, back.scale, 1e-4f); assertEquals(0.5f, back.rotation, 1e-4f)
+        r.moveBy(Float.NaN, 0f); assertEquals(40f, r.dx, 1e-4f)
+        back.fromJson(org.json.JSONObject().put("uris", org.json.JSONArray(listOf("a"))))
+        assertEquals("old files: centred, fitted", 1f, back.scale, 1e-4f)
+    }
 }

@@ -539,6 +539,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                         modifier=Modifier.padding(end=3.dp)
                     )
                 }
+                if(controller.mode!=GreaseMode.SCULPT){
                 Spacer(Modifier.width(7.dp))
                 Text("Brush",fontWeight=FontWeight.Bold,fontSize=11.sp,modifier=Modifier.padding(end=5.dp))
                 BrushPreset.entries.forEach{preset->
@@ -549,7 +550,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                         modifier=Modifier.padding(end=3.dp).testTag("brush_"+preset.name)
                     )
                 }
+                }
             }
+            if (controller.mode == GreaseMode.SCULPT) SculptOptions(controller,redraw)
             if (controller.mode == GreaseMode.VERTEX_PAINT) {
                 FlowRow(
                     Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=2.dp),
@@ -1236,82 +1239,13 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
             Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it);redraw()})
         }
         Text("Stabilizer factor " + (controller.stabilizerFactor*100).toInt() + "%",Modifier.padding(horizontal=20.dp))
-        Slider(controller.stabilizerFactor,{controller.setStabilizer(controller.stabilizerEnabled,it);redraw()},valueRange=0f..1f,modifier=Modifier.padding(horizontal=20.dp))
+        Slider(controller.stabilizerFactor,{controller.setStabilizer(controller.stabilizerEnabled,it);redraw()},valueRange=0.5f..0.99f,modifier=Modifier.padding(horizontal=20.dp).testTag("stabFactor"))
+        Text("Stabilizer radius " + controller.stabilizerRadius.toInt() + " px (the finger moves this far before the line follows)",Modifier.padding(horizontal=20.dp))
+        Slider(controller.stabilizerRadius,{controller.setStabilizer(controller.stabilizerEnabled,radius=it);redraw()},valueRange=10f..200f,modifier=Modifier.padding(horizontal=20.dp))
         BrushCurvesSection(controller,redraw)
         DrawingGuideSection(controller,redraw)
-        Text("Legacy GP sculpt brush",Modifier.padding(horizontal=20.dp,vertical=8.dp),fontWeight=FontWeight.Bold)
-        listOf(
-            com.smitnk.projectgrease.editor.SculptBrush.SMOOTH to "Smooth",
-            com.smitnk.projectgrease.editor.SculptBrush.THICKNESS to "Thickness",
-            com.smitnk.projectgrease.editor.SculptBrush.STRENGTH to "Strength",
-            com.smitnk.projectgrease.editor.SculptBrush.GRAB to "Grab",
-            com.smitnk.projectgrease.editor.SculptBrush.PUSH to "Push",
-            com.smitnk.projectgrease.editor.SculptBrush.PINCH to "Pinch",
-            com.smitnk.projectgrease.editor.SculptBrush.TWIST to "Twist",
-            com.smitnk.projectgrease.editor.SculptBrush.RANDOMIZE to "Randomize",
-            com.smitnk.projectgrease.editor.SculptBrush.CLONE to "Clone (pastes the copied strokes)"
-        ).forEach { (brush,label) ->
-            Button(
-                onClick={controller.sculpt.select(brush);redraw()},
-                modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)
-            ){Text(label)}
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
-            Text("Invert sculpt brush (thinner, weaker, inflate, twist back)",Modifier.weight(1f))
-            Switch(checked=controller.sculpt.invert,onCheckedChange={controller.sculpt.setInvert(it);redraw()})
-        }
-        SculptMaskingSection(controller,redraw)
-        Text("Legacy GP operations",Modifier.padding(horizontal=20.dp,vertical=10.dp),fontWeight=FontWeight.Bold)
-        listOf(
-            "Bring to front" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_TOP) },
-            "Bring forward" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_UP) },
-            "Send backward" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_DOWN) },
-            "Send to back" to { controller.arrangeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.ARRANGE_BOTTOM) },
-            "Assign active material" to { controller.assignActiveMaterialToSelection() },
-            "Reset vertex color" to { controller.resetSelectionVertexColor() },
-            "Flip direction" to { controller.flipSelection() },
-            "Toggle closed" to { controller.setSelectionCyclic(com.smitnk.projectgrease.editor.ProjectGreaseSelect.CYCLIC_TOGGLE) },
-            "Snap to grid" to { controller.snapSelectionToGrid() },
-            "Duplicate selection" to { controller.duplicateSelection() },
-            "Dissolve points" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_POINTS) },
-            "Dissolve between" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_BETWEEN) },
-            "Dissolve unselected" to { controller.dissolveSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.DISSOLVE_UNSELECT) },
-            "Split selection" to { controller.splitSelection() },
-            "Join selected strokes" to { controller.joinSelection() },
-            "Mirror copy (X)" to { controller.mirrorSelectionCopy(true, false) },
-            "Mirror copy (Y)" to { controller.mirrorSelectionCopy(false, true) },
-            "Mirror copy (X+Y)" to { controller.mirrorSelectionCopy(true, true) },
-            "Thickness x2 by weight" to { controller.applyThicknessModifierWithWeights(2f) },
-            "Select by vertex color" to { controller.selectByVertexColor() },
-            "Normalize thickness" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_THICKNESS, 1f) },
-            "Outline selected strokes" to { controller.outlineSelection() },
-            "Normalize opacity" to { controller.normalizeSelection(com.smitnk.projectgrease.editor.ProjectGreaseSelect.NORMALIZE_OPACITY, 1f) },
-            "Simplify (fixed)" to { controller.simplifySelectionFixed() },
-            "Resample (8 px)" to { controller.sampleSelection(8f) },
-            "Extrude ends" to { controller.extrudeSelection() },
-            "Select random 50%" to { controller.selectRandom() },
-            "Insert blank keyframe" to { controller.insertBlankFrame() },
-            "Use color as fill color" to { controller.setFillColor(controller.materials.colorArgb) },
-            "Clean loose points" to { controller.cleanLoosePoints() },
-            "Clean duplicate frames" to { controller.cleanDuplicateFrames() },
-            "Set vertex color" to { controller.setSelectionVertexColor() },
-            "Invert vertex color" to { controller.invertSelectionVertexColor() },
-            "Vertex color brighter" to { controller.selectionVertexColorBrightnessContrast(0.1f, 0f) },
-            "Vertex color more contrast" to { controller.selectionVertexColorBrightnessContrast(0f, 0.2f) },
-            "Vertex color hue +30°" to { controller.selectionVertexColorHsv(h = 0.5f + 1f / 12f) },
-            "Vertex color levels x0.8" to { controller.selectionVertexColorLevels(0f, 0.8f) },
-            "Dash (3 on / 2 off)" to { controller.dashSelection() },
-            "Multiply (2 copies)" to { controller.multiplySelection() },
-            "Array (3 copies)" to { controller.arraySelection() },
-            "Merge by distance" to { controller.mergeSelectionByDistance() },
-            "Toggle caps (round/flat)" to { controller.toggleSelectionCaps() },
-            "Set start point" to { controller.setSelectionStartPoint() },
-            "Separate to new layer" to { controller.separateSelectionToLayer() },
-            "Copy strokes" to { controller.copySelection() },
-            "Paste strokes" to { controller.pasteStrokes() }
-        ).forEach { (label, action) ->
-            Button(onClick={ if (action()) redraw() }, modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=2.dp)){Text(label)}
-        }
+        Text("Sculpt brushes are in Sculpt mode: pick Sculpt, then tap the brush button again. Stroke operations are under Selection actions (Options while a selection tool is active, or Menu > Edit actions).",
+            Modifier.padding(horizontal=20.dp,vertical=8.dp),fontSize=12.sp)
         ModifierStackSection(controller,redraw)
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
             Text("Multiframe editing",Modifier.weight(1f))
@@ -1337,26 +1271,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @OptIn(ExperimentalMaterial3Api::class)
 @NonSkippableComposable
 @Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit,onReference:()->Unit){
-    ModalBottomSheet(onDismissRequest=onDismiss){Text("Edit actions",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+    ModalBottomSheet(onDismissRequest=onDismiss){Column(Modifier.verticalScroll(rememberScrollState())){Text("Edit actions",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("3D reference (Line Art)")},supportingContent={Text("Import OBJ meshes and set the camera Line Art will use")},modifier=Modifier.clickable{onReference()})
-        ListItem(headlineContent={Text("Move selected stroke")},modifier=Modifier.clickable{controller.translateSelectedStroke(20f,20f);redraw()})
-        ListItem(headlineContent={Text("Rotate selected stroke 90°")},modifier=Modifier.clickable{controller.rotateSelectedStroke((Math.PI/2.0).toFloat());redraw()})
-        ListItem(headlineContent={Text("Scale selected stroke 110%")},modifier=Modifier.clickable{controller.scaleSelectedStroke(1.1f,1.1f);redraw()})
-        ListItem(headlineContent={Text("Mirror selected stroke X")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(true,false);redraw()})
-        ListItem(headlineContent={Text("Mirror selected stroke Y")},modifier=Modifier.clickable{controller.mirrorSelectedStroke(false,true);redraw()})
-        ListItem(headlineContent={Text("Delete selection")},modifier=Modifier.clickable{if(!controller.deleteSelectedStrokes())controller.deleteSelectedStroke();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Duplicate selection")},modifier=Modifier.clickable{if(!controller.duplicateSelection())controller.duplicateSelectedStroke();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Split selected stroke at point 3")},modifier=Modifier.clickable{controller.splitSelectedStroke(2);redraw();onDismiss()})
-        ListItem(headlineContent={Text("Subdivide selected stroke")},modifier=Modifier.clickable{controller.subdivideSelectedStroke(1);redraw();onDismiss()})
-        ListItem(headlineContent={Text("Close selected stroke")},modifier=Modifier.clickable{controller.closeSelectedStroke();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Trim selected stroke at first intersection")},modifier=Modifier.clickable{controller.trimSelectedStrokeToIntersection();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Reverse selected stroke (Legacy GP)")},modifier=Modifier.clickable{controller.reverseSelectedStroke();redraw();onDismiss()})
-        ListItem(headlineContent={Text("Uniform subdivide selected stroke (Legacy GP)")},modifier=Modifier.clickable{controller.uniformSubdivideSelectedStroke(8);redraw();onDismiss()})
-        ListItem(headlineContent={Text("Shrink selected stroke from start (Legacy GP)")},modifier=Modifier.clickable{controller.shrinkSelectedStroke(5f,1);redraw();onDismiss()})
-        ListItem(headlineContent={Text("Randomize selected stroke color (Legacy GP)")},modifier=Modifier.clickable{controller.randomizeSelectedStrokeColor();redraw();onDismiss()})
+        SelectionActionsPanel(controller,redraw)
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()})
         Spacer(Modifier.height(20.dp))
-    }
+    }}
 }
 
 @Composable private fun CapabilityRow(label:String,id:FeatureId){
@@ -1501,6 +1421,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             ModifierHandlesOverlay(controller,overlayTick,redraw)
             BoxSelectOverlay(controller,overlayTick)
             WarpOverlay(controller,overlayTick,redraw)
+            ReferenceAdjustOverlay(controller,redraw)
         }
 
         // top: project menu, mode, more
@@ -1560,6 +1481,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             StudioPopup.OPTIONS->StudioCard({popup=StudioPopup.NONE}){
                 ModeBrushBar(controller,redraw)
                 if(tool==GreaseTool.LASSO||tool in com.smitnk.projectgrease.editor.SELECTION_TOOLS) LassoActions(controller,redraw)
+                if(tool in com.smitnk.projectgrease.editor.SELECTION_TOOLS||controller.mode==GreaseMode.EDIT) SelectionActionsPanel(controller,redraw)
             }
             StudioPopup.COLOR->StudioCard({popup=StudioPopup.NONE}){
                 Row(Modifier.padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
@@ -1680,7 +1602,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
             OutlinedButton(onClick=onReference,Modifier.fillMaxWidth().testTag("rotoscopeOpen")){
                 Icon(Icons.Default.Image,null);Spacer(Modifier.width(6.dp))
-                Text(if(controller.rotoscope.isEmpty)"Reference (rotoscope)…" else "Reference: "+controller.rotoscope.kind.name.lowercase())
+                Text(if(controller.rotoscope.isEmpty)"Import photo / video…" else "Reference: "+controller.rotoscope.kind.name.lowercase())
             }
         }
     }
@@ -1788,7 +1710,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
             item(Icons.Default.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
             item(Icons.Default.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
-            item(Icons.Default.Image,"Rotoscope reference","Image, image sequence or video under the drawing","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
+            item(Icons.Default.Image,"Import photo / video","A photo, image sequence or video to draw over (rotoscope): move, resize, fade","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
             item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
         }

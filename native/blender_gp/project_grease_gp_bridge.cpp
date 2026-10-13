@@ -455,6 +455,21 @@ int project_grease_gp_selected_bounds(const ProjectGreaseGPHandle *handle, float
   return ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle)) && handle->backend.selected_points_bounds(r_bounds) ? 1 : 0;
 }
 
+int project_grease_gp_lattice_begin(ProjectGreaseGPHandle *handle, float r_bounds[4])
+{
+  return ensure_ready(handle) && handle->backend.lattice_begin(r_bounds) ? 1 : 0;
+}
+
+int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int nv, const float *ctrl, int interp)
+{
+  return ensure_ready(handle) && handle->backend.lattice_update(nu, nv, ctrl, interp) ? 1 : 0;
+}
+
+void project_grease_gp_lattice_end(ProjectGreaseGPHandle *handle, int keep)
+{
+  if (ensure_ready(handle)) handle->backend.lattice_end(keep != 0);
+}
+
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness)
 {

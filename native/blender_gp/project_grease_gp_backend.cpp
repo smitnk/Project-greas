@@ -1,4 +1,5 @@
 #include "project_grease_gp_backend.h"
+#include "project_grease_blender_lattice.h"
 #if defined(__has_include)
 #if __has_include(<android/log.h>)
 #include <android/log.h>
@@ -274,6 +275,9 @@ struct Backend::Impl {
   int brush_vertex_mode = 2; /* GPPAINT_MODE_STROKE 0 / FILL 1 / BOTH 2 */
 
   std::vector<HistorySnapshot *> undo_history;
+  struct LatticePoint { bGPDstroke *gps; int index; float x, y; };
+  std::vector<LatticePoint> lattice_points;
+  float lattice_bounds[4] = {0, 0, 0, 0};
   float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
   // Brush fill_factor ("Precision"), Blender default 1.
   float fill_factor = 1.0f;
@@ -1039,6 +1043,61 @@ bool Backend::transform_selected_points(const float m[9])
     project_grease_gp_tag(impl_->gpd);
   }
   return any;
+}
+
+bool Backend::lattice_begin(float r_bounds[4])
+{
+  impl_->lattice_points.clear();
+  if (!r_bounds || !selected_points_bounds(impl_->lattice_bounds)) return false;
+  LISTBASE_FOREACH (bGPDstroke *, gps, &impl_->frame->strokes) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      const bGPDspoint &pt = gps->points[i];
+      if (pt.flag & GP_SPOINT_SELECT) impl_->lattice_points.push_back({gps, i, pt.x, pt.y});
+    }
+  }
+  std::memcpy(r_bounds, impl_->lattice_bounds, sizeof(impl_->lattice_bounds));
+  return !impl_->lattice_points.empty();
+}
+
+void Backend::lattice_tag()
+{
+  bGPDstroke *last = nullptr;
+  for (const auto &p : impl_->lattice_points) {
+    if (p.gps != last) BKE_gpencil_stroke_geometry_update(impl_->gpd, p.gps);
+    last = p.gps;
+  }
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+}
+
+bool Backend::lattice_update(int nu, int nv, const float *ctrl, int interp)
+{
+  auto &pts = impl_->lattice_points;
+  if (pts.empty() || !ctrl) return false;
+  for (int k = 0; k < 2 * nu * nv && nu > 0 && nv > 0; k++) if (!std::isfinite(ctrl[k])) return false;
+  std::vector<float> xy(pts.size() * 2);
+  for (size_t k = 0; k < pts.size(); k++) { xy[2 * k] = pts[k].x; xy[2 * k + 1] = pts[k].y; }
+  if (!pg_lattice_deform_points(xy.data(), int(pts.size()), impl_->lattice_bounds, nu, nv, ctrl, interp))
+    return false;
+  for (size_t k = 0; k < pts.size(); k++) {
+    bGPDspoint &pt = pts[k].gps->points[pts[k].index];
+    pt.x = xy[2 * k];
+    pt.y = xy[2 * k + 1];
+  }
+  lattice_tag();
+  return true;
+}
+
+void Backend::lattice_end(bool keep)
+{
+  if (!keep && !impl_->lattice_points.empty()) {
+    for (const auto &p : impl_->lattice_points) {
+      p.gps->points[p.index].x = p.x;
+      p.gps->points[p.index].y = p.y;
+    }
+    lattice_tag();
+  }
+  impl_->lattice_points.clear();
 }
 
 bool Backend::selected_points_bounds(float r_bounds[4]) const

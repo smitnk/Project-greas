@@ -807,6 +807,7 @@ class EditorController {
             if (curve.phase == CurveSession.Phase.EDIT) confirmCurve() else cancelCurve()
         }
         if (tool != tools.activeTool && shapeEdit.isActive) confirmShape()
+        if (warpActive) endWarp(true)
         // Sculpt is one thing: the Sculpt tool is Sculpt mode, and any other tool leaves it.
         if (tool == GreaseTool.SCULPT) mode = GreaseMode.SCULPT
         else if (mode == GreaseMode.SCULPT) mode = GreaseMode.DRAW
@@ -833,7 +834,9 @@ class EditorController {
     /** Draw keeps the grid snapping of the former per-point path; the brushes use raw samples. */
     fun snapForTool(tool:Int, p:Pair<Float,Float>):Pair<Float,Float> =
         if (tool == ToolSession.TOOL_DRAW) view.snapPoint(p.first, p.second) else p
-    private fun paintsInMode() = tools.activeTool != GreaseTool.PAN && tools.activeTool != GreaseTool.EYEDROPPER
+    // the selection tools select in the paint modes too: Vertex Paint's mask paints only what is selected
+    private fun paintsInMode() = tools.activeTool != GreaseTool.PAN && tools.activeTool != GreaseTool.EYEDROPPER &&
+        tools.activeTool !in SELECTION_TOOLS
 
     private fun sessionParams(tool:Int, pxPerUnit:Float):FloatArray? {
         val argb = materials.colorArgb
@@ -926,6 +929,7 @@ class EditorController {
         setMaterialColor(materials.colorArgb)
     }
     fun setMode(value:GreaseMode):Boolean {
+        if (warpActive) endWarp(true)
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
             GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
@@ -1298,7 +1302,7 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
-            runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(selectMode), noose))
+            runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), noose))
             return
         }
         if (tools.activeTool == GreaseTool.POLYLINE) {
@@ -1367,13 +1371,20 @@ class EditorController {
         }
     }
     fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean =
-        runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(selectMode), points))
+        runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), points))
 
     // ---- Blender 3.6.23 Legacy GP selection (native/blender_gp/project_grease_blender_select.c) ----
     // Point vs. stroke select mode and the eSelectOp used by lasso/box/circle selection.
     // Edit-mode select mode switch (Point / Stroke / Segment); Stroke picks whole strokes as before.
     var selectMode = ProjectGreaseSelect.MODE_STROKE
         private set
+    /** Vertex Paint selects by its mask (ts->gpencil_selectmode_vertex: points, whole strokes or
+     *  segments), as Blender does in that mode; every other mode by the Edit select mode. */
+    val activeSelectMode:Int get() = if (mode != GreaseMode.VERTEX_PAINT) selectMode else when (vertexSelectMask) {
+        ToolSession.SELECT_MASK_POINT -> ProjectGreaseSelect.MODE_POINT
+        ToolSession.SELECT_MASK_SEGMENT -> ProjectGreaseSelect.MODE_SEGMENT
+        else -> ProjectGreaseSelect.MODE_STROKE
+    }
     var selectOp = ProjectGreaseSelect.OP_SET
         private set
     fun setSelectMode(value:Int):Boolean {
@@ -1409,10 +1420,10 @@ class EditorController {
     fun selectLastPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false) =
         runSelectCommand(ProjectGreaseSelect.last(onlySelectedStrokes, extend))
     fun selectBox(x0:Float, y0:Float, x1:Float, y1:Float) =
-        runSelectCommand(ProjectGreaseSelect.box(selectOp, ProjectGreaseSelect.areaMode(selectMode), x0, y0, x1, y1))
+        runSelectCommand(ProjectGreaseSelect.box(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), x0, y0, x1, y1))
     /** One dab of a circle-select gesture; only the first dab of a SET gesture replaces the selection. */
     fun selectCircleAt(x:Float, y:Float, radius:Float, isFirst:Boolean) =
-        runSelectCommand(ProjectGreaseSelect.circle(selectOp, ProjectGreaseSelect.areaMode(selectMode), x, y, radius, isFirst))
+        runSelectCommand(ProjectGreaseSelect.circle(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), x, y, radius, isFirst))
 
     fun fillSelectedStroke():Boolean {
         val i=selection.selectedStroke
@@ -1967,7 +1978,8 @@ class EditorController {
     }
     /** Bumped on renders while the proportional circle or 2D cursor overlay is visible. */
     var overlayTick by androidx.compose.runtime.mutableIntStateOf(0)
-    fun selectionOverlayVisible():Boolean = mode == GreaseMode.EDIT || tools.activeTool in SELECTION_TOOLS
+    fun selectionOverlayVisible():Boolean = mode == GreaseMode.EDIT || tools.activeTool in SELECTION_TOOLS ||
+        (mode == GreaseMode.VERTEX_PAINT && vertexSelectMask != 0) // the points the mask paints
     fun layerCount() = native.layerCount()
 
     // Live modifier stack of the selected layer (see ModifierStack.kt). Every change is an undo step
@@ -2406,11 +2418,11 @@ class EditorController {
     /** Blender gpencil_select_exec(): nearest point under the tap; a tap on empty space deselects. */
     fun pickSelect(x:Float, y:Float):Boolean {
         val flags = ProjectGreaseSelect.PICK_DESELECT_ALL or
-            (if (pickEntireStrokes) ProjectGreaseSelect.PICK_ENTIRE else 0)
+            (if (if (mode == GreaseMode.VERTEX_PAINT) activeSelectMode == ProjectGreaseSelect.MODE_STROKE else pickEntireStrokes) ProjectGreaseSelect.PICK_ENTIRE else 0)
         val radiusSquared = ProjectGreaseSelect.pickRadiusSquared(view.zoom)
         val changed = runSelectCommand(
-            if (selectMode == ProjectGreaseSelect.MODE_SEGMENT) ProjectGreaseSelect.segmentPick(x, y, radiusSquared, ProjectGreaseSelect.PICK_DESELECT_ALL)
-            else ProjectGreaseSelect.pick(x, y, radiusSquared, flags, ProjectGreaseSelect.areaMode(selectMode)))
+            if (activeSelectMode == ProjectGreaseSelect.MODE_SEGMENT) ProjectGreaseSelect.segmentPick(x, y, radiusSquared, ProjectGreaseSelect.PICK_DESELECT_ALL)
+            else ProjectGreaseSelect.pick(x, y, radiusSquared, flags, ProjectGreaseSelect.areaMode(activeSelectMode)))
         val index = native.hitTestStroke(x, y, 24f)
         if (index >= 0) selection.note(index) else if (changed) selection.clear()
         return changed || index >= 0
@@ -2480,6 +2492,61 @@ class EditorController {
         val dst = floatArrayOf(b[0] + kx * w * 0.5f, b[1], b[2] - kx * w * 0.5f, b[1] + ky * h * 0.5f,
             b[2], b[3] - ky * h * 0.5f, b[0], b[3])
         return transformSelection(Homography.fromQuads(src, dst) ?: return false)
+    }
+    // ---- Lasso warp: Blender's lattice deform (project_grease_blender_lattice.c) on the selection ----
+    /** The lattice over the selection's box while warping (null otherwise): nu x nv points, u fastest. */
+    var warpPoints: FloatArray? = null; private set
+    var warpNu = 2; private set
+    var warpNv = 2; private set
+    /** Lattice interpolation, Blender's KEY_LINEAR 0 / KEY_CARDINAL 1 / KEY_BSPLINE 2. */
+    var warpInterp = 0; private set
+    private var warpBounds: FloatArray? = null
+    val warpActive get() = warpPoints != null
+    /** Starts (or regrids) the warp; 2 x 2 is a free-distort box, more points a warp mesh. */
+    fun beginWarp(nu:Int = warpNu, nv:Int = warpNv):Boolean {
+        if (native.handle == 0L) return false
+        if (warpActive) GPNative.nativeLatticeEnd(native.handle, false)
+        val b = GPNative.nativeLatticeBegin(native.handle) ?: run { warpPoints = null; return false }
+        warpNu = nu.coerceIn(2, 6); warpNv = nv.coerceIn(2, 6); warpBounds = b
+        warpPoints = FloatArray(2 * warpNu * warpNv).also { p ->
+            for (j in 0 until warpNv) for (i in 0 until warpNu) {
+                p[2 * (j * warpNu + i)] = b[0] + (b[2] - b[0]) * i / (warpNu - 1)
+                p[2 * (j * warpNu + i) + 1] = b[1] + (b[3] - b[1]) * j / (warpNv - 1)
+            }
+        }
+        onOverlayChanged?.invoke()
+        return true
+    }
+    fun setWarpInterp(i:Int) { warpInterp = i.coerceIn(0, 2); pushWarp() }
+    /** Moves lattice point [index] (or every point for -1, a move of the whole box) by dx, dy canvas units. */
+    fun dragWarp(index:Int, dx:Float, dy:Float) {
+        val p = warpPoints ?: return
+        if (index < 0) for (k in p.indices) p[k] += if (k % 2 == 0) dx else dy
+        else if (index < p.size / 2) { p[2 * index] += dx; p[2 * index + 1] += dy }
+        pushWarp()
+    }
+    /** The lattice point within radius of x, y (canvas units), or -1. */
+    fun warpPointAt(x:Float, y:Float, radius:Float):Int {
+        val p = warpPoints ?: return -1
+        var best = -1; var bestD = radius * radius
+        for (k in 0 until p.size / 2) {
+            val d = (p[2 * k] - x) * (p[2 * k] - x) + (p[2 * k + 1] - y) * (p[2 * k + 1] - y)
+            if (d <= bestD) { bestD = d; best = k }
+        }
+        return best
+    }
+    private fun pushWarp() {
+        val p = warpPoints ?: return
+        if (GPNative.nativeLatticeUpdate(native.handle, warpNu, warpNv, p, warpInterp)) render()
+        onOverlayChanged?.invoke()
+    }
+    /** Apply keeps the warp as one undo step; Cancel puts the points back. */
+    fun endWarp(apply:Boolean) {
+        if (!warpActive) return
+        GPNative.nativeLatticeEnd(native.handle, apply)
+        warpPoints = null; warpBounds = null
+        if (apply) { history.markEdit(); document.markDirty() }
+        render(); onOverlayChanged?.invoke()
     }
     fun joinSelection(leaveGaps:Boolean=false) = runSelectCommand(ProjectGreaseSelect.join(leaveGaps))
     // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----

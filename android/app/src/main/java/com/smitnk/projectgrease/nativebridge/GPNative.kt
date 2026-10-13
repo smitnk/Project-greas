@@ -206,6 +206,9 @@ object GPNative {
     // Weight Paint view of the renderer: group >= 0 tints strokes by that group's weights, -1 = normal.
     external fun nativeSetWeightView(handle: Long, group: Int): Boolean
     external fun nativeSetVertexOpacity(handle: Long, opacity: Float): Boolean
+    external fun nativeLatticeBegin(handle: Long): FloatArray?
+    external fun nativeLatticeUpdate(handle: Long, nu: Int, nv: Int, ctrl: FloatArray, interp: Int): Boolean
+    external fun nativeLatticeEnd(handle: Long, keep: Boolean)
     /** Drawing guide overlay (GP_GUIDE_* 0..4, -1 off), canvas units / radians. */
     external fun nativeSetGuide(handle: Long, type: Int, cx: Float, cy: Float, angle: Float, spacing: Float): Boolean
     // Layer masks: names refer to layers; flags bit 0 = hidden, bit 1 = inverted (-1 = no such entry).

@@ -127,6 +127,9 @@ void project_grease_gp_set_brush_vertex_color(ProjectGreaseGPHandle *handle, int
 int project_grease_gp_active_layer(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_transform_selected(ProjectGreaseGPHandle *handle, const float m[9]);
 int project_grease_gp_selected_bounds(const ProjectGreaseGPHandle *handle, float r_bounds[4]);
+int project_grease_gp_lattice_begin(ProjectGreaseGPHandle *handle, float r_bounds[4]);
+int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int nv, const float *ctrl, int interp);
+void project_grease_gp_lattice_end(ProjectGreaseGPHandle *handle, int keep);
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness);
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);

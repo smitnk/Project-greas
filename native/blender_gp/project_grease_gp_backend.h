@@ -57,6 +57,12 @@ class Backend {
   // nothing is selected. Bounds: xmin, ymin, xmax, ymax of the selected points.
   bool transform_selected_points(const float m[9]);
   bool selected_points_bounds(float r_bounds[4]) const;
+  // Lasso warp (Blender lattice deform): begin snapshots the selected points and returns their box,
+  // update deforms the snapshot by the lattice's points (2 * nu * nv canvas floats), end keeps the
+  // result, cancel restores the snapshot.
+  bool lattice_begin(float r_bounds[4]);
+  bool lattice_update(int nu, int nv, const float *ctrl, int interp);
+  void lattice_end(bool keep);
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);
   bool move_layer(int from_index, int to_index);
@@ -347,6 +353,7 @@ class Backend {
 
   // Opaque implementation storage.
   struct Impl;
+  void lattice_tag();
 
  private:
   void apply_brush_vertex_color(bGPDstroke *gps);

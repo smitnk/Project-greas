@@ -38,6 +38,24 @@ int main()
   CHECK(b.transform_selected_points(persp));
   const float w = 0.01f * x7 + 1;
   CHECK(std::fabs(gps->points[7].x - x7 / w) < 1e-4f && std::fabs(gps->points[7].y - y7 / w) < 1e-4f);
+  /* Lattice warp session: a 2x2 linear lattice, (x1, y1) corner +30 in x; repeated updates start from
+   * the snapshot, cancel restores it, and unselected points never move. */
+  float lb[4];
+  CHECK(b.lattice_begin(lb));
+  const float x10 = gps->points[10].x, y10 = gps->points[10].y, x4 = gps->points[4].x;
+  /* the selected point with the largest y sits at the box's (x0, y1) corner: move that lattice point */
+  bGPDspoint *corner = nullptr;
+  for (int i = 5; i <= 10; i++)
+    if (gps->points[i].y == lb[3]) corner = &gps->points[i];
+  CHECK(corner && corner->x == lb[0]);
+  float ctrl[8] = {lb[0], lb[1], lb[2], lb[1], lb[0] + 30, lb[3], lb[2], lb[3]};
+  CHECK(b.lattice_update(2, 2, ctrl, 0 /* KEY_LINEAR */));
+  CHECK(b.lattice_update(2, 2, ctrl, 0));
+  CHECK(corner && std::fabs(corner->x - (lb[0] + 30)) < 1e-2f && std::fabs(corner->y - lb[3]) < 1e-2f);
+  CHECK(gps->points[4].x == x4);
+  b.lattice_end(false);
+  CHECK(gps->points[10].x == x10 && gps->points[10].y == y10);
+  CHECK(!b.lattice_update(2, 2, ctrl, 0)); /* no session after end */
   std::printf(failures ? "%d FAILURES\n" : "backend transform tests passed\n", failures);
   return failures ? 1 : 0;
 }

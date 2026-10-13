@@ -1500,6 +1500,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             ShapeEditOverlay(controller,overlayTick,redraw)
             ModifierHandlesOverlay(controller,overlayTick,redraw)
             BoxSelectOverlay(controller,overlayTick)
+            WarpOverlay(controller,overlayTick,redraw)
         }
 
         // top: project menu, mode, more
@@ -1537,6 +1538,13 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
         }
 
+        // after a lasso selection: its transforms right away (no second tap on the tool)
+        if(tool==GreaseTool.LASSO&&!controller.warpActive&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
+            Row(Modifier.align(Alignment.TopCenter).padding(top=52.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                Button(onClick={controller.beginWarp(2,2);redraw()},Modifier.testTag("lassoWarp")){Text("Warp")}
+                OutlinedButton(onClick={controller.beginWarp(3,3);redraw()}){Text("Warp mesh")}
+                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…")}
+            }
         if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)},
             {onSheet(Sheet.LAYER_ADVANCED)},{onSheet(Sheet.ROTOSCOPE)})
 
@@ -1614,9 +1622,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             "Flip V" to {controller.selectionPivot()?.let{controller.mirrorSelectedStrokeAround(false,true,it[0],it[1])}?:false},
             "Shear ←" to {controller.shearSelection(-0.15f,0f)},
             "Shear →" to {controller.shearSelection(0.15f,0f)},
-            "Perspective +" to {controller.perspectiveSelection(0.15f,0f)},
-            "Perspective −" to {controller.perspectiveSelection(-0.15f,0f)},
-            "Perspective side" to {controller.perspectiveSelection(0f,0.15f)},
+            "Warp (box)" to {controller.beginWarp(2,2)},
+            "Warp mesh" to {controller.beginWarp(3,3)},
             "Break off" to {controller.breakOffSelection()},
             "Copy" to {controller.copySelection()},
             "Cut" to {controller.cutSelection()},

@@ -487,6 +487,34 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTransformSelected(JNIE
   return project_grease_gp_transform_selected(from_handle(handle), m) != 0;
 }
 
+/* Lasso warp (Blender lattice deform): begin returns the selection box, update takes the lattice's
+ * points (2 * nu * nv canvas floats), end keeps (or cancels) the deform. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLatticeBegin(JNIEnv *env, jobject, jlong handle)
+{
+  float b[4];
+  if (!project_grease_gp_lattice_begin(from_handle(handle), b)) return nullptr;
+  jfloatArray out = env->NewFloatArray(4);
+  if (out) env->SetFloatArrayRegion(out, 0, 4, b);
+  return out;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLatticeUpdate(
+    JNIEnv *env, jobject, jlong handle, jint nu, jint nv, jfloatArray ctrl, jint interp)
+{
+  if (!ctrl || nu < 2 || nv < 2 || nu > 16 || nv > 16 || env->GetArrayLength(ctrl) < 2 * nu * nv) return JNI_FALSE;
+  std::vector<float> c(static_cast<size_t>(2 * nu * nv));
+  env->GetFloatArrayRegion(ctrl, 0, 2 * nu * nv, c.data());
+  return project_grease_gp_lattice_update(from_handle(handle), nu, nv, c.data(), interp) != 0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLatticeEnd(JNIEnv *, jobject, jlong handle, jboolean keep)
+{
+  project_grease_gp_lattice_end(from_handle(handle), keep ? 1 : 0);
+}
+
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectedBounds(JNIEnv *env, jobject, jlong handle)
 {

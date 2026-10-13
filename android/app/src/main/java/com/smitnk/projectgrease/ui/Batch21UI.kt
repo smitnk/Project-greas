@@ -44,6 +44,7 @@ private class OverlayMap(w: Float, h: Float, controller: EditorController) {
     private val ox = (w - cw * fit) * 0.5f + controller.view.panX
     private val oy = (h - ch * fit) * 0.5f + controller.view.panY
     fun screen(p: Pair<Float, Float>) = Offset(ox + p.first * fit, oy + p.second * fit)
+    fun canvas(o: Offset) = ((o.x - ox) / fit) to ((o.y - oy) / fit)
     fun scale() = fit
 }
 
@@ -141,6 +142,51 @@ fun ModifierHandlesOverlay(controller: EditorController, tick: Int, redraw: () -
         }
         Button(onClick = { controller.editModifierHandles(null); redraw() }, Modifier.align(Alignment.BottomCenter).padding(8.dp)) {
             Text("Done editing handles")
+        }
+    }
+}
+
+/** Lasso warp: the lattice over the selection (Blender lattice deform). Drag a point to bend the
+ *  strokes, drag inside the cage to move it all; 2 x 2 is a free-distort box, 3 x 3 / 4 x 4 a mesh. */
+@Composable
+fun WarpOverlay(controller: EditorController, tick: Int, redraw: () -> Unit) {
+    @Suppress("UNUSED_VARIABLE") val observed = tick
+    val pts = controller.warpPoints ?: return
+    val nu = controller.warpNu; val nv = controller.warpNv
+    Box(Modifier.fillMaxSize().testTag("warpOverlay")) {
+        Canvas(Modifier.fillMaxSize().pointerInput(nu, nv) {
+            var index = -1
+            detectDragGestures(
+                onDragStart = { o ->
+                    val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                    val c = m.canvas(o)
+                    index = controller.warpPointAt(c.first, c.second, 40f / m.scale())
+                },
+                onDragEnd = { redraw() }
+            ) { change, d ->
+                change.consume()
+                val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                controller.dragWarp(index, d.x / m.scale(), d.y / m.scale())
+            }
+        }) {
+            val m = OverlayMap(size.width, size.height, controller)
+            fun at(i: Int, j: Int) = m.screen(pts[2 * (j * nu + i)] to pts[2 * (j * nu + i) + 1])
+            for (j in 0 until nv) for (i in 0 until nu) {
+                if (i + 1 < nu) { drawLine(Color.Black, at(i, j), at(i + 1, j), 3f); drawLine(Color(0xFF4FC3F7), at(i, j), at(i + 1, j), 1.5f) }
+                if (j + 1 < nv) { drawLine(Color.Black, at(i, j), at(i, j + 1), 3f); drawLine(Color(0xFF4FC3F7), at(i, j), at(i, j + 1), 1.5f) }
+            }
+            for (j in 0 until nv) for (i in 0 until nu) { drawCircle(Color.Black, 13f, at(i, j)); drawCircle(Color.White, 10f, at(i, j)) }
+        }
+        FlowRow(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { controller.endWarp(true); redraw() }, modifier = Modifier.testTag("warpApply")) { Text("Apply") }
+            OutlinedButton(onClick = { controller.endWarp(false); redraw() }, modifier = Modifier.testTag("warpCancel")) { Text("Cancel") }
+            listOf(2 to "Box", 3 to "Mesh 3×3", 4 to "Mesh 4×4").forEach { (n, l) ->
+                FilterChip(selected = nu == n, onClick = { controller.beginWarp(n, n); redraw() }, label = { Text(l) },
+                    modifier = Modifier.testTag("warpGrid_$n"))
+            }
+            listOf(0 to "Linear", 2 to "Smooth (B-spline)").forEach { (k, l) ->
+                FilterChip(selected = controller.warpInterp == k, onClick = { controller.setWarpInterp(k); redraw() }, label = { Text(l) })
+            }
         }
     }
 }

@@ -154,6 +154,7 @@ C|native/blender_gp/rna/project_grease_mod_rna.c
 C|third_party/blender/source/blender/blenkernel/intern/colortools.c
 C|third_party/blender/source/blender/blenkernel/intern/colorband.c
 C|native/blender_gp/project_grease_key_extract.c
+C|native/blender_gp/project_grease_blender_lattice.c
 # L8 part 2: Blender 3.6.23's GP draw engine, unmodified, on the GLES 3.2 adapter (native/blender_gp/gles).
 C|third_party/blender/source/blender/draw/engines/gpencil/gpencil_engine.c
 C|third_party/blender/source/blender/draw/engines/gpencil/gpencil_cache_utils.c

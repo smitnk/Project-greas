@@ -37,6 +37,11 @@ for info in "${INFOS[@]}"; do
   fi
   if [[ -n "${GLSLANG:-}" ]]; then
     if "$GLSLANG" -S vert "$DEST/$info.vert.glsl" > "$G/$info.v.txt" 2>&1 && "$GLSLANG" -S frag "$DEST/$info.frag.glsl" > "$G/$info.f.txt" 2>&1; then echo "GLES 3.20 OK: $info"; else echo "GLES 3.20 FAIL: $info"; grep -h ERROR "$G/$info.v.txt" "$G/$info.f.txt" | head -3; FAILED=1; fi
+    # the OpenGL ES 3.1 path (pg_gles_source_for_api): ESSL 3.10 with GL_EXT_texture_buffer
+    for st in vert frag; do
+      sed '1s/^#version 320 es$/#version 310 es\n#extension GL_EXT_texture_buffer : require/' "$DEST/$info.$st.glsl" > "$G/$info.310.$st"
+      if "$GLSLANG" -S $st "$G/$info.310.$st" > "$G/$info.310.$st.txt" 2>&1; then :; else echo "GLES 3.10 FAIL: $info $st"; grep -h ERROR "$G/$info.310.$st.txt" | head -3; FAILED=1; fi
+    done
   fi
 done
 [[ $FAILED == 0 ]]

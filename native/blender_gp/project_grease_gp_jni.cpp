@@ -471,11 +471,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSoftEraseAt(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetBrushVertexColor(
-    JNIEnv *, jobject, jlong handle, jboolean enabled, jfloat r, jfloat g, jfloat b, jfloat factor)
+    JNIEnv *, jobject, jlong handle, jboolean enabled, jfloat r, jfloat g, jfloat b, jfloat factor, jint mode)
 {
   float rgb[3] = {r, g, b};
   pg_rgb_s2l(rgb);
-  project_grease_gp_set_brush_vertex_color(from_handle(handle), enabled ? 1 : 0, rgb, factor);
+  project_grease_gp_set_brush_vertex_color(from_handle(handle), enabled ? 1 : 0, rgb, factor, mode);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

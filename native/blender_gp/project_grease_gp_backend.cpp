@@ -271,6 +271,7 @@ struct Backend::Impl {
   bool brush_vertex_color = false;
   float brush_rgb[3] = {0.0f, 0.0f, 0.0f};
   float brush_vertex_factor = 1.0f;
+  int brush_vertex_mode = 2; /* GPPAINT_MODE_STROKE 0 / FILL 1 / BOTH 2 */
 
   std::vector<HistorySnapshot *> undo_history;
   float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
@@ -1681,8 +1682,9 @@ bool Backend::create_primitive(int type,
   return true;
 }
 
-void Backend::set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor)
+void Backend::set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor, int mode)
 {
+  impl_->brush_vertex_mode = std::clamp(mode, 0, 2);
   impl_->brush_vertex_color = enabled;
   if (rgb_linear) std::memcpy(impl_->brush_rgb, rgb_linear, sizeof(impl_->brush_rgb));
   impl_->brush_vertex_factor = std::clamp(factor, 0.0f, 1.0f);
@@ -1693,12 +1695,17 @@ void Backend::set_brush_vertex_color(bool enabled, const float rgb_linear[3], fl
 void Backend::apply_brush_vertex_color(bGPDstroke *gps)
 {
   if (!gps || !impl_->brush_vertex_color) return;
-  for (int i = 0; i < gps->totpoints; i++) {
-    copy_v3_v3(gps->points[i].vert_color, impl_->brush_rgb);
-    gps->points[i].vert_color[3] = impl_->brush_vertex_factor;
+  // GPENCIL_USE_VERTEX_COLOR_STROKE / _FILL (paint->mode != FILL / != STROKE)
+  if (impl_->brush_vertex_mode != 1) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      copy_v3_v3(gps->points[i].vert_color, impl_->brush_rgb);
+      gps->points[i].vert_color[3] = impl_->brush_vertex_factor;
+    }
   }
-  copy_v3_v3(gps->vert_color_fill, impl_->brush_rgb);
-  gps->vert_color_fill[3] = impl_->brush_vertex_factor;
+  if (impl_->brush_vertex_mode != 0) {
+    copy_v3_v3(gps->vert_color_fill, impl_->brush_rgb);
+    gps->vert_color_fill[3] = impl_->brush_vertex_factor;
+  }
 }
 
 bool Backend::create_polyline(const StrokePoint *points,

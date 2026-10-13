@@ -41,6 +41,7 @@
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
+extern "C" __attribute__((weak)) int pg_gles_api(void);
 
 namespace {
 struct Vertex { float x; float y; };
@@ -72,6 +73,8 @@ enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT, DRAW_PREMULT };
 DrawMode g_draw_mode=DRAW_NORMAL;
 // Weight Paint view: >= 0 draws strokes tinted by the weight of this vertex group (blue 0 .. red 1).
 int g_weight_group=-1;
+// Viewport Overlay "Vertex Paint Opacity" (View3DOverlay.gpencil_vertex_paint_opacity).
+float g_vertex_opacity=1.0f;
 // Fill boundary source (brush fill_draw_mode): 0 GP_FILL_DMODE_BOTH, 1 STROKE, 2 CONTROL.
 int g_fill_draw_mode=0;
 // Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): Blender's line extensions
@@ -586,8 +589,8 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
         style ? style->fill_rgba[2] : g_stroke_color[2]};
     float stroke_rgb[3], fill_rgb[3];
     pg_gp_stroke_mean_mix(stroke_base_rgb, s->points[0].vert_color, sizeof(bGPDspoint),
-                          s->totpoints, PG_GP_VERTEX_COLOR_OPACITY, stroke_rgb);
-    pg_gp_mix_vertex_color(fill_base_rgb, s->vert_color_fill, PG_GP_VERTEX_COLOR_OPACITY, fill_rgb);
+                          s->totpoints, g_vertex_opacity, stroke_rgb);
+    pg_gp_mix_vertex_color(fill_base_rgb, s->vert_color_fill, g_vertex_opacity, fill_rgb);
     const float stroke_base_alpha = style ? style->stroke_rgba[3] : g_stroke_color[3];
     const float fill_base_alpha = style ? style->fill_rgba[3] : g_stroke_color[3];
     const float layer_opacity = g_force_layer_opacity>=0.0f?g_force_layer_opacity:layer->opacity;
@@ -642,7 +645,7 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
         for(int c=0;c<4;c++){c1[c]=style->fill_rgba[c];c2[c]=style->mix_rgba[c];}
         if(style->flag&GP_MATERIAL_FLIP_FILL)for(int c=0;c<4;c++)std::swap(c1[c],c2[c]);
         // gpencil_vert.glsl: gradient mode does not modulate alpha by the material (fill_col.a = 1)
-        float base[3];pg_gp_mix_vertex_color(c1,s->vert_color_fill,PG_GP_VERTEX_COLOR_OPACITY,base);
+        float base[3];pg_gp_mix_vertex_color(c1,s->vert_color_fill,g_vertex_opacity,base);
         if(g_layer_tint[3]>0.0f)for(int c=0;c<3;c++)base[c]+=(g_layer_tint[c]-base[c])*g_layer_tint[3];
         for(int c=0;c<3;c++){c1[c]=pg_linear_to_srgb(c1[c]);c2[c]=pg_linear_to_srgb(c2[c]);base[c]=pg_linear_to_srgb(base[c]);}
         const float gcol[4]={base[0],base[1],base[2],alpha_scale};
@@ -939,10 +942,10 @@ bool engine_context_ok(){
   static int ok=-1;
   if(ok<0){
     const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
-    int maj=0,min=0;
-    ok=(v&&std::sscanf(v,"OpenGL ES %d.%d",&maj,&min)==2&&(maj>3||(maj==3&&min>=2)))?1:0;
+    // OpenGL ES 3.2, or 3.1 with the texture buffer / base vertex / implicit conversion extensions
+    ok=(pg_gles_api&&pg_gles_api()!=0)?1:0;
 #ifdef PG_HAVE_ANDROID_LOG
-    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","GL_VERSION %s: Blender GP draw engine %s",v?v:"?",ok?"on":"off (needs OpenGL ES 3.2)");
+    __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","GL_VERSION %s: Blender GP draw engine %s (API %d)",v?v:"?",ok?"on":"off (needs OpenGL ES 3.2, or 3.1 with texture buffers)",pg_gles_api?pg_gles_api():0);
 #endif
   }
   return ok==1;
@@ -1085,7 +1088,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   /* Update tagging: the batch cache (draw_cache_impl_gpencil.cc) is rebuilt only when the document
    * or modifier revision, the frame or the evaluated frames changed (GP_DATA_CACHE_IS_DIRTY). */
   static int drawn_weight=-2; /* the overlay's vertex group (its edit batch) */
-  const bool changed=drawn_weight!=g_weight_group||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
+  static float drawn_vopacity=-1.0f;
+  const bool changed=drawn_weight!=g_weight_group||drawn_vopacity!=g_vertex_opacity||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
                      shown_frames!=g_engine_drawn_frames;
   copy.flag&=~GP_DATA_CACHE_IS_DIRTY;
   if(changed)copy.flag|=GP_DATA_CACHE_IS_DIRTY;
@@ -1102,6 +1106,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   view.shader_fx=&fx.list;
   view.rendered=fx.list.first!=nullptr;
   view.weight_group=g_weight_group;
+  view.vertex_opacity=g_vertex_opacity;
   if(over)for(float&c:view.background)c=0.0f;
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
   g_engine_batch_cache=copy.runtime.gpencil_cache;
@@ -1119,6 +1124,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   g_engine_drawn_frame=frame_number;
   g_engine_drawn_frames=shown_frames;
   drawn_weight=g_weight_group;
+  drawn_vopacity=g_vertex_opacity;
   /* The engine image replaces the paper rectangle only (strokes are clipped to the canvas, as the
    * camera frame clips them in Blender). */
   const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));
@@ -1467,6 +1473,7 @@ extern "C" void project_grease_android_present_set_canvas_size(int width,int hei
   g_canvas_height=std::max(1,height);
 }
 extern "C" void project_grease_android_present_set_weight_view(int group){g_weight_group=group;}
+extern "C" void project_grease_android_present_set_vertex_opacity(float o){g_vertex_opacity=o<0?0:(o>1?1:o);}
 extern "C" void project_grease_android_present_set_guide(int type,float cx,float cy,float angle,float spacing){
   g_guide_type=(type>=0&&type<=4)?type:-1;g_guide_cx=cx;g_guide_cy=cy;g_guide_angle=angle;g_guide_spacing=spacing;}
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_fill_draw_mode=std::clamp(mode,0,2);}

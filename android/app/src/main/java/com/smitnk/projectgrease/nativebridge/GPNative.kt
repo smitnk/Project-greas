@@ -51,7 +51,7 @@ object GPNative {
     external fun nativeSetSelectionOverlay(handle: Long, enabled: Boolean): Boolean
     /** Fill tool options: leak (px; 0 = Blender ceil(3 x fill_factor)), dilate (px, negative contracts), boundary (0 All, 1 Strokes, 2 Edit Lines). */
     external fun nativeSetFillOptionsEglRenderer(handle: Long, leak: Int, dilate: Int, drawMode: Int): Boolean
-    external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float): Boolean
+    external fun nativeSetFillExtendEglRenderer(handle: Long, factor: Float, mode: Int): Boolean
     /** Fill precision (brush fill_factor, 0.05..8) and the Extend Lines stroke collision check. */
     external fun nativeSetFillPrecisionEglRenderer(handle: Long, factor: Float, collide: Boolean): Boolean
     /** Stroke (fill = false) or fill texture image of a material slot, ARGB top row first; null removes. */
@@ -205,6 +205,7 @@ object GPNative {
     external fun nativeSetPointWeight(handle: Long, stroke: Int, point: Int, group: Int, weight: Float): Boolean
     // Weight Paint view of the renderer: group >= 0 tints strokes by that group's weights, -1 = normal.
     external fun nativeSetWeightView(handle: Long, group: Int): Boolean
+    external fun nativeSetVertexOpacity(handle: Long, opacity: Float): Boolean
     /** Drawing guide overlay (GP_GUIDE_* 0..4, -1 off), canvas units / radians. */
     external fun nativeSetGuide(handle: Long, type: Int, cx: Float, cy: Float, angle: Float, spacing: Float): Boolean
     // Layer masks: names refer to layers; flags bit 0 = hidden, bit 1 = inverted (-1 = no such entry).

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -155,9 +156,16 @@ int main()
     std::printf("FAIL: no OpenGL ES 3.2 context (EGL surfaceless)\n");
     return 1;
   }
+  {
+    const char *force = std::getenv("PG_FORCE_GLES31");
+    const int api = pg_gles_api();
+    std::printf("  engine GL ES API: %d\n", api);
+    CHECK(api == ((force && force[0] == '1') ? 31 : 32));
+  }
   const float paper[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   PGGpEngineView view = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
   view.weight_group = -1;
+  view.vertex_opacity = 1.0f;
 
   bGPdata *gpd = make_doc();
   bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "Lines", true, false);

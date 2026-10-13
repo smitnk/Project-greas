@@ -1562,6 +1562,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                         label={Text("Material")},modifier=Modifier.testTag("colorModeMaterial"))
                 }
                 BlenderColorPicker(controller.materials.colorArgb,{controller.setMaterialColor(it);redraw()})
+                VertexColorOptions(controller,redraw)
                 TextButton(onClick={controller.selectTool(GreaseTool.EYEDROPPER);popup=StudioPopup.NONE;redraw()}){Text("Pick from canvas")}
                 TextButton(onClick={popup=StudioPopup.NONE;onSheet(Sheet.MATERIALS)}){Text("Materials…")}
             }
@@ -1785,4 +1786,39 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
         }
     }
+}
+
+/** Blender's vertex colour settings: brush Mix Factor, Stroke / Fill / Both for Draw mode, the
+ *  Vertex Paint selection mask and the viewport's Vertex Paint Opacity. */
+@Composable private fun VertexColorOptions(controller:EditorController,redraw:()->Unit){
+    var tick by remember{mutableIntStateOf(0)}
+    key(tick){Column(Modifier.padding(horizontal=12.dp)){
+        if(controller.mode==GreaseMode.DRAW&&controller.vertexColorMode){
+            FlowRow(itemVerticalAlignment=Alignment.CenterVertically){
+                Text("Mode",fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=6.dp))
+                listOf(0 to "Stroke",1 to "Fill",2 to "Both").forEach{(m,l)->
+                    FilterChip(selected=controller.vertexPaintTarget==m,onClick={controller.updateVertexPaintTarget(m);tick++;redraw()},
+                        label={Text(l)},modifier=Modifier.padding(end=4.dp).testTag("vertexTarget_$m"))
+                }
+            }
+        }
+        if(controller.mode==GreaseMode.DRAW&&controller.vertexColorMode||controller.mode==GreaseMode.VERTEX_PAINT){
+            Text("Mix Factor ${"%.2f".format(controller.vertexFactor)}")
+            Slider(controller.vertexFactor,{controller.updateVertexFactor(it);tick++},onValueChangeFinished=redraw,
+                modifier=Modifier.testTag("vertexMixFactor"))
+        }
+        if(controller.mode==GreaseMode.VERTEX_PAINT){
+            FlowRow(itemVerticalAlignment=Alignment.CenterVertically){
+                Text("Selection mask",fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=6.dp))
+                listOf(0 to "Off",com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",
+                    com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_STROKE to "Strokes",
+                    com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_SEGMENT to "Segments").forEach{(m,l)->
+                    FilterChip(selected=controller.vertexSelectMask==m,onClick={controller.vertexSelectMask=m;tick++;redraw()},
+                        label={Text(l)},modifier=Modifier.padding(end=4.dp).testTag("colorVpaintMask_$m"))
+                }
+            }
+        }
+        Text("Vertex Paint Opacity (viewport) ${"%.2f".format(controller.vertexOpacity)}")
+        Slider(controller.vertexOpacity,{controller.vertexOpacity=it;tick++;redraw()},modifier=Modifier.testTag("vertexOpacity"))
+    }}
 }

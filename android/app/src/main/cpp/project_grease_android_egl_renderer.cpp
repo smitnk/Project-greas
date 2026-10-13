@@ -30,6 +30,7 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char 
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
+extern "C" void project_grease_android_present_set_vertex_opacity(float opacity);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
@@ -960,5 +961,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetSelectionOverlay(
 {
   if (!from_handle(handle)) return JNI_FALSE;
   project_grease_android_present_set_selection_overlay(enabled ? 1 : 0);
+  return JNI_TRUE;
+}
+
+/* Viewport Overlay "Vertex Paint Opacity": how strongly vertex colours show over the material colour. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetVertexOpacity(
+    JNIEnv *, jobject, jlong handle, jfloat opacity)
+{
+  if (!from_handle(handle)) return JNI_FALSE;
+  project_grease_android_present_set_vertex_opacity(opacity);
   return JNI_TRUE;
 }

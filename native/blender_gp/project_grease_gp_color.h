@@ -20,7 +20,6 @@
 
 #include <stddef.h>
 
-#define PG_GP_VERTEX_COLOR_OPACITY 1.0f
 
 static inline float pg_gp_clamp01(float v)
 {

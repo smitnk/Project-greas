@@ -44,6 +44,17 @@ int main()
   b.set_brush_vertex_color(false, red, 1.0f);
   draw(b, 30);
   CHECK(b.get_point(2, 5, &p) && p.a == 0);
+  /* Mix Factor and Fill-only mode: points untouched, fill gets the colour at 0.25 */
+  b.set_brush_vertex_color(true, red, 0.25f, 1);
+  draw(b, 40);
+  CHECK(b.get_point(3, 5, &p) && p.a == 0);
+  const bGPDstroke *fs = static_cast<const bGPDstroke *>(f->strokes.last);
+  CHECK(fs->vert_color_fill[0] == 1 && fs->vert_color_fill[3] == 0.25f);
+  /* Stroke-only: fill untouched */
+  b.set_brush_vertex_color(true, red, 0.5f, 0);
+  draw(b, 50);
+  CHECK(b.get_point(4, 5, &p) && p.r == 1 && p.a == 0.5f);
+  CHECK(static_cast<const bGPDstroke *>(f->strokes.last)->vert_color_fill[3] == 0);
   std::printf(failures ? "%d FAILURES\n" : "backend colour tests passed\n", failures);
   return failures ? 1 : 0;
 }

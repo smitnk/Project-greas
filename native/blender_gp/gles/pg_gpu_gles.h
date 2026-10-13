@@ -14,6 +14,10 @@ struct GPUBatch;
 struct bGPdata;
 struct ListBase;
 
+/* Which GL ES the engine runs on: 32, 31 (3.1 with the texture buffer and base vertex extensions,
+ * shaders as ESSL 3.10) or 0 (not supported). Needs a current context. */
+int pg_gles_api(void);
+
 /* Last error of the GLES layer (shader compile / link, incomplete frame-buffer), or "". */
 const char *pg_gpu_gles_last_error(void);
 /* Generated GLES 3.2 source of a create-info (fragment != 0: fragment stage), or NULL. */
@@ -55,6 +59,8 @@ typedef struct PGGpEngineView {
   int rendered;
   /* Weight Paint view: the vertex group whose weights the overlay shows, or -1. */
   int weight_group;
+  /* Overlay "Vertex Paint Opacity" (gpencil_vertex_paint_opacity), 0..1. */
+  float vertex_opacity;
 } PGGpEngineView;
 
 /* Runs Blender 3.6.23's GP draw engine (draw/engines/gpencil, unmodified) on \a gpd at frame

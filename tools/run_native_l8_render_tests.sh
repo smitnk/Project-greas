@@ -36,3 +36,6 @@ g++ "${XF[@]}" -Wall "${INC[@]}" "${LI[@]}" -I"$ROOT/native/blender_gp" "$ROOT/n
   cat "$OUT/link.txt" | grep -v "pragma\|note:" | head -20
   grep -oE "(undefined reference to|multiple definition of) \`[^']*'" "$OUT/link.txt" | sort | uniq -c | sort -rn | head -60; exit 1; }
 PG_DRW_TRACE=1 EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$OUT/test_l8_render"
+# the OpenGL ES 3.1 path (3.1 context features through extensions, ESSL 3.10 shaders) on the same driver
+echo "--- OpenGL ES 3.1 path (PG_FORCE_GLES31) ---"
+PG_FORCE_GLES31=1 EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$OUT/test_l8_render"

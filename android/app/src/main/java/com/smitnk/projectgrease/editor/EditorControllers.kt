@@ -1009,10 +1009,16 @@ class EditorController {
      *  with that material, as in Blender. */
     var vertexColorMode = true; private set
     fun setVertexColorMode(on:Boolean) { vertexColorMode = on; pushBrushVertexColor() }
+    /** Brush Mix Factor (vertex_factor): how strongly the vertex colour covers the material colour. */
+    var vertexFactor = 1f; private set
+    fun updateVertexFactor(f:Float) { vertexFactor = f.coerceIn(0f,1f); pushBrushVertexColor() }
+    /** Paint mode for new strokes: 0 Stroke, 1 Fill, 2 Both (GPPAINT_MODE_STROKE / FILL / BOTH). */
+    var vertexPaintTarget = 2; private set
+    fun updateVertexPaintTarget(m:Int) { vertexPaintTarget = m.coerceIn(0,2); pushBrushVertexColor() }
     private fun pushBrushVertexColor() {
         if (native.handle == 0L) return
         val c = colorToFloats(materials.colorArgb)
-        GPNative.nativeSetBrushVertexColor(native.handle, vertexColorMode, c[0], c[1], c[2], 1f)
+        GPNative.nativeSetBrushVertexColor(native.handle, vertexColorMode, c[0], c[1], c[2], vertexFactor, vertexPaintTarget)
     }
     /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
     fun curveHandles(): List<Pair<Float, Float>> = curve.handles()
@@ -1949,6 +1955,7 @@ class EditorController {
             syncRotoscope()
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
+            GPNative.nativeSetVertexOpacity(rendererHandle, vertexOpacity)
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
             // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
             GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())
@@ -2491,6 +2498,8 @@ class EditorController {
     var drawTint by androidx.compose.runtime.mutableStateOf(false)
     /** gpencil_selectmode_vertex (GP_VERTEX_MASK_SELECTMODE_*) and the paint brushes' falloff curve preset. */
     var vertexSelectMask = 0
+    /** Viewport Overlay "Vertex Paint Opacity" (gpencil_vertex_paint_opacity): vertex colours shown fainter. */
+    var vertexOpacity = 1f
     var paintCurvePreset = 0
     /** Mirror modifier as copies, about the selection median (Blender uses the object origin). */
     fun mirrorSelectionCopy(axisX:Boolean, axisY:Boolean):Boolean {

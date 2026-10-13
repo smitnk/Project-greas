@@ -10,6 +10,7 @@
  * gl_shader.cc): the same GL calls for the GLES 3.2 subset; formats GLES 3.2 does not have are
  * listed in pg_gl_format().
  */
+#include <EGL/egl.h>
 #include <GLES3/gl32.h>
 
 #include <cstdio>
@@ -84,8 +85,81 @@ static void set_error(const std::string &e)
 /** \name Shaders (create-info name -> generated GLES 3.2 sources)
  * \{ */
 
-static GLuint compile(GLenum type, const char *src, const char *info, std::string &log)
+/* OpenGL ES 3.1 path: the generated sources are ESSL 3.20; on a 3.1 context the two 3.2 features
+ * the engine needs come from extensions (texture buffers: EXT/OES_texture_buffer, base vertex:
+ * EXT/OES_draw_elements_base_vertex) and the shaders start as ESSL 3.10 with those enabled.
+ * PG_FORCE_GLES31=1 takes this path on a 3.2 context too (CI checks it on Mesa). */
+static int g_api = -1; /* -1 unknown, 0 none, 31, 32 */
+static const char *g_texbuf_ext = "GL_EXT_texture_buffer";
+typedef void (*PFN_TexBuffer)(GLenum, GLenum, GLuint);
+typedef void (*PFN_DrawElementsBaseVertex)(GLenum, GLsizei, GLenum, const void *, GLint);
+static PFN_TexBuffer g_tex_buffer = nullptr;
+static PFN_DrawElementsBaseVertex g_draw_base_vertex = nullptr;
+
+static bool has_ext(const char *name)
 {
+  GLint n = 0;
+  glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+  for (GLint i = 0; i < n; i++) {
+    const char *e = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, (GLuint)i));
+    if (e && std::strcmp(e, name) == 0) return true;
+  }
+  return false;
+}
+
+int pg_gles_api(void)
+{
+  if (g_api >= 0) return g_api;
+  const char *v = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+  int maj = 0, min = 0;
+  if (!v || std::sscanf(v, "OpenGL ES %d.%d", &maj, &min) != 2) return g_api = 0;
+  const char *force = std::getenv("PG_FORCE_GLES31");
+  const bool es32 = (maj > 3 || (maj == 3 && min >= 2)) && !(force && force[0] == '1');
+  if (es32) {
+    g_tex_buffer = reinterpret_cast<PFN_TexBuffer>(eglGetProcAddress("glTexBuffer"));
+    g_draw_base_vertex = reinterpret_cast<PFN_DrawElementsBaseVertex>(eglGetProcAddress("glDrawElementsBaseVertex"));
+    return g_api = (g_tex_buffer && g_draw_base_vertex) ? 32 : 0;
+  }
+  if (maj < 3 || (maj == 3 && min < 1) || !has_ext("GL_EXT_shader_implicit_conversions")) return g_api = 0;
+  if (has_ext("GL_EXT_texture_buffer")) {
+    g_texbuf_ext = "GL_EXT_texture_buffer";
+    g_tex_buffer = reinterpret_cast<PFN_TexBuffer>(eglGetProcAddress("glTexBufferEXT"));
+  }
+  else if (has_ext("GL_OES_texture_buffer")) {
+    g_texbuf_ext = "GL_OES_texture_buffer";
+    g_tex_buffer = reinterpret_cast<PFN_TexBuffer>(eglGetProcAddress("glTexBufferOES"));
+  }
+  if (has_ext("GL_EXT_draw_elements_base_vertex")) {
+    g_draw_base_vertex = reinterpret_cast<PFN_DrawElementsBaseVertex>(eglGetProcAddress("glDrawElementsBaseVertexEXT"));
+  }
+  else if (has_ext("GL_OES_draw_elements_base_vertex")) {
+    g_draw_base_vertex = reinterpret_cast<PFN_DrawElementsBaseVertex>(eglGetProcAddress("glDrawElementsBaseVertexOES"));
+  }
+  return g_api = (g_tex_buffer && g_draw_base_vertex) ? 31 : 0;
+}
+
+void pg_gles_tex_buffer(GLenum target, GLenum format, GLuint buffer) { g_tex_buffer(target, format, buffer); }
+void pg_gles_draw_elements_base_vertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint base)
+{
+  g_draw_base_vertex(mode, count, type, indices, base);
+}
+
+/* "#version 320 es" -> "#version 310 es" + the texture buffer extension (ESSL 3.10). */
+std::string pg_gles_source_for_api(const char *src)
+{
+  std::string out(src);
+  if (pg_gles_api() != 31) return out;
+  const std::string v320 = "#version 320 es\n";
+  if (out.compare(0, v320.size(), v320) == 0) {
+    out.replace(0, v320.size(), std::string("#version 310 es\n#extension ") + g_texbuf_ext + " : require\n");
+  }
+  return out;
+}
+
+static GLuint compile(GLenum type, const char *src_in, const char *info, std::string &log)
+{
+  const std::string adapted = pg_gles_source_for_api(src_in);
+  const char *src = adapted.c_str();
   GLuint s = glCreateShader(type);
   glShaderSource(s, 1, &src, nullptr);
   glCompileShader(s);

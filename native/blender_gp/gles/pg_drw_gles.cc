@@ -57,6 +57,8 @@
 #include "DNA_userdef_types.h"
 
 #include "pg_gpu_gles.h"
+void pg_gles_tex_buffer(GLenum target, GLenum format, GLuint buffer);
+void pg_gles_draw_elements_base_vertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint base);
 #include "project_grease_modifier_stack.h"
 
 extern "C" DrawEngineType draw_engine_gpencil_type;
@@ -636,7 +638,7 @@ static void apply_uniforms(DRWShadingGroup *g)
         glGenTextures(1, &tex);
         glActiveTexture(GL_TEXTURE0 + (GLenum)u.loc);
         glBindTexture(GL_TEXTURE_BUFFER, tex);
-        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, buf);
+        pg_gles_tex_buffer(GL_TEXTURE_BUFFER, GL_RGBA32F, buf);
         c.frame_buffer_textures.push_back(tex);
         break;
       }
@@ -698,7 +700,7 @@ static void draw_command_once(DRWShadingGroup *g, const PGCmd &cmd)
   /* GLBatch::draw: offset (v_first + index_start) * index size, base vertex = index_base. */
   const size_t isize = type == GL_UNSIGNED_SHORT ? 2 : 4;
   const void *ofs = (const void *)(uintptr_t)((cmd.first + start) * isize);
-  glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)cmd.count, type, ofs, (GLint)base_index);
+  pg_gles_draw_elements_base_vertex(GL_TRIANGLES, (GLsizei)cmd.count, type, ofs, (GLint)base_index);
 }
 
 static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
@@ -1233,6 +1235,7 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   /* Overlay "Onion Skins" (V3D_GP_SHOW_ONION_SKIN) follows the document's onion switch; the engine
    * draws the ghosts itself (BKE_gpencil_visible_stroke_advanced_iter with do_onion). */
   c.v3d.shading.type = view->rendered ? OB_RENDER : OB_MATERIAL;
+  c.v3d.overlay.gpencil_vertex_paint_opacity = view->vertex_opacity;
   c.ob.shader_fx = view->shader_fx ? *view->shader_fx : ListBase{nullptr, nullptr};
   if (gpd->flag & GP_DATA_SHOW_ONIONSKINS) {
     c.v3d.gp_flag |= V3D_GP_SHOW_ONION_SKIN;

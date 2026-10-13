@@ -91,6 +91,7 @@ static void set_error(const std::string &e)
  * PG_FORCE_GLES31=1 takes this path on a 3.2 context too (CI checks it on Mesa). */
 static int g_api = -1; /* -1 unknown, 0 none, 31, 32 */
 static const char *g_texbuf_ext = "GL_EXT_texture_buffer";
+static const char *g_ioblock_ext = "GL_EXT_shader_io_blocks";
 typedef void (*PFN_TexBuffer)(GLenum, GLenum, GLuint);
 typedef void (*PFN_DrawElementsBaseVertex)(GLenum, GLsizei, GLenum, const void *, GLint);
 static PFN_TexBuffer g_tex_buffer = nullptr;
@@ -121,6 +122,9 @@ int pg_gles_api(void)
     return g_api = (g_tex_buffer && g_draw_base_vertex) ? 32 : 0;
   }
   if (maj < 3 || (maj == 3 && min < 1) || !has_ext("GL_EXT_shader_implicit_conversions")) return g_api = 0;
+  if (has_ext("GL_EXT_shader_io_blocks")) g_ioblock_ext = "GL_EXT_shader_io_blocks";
+  else if (has_ext("GL_OES_shader_io_blocks")) g_ioblock_ext = "GL_OES_shader_io_blocks";
+  else return g_api = 0;
   if (has_ext("GL_EXT_texture_buffer")) {
     g_texbuf_ext = "GL_EXT_texture_buffer";
     g_tex_buffer = reinterpret_cast<PFN_TexBuffer>(eglGetProcAddress("glTexBufferEXT"));
@@ -152,6 +156,7 @@ std::string pg_gles_source_for_api(const char *src)
   const std::string v320 = "#version 320 es\n";
   if (out.compare(0, v320.size(), v320) == 0) {
     out.replace(0, v320.size(), std::string("#version 310 es\n#extension ") + g_texbuf_ext +
+                                      " : require\n#extension " + g_ioblock_ext +
                                       " : require\n#extension GL_EXT_shader_implicit_conversions : require\n");
   }
   return out;

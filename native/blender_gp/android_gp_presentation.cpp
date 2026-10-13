@@ -995,7 +995,7 @@ bool engine_self_test(){
   glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev_fbo);glViewport(vp[0],vp[1],vp[2],vp[3]);
   if(gpd->runtime.gpencil_cache&&DRW_gpencil_batch_cache_free)DRW_gpencil_batch_cache_free(gpd);
   Material*ma=gpd->mat[0];
-  BKE_gpencil_free_data(gpd,false);
+  BKE_gpencil_free_layers(&gpd->layers);
   if(ma){MEM_freeN(ma->gp_style);MEM_freeN(ma);}
   MEM_SAFE_FREE(gpd->mat);
   MEM_freeN(gpd);

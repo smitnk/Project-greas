@@ -42,6 +42,7 @@ extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int 
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gles_api(void);
+extern "C" __attribute__((weak)) unsigned int pg_gp_engine_result_texture(void);
 
 namespace {
 struct Vertex { float x; float y; };
@@ -944,6 +945,62 @@ int g_engine_drawn_frame=-1;
 void* g_engine_batch_cache=nullptr; // the copy's GpencilBatchCache, kept between frames
 std::vector<const bGPDframe*> g_engine_drawn_frames;
 
+// Startup self-test (reported: on an ARM Mali phone the engine compiled but drew a black / broken
+// canvas and the app hung): a black line on white paper through the engine, read back. A wrong
+// picture keeps the presenter, with what was seen in the renderer report.
+char g_selftest_msg[256]="not run";
+extern "C" __attribute__((weak)) void DRW_gpencil_batch_cache_free(bGPdata *gpd);
+static Material *selftest_material(){
+  Material*ma=static_cast<Material*>(MEM_callocN(sizeof(Material),"pg selftest ma"));
+  MaterialGPencilStyle*st=static_cast<MaterialGPencilStyle*>(MEM_callocN(sizeof(*st),"pg selftest style"));
+  ma->gp_style=st;
+  st->stroke_rgba[3]=st->fill_rgba[3]=1.0f;
+  st->mix_rgba[0]=st->mix_rgba[1]=st->mix_rgba[2]=st->mix_rgba[3]=1.0f;
+  st->texture_scale[0]=st->texture_scale[1]=1.0f;st->texture_offset[0]=-0.5f;
+  st->texture_pixsize=100.0f;st->mix_factor=0.5f;st->flag=GP_MATERIAL_STROKE_SHOW;
+  return ma;
+}
+bool engine_self_test(){
+  if(!pg_gp_engine_draw||!pg_gp_engine_result_texture)return false;
+  GLint prev_fbo=0,vp[4]={0,0,0,0};glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev_fbo);glGetIntegerv(GL_VIEWPORT,vp);
+  bGPdata*gpd=static_cast<bGPdata*>(MEM_callocN(sizeof(bGPdata),"pg selftest gpd"));
+  gpd->pixfactor=GP_DEFAULT_PIX_FACTOR;gpd->totcol=1;
+  gpd->mat=static_cast<Material**>(MEM_callocN(sizeof(Material*),"pg selftest mats"));
+  gpd->mat[0]=selftest_material();
+  bGPDlayer*gpl=BKE_gpencil_layer_addnew(gpd,"selftest",true,false);
+  bGPDframe*f=BKE_gpencil_frame_addnew(gpl,1);
+  bGPDstroke*gps=BKE_gpencil_stroke_new(0,2,8);
+  for(int i=0;i<2;i++){gps->points[i].x=i?56.0f:8.0f;gps->points[i].y=32.0f;gps->points[i].pressure=gps->points[i].strength=1.0f;}
+  gps->hardeness=1.0f;gps->aspect_ratio[0]=gps->aspect_ratio[1]=1.0f;
+  BLI_addtail(&f->strokes,gps);BKE_gpencil_stroke_geometry_update(gpd,gps);
+  PGGpEngineView view{64,64,0.0f,0.0f,1.0f,{1.0f,1.0f,1.0f,1.0f},1};
+  view.weight_group=-1;view.vertex_opacity=1.0f;
+  bool ok=pg_gp_engine_draw(gpd,1,&view)==1;
+  float line[4]={-1,-1,-1,-1},paper[4]={-1,-1,-1,-1};
+  if(ok){
+    GLuint fbo=0;glGenFramebuffers(1,&fbo);glBindFramebuffer(GL_FRAMEBUFFER,fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,pg_gp_engine_result_texture(),0);
+    // RGBA / FLOAT always reads a float colour buffer; the engine image is RGBA16F
+    std::vector<float> px(64*64*4,-1.0f);
+    glReadPixels(0,0,64,64,GL_RGBA,GL_FLOAT,px.data());
+    glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev_fbo);glDeleteFramebuffers(1,&fbo);
+    // GL rows go bottom up: canvas y 32 is row 31, canvas y 8 row 55
+    std::memcpy(line,&px[(31*64+32)*4],sizeof line);std::memcpy(paper,&px[(55*64+32)*4],sizeof paper);
+    ok=line[0]<0.3f&&line[3]>0.7f&&paper[0]>0.7f&&paper[1]>0.7f&&paper[2]>0.7f;
+    std::snprintf(g_selftest_msg,sizeof g_selftest_msg,"%s: line %.2f %.2f %.2f %.2f (want 0 0 0 1), paper %.2f %.2f %.2f %.2f (want 1 1 1 1)",
+                  ok?"passed":"FAILED",line[0],line[1],line[2],line[3],paper[0],paper[1],paper[2],paper[3]);
+  }
+  else std::snprintf(g_selftest_msg,sizeof g_selftest_msg,"FAILED: the engine did not draw");
+  glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev_fbo);glViewport(vp[0],vp[1],vp[2],vp[3]);
+  if(gpd->runtime.gpencil_cache&&DRW_gpencil_batch_cache_free)DRW_gpencil_batch_cache_free(gpd);
+  Material*ma=gpd->mat[0];
+  BKE_gpencil_free_data(gpd,false);
+  if(ma){MEM_freeN(ma->gp_style);MEM_freeN(ma);}
+  MEM_SAFE_FREE(gpd->mat);
+  MEM_freeN(gpd);
+  return ok;
+}
+
 bool engine_context_ok(){
   static int ok=-1;
   if(ok<0){
@@ -951,6 +1008,7 @@ bool engine_context_ok(){
     if(!v)return false; // no current context yet: ask again next frame instead of keeping "off"
     // OpenGL ES 3.2, or 3.1 with the texture buffer / base vertex / implicit conversion extensions
     ok=(pg_gles_api&&pg_gles_api()!=0)?1:0;
+    if(ok&&!engine_self_test()){ok=0;g_engine_failed=1;}
 #ifdef PG_HAVE_ANDROID_LOG
     __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","GL_VERSION %s: Blender GP draw engine %s (API %d)",v?v:"?",ok?"on":"off (needs OpenGL ES 3.2, or 3.1 with texture buffers)",pg_gles_api?pg_gles_api():0);
 #endif
@@ -1560,6 +1618,7 @@ extern "C" const char* project_grease_android_present_renderer_info(){
   const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
   std::snprintf(buf,sizeof buf,"%s; Blender GP engine %s (GLES API %d)%s",v?v:"no GL context",
                 project_grease_android_present_engine_active()?"on":"off",pg_gles_api?pg_gles_api():0,g_engine_failed?", engine failed: ":"");
+  {const size_t n=std::strlen(buf);std::snprintf(buf+n,sizeof buf-n,"\nEngine self-test %s",g_selftest_msg);}
 #ifdef PG_HAVE_ANDROID_LOG /* the GLES adapter (and its error text) is linked into the app only */
   if(g_engine_failed){const size_t n=std::strlen(buf);std::snprintf(buf+n,sizeof buf-n,"%s\n\nShader check: %s",pg_gpu_gles_last_error(),pg_gles_shader_report());}
 #endif

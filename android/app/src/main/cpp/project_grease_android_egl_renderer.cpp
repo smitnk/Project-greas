@@ -32,6 +32,7 @@ extern "C" void project_grease_android_present_set_reference_transform(float dx,
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_overlay_unselected(int show);
 extern "C" const char *project_grease_android_present_renderer_info();
+extern "C" void project_grease_android_present_set_engine(int enabled);
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_vertex_opacity(float opacity);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
@@ -999,4 +1000,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRendererInfo(JNIEnv *e
   if (!renderer || renderer->display == EGL_NO_DISPLAY || renderer->context == EGL_NO_CONTEXT) return env->NewStringUTF("no renderer");
   if (renderer->surface != EGL_NO_SURFACE) eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context);
   return env->NewStringUTF(project_grease_android_present_renderer_info());
+}
+
+/* Settings > Use Blender's renderer: off draws with the Android presenter only. */
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetEngine(JNIEnv *, jobject, jlong handle, jboolean enabled)
+{
+  if (from_handle(handle)) project_grease_android_present_set_engine(enabled ? 1 : 0);
 }

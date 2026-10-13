@@ -1006,6 +1006,8 @@ class EditorController {
     var onUiChanged: (() -> Unit)? = null
     /** A short message for the user (a toast). */
     var onMessage: ((String) -> Unit)? = null
+    /** Settings > Use Blender's renderer (saved by the UI); off = the Android presenter only. */
+    var useBlenderRenderer = true
     /** GL version and whether Blender's draw engine renders (diagnostics). */
     fun rendererInfo(): String = if (rendererHandle != 0L) GPNative.nativeRendererInfo(rendererHandle) else "no renderer"
 
@@ -1999,6 +2001,7 @@ class EditorController {
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
             GPNative.nativeSetVertexOpacity(rendererHandle, vertexOpacity)
+            GPNative.nativeSetEngine(rendererHandle, useBlenderRenderer)
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
             // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
             GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())

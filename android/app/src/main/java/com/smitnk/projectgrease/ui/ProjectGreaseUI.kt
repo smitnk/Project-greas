@@ -360,6 +360,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     DisposableEffect(controller){
         controller.onUiChanged={redraw()}
         controller.onMessage={toast(context,it)}
+        controller.useBlenderRenderer=context.getSharedPreferences("project_grease_settings",android.content.Context.MODE_PRIVATE).getBoolean("blender_renderer",true)
         controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
         onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null}
     }
@@ -1307,6 +1308,19 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 ListItem(headlineContent={Text(mode.name.lowercase().replaceFirstChar{it.uppercase()})},
                     trailingContent={if(current==mode)Icon(Icons.Default.Check,null,tint=Accent)},
                     modifier=Modifier.clickable{onTheme(mode)})
+            }
+            Text("Renderer",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
+            val ctx=LocalContext.current
+            var blender by remember { mutableStateOf(controller.useBlenderRenderer) }
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Column(Modifier.weight(1f)){
+                    Text("Use Blender's renderer")
+                    Text("Effects, onion skin and rotation as in Blender. Switch off if the canvas goes dark or the app hangs on this phone.",fontSize=12.sp)
+                }
+                Switch(checked=blender,onCheckedChange={
+                    blender=it;controller.useBlenderRenderer=it;controller.render()
+                    ctx.getSharedPreferences("project_grease_settings",android.content.Context.MODE_PRIVATE).edit().putBoolean("blender_renderer",it).apply()
+                },modifier=Modifier.testTag("settingBlenderRenderer"))
             }
             Text("Drawing",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){

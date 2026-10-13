@@ -56,12 +56,14 @@ class DeviceReportedBugsTest : SweepBase() {
     /** Reported: effects did nothing. Flip mirrors the layer left-right on screen. */
     @Test fun effectChangesTheScreen() {
         onUi { controller.brushes.setSize(30f) }
-        line(300f, 150f, 450f)
-        assertInk(shot("bug_fx_before"), 300f, 300f, "line before the effect")
+        // right of the floating toolbar (it covers the canvas' left edge)
+        line(300f, 320f, 500f)
+        assertInk(shot("bug_fx_before"), 400f, 300f, "line before the effect")
         assertTrue("add Flip", onUi { controller.addEffect(FxType.FLIP) })
         val bmp = shot("bug_fx_after")
         val w = onUi { controller.document.canvasWidth }.toFloat()
-        assertTrue("flipped line shows at the mirrored place: " + colorsNear(bmp, w - 300f, 300f), inkNear(bmp, w - 300f, 300f, 12))
+        assertTrue("flipped line shows at the mirrored place: " + colorsNear(bmp, w - 400f, 300f), inkNear(bmp, w - 400f, 300f, 12))
+        assertTrue("and not at the old place any more", !inkNear(bmp, 400f, 300f, 6))
     }
 
     /** Reported: rectangle / circle / arc / polyline / curve handles stopped adjusting the shape. */
@@ -82,6 +84,7 @@ class DeviceReportedBugsTest : SweepBase() {
 
     /** Reported: an imported photo never showed on the canvas. */
     @Test fun importedPhotoShows() {
+        line(300f)
         val file = File(rule.activity.cacheDir, "ref_red.png")
         Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
             .compress(Bitmap.CompressFormat.PNG, 100, file.outputStream())
@@ -92,17 +95,17 @@ class DeviceReportedBugsTest : SweepBase() {
         }
         Thread.sleep(500)
         onUi { controller.render() }
-        val c = pixel(shot("bug_photo"), 640f, 360f)
+        val c = pixel(shot("bug_photo"), 640f, 500f)
         assertTrue("the photo shows under the drawing: ${Integer.toHexString(c)}", Color.red(c) > 180 && Color.green(c) < 80)
     }
 
     /** Reported: with two or more strokes the lasso lagged and showed points that were not selected. */
     @Test fun lassoWithManyStrokesSelectsOnlyInside() {
         onUi { controller.brushes.setSize(10f) }
-        for (y in listOf(150f, 250f, 350f, 450f, 550f)) line(y)
+        for (y in listOf(150f, 250f, 350f, 450f, 550f)) line(y, 350f, 1000f)
         onUi { controller.selectTool(GreaseTool.LASSO) }
         val t0 = System.nanoTime()
-        drag(150f to 220f, 1050f to 220f, 1050f to 280f, 150f to 280f, 150f to 220f, steps = 30)
+        drag(280f to 220f, 1050f to 220f, 1050f to 280f, 280f to 280f, 280f to 220f, steps = 30)
         val ms = (System.nanoTime() - t0) / 1_000_000
         val sel = onUi { GPNative.nativeSelectedPointCount(controller.nativeHandle) }
         val all = onUi { GPNative.nativePointCount(controller.nativeHandle) }

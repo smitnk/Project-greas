@@ -1556,9 +1556,12 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_renderer_info(){
-  static char buf[256];
+  static char buf[1024];
   const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
   std::snprintf(buf,sizeof buf,"%s; Blender GP engine %s (GLES API %d)%s",v?v:"no GL context",
-                project_grease_android_present_engine_active()?"on":"off",pg_gles_api?pg_gles_api():0,g_engine_failed?", engine failed":"");
+                project_grease_android_present_engine_active()?"on":"off",pg_gles_api?pg_gles_api():0,g_engine_failed?", engine failed: ":"");
+#ifdef PG_HAVE_ANDROID_LOG /* the GLES adapter (and its error text) is linked into the app only */
+  if(g_engine_failed){const size_t n=std::strlen(buf);std::snprintf(buf+n,sizeof buf-n,"%s",pg_gpu_gles_last_error());}
+#endif
   return buf;
 }

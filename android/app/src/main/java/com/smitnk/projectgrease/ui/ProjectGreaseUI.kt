@@ -1713,6 +1713,15 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Image,"Import photo / video","A photo, image sequence or video to draw over (rotoscope): move, resize, fade","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
             item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
+            val context=LocalContext.current
+            var crash by remember{mutableStateOf<String?>(null)}
+            item(Icons.Default.BugReport,"Last crash report","The error of the last crash, to share","crash"){crash=com.smitnk.projectgrease.CrashLog.read(context)?:"No crash recorded."}
+            crash?.let{text->
+                AlertDialog(onDismissRequest={crash=null},title={Text("Last crash report")},
+                    text={Text(text,fontSize=11.sp,modifier=Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState()))},
+                    confirmButton={TextButton(onClick={com.smitnk.projectgrease.CrashLog.share(context,text)}){Text("Share")}},
+                    dismissButton={TextButton(onClick={com.smitnk.projectgrease.CrashLog.clear(context);crash=null}){Text("Clear")}})
+            }
         }
     }
 }
@@ -1746,6 +1755,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                         label={Text(l)},modifier=Modifier.padding(end=4.dp).testTag("colorVpaintMask_$m"))
                 }
             }
+            if(controller.vertexSelectMask!=0) Text("Points: paint only the selected points (lasso part of a stroke). Strokes: whole selected strokes. Segments: a stroke's part between its crossings with other strokes; a stroke that crosses nothing is one segment, so all of it paints.",fontSize=11.sp)
         }
         Text("Vertex Paint Opacity (viewport) ${"%.2f".format(controller.vertexOpacity)}")
         Slider(controller.vertexOpacity,{controller.vertexOpacity=it;tick++;redraw()},modifier=Modifier.testTag("vertexOpacity"))

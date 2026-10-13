@@ -700,6 +700,7 @@ fun PaintOptionsBar(controller: EditorController, redraw: () -> Unit) {
                     FilterChip(selected = controller.vertexSelectMask == m, onClick = { controller.vertexSelectMask = m; tick++; redraw() },
                         label = { Text(label, fontSize = 10.sp) }, modifier = Modifier.padding(end = 3.dp).testTag("vpaintMask_$m"))
                 }
+                if (controller.vertexSelectMask != 0) Text("Points: paint only the selected points (lasso part of a stroke). Strokes: whole selected strokes. Segments: a stroke's part between its crossings with other strokes; a stroke that crosses nothing is one segment, so all of it paints.", fontSize = 10.sp)
             }
             Text("Falloff", fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 6.dp))
             com.smitnk.projectgrease.editor.ToolSession.CURVE_PRESETS.forEach { (preset, label) ->

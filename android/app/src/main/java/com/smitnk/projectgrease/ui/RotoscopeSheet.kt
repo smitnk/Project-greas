@@ -31,25 +31,33 @@ class RotoscopeLoader(private val context: Context) {
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val pending = java.util.Collections.synchronizedSet(HashSet<String>())
-    private fun key(r: Rotoscope, n: Int) = r.kind.name + "|" + r.uris.firstOrNull() + "|" + n
+    private fun key(kind: Rotoscope.Kind, uris: List<String>, n: Int) = kind.name + "|" + uris.firstOrNull() + "|" + n
 
-    fun cached(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = synchronized(cache) { cache[key(r, n)] }
+    fun cached(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = synchronized(cache) { cache[key(r.kind, r.uris, n)] }
 
-    /** Decodes frame [n] off the UI thread, then runs [done] on it. */
+    /** Decodes frame [n] off the UI thread, then runs [done] on it. The job keeps its own copy of the
+     *  reference (kind, files): the reference may be replaced or removed while it runs. */
     fun decodeAsync(r: Rotoscope, n: Int, done: () -> Unit = {}) {
-        if (n < 1 || n > r.frames || cached(r, n) != null || !pending.add(key(r, n))) return
-        worker.execute { try { frame(r, n) } finally { pending.remove(key(r, n)) }; main.post(done) }
+        val kind = r.kind; val uris = r.uris.toList()
+        val k = key(kind, uris, n)
+        if (uris.isEmpty() || n < 1 || n > r.frames || cached(r, n) != null || !pending.add(k)) return
+        worker.execute {
+            try { decode(kind, uris, n) } catch (_: Throwable) { } finally { pending.remove(k) }
+            main.post(done)
+        }
     }
     fun prefetch(r: Rotoscope, from: Int, count: Int) { for (n in from until from + count) decodeAsync(r, n) }
 
-    fun frame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? {
-        if (n < 1) return null
-        val key = key(r, n)
-        cached(r, n)?.let { return it }
-        val img = when (r.kind) {
-            Rotoscope.Kind.IMAGE -> decodeTextureImage(context, Uri.parse(r.uris[0]))
-            Rotoscope.Kind.SEQUENCE -> r.uris.getOrNull(n - 1)?.let { decodeTextureImage(context, Uri.parse(it)) }
-            Rotoscope.Kind.MOVIE -> movieFrame(r.uris[0], n)
+    fun frame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = decode(r.kind, r.uris.toList(), n)
+
+    private fun decode(kind: Rotoscope.Kind, uris: List<String>, n: Int): Triple<IntArray, Int, Int>? {
+        if (n < 1 || uris.isEmpty()) return null
+        val key = key(kind, uris, n)
+        synchronized(cache) { cache[key] }?.let { return it }
+        val img = when (kind) {
+            Rotoscope.Kind.IMAGE -> decodeTextureImage(context, Uri.parse(uris[0]))
+            Rotoscope.Kind.SEQUENCE -> uris.getOrNull(n - 1)?.let { decodeTextureImage(context, Uri.parse(it)) }
+            Rotoscope.Kind.MOVIE -> movieFrame(uris[0], n)
         } ?: return null
         synchronized(cache) { cache[key] = img }
         return img
@@ -60,8 +68,12 @@ class RotoscopeLoader(private val context: Context) {
             retriever?.release(); it.setDataSource(context, Uri.parse(uri)); retriever = it; retrieverUri = uri
         }
         // a movie frame per scene frame, as Blender plays a movie clip in an image user
-        val bmp: Bitmap = (if (Build.VERSION.SDK_INT >= 28) mr.getFrameAtIndex(n - 1) else null)
-            ?: mr.getFrameAtTime((n - 1) * 1_000_000L / movieFps(mr), MediaMetadataRetriever.OPTION_CLOSEST) ?: return null
+        // the phone's own video decoders (no encoder involved); some (HEVC / HDR phone videos) fail
+        // getFrameAtIndex, so the time-based, scaled-down decode is the fallback, not a casualty
+        val us = (n - 1) * 1_000_000L / movieFps(mr)
+        val bmp: Bitmap = (if (Build.VERSION.SDK_INT >= 28) runCatching { mr.getFrameAtIndex(n - 1) }.getOrNull() else null)
+            ?: (if (Build.VERSION.SDK_INT >= 27) runCatching { mr.getScaledFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST, 1024, 1024) }.getOrNull() else null)
+            ?: runCatching { mr.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST) }.getOrNull() ?: return null
         val s = minOf(1f, 1024f / maxOf(bmp.width, bmp.height))
         val b = if (s < 1f) Bitmap.createScaledBitmap(bmp, maxOf(1, (bmp.width * s).toInt()), maxOf(1, (bmp.height * s).toInt()), true) else bmp
         val px = IntArray(b.width * b.height); b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)

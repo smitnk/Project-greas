@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         val jniReady = runCatching { GPNative.nativePing() }.getOrDefault(false)
         Log.i("ProjectGrease", "Android JNI smoke connection: " + jniReady)
         setContent {

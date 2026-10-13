@@ -102,7 +102,7 @@ class DeviceBouncingBallTest : SweepBase() {
             shot("ball_f4_squash")
             // (no selectAll here: selecting is an undo step of its own and would drop the redo)
             // measured on the ball's points: undo does not keep the selection
-            fun ballHeight() = strokes().flatMap { points(it) }.filter { kotlin.math.abs(it[0] - cx) < r + 40 && kotlin.math.abs(it[1] - cy) < r + 40 }
+            fun ballHeight() = strokes().flatMap { points(it) }.filter { kotlin.math.abs(it[0] - cx) < r + 30 && kotlin.math.abs(it[1] - cy) < r + 15 } // not the shadow at y 620
                 .let { pts -> (pts.maxOfOrNull { it[1] } ?: 0.0) - (pts.minOfOrNull { it[1] } ?: 0.0) }
             val squashed = ballHeight()
             check("undo", onUi { controller.undo() })

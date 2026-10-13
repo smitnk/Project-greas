@@ -1,6 +1,5 @@
 package com.smitnk.projectgrease
 
-import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.smitnk.projectgrease.editor.GifEncoder
 import com.smitnk.projectgrease.editor.GreaseMode
@@ -101,8 +100,9 @@ class DeviceBouncingBallTest : SweepBase() {
             check("wider: ${b0[2] - b0[0]} -> ${b1[2] - b1[0]}", (b1[2] - b1[0]) > (b0[2] - b0[0]) + 20f)
             onUi { controller.endWarp(true) }
             shot("ball_f4_squash")
+            // (no selectAll here: selecting is an undo step of its own and would drop the redo)
             check("undo restores the round ball", onUi { controller.undo() } &&
-                onUi { controller.selectAll(); controller.selectionBounds() }!!.let { kotlin.math.abs((it[3] - it[1]) - (b0[3] - b0[1])) < 2f })
+                onUi { controller.selectionBounds() }!!.let { kotlin.math.abs((it[3] - it[1]) - (b0[3] - b0[1])) < 2f })
             check("redo squashes again", onUi { controller.redo() })
         }
         step("warp cancel restores") {
@@ -131,8 +131,13 @@ class DeviceBouncingBallTest : SweepBase() {
             onUi { controller.setMaterialColor(0xFF00C853.toInt()); controller.vertexBrush.setSize(80f); controller.vertexBrush.setStrength(1f)
                 controller.selectTool(GreaseTool.DRAW) }
             drag(cx - r to cy, cx + r to cy, cx - r to cy, cx + r to cy)
-            val c = pixel(shot("ball_f2_vertex_paint"), cx + r, cy)
-            check("painted green ${Integer.toHexString(c)}", Color.green(c) > Color.red(c))
+            shot("ball_f2_vertex_paint")
+            // the screen shows the selected points (orange) over the outline, so read the colour:
+            // point layout x, y, z, pressure, strength, time?, r, g, b, a (vertex colour from index 6)
+            val painted = strokes().flatMap { points(it) }.filter { kotlin.math.abs(it[1] - cy) < r + 5 && kotlin.math.abs(it[0] - cx) < r + 5 }
+            check("ball points found (${painted.size})", painted.isNotEmpty())
+            check("ball painted green: " + painted.take(3).map { it.drop(6).take(4) },
+                painted.any { it[9] > 0.3 && it[7] > it[6] })
         }
         step("vertex paint mask points") {
             onUi { controller.vertexSelectMask = ToolSession.SELECT_MASK_POINT; controller.deselectAll(); controller.selectTool(GreaseTool.LASSO) }

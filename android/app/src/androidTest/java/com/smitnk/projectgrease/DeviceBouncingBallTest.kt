@@ -34,6 +34,15 @@ class DeviceBouncingBallTest : SweepBase() {
     private val r = 60f
     private fun strokeCount() = onUi { GPNative.nativeStrokeCount(controller.nativeHandle) }
     private fun selectedPoints() = onUi { GPNative.nativeSelectedPointCount(controller.nativeHandle) }
+    /** Height of the ball layer's drawing on frame [f], from the saved document (layers > frames > strokes). */
+    private fun ballHeight(f: Int): Double {
+        val layers = document().getJSONArray("layers")
+        val frames = layers.getJSONObject(layers.length() - 1).getJSONArray("frames")
+        val ys = (0 until frames.length()).map { frames.getJSONObject(it) }.filter { it.optInt("number") == f }
+            .flatMap { fr -> val st = fr.getJSONArray("strokes"); (0 until st.length()).flatMap { points(st.getJSONObject(it)) } }
+            .map { it[1] }
+        return (ys.maxOrNull() ?: 0.0) - (ys.minOrNull() ?: 0.0)
+    }
     private fun goTo(f: Int) = onUi { controller.selectFrame(f); controller.render() }
 
     @Test fun bouncingBallSevenFrames() {
@@ -100,15 +109,10 @@ class DeviceBouncingBallTest : SweepBase() {
             check("wider: ${b0[2] - b0[0]} -> ${b1[2] - b1[0]}", (b1[2] - b1[0]) > (b0[2] - b0[0]) + 20f)
             onUi { controller.endWarp(true) }
             shot("ball_f4_squash")
-            // (no selectAll here: selecting is an undo step of its own and would drop the redo)
-            // measured on the ball's points: undo does not keep the selection
-            fun ballHeight() = strokes().flatMap { points(it) }.filter { kotlin.math.abs(it[0] - cx) < r + 30 && kotlin.math.abs(it[1] - cy) < r + 15 } // not the shadow at y 620
-                .let { pts -> (pts.maxOfOrNull { it[1] } ?: 0.0) - (pts.minOfOrNull { it[1] } ?: 0.0) }
-            val squashed = ballHeight()
-            check("undo", onUi { controller.undo() })
-            val round = ballHeight()
-            check("undo restores the round ball: $squashed -> $round (was ${b0[3] - b0[1]})", kotlin.math.abs(round - (b0[3] - b0[1])) < 3.0)
-            check("redo squashes again", onUi { controller.redo() } && kotlin.math.abs(ballHeight() - squashed) < 3.0)
+            check("undo restores the round ball: ${ballHeight(4)} (was ${b0[3] - b0[1]})", onUi { controller.undo() } &&
+                kotlin.math.abs(ballHeight(4) - (b0[3] - b0[1])) < 2.0)
+            check("redo squashes again: ${ballHeight(4)} (squashed ${b1[3] - b1[1]})", onUi { controller.redo() } &&
+                kotlin.math.abs(ballHeight(4) - (b1[3] - b1[1])) < 2.0)
         }
         step("warp cancel restores") {
             goTo(5); onUi { controller.selectAll() }

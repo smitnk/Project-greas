@@ -80,6 +80,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Brighter", "Vertex colour brightness +10%") { controller.selectionVertexColorBrightnessContrast(0.1f, 0f) },
                 Op("More contrast", "Vertex colour contrast +20%") { controller.selectionVertexColorBrightnessContrast(0f, 0.2f) },
                 Op("Hue +30°", "Shift the vertex colour hue") { controller.selectionVertexColorHsv(h = 0.5f + 1f / 12f) },
+                Op("Levels x0.8", "Darken the vertex colour (Levels, gain 0.8)") { controller.selectionVertexColorLevels(0f, 0.8f) },
                 Op("Randomize colour", "A random colour per stroke") { controller.randomizeSelectedStrokeColor() },
                 Op("Select same colour", "Select every stroke with this vertex colour") { controller.selectByVertexColor() },
             ),
@@ -87,6 +88,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Duplicate", "Copy the selection in place") { controller.duplicateSelection() },
                 Op("Mirror copy X", "A mirrored copy, left-right") { controller.mirrorSelectionCopy(true, false) },
                 Op("Mirror copy Y", "A mirrored copy, up-down") { controller.mirrorSelectionCopy(false, true) },
+                Op("Mirror copy X+Y", "A copy mirrored both ways") { controller.mirrorSelectionCopy(true, true) },
                 Op("Array ($copies copies)", "Copies in a row, 60 px apart") { controller.arraySelection(copies) },
                 Op("Multiply ($copies copies)", "Copies stacked close together (sketchy lines)") { controller.multiplySelection(copies) },
                 Op("Bring to front", "Draw above every other stroke") { controller.arrangeSelection(S.ARRANGE_TOP) },
@@ -173,7 +175,7 @@ fun SculptOptions(controller: EditorController, redraw: () -> Unit) {
         Text("Strength ${(controller.sculptBrush.strength * 100).toInt()}%")
         Slider(controller.sculptBrush.strength, { controller.sculptBrush.setStrength(it); tick++ }, valueRange = 0f..1f)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Invert", Modifier.weight(1f))
+            Text("Invert sculpt brush (thinner, weaker, twist back)", Modifier.weight(1f))
             Switch(controller.sculpt.invert, { controller.sculpt.setInvert(it); tick++; redraw() })
         }
         SculptMaskingSection(controller, redraw)

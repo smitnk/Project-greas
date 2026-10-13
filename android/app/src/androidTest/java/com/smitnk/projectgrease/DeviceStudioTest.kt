@@ -47,7 +47,7 @@ class DeviceStudioTest : SweepBase() {
         rule.onNodeWithTag("studioTool_Layers").performClick()
         rule.onNodeWithTag("layerAdvanced_0").performClick()
         rule.onNodeWithTag("layerAdvancedSheet").assertIsDisplayed()
-        for (i in 0..5) rule.onNodeWithTag("advTab_$i").performClick()
+        for (i in 0..4) rule.onNodeWithTag("advTab_$i").performClick() // Modifiers, Onion skin, Masks, Adjustments, Sculpt
         shot("studio_layer_advanced")
     }
 

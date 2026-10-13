@@ -30,6 +30,7 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char 
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 extern "C" void project_grease_android_present_set_reference_transform(float dx, float dy, float scale, float rot);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
+extern "C" void project_grease_android_present_set_overlay_unselected(int show);
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_vertex_opacity(float opacity);
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
@@ -981,4 +982,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceTransform(
     JNIEnv *, jobject, jlong handle, jfloat dx, jfloat dy, jfloat scale, jfloat rot)
 {
   if (from_handle(handle)) project_grease_android_present_set_reference_transform(dx, dy, scale, rot);
+}
+
+/* The selection overlay shows unselected points too (Edit mode) or only the selected ones. */
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetOverlayUnselected(JNIEnv *, jobject, jlong handle, jboolean show)
+{
+  if (from_handle(handle)) project_grease_android_present_set_overlay_unselected(show ? 1 : 0);
 }

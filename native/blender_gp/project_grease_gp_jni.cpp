@@ -1008,10 +1008,10 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetMaterialInfo(
   const jfloat values[] = {
       info.stroke_rgba[0], info.stroke_rgba[1], info.stroke_rgba[2], info.stroke_rgba[3],
       info.fill_rgba[0], info.fill_rgba[1], info.fill_rgba[2], info.fill_rgba[3],
-      info.visible ? 1.0f : 0.0f, info.fill_enabled ? 1.0f : 0.0f};
-  jfloatArray result = env->NewFloatArray(10);
+      info.visible ? 1.0f : 0.0f, info.fill_enabled ? 1.0f : 0.0f, info.stroke_enabled ? 1.0f : 0.0f};
+  jfloatArray result = env->NewFloatArray(11);
   if (!result) return nullptr;
-  env->SetFloatArrayRegion(result, 0, 10, values);
+  env->SetFloatArrayRegion(result, 0, 11, values);
   return result;
 }
 
@@ -1310,4 +1310,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialName(
   const int result = project_grease_gp_set_material_name(from_handle(handle), slot, chars);
   env->ReleaseStringUTFChars(name, chars);
   return result != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialStrokeEnabled(
+    JNIEnv *, jobject, jlong handle, jint index, jboolean enabled)
+{
+  return project_grease_gp_set_material_stroke_enabled(from_handle(handle), index, enabled ? 1 : 0) != 0;
 }

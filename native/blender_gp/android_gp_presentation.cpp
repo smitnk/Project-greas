@@ -834,15 +834,21 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
 
 namespace {
 // Selected points 5 px, unselected 3 px (screen pixels, independent of zoom).
+// Edit mode shows every point (Blender's edit overlay); elsewhere (a lasso in Draw / Vertex Paint)
+// only the selected ones, so unselected points do not look selected and huge drawings stay fast.
+int g_overlay_unselected=1;
 void draw_selection_overlay(const bGPDframe*frame,int w,int h){
   if(!frame)return;
   const float px=1.0f/std::max(g_map_scale,1e-6f);
   std::vector<Vertex> sel,unsel;
+  std::vector<PGOutlinePoint> one(1);
   for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
     if(!s->points)continue;
     for(int i=0;i<s->totpoints;i++){
-      const PGOutlinePoint p=outline_point(s->points[i].x,s->points[i].y,(s->points[i].flag&GP_SPOINT_SELECT)?5.0f*px:3.0f*px);
-      append_outline((s->points[i].flag&GP_SPOINT_SELECT)?sel:unsel,std::vector<PGOutlinePoint>{p},0,w,h);
+      const bool selected=(s->points[i].flag&GP_SPOINT_SELECT)!=0;
+      if(!selected&&!g_overlay_unselected)continue;
+      one[0]=outline_point(s->points[i].x,s->points[i].y,selected?5.0f*px:3.0f*px);
+      append_outline(selected?sel:unsel,one,0,w,h);
     }
   }
   const float dark[4]={0.0f,0.0f,0.0f,0.85f};
@@ -1544,3 +1550,5 @@ extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(
   // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
   {OpenStrokeCache&c=g_open_cache;if(c.tex)glDeleteTextures(1,&c.tex);if(c.program)glDeleteProgram(c.program);if(c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
   project_grease_fx_reset();}
+
+extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_overlay_unselected=show?1:0;}

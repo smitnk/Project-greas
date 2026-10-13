@@ -136,7 +136,7 @@ object VectorExport {
         // stroke_color_ = interpolate(stroke_rgba, mean vert_color, its alpha); opacity x strength x layer
         val vcA = stroke.points.map { clamp01(it.getOrElse(9) { 0f }) }.average().toFloat()
         val strokeAlpha = clamp01((strokeBase[3] * (1f - vcA) + vcA * vcA) * avgStrength * layerAlpha)
-        if (strokeAlpha > ALPHA_THRESH) {
+        if (strokeAlpha > ALPHA_THRESH && material?.strokeEnabled != false) { // GP_MATERIAL_STROKE_SHOW
             val rgb = tinted(meanStrokeRgb(strokeBase, stroke.points), tint)
             val thickness = max(stroke.thickness + lineChange, 1f)
             out.add(

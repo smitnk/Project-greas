@@ -126,6 +126,7 @@ int pg_doc_material_info_get(const Material *ma, PGMaterialInfo *r_info)
   memcpy(r_info->fill_rgba, ma->gp_style->fill_rgba, sizeof(r_info->fill_rgba));
   r_info->visible = (ma->gp_style->flag & GP_MATERIAL_HIDE) == 0;
   r_info->fill_enabled = (ma->gp_style->flag & GP_MATERIAL_FILL_SHOW) != 0;
+  r_info->stroke_enabled = (ma->gp_style->flag & GP_MATERIAL_STROKE_SHOW) != 0;
   return 1;
 }
 

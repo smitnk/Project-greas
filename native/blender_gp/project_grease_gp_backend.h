@@ -149,6 +149,7 @@ class Backend {
   bool set_material_colors(int index, const float stroke_rgba[4], const float fill_rgba[4]);
   bool set_material_visibility(int index, bool visible);
   bool set_material_fill_enabled(int index, bool enabled);
+  bool set_material_stroke_enabled(int index, bool enabled); // GP_MATERIAL_STROKE_SHOW
   bool material_fill_enabled(int index) const;
 
   // Save/load state that get_point() does not carry: per-stroke style, layer state and the

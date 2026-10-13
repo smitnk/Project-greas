@@ -3792,6 +3792,19 @@ bool Backend::set_material_visibility(int index, bool visible)
   return true;
 }
 
+bool Backend::set_material_stroke_enabled(int index, bool enabled)
+{
+  Material *ma = gp_material_at(impl_->gpd, index);
+  if (!ma || !ma->gp_style) {
+    impl_->last_error = "invalid Legacy GP material";
+    return false;
+  }
+  if (enabled) ma->gp_style->flag |= GP_MATERIAL_STROKE_SHOW;
+  else ma->gp_style->flag &= ~GP_MATERIAL_STROKE_SHOW;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
 bool Backend::set_material_fill_enabled(int index, bool enabled)
 {
   Material *ma = gp_material_at(impl_->gpd, index);

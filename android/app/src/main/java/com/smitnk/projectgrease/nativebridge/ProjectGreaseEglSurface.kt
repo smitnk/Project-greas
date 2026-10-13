@@ -426,7 +426,10 @@ internal class ProjectGreaseDrawingSurfaceView(
                         }
                         strokeOpen -> {
                             addPointsWithHistory(event, pointerIndex)
-                            controller.render()
+                            // the lasso / box outline is a Compose overlay: the drawing itself has not
+                            // changed, and a full redraw per move made lassoing lag with many strokes
+                            val t = controller.tools.activeTool
+                            if (t != com.smitnk.projectgrease.editor.GreaseTool.LASSO && t != com.smitnk.projectgrease.editor.GreaseTool.BOX_SELECT) controller.render()
                         }
                     }
                 } else if (strokeOpen) {

@@ -134,6 +134,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun setMaterialColors(index:Int, stroke:FloatArray, fill:FloatArray) = handle != 0L && GPNative.nativeSetMaterialColors(handle,index,stroke,fill)
     fun setMaterialVisibility(index:Int, visible:Boolean) = handle != 0L && GPNative.nativeSetMaterialVisibility(handle,index,visible)
     fun setMaterialFillEnabled(index:Int, enabled:Boolean) = handle != 0L && GPNative.nativeSetMaterialFillEnabled(handle,index,enabled)
+    fun setMaterialStrokeEnabled(index:Int, enabled:Boolean) = handle != 0L && GPNative.nativeSetMaterialStrokeEnabled(handle,index,enabled)
     fun smoothStroke(index:Int,influence:Float=0.5f,iterations:Int=2) = handle != 0L && GPNative.nativeSmoothStroke(handle,index,influence,iterations)
     fun setOnionSkin(enabled:Boolean,before:Int,after:Int,opacity:Float) = handle != 0L && GPNative.nativeSetOnionSkin(handle,enabled,before,after,opacity)
     fun setMultiframeEditing(enabled:Boolean) = handle != 0L && GPNative.nativeSetMultiframeEditing(handle,enabled)
@@ -1797,27 +1798,35 @@ class EditorController {
         fillDilate = dilate.coerceIn(-40, 40)
         fillBoundary = boundary.coerceIn(FILL_BOUNDARY_ALL, FILL_BOUNDARY_EDIT_LINES)
     }
+    /** The Fill tool's material (Blender pins a fill material on the Fill brush): a fill-only slot
+     *  named "Fill" in the current colour, found or made. Turning fill on for the active material
+     *  instead filled every line drawn with it (open strokes too) and gave the fill a black outline. */
+    fun fillMaterialSlot():Int? {
+        val c = colorToFloats(materials.colorArgb)
+        val count = native.materialCount()
+        for (i in 0 until count) {
+            val m = native.materialInfo(i) ?: continue
+            if (native.materialName(i)?.startsWith("Fill") == true && m.size >= 10 && m[9] > 0.5f &&
+                (0..2).all { kotlin.math.abs(m[4 + it] - c[it]) < 0.01f }) return i
+        }
+        if (!native.createMaterial()) return null
+        val rgba = floatArrayOf(c[0], c[1], c[2], 1f)
+        native.setMaterialColors(count, rgba, rgba)
+        native.setMaterialFillEnabled(count, true)
+        native.setMaterialStrokeEnabled(count, false)
+        native.setMaterialName(count, "Fill " + String.format("#%06X", materials.colorArgb and 0xFFFFFF))
+        return count
+    }
+
     fun fillAt(x: Float, y: Float): Boolean {
         if (rendererHandle == 0L || !activeLayerEditable()) return false
-        // Blender Legacy GP Fill creates a closed filled stroke using the active material.
-        // Enable the material's Fill component only when the Fill tool is actually used.
-        val enabledFill = !materials.fillEnabled
-        if (enabledFill) {
-            // Part of the fill's own undo step, recorded below.
-            materials.setFillEnabled(true)
-            native.setMaterialFillEnabled(materials.activeMaterial, true)
-        }
+        val slot = fillMaterialSlot() ?: return false
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
         GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, fillPrecision, fillCollide)
-        val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), materials.activeMaterial, materials.thickness)
+        // the new slot (if one was made) is part of this fill's undo step
+        val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), slot, materials.thickness)
         if (ok) { history.markEdit(); document.markDirty() }
-        else if (enabledFill) {
-            // No fill was made (it leaked, or the tap was outside a boundary): the material is left
-            // as it was, since there is no undo step that could restore it.
-            materials.setFillEnabled(false)
-            native.setMaterialFillEnabled(materials.activeMaterial, false)
-        }
         return ok
     }
 
@@ -1985,6 +1994,7 @@ class EditorController {
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
             // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
             GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())
+            GPNative.nativeSetOverlayUnselected(rendererHandle, mode == GreaseMode.EDIT)
             GPNative.nativeSetGuide(rendererHandle, if (tools.activeTool == GreaseTool.DRAW) view.guideType else -1,
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             GPNative.nativeRenderEgl(rendererHandle)

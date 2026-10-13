@@ -96,6 +96,19 @@ class VectorExportTest {
     }
 
     @Test
+    fun fillOnlyMaterialExportsNoOutline() {
+        // the Fill tool's material: fill on, stroke off (GP_MATERIAL_STROKE_SHOW cleared)
+        val doc = ExportDoc()
+        doc.materials.add(MaterialRecord(floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 1f, 1f, 1f), true, true, strokeEnabled = false))
+        doc.layers.add(ExportDoc.Layer(LayerRecord("L", true, false, 1f), listOf(ExportDoc.Frame(1, listOf(
+            StrokeRecord(listOf(pt(0f, 0f), pt(10f, 0f), pt(5f, 8f)), 0, 4f, cyclic = true)
+        )))))
+        val svg = VectorExport.toSvg(VectorExport.pages(doc, 10, 10, listOf(1)).single())
+        assertTrue(svg, svg.contains("#00FFFF", ignoreCase = true))
+        assertFalse(svg, svg.contains("stroke=\"#000000\"", ignoreCase = true))
+    }
+
+    @Test
     fun frameRangeGivesOnePagePerFrameAndThePdfHasThatManyPages() {
         val pages = VectorExport.pages(document(), 200, 100, listOf(1, 2, 5))
         assertEquals(3, pages.size)

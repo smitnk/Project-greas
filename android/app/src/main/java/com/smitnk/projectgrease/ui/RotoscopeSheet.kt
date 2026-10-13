@@ -108,8 +108,22 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
     @Suppress("UNUSED_VARIABLE") val observed = tick
     fun changed() { controller.rotoscopeChanged(); tick++; redraw() }
     fun keep(uri: Uri) = runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-    val image = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) { keep(uri); r.set(Rotoscope.Kind.IMAGE, listOf(uri.toString()), 1); changed() }
+    var more by remember { mutableStateOf(false) }
+    // one picker for photos and videos; the file's type decides which it is
+    val media = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        keep(uri)
+        val loader = controller.rotoscopeLoader
+        if (context.contentResolver.getType(uri)?.startsWith("video") == true) {
+            val n = loader?.movieFrames(uri) ?: 0
+            if (n <= 0) { toast(context, "Couldn't read this video on this phone"); return@rememberLauncherForActivityResult }
+            r.set(Rotoscope.Kind.MOVIE, listOf(uri.toString()), n); changed()
+            loader?.decodeAsync(r, 1) { if (loader.cached(r, 1) == null) toast(context, "Couldn't decode this video's frames") else changed() }
+        } else {
+            r.set(Rotoscope.Kind.IMAGE, listOf(uri.toString()), 1)
+            if (loader?.frame(r, 1) == null) { r.clear(); toast(context, "Couldn't open this photo (format not supported)") }
+            changed()
+        }
     }
     val sequence = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
@@ -119,52 +133,48 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
             r.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed()
         }
     }
-    val movie = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            keep(uri)
-            val n = controller.rotoscopeLoader?.movieFrames(uri) ?: 0
-            r.set(Rotoscope.Kind.MOVIE, listOf(uri.toString()), n.coerceAtLeast(1)); changed()
-        }
-    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("Photo / video reference", style = MaterialTheme.typography.headlineSmall)
-            Text(if (r.isEmpty) "No reference" else "${r.kind.name.lowercase()} · ${r.frames} frame(s)", Modifier.padding(vertical = 6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = { image.launch(arrayOf("image/*")) }, Modifier.testTag("rotoImage")) { Text("Image") }
-                Button(onClick = { sequence.launch(arrayOf("image/*")) }) { Text("Image sequence") }
-                Button(onClick = { movie.launch(arrayOf("video/*")) }) { Text("Video") }
+            Text("Photo / video", style = MaterialTheme.typography.headlineSmall)
+            Text(if (r.isEmpty) "Pick a photo or video to draw over. It sits behind your drawing and is not exported."
+                 else "${if (r.kind == Rotoscope.Kind.MOVIE) "Video" else if (r.kind == Rotoscope.Kind.SEQUENCE) "Image sequence" else "Photo"}" +
+                      (if (r.kind == Rotoscope.Kind.IMAGE) "" else " · ${r.frames} frames, one per timeline frame"), Modifier.padding(vertical = 6.dp))
+            Button(onClick = { media.launch(arrayOf("image/*", "video/*")) }, Modifier.fillMaxWidth().testTag("rotoImage")) {
+                Text(if (r.isEmpty) "Import photo or video" else "Replace with another photo or video")
             }
             if (!r.isEmpty) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Show", Modifier.weight(1f)); Switch(r.visible, { r.visible = it; changed() })
                 }
-                Text("Placement", style = MaterialTheme.typography.titleSmall)
-                Text("Size ${(r.scale * 100).toInt()}%")
-                Slider(r.scale, { r.scale = it; changed() }, valueRange = 0.1f..4f, modifier = Modifier.testTag("rotoScale"))
-                Text("Rotation ${Math.toDegrees(r.rotation.toDouble()).toInt()}°")
-                Slider(r.rotation, { r.rotation = it; changed() }, valueRange = -3.1416f..3.1416f)
+                Text("Opacity ${(r.opacity * 100).toInt()}%")
+                Slider(r.opacity, { r.setOpacity(it); changed() }, valueRange = 0f..1f, modifier = Modifier.testTag("rotoOpacity"))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { controller.referenceAdjusting = true; onDismiss() }, Modifier.testTag("rotoAdjust")) { Text("Move / resize on canvas") }
                     OutlinedButton(onClick = { r.resetPlacement(); changed() }) { Text("Reset") }
                 }
-                Text("Opacity ${(r.opacity * 100).toInt()}%")
-                Slider(r.opacity, { r.setOpacity(it); changed() }, valueRange = 0f..1f, modifier = Modifier.testTag("rotoOpacity"))
-                if (r.kind != Rotoscope.Kind.IMAGE) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Start frame ${r.start}", Modifier.weight(1f))
-                        TextButton({ r.start--; changed() }) { Text("−") }; TextButton({ r.start++; changed() }) { Text("+") }
+                TextButton(onClick = { more = !more }) { Text(if (more) "Fewer options ▴" else "More options ▾") }
+                if (more) {
+                    Text("Size ${(r.scale * 100).toInt()}%")
+                    Slider(r.scale, { r.scale = it; changed() }, valueRange = 0.1f..4f, modifier = Modifier.testTag("rotoScale"))
+                    Text("Rotation ${Math.toDegrees(r.rotation.toDouble()).toInt()}°")
+                    Slider(r.rotation, { r.rotation = it; changed() }, valueRange = -3.1416f..3.1416f)
+                    if (r.kind != Rotoscope.Kind.IMAGE) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Starts at frame ${r.start}", Modifier.weight(1f))
+                            TextButton({ r.start--; changed() }) { Text("−") }; TextButton({ r.start++; changed() }) { Text("+") }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Skip ${r.offset} frames", Modifier.weight(1f))
+                            TextButton({ r.offset--; changed() }) { Text("−") }; TextButton({ r.offset++; changed() }) { Text("+") }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Loop", Modifier.weight(1f)); Switch(r.cyclic, { r.cyclic = it; changed() })
+                        }
+                        TextButton(onClick = { controller.fitTimelineToRotoscope(); changed() }) { Text("Make the animation as long as the video") }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Offset ${r.offset}", Modifier.weight(1f))
-                        TextButton({ r.offset--; changed() }) { Text("−") }; TextButton({ r.offset++; changed() }) { Text("+") }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Cyclic", Modifier.weight(1f)); Switch(r.cyclic, { r.cyclic = it; changed() })
-                    }
-                    TextButton(onClick = { controller.fitTimelineToRotoscope(); changed() }) { Text("Set the scene end to the reference length") }
+                    OutlinedButton(onClick = { sequence.launch(arrayOf("image/*")) }) { Text("Import an image sequence instead") }
                 }
-                TextButton(onClick = { r.clear(); changed() }) { Text("Remove reference") }
+                TextButton(onClick = { r.clear(); changed() }) { Text("Remove") }
             }
         }
     }

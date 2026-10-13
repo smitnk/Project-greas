@@ -983,6 +983,11 @@ int project_grease_gp_set_material_visibility(ProjectGreaseGPHandle *handle, int
 {
   return ensure_ready(handle) && handle->backend.set_material_visibility(index, visible != 0) ? 1 : 0;
 }
+int project_grease_gp_set_material_stroke_enabled(ProjectGreaseGPHandle *handle, int index, int enabled)
+{
+  return ensure_ready(handle) && handle->backend.set_material_stroke_enabled(index, enabled != 0) ? 1 : 0;
+}
+
 int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, int index, int enabled)
 {
   return ensure_ready(handle) && handle->backend.set_material_fill_enabled(index, enabled != 0) ? 1 : 0;

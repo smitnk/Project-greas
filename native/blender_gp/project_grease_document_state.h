@@ -40,6 +40,7 @@ typedef struct PGMaterialInfo {
   float fill_rgba[4];      /* MaterialGPencilStyle.fill_rgba */
   int visible;             /* !GP_MATERIAL_HIDE */
   int fill_enabled;        /* GP_MATERIAL_FILL_SHOW */
+  int stroke_enabled;      /* GP_MATERIAL_STROKE_SHOW (read only: info_apply leaves it) */
 } PGMaterialInfo;
 
 int pg_doc_stroke_info_get(const struct bGPDstroke *gps, PGStrokeInfo *r_info);

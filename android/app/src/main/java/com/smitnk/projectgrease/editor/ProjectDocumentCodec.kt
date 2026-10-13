@@ -57,7 +57,9 @@ class MaterialRecord(
     /** Stroke holdout, fill holdout, self overlap (GP_MATERIAL_IS_*_HOLDOUT, GP_MATERIAL_DISABLE_STENCIL). */
     val strokeHoldout: Boolean = false,
     val fillHoldout: Boolean = false,
-    val selfOverlap: Boolean = false
+    val selfOverlap: Boolean = false,
+    /** GP_MATERIAL_STROKE_SHOW: off for a fill-only material (the Fill tool's). */
+    val strokeEnabled: Boolean = true
 )
 
 /** What the save/load code needs from the native document; the real one is [NativeDocumentAdapter]. */
@@ -374,6 +376,7 @@ object ProjectDocumentCodec {
         fill = floats(json.optJSONArray("fill"), 4, 1f),
         visible = json.optBoolean("visible", true),
         fillEnabled = json.optBoolean("fillEnabled", false),
+        strokeEnabled = json.optBoolean("strokeEnabled", true),
         name = json.optString("name", ""),
         locked = json.optBoolean("locked", false),
         mode = json.optInt("mode", 0).coerceIn(0, 2),
@@ -418,6 +421,7 @@ object ProjectDocumentCodec {
         .put("visible", material.visible)
         .put("fillEnabled", material.fillEnabled)
         .apply {
+            if (!material.strokeEnabled) put("strokeEnabled", false)
             if (material.name.isNotEmpty()) put("name", material.name)
             if (material.locked) put("locked", true)
             if (material.mode != 0) put("mode", material.mode)

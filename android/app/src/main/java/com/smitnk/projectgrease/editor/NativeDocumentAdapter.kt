@@ -71,6 +71,7 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
             fill = info.copyOfRange(4, 8),
             visible = info[8] != 0f,
             fillEnabled = info[9] != 0f,
+            strokeEnabled = info.size < 11 || info[10] != 0f,
             name = native.materialName(index) ?: "",
             locked = extra != null && extra.size >= 6 && extra[3] != 0f,
             mode = extra?.getOrNull(0)?.toInt() ?: 0,
@@ -191,7 +192,8 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
     override fun applyMaterialRecord(index: Int, record: MaterialRecord): Boolean {
         val ok = native.setMaterialColors(index, record.stroke, record.fill) &&
             native.setMaterialVisibility(index, record.visible) &&
-            native.setMaterialFillEnabled(index, record.fillEnabled)
+            native.setMaterialFillEnabled(index, record.fillEnabled) &&
+            native.setMaterialStrokeEnabled(index, record.strokeEnabled)
         if (!ok) return false
         if (record.name.isNotEmpty()) native.setMaterialName(index, record.name)
         ProjectGreaseSelect.materialFlags(index, record.locked, !record.visible).let { native.applyEditCommand(it.id, it.args) }

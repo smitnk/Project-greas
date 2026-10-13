@@ -125,7 +125,7 @@ int pg_gles_api(void)
     g_draw_base_vertex = glDrawElementsBaseVertex;
     return g_api = 32;
   }
-  if (maj < 3 || (maj == 3 && min < 1) || !has_ext("GL_EXT_shader_implicit_conversions")) return g_api = 0;
+  if (maj < 3 || (maj == 3 && min < 1)) return g_api = 0;
   if (has_ext("GL_EXT_shader_io_blocks")) g_ioblock_ext = "GL_EXT_shader_io_blocks";
   else if (has_ext("GL_OES_shader_io_blocks")) g_ioblock_ext = "GL_OES_shader_io_blocks";
   else return g_api = 0;
@@ -160,8 +160,7 @@ std::string pg_gles_source_for_api(const char *src)
   const std::string v320 = "#version 320 es\n";
   if (out.compare(0, v320.size(), v320) == 0) {
     out.replace(0, v320.size(), std::string("#version 310 es\n#extension ") + g_texbuf_ext +
-                                      " : require\n#extension " + g_ioblock_ext +
-                                      " : require\n#extension GL_EXT_shader_implicit_conversions : require\n");
+                                      " : require\n#extension " + g_ioblock_ext + " : require\n");
   }
   return out;
 }

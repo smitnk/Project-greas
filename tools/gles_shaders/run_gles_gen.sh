@@ -31,6 +31,7 @@ INFOS=(gpencil_geometry gpencil_layer_blend gpencil_mask_invert gpencil_depth_me
        overlay_edit_gpencil_wire overlay_edit_gpencil_point)
 for info in "${INFOS[@]}"; do
   "$G/pg_gles_shader_gen" "$info" "$DEST/$info.vert.glsl" "$DEST/$info.frag.glsl"
+  sed -i -f "$ROOT/tools/gles_shaders/es_no_implicit.sed" "$DEST/$info.vert.glsl" "$DEST/$info.frag.glsl"
   # ADAPTED: OpenGL ES has no 1D textures; the weight ramp (G_draw.weight_ramp, 256x1) is a 2D texture.
   if [[ "$info" == overlay_edit_gpencil_* ]]; then
     sed -i 's/uniform sampler1D weightTex;/uniform sampler2D weightTex;/; s/texture(weightTex, t)/texture(weightTex, vec2(t, 0.5))/' "$DEST/$info.vert.glsl" "$DEST/$info.frag.glsl"
@@ -39,7 +40,7 @@ for info in "${INFOS[@]}"; do
     if "$GLSLANG" -S vert "$DEST/$info.vert.glsl" > "$G/$info.v.txt" 2>&1 && "$GLSLANG" -S frag "$DEST/$info.frag.glsl" > "$G/$info.f.txt" 2>&1; then echo "GLES 3.20 OK: $info"; else echo "GLES 3.20 FAIL: $info"; grep -h ERROR "$G/$info.v.txt" "$G/$info.f.txt" | head -3; FAILED=1; fi
     # the OpenGL ES 3.1 path (pg_gles_source_for_api): ESSL 3.10 with GL_EXT_texture_buffer
     for st in vert frag; do
-      sed '1s/^#version 320 es$/#version 310 es\n#extension GL_EXT_texture_buffer : require\n#extension GL_EXT_shader_io_blocks : require\n#extension GL_EXT_shader_implicit_conversions : require/' "$DEST/$info.$st.glsl" > "$G/$info.310.$st"
+      sed '1s/^#version 320 es$/#version 310 es\n#extension GL_EXT_texture_buffer : require\n#extension GL_EXT_shader_io_blocks : require/' "$DEST/$info.$st.glsl" > "$G/$info.310.$st"
       if "$GLSLANG" -S $st "$G/$info.310.$st" > "$G/$info.310.$st.txt" 2>&1; then :; else echo "::error::GLES 3.10 FAIL: $info $st $(grep -h ERROR "$G/$info.310.$st.txt" | head -2 | tr '\n' ' ')"; FAILED=1; fi
     done
   fi

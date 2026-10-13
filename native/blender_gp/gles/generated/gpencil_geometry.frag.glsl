@@ -1,5 +1,4 @@
 #version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -1381,15 +1380,15 @@ float fast_acos(float v)
 {
   float res = -0.156583 * abs(v) + M_PI_2;
   res *= fast_sqrt(1.0 - abs(v));
-  return (v >= 0) ? res : M_PI - res;
+  return (v >= 0.0) ? res : M_PI - res;
 }
 
 vec2 fast_acos(vec2 v)
 {
   vec2 res = -0.156583 * abs(v) + M_PI_2;
   res *= fast_sqrt(1.0 - abs(v));
-  v.x = (v.x >= 0) ? res.x : M_PI - res.x;
-  v.y = (v.y >= 0) ? res.y : M_PI - res.y;
+  v.x = (v.x >= 0.0) ? res.x : M_PI - res.x;
+  v.y = (v.y >= 0.0) ? res.y : M_PI - res.y;
   return v;
 }
 
@@ -1714,8 +1713,8 @@ vec4 gpencil_vertex(vec4 viewport_size,
       out_thickness.y = (is_squares) ? 1e18 : (thickness / out_ndc.w);
     }
     else {
-      bool is_stroke_start = (ma.x == -1 && x == -1);
-      bool is_stroke_end = (ma3.x == -1 && x == 1);
+      bool is_stroke_start = (ma.x == -1 && x == -1.0);
+      bool is_stroke_end = (ma3.x == -1 && x == 1.0);
 
       /* Mitter tangent vector. */
       vec2 miter_tan = safe_normalize(line_adj + line);

@@ -1297,6 +1297,23 @@ int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
   frame_end(c);
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev_fbo);
   pg_gpu_framebuffer_set_backbuffer(prev_fbo);
+  if (c.failed) {
+    /* A shader failed part way: hand the context back clean, the Android presenter draws next. */
+    glUseProgram(0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_TRUE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glActiveTexture(GL_TEXTURE0);
+    glViewport(0, 0, view->viewport_w, view->viewport_h);
+  }
   return c.failed ? 0 : 1;
 }
 

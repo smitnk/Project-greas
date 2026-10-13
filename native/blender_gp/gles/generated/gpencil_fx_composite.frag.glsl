@@ -1,5 +1,4 @@
 #version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;

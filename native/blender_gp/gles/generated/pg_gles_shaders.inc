@@ -7,7 +7,6 @@ struct PGGlesShaderSource {
 static const PGGlesShaderSource pg_gles_shader_sources[] = {
     {"gpencil_geometry",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -1387,15 +1386,15 @@ float fast_acos(float v)
 {
   float res = -0.156583 * abs(v) + M_PI_2;
   res *= fast_sqrt(1.0 - abs(v));
-  return (v >= 0) ? res : M_PI - res;
+  return (v >= 0.0) ? res : M_PI - res;
 }
 
 vec2 fast_acos(vec2 v)
 {
   vec2 res = -0.156583 * abs(v) + M_PI_2;
   res *= fast_sqrt(1.0 - abs(v));
-  v.x = (v.x >= 0) ? res.x : M_PI - res.x;
-  v.y = (v.y >= 0) ? res.y : M_PI - res.y;
+  v.x = (v.x >= 0.0) ? res.x : M_PI - res.x;
+  v.y = (v.y >= 0.0) ? res.y : M_PI - res.y;
   return v;
 }
 
@@ -1720,8 +1719,8 @@ vec4 gpencil_vertex(vec4 viewport_size,
       out_thickness.y = (is_squares) ? 1e18 : (thickness / out_ndc.w);
     }
     else {
-      bool is_stroke_start = (ma.x == -1 && x == -1);
-      bool is_stroke_end = (ma3.x == -1 && x == 1);
+      bool is_stroke_start = (ma.x == -1 && x == -1.0);
+      bool is_stroke_end = (ma3.x == -1 && x == 1.0);
 
       /* Mitter tangent vector. */
       vec2 miter_tan = safe_normalize(line_adj + line);
@@ -1917,7 +1916,7 @@ void main()
 
     /* Decode fill opacity. */
     vec4 fcol_decode = vec4(fcol1.rgb, floor(fcol1.a / 10.0));
-    float fill_opacity = fcol1.a - (fcol_decode.a * 10);
+    float fill_opacity = fcol1.a - (fcol_decode.a * 10.0);
     fcol_decode.a /= 10000.0;
 
     /* Special case: We don't use vertex color if material Holdout. */
@@ -1955,7 +1954,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -3337,15 +3335,15 @@ float fast_acos(float v)
 {
   float res = -0.156583 * abs(v) + M_PI_2;
   res *= fast_sqrt(1.0 - abs(v));
-  return (v >= 0) ? res : M_PI - res;
+  return (v >= 0.0) ? res : M_PI - res;
 }
 
 vec2 fast_acos(vec2 v)
 {
   vec2 res = -0.156583 * abs(v) + M_PI_2;
   res *= fast_sqrt(1.0 - abs(v));
-  v.x = (v.x >= 0) ? res.x : M_PI - res.x;
-  v.y = (v.y >= 0) ? res.y : M_PI - res.y;
+  v.x = (v.x >= 0.0) ? res.x : M_PI - res.x;
+  v.y = (v.y >= 0.0) ? res.y : M_PI - res.y;
   return v;
 }
 
@@ -3670,8 +3668,8 @@ vec4 gpencil_vertex(vec4 viewport_size,
       out_thickness.y = (is_squares) ? 1e18 : (thickness / out_ndc.w);
     }
     else {
-      bool is_stroke_start = (ma.x == -1 && x == -1);
-      bool is_stroke_end = (ma3.x == -1 && x == 1);
+      bool is_stroke_start = (ma.x == -1 && x == -1.0);
+      bool is_stroke_end = (ma3.x == -1 && x == 1.0);
 
       /* Mitter tangent vector. */
       vec2 miter_tan = safe_normalize(line_adj + line);
@@ -3941,7 +3939,6 @@ void main()
 )PGGLSL"},
     {"gpencil_layer_blend",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -4031,7 +4028,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -4179,11 +4175,11 @@ void main()
   vec4 color;
 
   /* Remember, this is associated alpha (aka. premult). */
-  color.rgb = textureLod(colorBuf, uvcoordsvar.xy, 0).rgb;
+  color.rgb = textureLod(colorBuf, uvcoordsvar.xy, 0.0).rgb;
   /* Stroke only render mono-chromatic revealage. We convert to alpha. */
-  color.a = 1.0 - textureLod(revealBuf, uvcoordsvar.xy, 0).r;
+  color.a = 1.0 - textureLod(revealBuf, uvcoordsvar.xy, 0.0).r;
 
-  float mask = textureLod(maskBuf, uvcoordsvar.xy, 0).r;
+  float mask = textureLod(maskBuf, uvcoordsvar.xy, 0.0).r;
   mask *= blendOpacity;
 
   fragColor = vec4(1.0, 0.0, 1.0, 1.0);
@@ -4194,7 +4190,6 @@ void main()
 )PGGLSL"},
     {"gpencil_mask_invert",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -4279,7 +4274,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -4360,7 +4354,6 @@ void main()
 )PGGLSL"},
     {"gpencil_depth_merge",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -4932,7 +4925,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -5496,7 +5488,7 @@ uniform bool strokeOrder3d;
 
 void main()
 {
-  float depth = textureLod(depthBuf, gl_FragCoord.xy / vec2(textureSize(depthBuf, 0)), 0).r;
+  float depth = textureLod(depthBuf, gl_FragCoord.xy / vec2(textureSize(depthBuf, 0)), 0.0).r;
   if (strokeOrder3d) {
     gl_FragDepth = depth;
   }
@@ -5507,7 +5499,6 @@ void main()
 )PGGLSL"},
     {"gpencil_antialiasing_stage_0",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -7130,7 +7121,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -8780,7 +8770,6 @@ void main()
 )PGGLSL"},
     {"gpencil_antialiasing_stage_1",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -10404,7 +10393,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -12055,7 +12043,6 @@ void main()
 )PGGLSL"},
     {"gpencil_antialiasing_stage_2",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -13683,7 +13670,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -15349,7 +15335,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_composite",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -15438,7 +15423,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -15876,7 +15860,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_colorize",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -15968,7 +15951,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -16409,7 +16391,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_blur",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -16499,7 +16480,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -16938,7 +16918,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_transform",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -17033,7 +17012,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -17477,7 +17455,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_glow",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -17572,7 +17549,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -18016,7 +17992,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_rim",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -18111,7 +18086,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -18555,7 +18529,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_shadow",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -18653,7 +18626,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -19100,7 +19072,6 @@ void main()
 )PGGLSL"},
     {"gpencil_fx_pixelize",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -19192,7 +19163,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -19633,7 +19603,6 @@ void main()
 )PGGLSL"},
     {"overlay_edit_gpencil_wire",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -21079,7 +21048,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -22023,7 +21991,6 @@ void main()
 )PGGLSL"},
     {"overlay_edit_gpencil_point",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -23470,7 +23437,6 @@ void main()
 }
 )PGGLSL",
      R"PGGLSL(#version 320 es
-#extension GL_EXT_shader_implicit_conversions : require
 precision highp float;
 precision highp int;
 precision highp sampler2D;

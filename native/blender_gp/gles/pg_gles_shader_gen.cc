@@ -722,8 +722,8 @@ static void standard_defines(Vector<const char *> &sources)
 static std::string glsl_patch_gles()
 {
   std::string patch = "#version 320 es\n";
-  /* Blender's GLSL relies on desktop implicit int -> float / uint conversions. */
-  patch += "#extension GL_EXT_shader_implicit_conversions : require\n";
+  /* No GL_EXT_shader_implicit_conversions: ARM Mali drivers lack it and failed every shader. The few
+   * int literals Blender's GLSL uses as floats are made explicit (es_no_implicit.sed). */
   patch += "precision highp float;\nprecision highp int;\n";
   patch += "precision highp sampler2D;\nprecision highp sampler2DArray;\nprecision highp sampler3D;\n";
   patch += "precision highp samplerBuffer;\nprecision highp isamplerBuffer;\nprecision highp usamplerBuffer;\n";

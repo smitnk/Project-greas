@@ -151,7 +151,8 @@ std::string pg_gles_source_for_api(const char *src)
   if (pg_gles_api() != 31) return out;
   const std::string v320 = "#version 320 es\n";
   if (out.compare(0, v320.size(), v320) == 0) {
-    out.replace(0, v320.size(), std::string("#version 310 es\n#extension ") + g_texbuf_ext + " : require\n");
+    out.replace(0, v320.size(), std::string("#version 310 es\n#extension ") + g_texbuf_ext +
+                                      " : require\n#extension GL_EXT_shader_implicit_conversions : require\n");
   }
   return out;
 }

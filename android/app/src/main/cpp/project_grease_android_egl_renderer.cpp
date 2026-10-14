@@ -41,7 +41,7 @@ extern "C" void project_grease_android_present_set_fill_extend(float factor);
 extern "C" void project_grease_android_present_set_fill_collide(int collide);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
-extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy);
+extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy, float *rotation);
 extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
@@ -643,9 +643,9 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
     rgba[i] = static_cast<float>(pixels[i]) / 255.0f;
   }
 
-  float map_scale = 1.0f, map_ox = 0.0f, map_oy = 0.0f;
-  project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy);
-  project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy);
+  float map_scale = 1.0f, map_ox = 0.0f, map_oy = 0.0f, map_rot = 0.0f;
+  project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy, &map_rot);
+  project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy, map_rot);
   const bool filled = project_grease_gp_fill_at_screen(
       renderer->gp_handle,
       rgba.data(),
@@ -1000,6 +1000,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRendererInfo(JNIEnv *e
   if (!renderer || renderer->display == EGL_NO_DISPLAY || renderer->context == EGL_NO_CONTEXT) return env->NewStringUTF("no renderer");
   if (renderer->surface != EGL_NO_SURFACE) eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context);
   return env->NewStringUTF(project_grease_android_present_renderer_info());
+}
+
+extern "C" const char *project_grease_android_present_last_frame();
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLastFrameInfo(JNIEnv *env, jobject, jlong)
+{
+  return env->NewStringUTF(project_grease_android_present_last_frame());
 }
 
 /* Settings > Use Blender's renderer: off draws with the Android presenter only. */

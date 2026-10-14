@@ -207,6 +207,8 @@ object GPNative {
     external fun nativeSetVertexOpacity(handle: Long, opacity: Float): Boolean
     external fun nativeSetMaterialStrokeEnabled(handle: Long, index: Int, enabled: Boolean): Boolean
     external fun nativeRendererInfo(handle: Long): String
+    /** Timing of the last engine frame (crash report). */
+    external fun nativeLastFrameInfo(handle: Long): String
     external fun nativeInstallCrashHandler(path: String)
     external fun nativeSetEngine(handle: Long, enabled: Boolean)
     external fun nativeSetOverlayUnselected(handle: Long, show: Boolean)

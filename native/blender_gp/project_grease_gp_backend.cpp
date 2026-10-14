@@ -278,7 +278,7 @@ struct Backend::Impl {
   struct LatticePoint { bGPDstroke *gps; int index; float x, y; };
   std::vector<LatticePoint> lattice_points;
   float lattice_bounds[4] = {0, 0, 0, 0};
-  float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f;
+  float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f, fill_map_rotation = 0.0f;
   // Brush fill_factor ("Precision"), Blender default 1.
   float fill_factor = 1.0f;
   std::vector<HistorySnapshot *> redo_history;
@@ -4896,11 +4896,12 @@ bool Backend::fill_stroke(int index)
 }
 
 
-void Backend::set_fill_screen_map(float scale, float origin_x, float origin_y)
+void Backend::set_fill_screen_map(float scale, float origin_x, float origin_y, float rotation)
 {
   impl_->fill_map_scale = scale;
   impl_->fill_map_origin_x = origin_x;
   impl_->fill_map_origin_y = origin_y;
+  impl_->fill_map_rotation = std::isfinite(rotation) ? rotation : 0.0f;
 }
 
 void Backend::set_fill_factor(float factor)
@@ -4974,11 +4975,16 @@ bool Backend::fill_at_screen(const float* rgba,
   const float ky = static_cast<float>(height) / static_cast<float>(sy);
   std::vector<StrokePoint> points;
   points.reserve(static_cast<size_t>(total));
+  // the mask was drawn turned by the view rotation about the view centre: turn the outline back
+  const float rc = std::cos(impl_->fill_map_rotation), rs = std::sin(impl_->fill_map_rotation);
+  const float hw = 0.5f * static_cast<float>(width), hh = 0.5f * static_cast<float>(height);
   for (int i = 0; i < total; i++) {
-    const float px = xy[i * 2] * kx;
-    const float py = xy[i * 2 + 1] * ky;
-    points.push_back({(px - impl_->fill_map_origin_x) / map_scale,
-                      (static_cast<float>(height) - py - impl_->fill_map_origin_y) / map_scale,
+    const float dx = xy[i * 2] * kx - hw;
+    const float dy = (static_cast<float>(height) - xy[i * 2 + 1] * ky) - hh; /* top-left origin */
+    const float sx = hw + rc * dx + rs * dy;
+    const float sy = hh - rs * dx + rc * dy;
+    points.push_back({(sx - impl_->fill_map_origin_x) / map_scale,
+                      (sy - impl_->fill_map_origin_y) / map_scale,
                       0.0f,
                       1.0f,
                       1.0f,

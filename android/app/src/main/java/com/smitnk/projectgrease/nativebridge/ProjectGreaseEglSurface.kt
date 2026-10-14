@@ -201,8 +201,10 @@ internal class ProjectGreaseDrawingSurfaceView(
                         eraseLastY = start.second
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
-                        controller.fillAt(event.x, event.y)
-                        controller.render()
+                        if (event.eventTime >= controller.lastFillEndMs) {
+                            controller.fillAt(event.x, event.y)
+                            controller.render()
+                        }
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.EYEDROPPER -> {
                         controller.pickColorAt(event.x.toInt(), event.y.toInt())

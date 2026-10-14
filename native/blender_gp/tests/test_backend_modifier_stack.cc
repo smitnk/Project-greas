@@ -175,6 +175,25 @@ int main()
     CHECK(miny > 1.0f && maxy < 13.0f && maxy - miny > 7.0f); /* (y - 6) / 2 */
     b.set_fill_screen_map(1.0f, 0.0f, 0.0f);
     CHECK(b.delete_stroke(b.stroke_count() - 1));
+
+    /* a turned view: the mask is drawn turned, the outline is turned back (90 deg about the centre) */
+    std::memset(rgba, 0, sizeof(rgba));
+    for (int k = 4; k <= 16; ++k) { mark(k, 4); mark(k, 16); mark(4, k); mark(16, k); }
+    auto centre = [&](float rot, float *cx, float *cy) {
+      b.set_fill_screen_map(1.0f, 0.0f, 0.0f, rot);
+      CHECK(b.fill_at_screen(rgba, W, H, 10, 40 - 1 - 10, 1, 0, {0, 2.0f}));
+      const bGPDstroke *g = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.last);
+      float sx = 0, sy = 0;
+      for (int i = 0; i < g->totpoints; i++) { sx += g->points[i].x; sy += g->points[i].y; }
+      *cx = sx / g->totpoints; *cy = sy / g->totpoints;
+      CHECK(b.delete_stroke(b.stroke_count() - 1));
+    };
+    float x0, y0, x1, y1;
+    centre(0.0f, &x0, &y0);
+    centre(1.5707963f, &x1, &y1);
+    printf("  fill centre unrotated %.2f %.2f, rotated %.2f %.2f\n", x0, y0, x1, y1);
+    CHECK(std::fabs(x1 - (20.0f + (y0 - 20.0f))) < 1.0f && std::fabs(y1 - (20.0f - (x0 - 20.0f))) < 1.0f);
+    b.set_fill_screen_map(1.0f, 0.0f, 0.0f);
   }
 
   /* --- undo / redo keep the layer the user selected active --- */

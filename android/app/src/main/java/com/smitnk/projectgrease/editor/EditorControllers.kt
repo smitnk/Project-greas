@@ -1010,6 +1010,10 @@ class EditorController {
     var onMessage: ((String) -> Unit)? = null
     /** Settings > Use Blender's renderer (saved by the UI); off = the Android presenter only. */
     var useBlenderRenderer = true
+    private var slowEngineFrames = 0
+    /** Set for the session once Blender's renderer was too slow (see render()). */
+    var engineTooSlow = false
+        private set
     /** GL version and whether Blender's draw engine renders (diagnostics). */
     fun rendererInfo(): String = if (rendererHandle != 0L) GPNative.nativeRendererInfo(rendererHandle) else "no renderer"
 
@@ -1830,6 +1834,10 @@ class EditorController {
         return count
     }
 
+    /** uptimeMillis when the last fill finished: taps made while it ran are dropped (each would
+     *  start another full-screen fill and the waits add up to a freeze). */
+    var lastFillEndMs = 0L
+        private set
     fun fillAt(x: Float, y: Float): Boolean {
         if (rendererHandle == 0L || !activeLayerEditable()) return false
         val slot = fillMaterialSlot() ?: return false
@@ -1840,6 +1848,8 @@ class EditorController {
         val t0 = System.nanoTime()
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), slot, materials.thickness)
         noteIfSlow("fill ok=$ok", t0, t0)
+        lastFillEndMs = android.os.SystemClock.uptimeMillis()
+        if (!ok) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
         if (ok) { history.markEdit(); document.markDirty() }
         return ok
     }
@@ -2006,7 +2016,7 @@ class EditorController {
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
             GPNative.nativeSetVertexOpacity(rendererHandle, vertexOpacity)
-            GPNative.nativeSetEngine(rendererHandle, useBlenderRenderer)
+            GPNative.nativeSetEngine(rendererHandle, useBlenderRenderer && !engineTooSlow)
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
             // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
             GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())
@@ -2015,7 +2025,20 @@ class EditorController {
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             val t1=System.nanoTime()
             GPNative.nativeRenderEgl(rendererHandle)
-            noteIfSlow("render", t0, t1)
+            val ms=(System.nanoTime()-t0)/1_000_000
+            if(ms>=120) noteIfSlow("render [${GPNative.nativeLastFrameInfo(rendererHandle)}]", t0, t1)
+            // Blender's renderer too slow on this GPU: three frames over 250 ms in a row switch to
+            // the Android renderer for this session (Settings keeps the user's choice).
+            if(useBlenderRenderer && !engineTooSlow){
+                slowEngineFrames = if(ms>250) slowEngineFrames+1 else 0
+                if(slowEngineFrames>=3){
+                    engineTooSlow=true
+                    com.smitnk.projectgrease.CrashLog.noteSlow("switched to the Android renderer: Blender's renderer took over 250 ms per frame")
+                    onMessage?.invoke("Blender's renderer is too slow on this phone: switched to the fast renderer")
+                    GPNative.nativeSetEngine(rendererHandle,false)
+                    GPNative.nativeRenderEgl(rendererHandle)
+                }
+            }
         }
         if (transformSettings.proportional || transformSettings.pivot == ProjectGreaseSelect.PIVOT_CURSOR) overlayTick++
     }

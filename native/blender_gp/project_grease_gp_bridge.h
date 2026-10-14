@@ -174,7 +174,7 @@ int project_grease_gp_apply_blender_modifier_stack(ProjectGreaseGPHandle *handle
 int project_grease_gp_set_onion_skin(ProjectGreaseGPHandle *handle, int enabled, int before, int after, float opacity);
 int project_grease_gp_set_multiframe_editing(ProjectGreaseGPHandle *handle, int enabled);
 int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index);
-void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float scale, float origin_x, float origin_y);
+void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float scale, float origin_x, float origin_y, float rotation);
 /* Brush fill_factor (Precision). fill_at_screen: fill_leak <= 0 uses ceil(3 * fill_factor). */
 void project_grease_gp_set_fill_factor(ProjectGreaseGPHandle *handle, float factor);
 int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,

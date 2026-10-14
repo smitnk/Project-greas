@@ -1,3 +1,4 @@
+#include <chrono>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -121,6 +122,8 @@ float g_view_pan_y=0.0f;
 /* Two-finger view rotation (radians) about the viewport centre; the engine path draws unrotated
  * views only (shortcut: rotated views use this presenter, until the engine gets a view matrix). */
 float g_view_rotation=0.0f;
+/* last engine frame, for the crash report slow steps */
+static double g_last_engine_ms=0.0;static int g_last_engine_rebuilt=0,g_last_w=0,g_last_h=0;
 void update_canvas_map(int w,int h){
   const float sx=float(w)/float(std::max(1,g_canvas_width));
   const float sy=float(h)/float(std::max(1,g_canvas_height));
@@ -1178,7 +1181,11 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   view.weight_group=g_weight_group;
   view.vertex_opacity=g_vertex_opacity;
   if(over)for(float&c:view.background)c=0.0f;
+  const auto t_engine=std::chrono::steady_clock::now();
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
+  glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
+  g_last_engine_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t_engine).count();
+  g_last_engine_rebuilt=changed?1:0;g_last_w=w;g_last_h=h;
   g_engine_batch_cache=copy.runtime.gpencil_cache;
   MEM_freeN(frames);
   MEM_freeN(layers);
@@ -1580,7 +1587,8 @@ extern "C" void project_grease_android_present_set_reference_style(int visible,f
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
-extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy){
+extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy,float*rotation){
+  if(rotation)*rotation=g_export_mode?0.0f:g_view_rotation;
   update_canvas_map(w,h);
   if(scale)*scale=g_map_scale;
   if(ox)*ox=g_map_origin_x;
@@ -1614,6 +1622,12 @@ extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(
 extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_overlay_unselected=show?1:0;}
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
+extern "C" const char* project_grease_android_present_last_frame(){
+  static char buf[160];
+  std::snprintf(buf,sizeof buf,"engine draw %.0f ms (%s), %dx%d px%s",g_last_engine_ms,
+                g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"");
+  return buf;
+}
 extern "C" const char* project_grease_android_present_renderer_info(){
   static char buf[8192];
   const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));

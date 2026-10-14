@@ -1099,9 +1099,9 @@ int project_grease_gp_fill_stroke(ProjectGreaseGPHandle *handle, int index)
 }
 
 
-void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float scale, float origin_x, float origin_y)
+void project_grease_gp_set_fill_screen_map(ProjectGreaseGPHandle *handle, float scale, float origin_x, float origin_y, float rotation)
 {
-  if (handle) handle->backend.set_fill_screen_map(scale, origin_x, origin_y);
+  if (handle) handle->backend.set_fill_screen_map(scale, origin_x, origin_y, rotation);
 }
 
 void project_grease_gp_set_fill_factor(ProjectGreaseGPHandle *handle, float factor)

@@ -1152,6 +1152,11 @@ static void test_edit3(void)
   /* contrast 0.5: gain = 1/(1-0.5) = 2, offset = 2*(0-0.25) = -0.5 -> 0.75 -> 1.0, 0.25 -> 0.0 */
   CHECK(NEAR(v->points[0].vert_color[1], 1.0f) && NEAR(v->points[0].vert_color[0], 0.0f), "contrast stretches around 0.5");
   CHECK(pg_gp_vcolor_invert(g3, NULL, 5) == 0, "invalid mode");
+  /* nothing selected (vertex mask off): every point, as is_any_stroke_selected() == false */
+  v->flag &= ~GP_STROKE_SELECT;
+  for (int i = 0; i < v->totpoints; i++) v->points[i].flag &= ~GP_SPOINT_SELECT;
+  CHECK(pg_gp_vcolor_set(g3, NULL, PG_PAINT_MODE_STROKE, red, 1.0f) == 1 && NEAR(v->points[2].vert_color[0], 1) &&
+        NEAR(v->points[2].vert_color[3], 1), "set with nothing selected paints every point");
 
   const float sr[3] = {0.5f, 3, 1};
   l->actframe = f; /* the blank-frame checks made an empty frame active */

@@ -152,6 +152,8 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var eraseLastY = Float.NaN
     private var lastPanY = 0f
     private var pinchOpen = false
+    /** Pointer ids of ghost touches (second contacts at a finger's own spot), ignored until they lift. */
+    private val ghostPointers = HashSet<Int>()
     private var pinchStartDistance = 0f
     private var pinchStartZoom = 1f
     /** Pinch during a proportional transform changes the proportional size (Blender: wheel / PageUp). */
@@ -195,6 +197,7 @@ internal class ProjectGreaseDrawingSurfaceView(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                ghostPointers.clear()
                 controller.screenPxPerUnit = pixelsPerUnit()
                 controller.touchRadiusPx = 40f * resources.displayMetrics.density
                 controller.uiScale = resources.displayMetrics.density
@@ -338,12 +341,15 @@ internal class ProjectGreaseDrawingSurfaceView(
                 // Reported (activity log): on this phone a second touch arrived 20-40 ms after almost every
                 // stroke start, at the drawing finger's own spot, and cancelled the stroke as a pinch. A
                 // real second finger cannot land that close: ignore it and keep drawing.
-                if (event.pointerCount >= 2 && !pinchOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-                    val a = event.findPointerIndex(activePointerId)
+                if (event.pointerCount >= 2) {
                     val n = event.actionIndex
-                    if (a >= 0 && a != n && hypot(event.getX(n) - event.getX(a), event.getY(n) - event.getY(a)) <
-                        40f * resources.displayMetrics.density) {
-                        com.smitnk.projectgrease.CrashLog.event("TOUCH ignored a second touch at the drawing finger's spot")
+                    val near = (0 until event.pointerCount).any { i -> i != n &&
+                        hypot(event.getX(n) - event.getX(i), event.getY(n) - event.getY(i)) < 40f * resources.displayMetrics.density }
+                    com.smitnk.projectgrease.CrashLog.event("TOUCH second touch: " + (0 until event.pointerCount).joinToString { i ->
+                        "id ${event.getPointerId(i)} at %.0f,%.0f".format(event.getX(i), event.getY(i)) } + " new index $n, active $activePointerId, pinch $pinchOpen -> " +
+                        if (near) "ignored (at another finger's spot)" else "gesture")
+                    if (near) {
+                        ghostPointers += event.getPointerId(n)
                         return true
                     }
                 }
@@ -492,6 +498,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
+                if (ghostPointers.remove(event.getPointerId(event.actionIndex))) return true
                 if (propPinch) {
                     propPinch = false
                     if (event.getPointerId(event.actionIndex) != activePointerId) return true

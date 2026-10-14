@@ -175,6 +175,31 @@ int main()
     BKE_gpencil_free_layers(&d.gpd->layers);
     MEM_freeN(d.gpd);
   }
+  /* Cutter: a lasso around the middle of a horizontal line crossed by a vertical one cuts the
+   * middle away; the pieces left end at the cut, nothing remains inside the lasso. */
+  {
+    Doc d = doc();
+    bGPDstroke *h = add_stroke(d.gpf, 11, 0.0f, 0); /* x 0..100, y 0 */
+    bGPDstroke *v = add_stroke(d.gpf, 5, 0.0f, 0);
+    for (int i = 0; i < 5; i++) { v->points[i].x = 55.0f; v->points[i].y = -20.0f + 10.0f * i; }
+    (void)h;
+    const int lasso[4][2] = {{42, -6}, {68, -6}, {68, 6}, {42, 6}};
+    CHECK(pg_gp_cutter(d.gpd, lasso, 4, 0) == 1);
+    int pieces = 0;
+    LISTBASE_FOREACH (bGPDstroke *, s, &d.gpf->strokes) {
+      bool horizontal = s->totpoints > 0 && std::fabs(s->points[0].y) < 1e-3f && std::fabs(s->points[s->totpoints - 1].y) < 1e-3f;
+      if (!horizontal) continue;
+      pieces++;
+    }
+    printf("  cutter: %d horizontal pieces\n", pieces);
+    /* gpencil_cutter_lasso_select: the segment of the first point inside (x 50) runs from the free
+     * start to the crossing at x 55, where a point is inserted; the rest of the line stays. */
+    bGPDstroke *rest = nth(d.gpf, 0);
+    CHECK(pieces == 1 && rest->totpoints == 6 && std::fabs(rest->points[0].x - 55.0f) < 1.0f &&
+          std::fabs(rest->points[5].x - 100.0f) < 1e-3f);
+    BKE_gpencil_free_layers(&d.gpd->layers);
+    MEM_freeN(d.gpd);
+  }
   if (failures) {
     printf("%d edit10 failures\n", failures);
     return 1;

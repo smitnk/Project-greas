@@ -376,6 +376,14 @@ object ProjectGreaseSelect {
     const val CMD_PASTE = 85
     /** GPENCIL_OT_stroke_separate (modes POINT / STROKE) into new layers; edit10 id 135. */
     const val CMD_SEPARATE = 135
+    /** GPENCIL_OT_stroke_cutter: args flat_caps, then the lasso in canvas units. */
+    const val CMD_CUTTER = 136
+    fun cutter(points: List<Pair<Float, Float>>, flatCaps: Boolean = false): Command? {
+        if (points.size < 3 || points.any { !it.first.isFinite() || !it.second.isFinite() }) return null
+        val a = FloatArray(1 + points.size * 2); a[0] = if (flatCaps) 1f else 0f
+        points.forEachIndexed { i, p -> a[1 + i * 2] = p.first; a[2 + i * 2] = p.second }
+        return Command(CMD_CUTTER, a)
+    }
     const val SEPARATE_POINT = 0
     const val SEPARATE_STROKE = 1
     const val CAPS_TOGGLE_BOTH = 0

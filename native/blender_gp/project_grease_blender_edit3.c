@@ -187,13 +187,20 @@ static int pe3_apply_vcolor(bGPdata *gpd, const bGPDlayer *only_layer, int mode,
                             const float *p, bool only_painted)
 {
   if (gpd == NULL || mode < PG_PAINT_MODE_STROKE || mode > PG_PAINT_MODE_BOTH) return 0;
+  /* gpencil_vertex_ops.c is_any_stroke_selected(): with nothing selected (or the vertex mask off,
+   * where the caller clears the selection) the operator applies to every stroke. */
+  bool any_selected = false;
+  PE3_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (gps->flag & GP_STROKE_SELECT) any_selected = true;
+  }
+  PE3_STROKES_END;
   int changed = 0;
   PE3_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) continue;
+    if ((any_selected && !(gps->flag & GP_STROKE_SELECT)) || gps->points == NULL) continue;
     if (mode != PG_PAINT_MODE_FILL) {
       for (int i = 0; i < gps->totpoints; i++) {
         bGPDspoint *pt = &gps->points[i];
-        if (!(pt->flag & GP_SPOINT_SELECT)) continue;
+        if (any_selected && !(pt->flag & GP_SPOINT_SELECT)) continue;
         if (only_painted && pt->vert_color[3] <= 0.0f) continue;
         fn(pt->vert_color, p);
         changed = 1;

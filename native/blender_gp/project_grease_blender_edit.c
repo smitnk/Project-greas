@@ -1163,8 +1163,14 @@ int pg_gp_stroke_reset_vertex_color(bGPdata *gpd, const bGPDlayer *only_layer, i
     return 0;
   }
   int changed = 0;
+  /* "First need to check if there are something selected. If not, apply to all strokes." */
+  bool any_selected = false;
   PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
-    if (!pge_stroke_selected(gps)) {
+    if (pge_stroke_selected(gps)) any_selected = true;
+  }
+  PGE_EDITABLE_STROKES_END;
+  PGE_EDITABLE_STROKES_BEGIN (gpd, only_layer, gpl, gpf, gps) {
+    if (any_selected && !pge_stroke_selected(gps)) {
       continue;
     }
     if (mode != PG_PAINT_MODE_FILL && gps->points != NULL) {

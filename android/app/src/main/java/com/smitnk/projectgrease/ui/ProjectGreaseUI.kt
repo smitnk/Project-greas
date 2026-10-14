@@ -50,6 +50,34 @@ private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
 private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
+
+/** Quick Favorites (Blender's Q menu): tools pinned by long press, kept on this phone. */
+internal object QuickFavorites {
+    private fun prefs(c:android.content.Context)=c.getSharedPreferences("project_grease_settings",android.content.Context.MODE_PRIVATE)
+    fun list(c:android.content.Context):List<GreaseTool> =
+        runCatching{prefs(c).getString("quick_favorites","").orEmpty().split(',').filter{it.isNotBlank()}.mapNotNull{n->GreaseTool.values().firstOrNull{it.name==n}}}.getOrDefault(emptyList())
+    fun toggle(c:android.content.Context,t:GreaseTool){
+        val l=list(c).toMutableList(); if(!l.remove(t)) l+=t
+        prefs(c).edit().putString("quick_favorites",l.joinToString(","){it.name}).apply()
+    }
+}
+
+/** The pinned tools as a small bar on the canvas; long press unpins. */
+@Composable internal fun QuickFavoritesBar(controller:EditorController,modifier:Modifier,redraw:()->Unit){
+    val ctx=LocalContext.current
+    var tick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seen=tick
+    val favs=QuickFavorites.list(ctx)
+    if(favs.isEmpty())return
+    Row(modifier.background(MaterialTheme.colorScheme.surface.copy(alpha=0.9f),RoundedCornerShape(20.dp)).padding(4.dp).testTag("quickFavorites")){
+        favs.forEach{t->
+            val e=tools.firstOrNull{it.tool==t}?:return@forEach
+            val sel=controller.tools.activeTool==t
+            Box(Modifier.size(40.dp).background(if(sel)MaterialTheme.colorScheme.primaryContainer else Color.Transparent,CircleShape)
+                .pointerInput(t){detectTapGestures(onTap={if(controller.selectTool(t))redraw();tick++},onLongPress={QuickFavorites.toggle(ctx,t);tick++})},
+                contentAlignment=Alignment.Center){Icon(e.icon,e.label)}
+        }
+    }
+}
 private val presets=listOf(
     Preset("YouTube 1080p",1920,1080,30),Preset("YouTube 720p",1280,720,12),
     Preset("Instagram 1:1",1080,1080,30),Preset("TikTok 1080p",1080,1920,30),Preset("Vimeo 1080p",1920,1080,30)
@@ -859,13 +887,18 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @Composable private fun ToolsSheet(controller:EditorController,onDismiss:()->Unit,redraw:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){
         Text("Tools",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        Text("Long-press a tool to pin it to Quick Favorites",Modifier.padding(horizontal=20.dp),fontSize=12.sp)
         tools.filter { FeatureRegistry.capability(it.feature).state != FeatureState.NOT_IMPLEMENTED }.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 row.forEach { entry ->
                     val selected=controller.tools.activeTool==entry.tool
+                    val ctx=LocalContext.current
                     Surface(
-                        modifier=Modifier.weight(1f).height(64.dp).clickable{
-                            if(controller.selectTool(entry.tool)){redraw();onDismiss()}
+                        // long press: pin to Quick Favorites (Blender's Q menu)
+                        modifier=Modifier.weight(1f).height(64.dp).pointerInput(entry.tool){
+                            detectTapGestures(
+                                onTap={ if(controller.selectTool(entry.tool)){redraw();onDismiss()} },
+                                onLongPress={ QuickFavorites.toggle(ctx,entry.tool); toast(ctx,if(entry.tool in QuickFavorites.list(ctx))"${entry.label} added to Quick Favorites" else "${entry.label} removed from Quick Favorites"); redraw() })
                         },
                         shape=RoundedCornerShape(12.dp),
                         tonalElevation=if(selected)4.dp else 1.dp,
@@ -1484,8 +1517,10 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
         }
 
+        // Quick Favorites (Blender's Q menu): the pinned tools, top right under the bar
+        QuickFavoritesBar(controller,Modifier.align(Alignment.TopEnd).padding(top=56.dp,end=8.dp),redraw)
         // Lasso Cut (Blender's Cutter tool): the lasso cuts away the line parts inside it
-        if(tool==GreaseTool.LASSO&&!controller.warpActive){
+        if(tool==GreaseTool.LASSO&&!controller.warpActive&&controller.mode==GreaseMode.DRAW){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;cutTick++},{Text(if(controller.lassoCut)"Cut: on (lasso erases inside)" else "Cut")},
                 Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp).testTag("lassoCut"))
@@ -1778,6 +1813,35 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
 /** Blender's vertex colour settings: brush Mix Factor, Stroke / Fill / Both for Draw mode, the
  *  Vertex Paint selection mask and the viewport's Vertex Paint Opacity. */
+/** Blender's Vertex Paint "Paint" menu (gpencil_vertex_ops.c): on the selection, or on every stroke
+ *  when the selection mask is off / nothing is selected; Stroke / Fill / Both decides what changes. */
+@Composable private fun VertexPaintMenu(controller:EditorController,changed:()->Unit){
+    Text("Paint",fontWeight=FontWeight.Bold)
+    Text(if(controller.vertexSelectMask==0)"Applies to every stroke (selection mask off)" else "Applies to the selected points",fontSize=12.sp)
+    FlowRow(itemVerticalAlignment=Alignment.CenterVertically){
+        listOf(com.smitnk.projectgrease.editor.ProjectGreaseSelect.PAINT_STROKE to "Stroke",com.smitnk.projectgrease.editor.ProjectGreaseSelect.PAINT_FILL to "Fill",com.smitnk.projectgrease.editor.ProjectGreaseSelect.PAINT_BOTH to "Stroke & Fill").forEach{(m,l)->
+            FilterChip(controller.vertexPaintTarget==m,{controller.setVertexPaintTarget(m);changed()},{Text(l)},Modifier.padding(end=4.dp))
+        }
+    }
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+        Button(onClick={controller.setSelectionVertexColor();changed()},Modifier.testTag("vertexSetColor")){Text("Set Color Attribute")}
+        OutlinedButton(onClick={controller.resetSelectionVertexColor(controller.vertexPaintTarget);changed()}){Text("Reset Vertex Color")}
+        OutlinedButton(onClick={controller.invertSelectionVertexColor();changed()}){Text("Invert")}
+    }
+    var h by remember{mutableFloatStateOf(0.5f)};var s by remember{mutableFloatStateOf(1f)};var v by remember{mutableFloatStateOf(1f)}
+    Text("Hue / Saturation / Value: ${"%.2f".format(h)} / ${"%.2f".format(s)} / ${"%.2f".format(v)}",fontSize=12.sp)
+    Slider(h,{h=it},valueRange=0f..1f);Slider(s,{s=it},valueRange=0f..2f);Slider(v,{v=it},valueRange=0f..2f)
+    OutlinedButton(onClick={controller.selectionVertexColorHsv(h,s,v);changed()}){Text("Apply Hue / Saturation")}
+    var b by remember{mutableFloatStateOf(0f)};var c by remember{mutableFloatStateOf(0f)}
+    Text("Brightness / Contrast: ${"%.2f".format(b)} / ${"%.2f".format(c)}",fontSize=12.sp)
+    Slider(b,{b=it},valueRange=-1f..1f);Slider(c,{c=it},valueRange=-1f..1f)
+    OutlinedButton(onClick={controller.selectionVertexColorBrightnessContrast(b,c);changed()}){Text("Apply Brightness / Contrast")}
+    var off by remember{mutableFloatStateOf(0f)};var gain by remember{mutableFloatStateOf(1f)}
+    Text("Levels: offset ${"%.2f".format(off)}, gain ${"%.2f".format(gain)}",fontSize=12.sp)
+    Slider(off,{off=it},valueRange=-1f..1f);Slider(gain,{gain=it},valueRange=0f..2f)
+    OutlinedButton(onClick={controller.selectionVertexColorLevels(off,gain);changed()}){Text("Apply Levels")}
+}
+
 @Composable private fun VertexColorOptions(controller:EditorController,redraw:()->Unit){
     var tick by remember{mutableIntStateOf(0)}
     key(tick){Column(Modifier.padding(horizontal=12.dp)){
@@ -1796,8 +1860,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 modifier=Modifier.testTag("vertexMixFactor"))
         }
         if(controller.mode==GreaseMode.VERTEX_PAINT){
-            // brushing tints the fill very slowly (Blender: strength / 1000 per sample); this sets it at once
-            Button(onClick={controller.setVertexColorAll();redraw()},Modifier.testTag("vertexSetColor")){Text("Set Color: paint the whole frame now")}
+            VertexPaintMenu(controller,{tick++;redraw()})
             FlowRow(itemVerticalAlignment=Alignment.CenterVertically){
                 Text("Selection mask",fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=6.dp))
                 listOf(0 to "Off",com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",

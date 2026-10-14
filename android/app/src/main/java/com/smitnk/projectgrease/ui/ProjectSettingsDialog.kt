@@ -40,6 +40,7 @@ fun ProjectSettingsDialog(controller: EditorController, onDismiss: () -> Unit, o
     var end by remember { mutableStateOf(current.frameEnd.toString()) }
     var background by remember { mutableStateOf("#%06X".format(current.background and 0xFFFFFF)) }
     var transparent by remember { mutableStateOf(current.transparentBackground) }
+    var step by remember { mutableStateOf(current.frameStep.toString()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     @Composable
@@ -58,6 +59,7 @@ fun ProjectSettingsDialog(controller: EditorController, onDismiss: () -> Unit, o
                 number("Frame rate (FPS)", fps, "settingsFps") { fps = it }
                 number("Start frame", start, "settingsStart") { start = it }
                 number("End frame", end, "settingsEnd") { end = it }
+                number("Frame step (render every Nth frame, held; video / GIF / PNG)", step, "settingsStep") { step = it }
                 OutlinedTextField(background, { background = it.take(7) }, Modifier.fillMaxWidth().padding(top = 4.dp),
                     label = { Text("Background (#RRGGBB)") }, singleLine = true)
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -77,6 +79,7 @@ fun ProjectSettingsDialog(controller: EditorController, onDismiss: () -> Unit, o
                     this.frameEnd = end.toIntOrNull() ?: -1
                     this.background = background.removePrefix("#").toLongOrNull(16)?.let { (0xFF000000 or it).toInt() } ?: current.background
                     this.transparentBackground = transparent
+                    this.frameStep = step.toIntOrNull() ?: -1
                 }
                 error = controller.applyProjectSettings(s)
                 if (error == null) { onApplied(); onDismiss() }

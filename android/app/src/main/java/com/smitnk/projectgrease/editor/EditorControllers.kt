@@ -752,7 +752,12 @@ class EditorController {
             // A destroyed surface takes its native renderer and document with it, and a new surface
             // starts from an empty "Layer 1" document: restore the document as it was at detach.
             setupTrace("attach pending=${pending != null} snapshot=${snapshot != null} layers=${native.layerCount()}")
-            if (pending != null) pending() else if (snapshot != null) loadDocumentJson(snapshot)
+            if (pending != null) pending() else if (snapshot != null) {
+                loadDocumentJson(snapshot)
+                // the snapshot comes back on frame 1: return to the frame that was shown (strokes on
+                // another frame looked deleted after a photo import / export)
+                if (detachedFrame > 1 && animation.setFrame(detachedFrame)) render()
+            }
             native.activeLayer().takeIf { it >= 0 }?.let { selectedLayer = it }
             val queued = whenAttached.toList(); whenAttached.clear()
             queued.forEach { com.smitnk.projectgrease.CrashLog.event("ATTACH runs a queued action"); it() }
@@ -768,6 +773,7 @@ class EditorController {
     }
     /** The document saved when the surface went away (app in background, surface recreated). */
     private var detachedSnapshot: String? = null
+    private var detachedFrame = 1
     private var pendingDocumentSetup: (() -> Unit)? = null
     /**
      * Runs a document setup (template, project load) on the native document. Before the editor's
@@ -787,7 +793,7 @@ class EditorController {
     fun detachRenderer(){
         animation.stop()
         setupTrace("detach ready=$rendererReady")
-        if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it }
+        if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it; detachedFrame = animation.currentFrame }
         rendererHandle=0L;native.detach()
     }
     fun resetDocument():Boolean {

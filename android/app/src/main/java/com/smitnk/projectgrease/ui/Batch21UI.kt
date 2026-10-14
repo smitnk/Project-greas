@@ -169,7 +169,8 @@ fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
     }) {
         Text("Drag to move the reference, pinch to resize and turn it", Modifier.align(Alignment.TopCenter).padding(top = 56.dp)
             .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White)
-        Row(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // at the top, under the hint: at the bottom the timeline bar covered Done and the editor stayed stuck here
+        Row(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { controller.referenceAdjusting = false; redraw() }, Modifier.testTag("referenceAdjustDone")) { Text("Done") }
             OutlinedButton(onClick = { controller.rotoscope.resetPlacement(); controller.rotoscopeChanged() }) { Text("Reset") }
         }

@@ -8,7 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import com.smitnk.projectgrease.editor.EditorController
 
-internal fun toast(context: Context, text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+internal fun toast(context: Context, text: String) { com.smitnk.projectgrease.CrashLog.event("MESSAGE $text"); Toast.makeText(context, text, Toast.LENGTH_SHORT).show() }
 
 /** Project > Import SVG: picks an .svg through the Storage Access Framework and imports it. */
 @Composable

@@ -1737,6 +1737,25 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     confirmButton={TextButton(onClick={com.smitnk.projectgrease.CrashLog.share(context,text)}){Text("Share")}},
                     dismissButton={TextButton(onClick={com.smitnk.projectgrease.CrashLog.clear(context);crash=null}){Text("Clear")}})
             }
+            // Activity log: what each option did (tool, touch, result, error, timing), to share.
+            var activity by remember{mutableStateOf<String?>(null)}
+            val saveLog=androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")){uri->
+                if(uri!=null){
+                    val ok=runCatching{context.contentResolver.openOutputStream(uri)?.use{it.write(("Renderer: "+controller.rendererInfo()+"\n\n"+com.smitnk.projectgrease.CrashLog.readLog()).toByteArray())}!=null}.getOrDefault(false)
+                    toast(context,if(ok)"Activity log saved" else "Couldn't save the activity log")
+                }
+            }
+            item(Icons.Default.BugReport,"Activity log","Every option you use and what it did, to share","activity"){
+                activity="Renderer: "+controller.rendererInfo()+"\n\n"+com.smitnk.projectgrease.CrashLog.readLog()}
+            activity?.let{text->
+                AlertDialog(onDismissRequest={activity=null},title={Text("Activity log")},
+                    text={Text(text.takeLast(20_000),fontSize=10.sp,modifier=Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState(Int.MAX_VALUE)))},
+                    confirmButton={Row{
+                        TextButton(onClick={saveLog.launch("project_grease_activity_log.txt")}){Text("Save file")}
+                        TextButton(onClick={com.smitnk.projectgrease.CrashLog.share(context,text.takeLast(90_000))}){Text("Share")}}},
+                    dismissButton={TextButton(onClick={com.smitnk.projectgrease.CrashLog.clearLog();activity=null}){Text("Clear")}})
+            }
         }
     }
 }

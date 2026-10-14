@@ -800,6 +800,7 @@ class EditorController {
         return ok
     }
     fun selectTool(tool:GreaseTool):Boolean {
+        com.smitnk.projectgrease.CrashLog.event("TOOL $tool (was ${tools.activeTool}, mode $mode)")
         // Leaving the polyline tool confirms the polyline, like Blender's confirm keys.
         if (tool != tools.activeTool && polyline.isActive) finishPolyline()
         // Likewise for the curve once its handles are shown; a curve still being dragged is dropped.
@@ -904,6 +905,9 @@ class EditorController {
         val t0 = System.nanoTime()
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
         noteIfSlow("tool $tool phase $phase ($count samples)", t0, t0)
+        if (phase != ToolSession.PHASE_MOVE)
+            com.smitnk.projectgrease.CrashLog.event("SESSION tool $tool phase $phase -> result $result, mode $mode" +
+                (if (tool == ToolSession.TOOL_VERTEX_PAINT) ", target $vertexPaintTarget, mask $vertexSelectMask, selected ${native.selectedPointCount()}, colour ${Integer.toHexString(materials.colorArgb)}" else ""))
         if ((result and ToolSession.RESULT_CHANGED) != 0 && tool != ToolSession.TOOL_DRAW) {
             sessionGestureChanged = true
             document.markDirty()
@@ -935,6 +939,7 @@ class EditorController {
         setMaterialColor(materials.colorArgb)
     }
     fun setMode(value:GreaseMode):Boolean {
+        com.smitnk.projectgrease.CrashLog.event("MODE $value (was $mode)")
         if (warpActive) endWarp(true)
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
@@ -1187,7 +1192,9 @@ class EditorController {
         if (shapeEdit.isActive && (shapeAwaitingPress || shapeEdit.dragging >= 0 || shapeConfirmOnRelease)) {
             if (shapeAwaitingPress) {
                 shapeAwaitingPress = false
-                if (!shapeEdit.press(x, y, curveHitRadius())) shapeConfirmOnRelease = true
+                val hit = shapeEdit.press(x, y, curveHitRadius())
+                com.smitnk.projectgrease.CrashLog.event("SHAPE press at %.0f,%.0f radius %.0f -> ${if (hit) "handle ${shapeEdit.dragging}" else "missed (confirms)"}; handles ${shapeEdit.handles().joinToString { "%.0f,%.0f".format(it.first, it.second) }}".format(x, y, curveHitRadius()))
+                if (!hit) shapeConfirmOnRelease = true
             } else if (!shapeConfirmOnRelease) {
                 val snapped = view.snapPoint(x, y)
                 shapeEdit.move(snapped.first, snapped.second); showShapePreview()
@@ -1344,7 +1351,8 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
-            runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), noose))
+            val ok = runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), noose))
+            com.smitnk.projectgrease.CrashLog.event("LASSO ${noose.size} noose points, op $selectOp, select mode $activeSelectMode -> ok=$ok, selected ${native.selectedPointCount()} of ${native.pointCount()} points")
             return
         }
         if (tools.activeTool == GreaseTool.POLYLINE) {
@@ -1858,6 +1866,7 @@ class EditorController {
         val t0 = System.nanoTime()
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), slot, materials.thickness)
         noteIfSlow("fill ok=$ok", t0, t0)
+        com.smitnk.projectgrease.CrashLog.event("FILL at %.0f,%.0f slot $slot -> ok=$ok in ${(System.nanoTime() - t0) / 1_000_000} ms".format(x, y))
         lastFillEndMs = android.os.SystemClock.uptimeMillis()
         if (!ok) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
         if (ok) { history.markEdit(); document.markDirty() }
@@ -2034,7 +2043,7 @@ class EditorController {
             GPNative.nativeSetGuide(rendererHandle, if (tools.activeTool == GreaseTool.DRAW) view.guideType else -1,
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             val t1=System.nanoTime()
-            GPNative.nativeRenderEgl(rendererHandle)
+            if(!GPNative.nativeRenderEgl(rendererHandle)) com.smitnk.projectgrease.CrashLog.event("RENDER failed: ${GPNative.nativeLastFrameInfo(rendererHandle)}")
             val ms=(System.nanoTime()-t0)/1_000_000
             if(ms>=120) noteIfSlow("render [${GPNative.nativeLastFrameInfo(rendererHandle)}]", t0, t1)
             // Blender's renderer too slow on this GPU: three frames over 250 ms in a row switch to
@@ -3044,6 +3053,7 @@ class EditorController {
         val points = blenderPrimitivePointsEdges(type, shapeEdit.anchors(), shapeEdit.edges)
         shapeEdit.reset(); showPrimitivePreview(null); onOverlayChanged?.invoke()
         val ok = points != null && commitPrimitivePoints(points, ProjectGreasePrimitive.isCyclic(type))
+        com.smitnk.projectgrease.CrashLog.event("SHAPE confirm type $type -> ${points?.size ?: 0} points, ok=$ok")
         if (!ok) render()
         return ok
     }

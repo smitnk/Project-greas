@@ -111,6 +111,7 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
     var more by remember { mutableStateOf(false) }
     // one picker for photos and videos; the file's type decides which it is
     val media = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        com.smitnk.projectgrease.CrashLog.event("IMPORT picked $uri type ${uri?.let { context.contentResolver.getType(it) }}")
         if (uri == null) return@rememberLauncherForActivityResult
         keep(uri)
         val loader = controller.rotoscopeLoader

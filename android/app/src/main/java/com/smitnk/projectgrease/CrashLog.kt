@@ -11,10 +11,13 @@ object CrashLog {
 
     fun install(context: Context) {
         val app = context.applicationContext
+        logFile = File(app.filesDir, "activity_log.txt")
+        event("---- app start: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
         // native (C/C++) crashes land in the same file
         runCatching { com.smitnk.projectgrease.nativebridge.GPNative.nativeInstallCrashHandler(file(app).absolutePath) }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            event("CRASH ${error.javaClass.simpleName}: ${error.message}")
             runCatching {
                 file(app).writeText("Project Grease crash  ${java.util.Date()}\nAndroid ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), " +
                     "${Build.MANUFACTURER} ${Build.MODEL}\nthread ${thread.name}\n\n${error.stackTraceToString()}")
@@ -42,6 +45,7 @@ object CrashLog {
                 Thread.sleep(3000)
                 if (seen.get() >= want) continue
                 val t = android.os.Looper.getMainLooper().thread
+                event("FREEZE main thread stuck >3 s at ${t.stackTrace.take(4).joinToString(" < ")}")
                 runCatching {
                     freezeFile(app).writeText("Project Grease froze (main thread stuck over 3 s)  ${java.util.Date()}\n" +
                         "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}\n\n" +
@@ -52,11 +56,31 @@ object CrashLog {
         }, "pg-freeze-watch").apply { isDaemon = true }.start()
     }
 
-    /** Remembers the last slow steps (render, fill, export) for the report. */
-    fun noteSlow(what: String) = synchronized(slow) {
-        slow.addLast("${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what")
-        while (slow.size > 15) slow.removeFirst()
+    /** Remembers the last slow steps (render, fill, export) for the report; also in the activity log. */
+    fun noteSlow(what: String) {
+        synchronized(slow) {
+            slow.addLast("${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what")
+            while (slow.size > 15) slow.removeFirst()
+        }
+        event("SLOW $what")
     }
+
+    // Activity log (Menu > Activity log): every tool, touch, result and error, kept in a file so it
+    // survives a crash or a forced close. shortcut: capped at ~400 KB by keeping the newer half.
+    private var logFile: File? = null
+    private val stamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+    fun event(what: String) {
+        val f = logFile ?: return
+        val line = "${synchronized(stamp) { stamp.format(java.util.Date()) }} $what\n"
+        synchronized(this) {
+            runCatching {
+                f.appendText(line)
+                if (f.length() > 400_000) { val t = f.readText(); f.writeText(t.substring(t.length / 2)) }
+            }
+        }
+    }
+    fun readLog(): String = runCatching { logFile?.readText() }.getOrNull().orEmpty().ifEmpty { "Nothing recorded yet." }
+    fun clearLog() { synchronized(this) { runCatching { logFile?.writeText("") } } }
 
     fun read(context: Context): String? {
         val parts = listOfNotNull(

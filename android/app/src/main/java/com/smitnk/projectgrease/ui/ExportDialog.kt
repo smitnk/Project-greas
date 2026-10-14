@@ -103,7 +103,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     val exportOptions = VectorExportOptions(if (selectedLayersOnly) chosenLayers else null, clipToCanvas)
     val baseName = controller.document.projectName.ifBlank { "Project Grease" }
 
-    fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+    fun toast(text: String) { com.smitnk.projectgrease.CrashLog.event("EXPORT result: $text"); Toast.makeText(context, text, Toast.LENGTH_SHORT).show() }
 
     fun writeBytes(uri: Uri, bytes: ByteArray): Boolean = runCatching {
         context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } != null

@@ -159,7 +159,23 @@ internal class ProjectGreaseDrawingSurfaceView(
 
     fun getRendererHandle(): Long = rendererHandle
 
+    /** Activity log: each touch down / up (tool, mode, canvas point), how late Android delivered it
+     *  (the main thread was busy) and how long handling took; moves only when slow. */
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val late = android.os.SystemClock.uptimeMillis() - event.eventTime
+        val t0 = System.nanoTime()
+        val r = handleTouch(event)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        val a = event.actionMasked
+        if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_POINTER_DOWN || ms > 100 || late > 150) {
+            val c = canvasPoint(event.x, event.y)
+            com.smitnk.projectgrease.CrashLog.event("TOUCH ${MotionEvent.actionToString(a)} x${event.pointerCount} tool ${controller.tools.activeTool} " +
+                "mode ${controller.mode} canvas %.0f,%.0f late $late ms handled $ms ms".format(c.first, c.second))
+        }
+        return r
+    }
+
+    private fun handleTouch(event: MotionEvent): Boolean {
         if (rendererHandle == 0L) return true
 
         when (event.actionMasked) {

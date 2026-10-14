@@ -735,6 +735,7 @@ class EditorController {
     private var rendererHandle=0L
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
+        surfaceReady = handle != 0L
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
         native.attach(gpHandle)
         native.historyReset()
@@ -768,7 +769,7 @@ class EditorController {
      *  which destroys the surface and its native document; Android hands the picked file back
      *  before the new surface exists, so imports and exports wait for the restored document. */
     fun afterReattach(block: () -> Unit) {
-        if (rendererHandle != 0L && rendererReady) block()
+        if (rendererHandle != 0L && rendererReady && surfaceReady) block()
         else { com.smitnk.projectgrease.CrashLog.event("QUEUED until the drawing is back (surface not attached yet)"); whenAttached += block }
     }
     /** The document saved when the surface went away (app in background, surface recreated). */
@@ -790,7 +791,21 @@ class EditorController {
         setupLog += msg
         runCatching { android.util.Log.i("ProjectGrease", "setup: $msg") }
     }
+    /** The window surface is present (false while a picker or another app covers the editor). */
+    var surfaceReady = false
+        private set
+    fun rendererHandleOrZero(): Long = rendererHandle
+    /** The surface came back to the same renderer and document: draw, then run what waited. */
+    fun surfaceAttached() {
+        surfaceReady = true
+        com.smitnk.projectgrease.CrashLog.event("SURFACE back: same document, ${native.strokeCount()} strokes on frame ${animation.currentFrame}")
+        render()
+        val queued = whenAttached.toList(); whenAttached.clear()
+        queued.forEach { com.smitnk.projectgrease.CrashLog.event("ATTACH runs a queued action"); it() }
+    }
+    fun surfaceDetached() { animation.stop(); surfaceReady = false }
     fun detachRenderer(){
+        surfaceReady = false
         animation.stop()
         setupTrace("detach ready=$rendererReady")
         if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it; detachedFrame = animation.currentFrame }
@@ -862,15 +877,15 @@ class EditorController {
         val b = (argb and 0xFF) / 255f
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
-                ToolSession.sculptTool(sculpt.brush), sculptBrush.size * uiScale / pxPerUnit.coerceAtLeast(1e-3f),
+                ToolSession.sculptTool(sculpt.brush), minOf(sculptBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f),
                 sculptBrush.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
                 selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), vertexBrush.size * uiScale / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
+                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), minOf(vertexBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
                 curvePreset = paintCurvePreset)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
-                weightPaintBrush, weightBrush.size * uiScale / pxPerUnit.coerceAtLeast(1e-3f), weightBrush.strength, pxPerUnit,
+                weightPaintBrush, minOf(weightBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f), weightBrush.strength, pxPerUnit,
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue,
                 curvePreset = paintCurvePreset)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
@@ -921,7 +936,8 @@ class EditorController {
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
         val t0 = System.nanoTime()
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
-        noteIfSlow("tool $tool phase $phase ($count samples)", t0, t0)
+        if ((System.nanoTime() - t0) / 1_000_000 >= 120)
+            noteIfSlow("tool $tool phase $phase ($count samples) [${GPNative.nativeLastFrameInfo(rendererHandle)}]", t0, t0)
         if (phase != ToolSession.PHASE_MOVE)
             com.smitnk.projectgrease.CrashLog.event("SESSION tool $tool phase $phase -> result $result, mode $mode" +
                 (if (tool == ToolSession.TOOL_VERTEX_PAINT) ", target $vertexPaintTarget, mask $vertexSelectMask, selected ${native.selectedPointCount()}, colour ${Integer.toHexString(materials.colorArgb)}" else ""))
@@ -1393,7 +1409,7 @@ class EditorController {
             pendingLassoPoints.clear()
             if (lassoCut) {
                 // Cutter (gpencil_cutter): the points inside the lasso are cut out of their strokes
-                val sel = runSelectCommand(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, noose))
+                val sel = runSelectCommand(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_SEGMENT, noose)) // gpencil_cutter: the cut ends where lines cross
                 val cut = sel && native.selectedPointCount() > 0 && deleteSelectedPoints()
                 com.smitnk.projectgrease.CrashLog.event("CUT ${noose.size} noose points -> cut=$cut")
                 if (!cut) render()
@@ -2076,7 +2092,7 @@ class EditorController {
         ((argb ushr 24) and 255)/255f
     )
     fun render(){
-        if(rendererHandle!=0L){
+        if(rendererHandle!=0L && surfaceReady){
             val t0=System.nanoTime()
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)

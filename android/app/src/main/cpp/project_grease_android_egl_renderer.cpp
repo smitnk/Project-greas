@@ -236,8 +236,9 @@ bool attach_window(Renderer &renderer, ANativeWindow *window)
   glViewport(0, 0, renderer.width, renderer.height);
 
   // Connect only after Android's EGL/GLES context is current on this thread.
-  // The Blender GP backend does not create or own the Android EGL objects.
-  connect_blender_gp(renderer);
+  // The Blender GP backend does not create or own the Android EGL objects. A surface coming back
+  // keeps the document it had (detach_surface_keep_document).
+  if (!renderer.gp_connected) connect_blender_gp(renderer);
   return true;
 }
 
@@ -264,6 +265,27 @@ void detach_window(Renderer &renderer)
     renderer.window = nullptr;
   }
 
+  renderer.width = 0;
+  renderer.height = 0;
+}
+
+/* The surface went away (app in the background, a file picker on top): only the window surface is
+ * released. The GL context, the Blender GP document and the presenter's GL objects stay, so the
+ * drawing, its undo history and the shown frame survive; before, the whole document was destroyed
+ * here and rebuilt from a JSON snapshot (strokes on another frame looked lost, exports found no
+ * document, undo history was gone). */
+void detach_surface_keep_document(Renderer &renderer)
+{
+  if (renderer.display == EGL_NO_DISPLAY) return;
+  eglMakeCurrent(renderer.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  if (renderer.surface != EGL_NO_SURFACE) {
+    eglDestroySurface(renderer.display, renderer.surface);
+    renderer.surface = EGL_NO_SURFACE;
+  }
+  if (renderer.window) {
+    ANativeWindow_release(renderer.window);
+    renderer.window = nullptr;
+  }
   renderer.width = 0;
   renderer.height = 0;
 }
@@ -342,7 +364,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAttachSurface(
     return JNI_FALSE;
   }
 
-  detach_window(*renderer);
+  detach_surface_keep_document(*renderer);
 
   ANativeWindow *window = ANativeWindow_fromSurface(env, surface);
   if (!window) {
@@ -363,12 +385,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDetachSurface(
 {
   Renderer *renderer = from_handle(handle);
   if (renderer) {
-    detach_window(*renderer);
+    detach_surface_keep_document(*renderer);
   }
 }
 
 /* Renders the document (and the shape preview) and presents it. */
-static double g_last_swap_ms = 0.0, g_last_frame_ms = 0.0;
+static double g_last_swap_ms = 0.0, g_last_frame_ms = 0.0, g_last_tool_ms = 0.0, g_last_tool_render_ms = 0.0;
 static bool render_now(Renderer *renderer)
 {
   const auto t_frame = std::chrono::steady_clock::now();
@@ -949,6 +971,8 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeToolSamples(
   static double tool_ms = 0, render_ms = 0;
   static int batches = 0, renders = 0;
   tool_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+  g_last_tool_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+  g_last_tool_render_ms = rendered ? std::chrono::duration<double, std::milli>(clock::now() - t1).count() : 0.0;
   if (rendered) { render_ms += std::chrono::duration<double, std::milli>(clock::now() - t1).count(); renders++; }
   batches++;
   if (phase == 2 /* END */ || phase == 3 /* CANCEL */) {
@@ -1013,8 +1037,8 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLastFrameInfo(JNIEnv *env, jobject, jlong)
 {
   char buf[320];
-  std::snprintf(buf, sizeof buf, "native frame %.0f ms: %s, swap %.0f ms", g_last_frame_ms,
-                project_grease_android_present_last_frame(), g_last_swap_ms);
+  std::snprintf(buf, sizeof buf, "native frame %.0f ms: %s, swap %.0f ms; last tool call: Blender tool %.0f ms + redraw %.0f ms",
+                g_last_frame_ms, project_grease_android_present_last_frame(), g_last_swap_ms, g_last_tool_ms, g_last_tool_render_ms);
   return env->NewStringUTF(buf);
 }
 

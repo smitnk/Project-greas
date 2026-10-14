@@ -31,8 +31,15 @@ fun ProjectGreaseEglViewport(
             val view = ProjectGreaseDrawingSurfaceView(context, controller)
             view.holder.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) {
-                    val handle = GPNative.nativeCreateEglRenderer()
+                    // One renderer (GL context + Blender document) for the editor's lifetime: a surface
+                    // coming back (picker closed, app resumed) attaches to the same document.
+                    val existing = controller.rendererHandleOrZero()
+                    val handle = if (existing != 0L) existing else GPNative.nativeCreateEglRenderer()
                     view.setRendererHandle(handle)
+                    if (existing != 0L) {
+                        if (GPNative.nativeAttachSurface(handle, holder.surface)) controller.surfaceAttached()
+                        return
+                    }
                     if (handle != 0L && GPNative.nativeAttachSurface(handle, holder.surface)) {
                         controller.attachRenderer(handle)
                         Log.i(
@@ -59,18 +66,26 @@ fun ProjectGreaseEglViewport(
                 }
 
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    // only the window surface goes; the document stays (see detach_surface_keep_document)
                     val handle = view.getRendererHandle()
-                    controller.detachRenderer()
-                    if (handle != 0L) {
-                        GPNative.nativeDetachSurface(handle)
-                        GPNative.nativeDestroyEglRenderer(handle)
-                        view.setRendererHandle(0L)
-                    }
+                    controller.surfaceDetached()
+                    if (handle != 0L) GPNative.nativeDetachSurface(handle)
                 }
             })
             view
         }
     )
+    // The editor screen leaves (Home, another project): now the renderer and its document go.
+    androidx.compose.runtime.DisposableEffect(controller) {
+        onDispose {
+            val handle = controller.rendererHandleOrZero()
+            if (handle != 0L) {
+                controller.detachRenderer()
+                GPNative.nativeDetachSurface(handle)
+                GPNative.nativeDestroyEglRenderer(handle)
+            }
+        }
+    }
     TransformOverlay(controller, Modifier.matchParentSize())
   }
 }

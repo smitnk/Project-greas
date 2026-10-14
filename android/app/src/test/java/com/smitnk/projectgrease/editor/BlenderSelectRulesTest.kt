@@ -46,7 +46,7 @@ class BlenderSelectRulesTest {
         val triangle = listOf(0f to 0f, 1f to 0f, 0f to 1f)
         assertNull(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, triangle.take(2)))
         assertNull(ProjectGreaseSelect.lasso(0, ProjectGreaseSelect.MODE_POINT, triangle))
-        assertNull(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, 2, triangle))
+        assertNull(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, 9, triangle)) // segment mode (2) is valid: gpencil_generic_select_exec
         assertNull(
             ProjectGreaseSelect.lasso(
                 ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT,

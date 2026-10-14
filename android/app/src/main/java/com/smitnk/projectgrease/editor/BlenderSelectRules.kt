@@ -91,7 +91,7 @@ object ProjectGreaseSelect {
 
     /** args: op, mode, x0, y0, x1, y1, ... (needs at least three points). */
     fun lasso(op: Int, mode: Int, points: List<Pair<Float, Float>>): Command? {
-        if (!isValidOp(op) || !isValidMode(mode) || points.size < 3) return null
+        if (!isValidOp(op) || !isValidSelectMode(mode) || points.size < 3) return null
         val args = FloatArray(2 + points.size * 2)
         args[0] = op.toFloat()
         args[1] = mode.toFloat()

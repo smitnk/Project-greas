@@ -107,17 +107,20 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
 
     fun writeBytes(uri: Uri, bytes: ByteArray): Boolean = runCatching {
         context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } != null
-    }.getOrDefault(false)
+    }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("export write failed: $it") }.getOrDefault(false)
 
     val singleFile = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(if (pdf) "application/pdf" else "image/svg+xml")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
-        val ok = pages.isNotEmpty() && writeBytes(
-            uri,
-            if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
-        )
+        val ok = runCatching {
+            val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
+            if (pages.isEmpty()) com.smitnk.projectgrease.CrashLog.noteSlow("export: no pages for frames $frames")
+            pages.isNotEmpty() && writeBytes(
+                uri,
+                if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
+            )
+        }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("export failed: ${it.stackTraceToString().take(1500)}") }.getOrDefault(false)
         toast(if (ok) "Exported" else "Export failed")
         if (ok) onDismiss()
     }

@@ -901,14 +901,16 @@ class EditorController {
             return 0
         }
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
+        val t0 = System.nanoTime()
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
+        noteIfSlow("tool $tool phase $phase ($count samples)", t0, t0)
         if ((result and ToolSession.RESULT_CHANGED) != 0 && tool != ToolSession.TOOL_DRAW) {
             sessionGestureChanged = true
             document.markDirty()
         }
         if (phase == ToolSession.PHASE_END || phase == ToolSession.PHASE_CANCEL) {
             if ((result and ToolSession.RESULT_ENDED) != 0 || sessionGestureChanged) {
-                if (phase == ToolSession.PHASE_END) { history.markEdit(); document.markDirty() }
+                if (phase == ToolSession.PHASE_END) { val t1 = System.nanoTime(); history.markEdit(); document.markDirty(); noteIfSlow("undo step", t1, t1) }
             }
             sessionTool = -1
             sessionGestureChanged = false
@@ -1835,7 +1837,9 @@ class EditorController {
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
         GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, fillPrecision, fillCollide)
         // the new slot (if one was made) is part of this fill's undo step
+        val t0 = System.nanoTime()
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), slot, materials.thickness)
+        noteIfSlow("fill ok=$ok", t0, t0)
         if (ok) { history.markEdit(); document.markDirty() }
         return ok
     }
@@ -1994,6 +1998,7 @@ class EditorController {
     )
     fun render(){
         if(rendererHandle!=0L){
+            val t0=System.nanoTime()
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
             GPNative.nativeSetViewRotation(rendererHandle,view.rotation)
@@ -2008,9 +2013,18 @@ class EditorController {
             GPNative.nativeSetOverlayUnselected(rendererHandle, mode == GreaseMode.EDIT)
             GPNative.nativeSetGuide(rendererHandle, if (tools.activeTool == GreaseTool.DRAW) view.guideType else -1,
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
+            val t1=System.nanoTime()
             GPNative.nativeRenderEgl(rendererHandle)
+            noteIfSlow("render", t0, t1)
         }
         if (transformSettings.proportional || transformSettings.pivot == ProjectGreaseSelect.PIVOT_CURSOR) overlayTick++
+    }
+    /** Report entry for a step over 120 ms (setup = Kotlin side before the native call), with the frame's size. */
+    fun noteIfSlow(what:String, t0:Long, t1:Long){
+        val total=(System.nanoTime()-t0)/1_000_000
+        if(total<120) return
+        com.smitnk.projectgrease.CrashLog.noteSlow("$what ${total} ms (setup ${(t1-t0)/1_000_000} ms) engine=$useBlenderRenderer " +
+            "strokes=${native.strokeCount()} points=${native.pointCount()} materials=${native.materialCount()} tool=${tools.activeTool} mode=$mode")
     }
     /** Bumped on renders while the proportional circle or 2D cursor overlay is visible. */
     var overlayTick by androidx.compose.runtime.mutableIntStateOf(0)

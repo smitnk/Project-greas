@@ -113,7 +113,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         ActivityResultContracts.CreateDocument(if (pdf) "application/pdf" else "image/svg+xml")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        controller.runWhenAttached {
+        controller.afterReattach {
             val ok = runCatching {
                 val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
                 if (pages.isEmpty()) com.smitnk.projectgrease.CrashLog.noteSlow("export: no pages for frames $frames")
@@ -130,7 +130,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val pngFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        controller.runWhenAttached {
+        controller.afterReattach {
             val w = controller.document.canvasWidth
             val h = controller.document.canvasHeight
             val pixels = controller.exportCanvasPixels(transparent)
@@ -142,7 +142,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val gifFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/gif")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        controller.runWhenAttached {
+        controller.afterReattach {
             val n = writeGif(context, uri, controller, transparent, dither)
             toast(if (n > 0) "Exported GIF, $n frames" else "GIF export failed")
             if (n > 0) onDismiss()
@@ -150,7 +150,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val mp4File = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        controller.runWhenAttached {
+        controller.afterReattach {
             val n = runCatching {
                 context.contentResolver.openFileDescriptor(uri, "rw")?.use { VideoExport.exportToDescriptor(controller, it.fileDescriptor) } ?: 0
             }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("mp4 export failed: ${it.stackTraceToString().take(1500)}") }.getOrDefault(0)
@@ -160,7 +160,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val sequenceFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
-        controller.runWhenAttached {
+        controller.afterReattach {
             val n = writePngSequence(context, tree, controller, transparent)
             toast(if (n > 0) "Exported $n PNG files" else "PNG sequence export failed")
             if (n > 0) onDismiss()
@@ -168,7 +168,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
     }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
-        controller.runWhenAttached {
+        controller.afterReattach {
             val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
             val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
             var written = 0

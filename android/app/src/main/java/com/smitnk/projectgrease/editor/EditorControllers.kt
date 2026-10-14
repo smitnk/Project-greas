@@ -762,7 +762,7 @@ class EditorController {
     /** Runs [block] once the drawing is attached. A file picker sends the app to the background,
      *  which destroys the surface and its native document; Android hands the picked file back
      *  before the new surface exists, so imports and exports wait for the restored document. */
-    fun runWhenAttached(block: () -> Unit) {
+    fun afterReattach(block: () -> Unit) {
         if (rendererHandle != 0L && rendererReady) block()
         else { com.smitnk.projectgrease.CrashLog.event("QUEUED until the drawing is back (surface not attached yet)"); whenAttached += block }
     }

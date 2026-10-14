@@ -116,7 +116,7 @@ internal fun rememberRotoscopePickers(controller: EditorController, context: Con
         com.smitnk.projectgrease.CrashLog.event("IMPORT picked $uri type ${uri?.let { context.contentResolver.getType(it) }}")
         if (uri == null) return@rememberLauncherForActivityResult
         keep(uri)
-        controller.runWhenAttached { importMedia(controller, context, uri, ::changed) }
+        controller.afterReattach { importMedia(controller, context, uri, ::changed) }
     }
     val sequence = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         com.smitnk.projectgrease.CrashLog.event("IMPORT sequence picked ${uris.size} files")
@@ -124,7 +124,7 @@ internal fun rememberRotoscopePickers(controller: EditorController, context: Con
             uris.forEach(::keep)
             // sorted by name, as Blender reads a numbered sequence
             val sorted = uris.sortedBy { it.lastPathSegment ?: it.toString() }.map { it.toString() }
-            controller.runWhenAttached { r.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed() }
+            controller.afterReattach { r.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed() }
         }
     }
     return remember(media, sequence) { RotoscopePickers(media, sequence) }

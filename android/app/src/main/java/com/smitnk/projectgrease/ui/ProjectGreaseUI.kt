@@ -368,6 +368,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     // each layer's Advanced panel, the frame strip, and one menu for everything else.
     StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},viewport)
     if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
+    val rotoscopePickers=rememberRotoscopePickers(controller,context,::redraw)
     when(sheet){
         Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject)
         Sheet.TOOLS->ToolsSheet(controller,{sheet=Sheet.NONE},::redraw)
@@ -377,7 +378,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.ADVANCED->AdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MORE->MoreSheet(controller,{sheet=Sheet.NONE},onSettings,::redraw,{sheet=Sheet.REFERENCE})
         Sheet.REFERENCE->ReferenceSheet(controller,context,{sheet=Sheet.NONE},::redraw)
-        Sheet.ROTOSCOPE->RotoscopeSheet(controller,context,{sheet=Sheet.NONE},::redraw)
+        Sheet.ROTOSCOPE->RotoscopeSheet(controller,context,{sheet=Sheet.NONE},::redraw,rotoscopePickers)
         Sheet.LAYER_ADVANCED->LayerAdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MENU->StudioMenu(controller,{sheet=it},{persistProject();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();sheet=Sheet.NONE},onSettings,{sheet=Sheet.NONE})
         Sheet.DRAW_SETTINGS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Properties(controller,::redraw)}

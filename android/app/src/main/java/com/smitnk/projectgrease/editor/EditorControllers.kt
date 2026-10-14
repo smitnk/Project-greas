@@ -564,7 +564,7 @@ class ViewController {
      * times the zoom, centered plus the pan, so zoom 1 without pan is the whole canvas in view with
      * a 4% margin on each side of the limiting axis.
      */
-    fun fitCanvas(){zoom=FIT_ZOOM;panX=0f;panY=0f}
+    fun fitCanvas(){zoom=FIT_ZOOM;panX=0f;panY=0f;rotation=0f} // "Fit canvas" also straightens a turned view
     companion object {
         const val FIT_ZOOM = 1f
         const val FIT_MARGIN = 0.04f
@@ -754,7 +754,17 @@ class EditorController {
             setupTrace("attach pending=${pending != null} snapshot=${snapshot != null} layers=${native.layerCount()}")
             if (pending != null) pending() else if (snapshot != null) loadDocumentJson(snapshot)
             native.activeLayer().takeIf { it >= 0 }?.let { selectedLayer = it }
+            val queued = whenAttached.toList(); whenAttached.clear()
+            queued.forEach { com.smitnk.projectgrease.CrashLog.event("ATTACH runs a queued action"); it() }
         }
+    }
+    private val whenAttached = ArrayList<() -> Unit>()
+    /** Runs [block] once the drawing is attached. A file picker sends the app to the background,
+     *  which destroys the surface and its native document; Android hands the picked file back
+     *  before the new surface exists, so imports and exports wait for the restored document. */
+    fun runWhenAttached(block: () -> Unit) {
+        if (rendererHandle != 0L && rendererReady) block()
+        else { com.smitnk.projectgrease.CrashLog.event("QUEUED until the drawing is back (surface not attached yet)"); whenAttached += block }
     }
     /** The document saved when the surface went away (app in background, surface recreated). */
     private var detachedSnapshot: String? = null

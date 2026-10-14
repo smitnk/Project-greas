@@ -99,25 +99,43 @@ class RotoscopeLoader(private val context: Context) {
     fun clearCache() { synchronized(cache) { cache.clear() } }
 }
 
-/** Rotoscope reference: import, opacity, visibility and the timeline mapping (start, offset, cyclic). */
-@OptIn(ExperimentalMaterial3Api::class)
+internal class RotoscopePickers(
+    val media: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    val sequence: androidx.activity.result.ActivityResultLauncher<Array<String>>)
+
+/** The photo / video pickers, registered on the editor screen (always composed). Registered inside
+ *  the sheet, the picked file was lost whenever the sheet was gone or the app was restarted in the
+ *  background before Android handed the file back; the result also waits for the restored drawing. */
 @Composable
-internal fun RotoscopeSheet(controller: EditorController, context: Context, onDismiss: () -> Unit, redraw: () -> Unit) {
+internal fun rememberRotoscopePickers(controller: EditorController, context: Context, redraw: () -> Unit): RotoscopePickers {
     val r = controller.rotoscope
-    var tick by remember { mutableIntStateOf(0) }
-    @Suppress("UNUSED_VARIABLE") val observed = tick
-    fun changed() { controller.rotoscopeChanged(); tick++; redraw() }
+    fun changed() { controller.rotoscopeChanged(); redraw() }
     fun keep(uri: Uri) = runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-    var more by remember { mutableStateOf(false) }
     // one picker for photos and videos; the file's type decides which it is
     val media = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         com.smitnk.projectgrease.CrashLog.event("IMPORT picked $uri type ${uri?.let { context.contentResolver.getType(it) }}")
         if (uri == null) return@rememberLauncherForActivityResult
         keep(uri)
+        controller.runWhenAttached { importMedia(controller, context, uri, ::changed) }
+    }
+    val sequence = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        com.smitnk.projectgrease.CrashLog.event("IMPORT sequence picked ${uris.size} files")
+        if (uris.isNotEmpty()) {
+            uris.forEach(::keep)
+            // sorted by name, as Blender reads a numbered sequence
+            val sorted = uris.sortedBy { it.lastPathSegment ?: it.toString() }.map { it.toString() }
+            controller.runWhenAttached { r.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed() }
+        }
+    }
+    return remember(media, sequence) { RotoscopePickers(media, sequence) }
+}
+
+private fun importMedia(controller: EditorController, context: Context, uri: Uri, changed: () -> Unit) {
+        val r = controller.rotoscope
         val loader = controller.rotoscopeLoader
         if (context.contentResolver.getType(uri)?.startsWith("video") == true) {
             val n = loader?.movieFrames(uri) ?: 0
-            if (n <= 0) { toast(context, "Couldn't read this video on this phone"); return@rememberLauncherForActivityResult }
+            if (n <= 0) { toast(context, "Couldn't read this video on this phone"); return }
             r.set(Rotoscope.Kind.MOVIE, listOf(uri.toString()), n); changed()
             loader?.decodeAsync(r, 1) { if (loader.cached(r, 1) == null) toast(context, "Couldn't decode this video's frames") else changed() }
         } else {
@@ -125,15 +143,19 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
             if (loader?.frame(r, 1) == null) { r.clear(); toast(context, "Couldn't open this photo (format not supported)") }
             changed()
         }
-    }
-    val sequence = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) {
-            uris.forEach(::keep)
-            // sorted by name, as Blender reads a numbered sequence
-            val sorted = uris.sortedBy { it.lastPathSegment ?: it.toString() }.map { it.toString() }
-            r.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed()
-        }
-    }
+}
+
+/** Rotoscope reference: import, opacity, visibility and the timeline mapping (start, offset, cyclic). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RotoscopeSheet(controller: EditorController, context: Context, onDismiss: () -> Unit, redraw: () -> Unit, pickers: RotoscopePickers) {
+    val r = controller.rotoscope
+    var tick by remember { mutableIntStateOf(0) }
+    @Suppress("UNUSED_VARIABLE") val observed = tick
+    fun changed() { controller.rotoscopeChanged(); tick++; redraw() }
+    var more by remember { mutableStateOf(false) }
+    val media = pickers.media
+    val sequence = pickers.sequence
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text("Photo / video", style = MaterialTheme.typography.headlineSmall)

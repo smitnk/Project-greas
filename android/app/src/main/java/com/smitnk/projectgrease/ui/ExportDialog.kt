@@ -113,63 +113,75 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         ActivityResultContracts.CreateDocument(if (pdf) "application/pdf" else "image/svg+xml")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val ok = runCatching {
-            val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
-            if (pages.isEmpty()) com.smitnk.projectgrease.CrashLog.noteSlow("export: no pages for frames $frames")
-            val bytes = if (pages.isEmpty()) ByteArray(0)
-                else if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
-            val written = pages.isNotEmpty() && writeBytes(uri, bytes)
-            com.smitnk.projectgrease.CrashLog.noteSlow("export ${if (pdf) "pdf" else "svg"}: ${pages.size} pages, " +
-                "${pages.sumOf { p -> p.layers.size }} layers, ${bytes.size} bytes, written=$written to $uri")
-            written
-        }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("export failed: ${it.stackTraceToString().take(1500)}") }.getOrDefault(false)
-        toast(if (ok) "Exported" else "Export failed")
-        if (ok) onDismiss()
+        controller.runWhenAttached {
+            val ok = runCatching {
+                val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
+                if (pages.isEmpty()) com.smitnk.projectgrease.CrashLog.noteSlow("export: no pages for frames $frames")
+                val bytes = if (pages.isEmpty()) ByteArray(0)
+                    else if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
+                val written = pages.isNotEmpty() && writeBytes(uri, bytes)
+                com.smitnk.projectgrease.CrashLog.noteSlow("export ${if (pdf) "pdf" else "svg"}: ${pages.size} pages, " +
+                    "${pages.sumOf { p -> p.layers.size }} layers, ${bytes.size} bytes, written=$written to $uri")
+                written
+            }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("export failed: ${it.stackTraceToString().take(1500)}") }.getOrDefault(false)
+            toast(if (ok) "Exported" else "Export failed")
+            if (ok) onDismiss()
+        }
     }
     val pngFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val w = controller.document.canvasWidth
-        val h = controller.document.canvasHeight
-        val pixels = controller.exportCanvasPixels(transparent)
-        val ok = pixels != null && writePng(context, uri, pixels, w, h)
-        com.smitnk.projectgrease.CrashLog.noteSlow("export png ${w}x$h: pixels=${pixels != null} ok=$ok")
-        toast(if (ok) "Exported PNG ${w}×$h" else "PNG export failed")
-        if (ok) onDismiss()
+        controller.runWhenAttached {
+            val w = controller.document.canvasWidth
+            val h = controller.document.canvasHeight
+            val pixels = controller.exportCanvasPixels(transparent)
+            val ok = pixels != null && writePng(context, uri, pixels, w, h)
+            com.smitnk.projectgrease.CrashLog.noteSlow("export png ${w}x$h: pixels=${pixels != null} ok=$ok")
+            toast(if (ok) "Exported PNG ${w}×$h" else "PNG export failed")
+            if (ok) onDismiss()
+        }
     }
     val gifFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/gif")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val n = writeGif(context, uri, controller, transparent, dither)
-        toast(if (n > 0) "Exported GIF, $n frames" else "GIF export failed")
-        if (n > 0) onDismiss()
+        controller.runWhenAttached {
+            val n = writeGif(context, uri, controller, transparent, dither)
+            toast(if (n > 0) "Exported GIF, $n frames" else "GIF export failed")
+            if (n > 0) onDismiss()
+        }
     }
     val mp4File = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val n = runCatching {
-            context.contentResolver.openFileDescriptor(uri, "rw")?.use { VideoExport.exportToDescriptor(controller, it.fileDescriptor) } ?: 0
-        }.getOrDefault(0)
-        toast(if (n > 0) "Exported MP4, $n frames" else "MP4 export failed")
-        if (n > 0) onDismiss()
+        controller.runWhenAttached {
+            val n = runCatching {
+                context.contentResolver.openFileDescriptor(uri, "rw")?.use { VideoExport.exportToDescriptor(controller, it.fileDescriptor) } ?: 0
+            }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("mp4 export failed: ${it.stackTraceToString().take(1500)}") }.getOrDefault(0)
+            toast(if (n > 0) "Exported MP4, $n frames" else "MP4 export failed")
+            if (n > 0) onDismiss()
+        }
     }
     val sequenceFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
-        val n = writePngSequence(context, tree, controller, transparent)
-        toast(if (n > 0) "Exported $n PNG files" else "PNG sequence export failed")
-        if (n > 0) onDismiss()
+        controller.runWhenAttached {
+            val n = writePngSequence(context, tree, controller, transparent)
+            toast(if (n > 0) "Exported $n PNG files" else "PNG sequence export failed")
+            if (n > 0) onDismiss()
+        }
     }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
-        val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
-        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        var written = 0
-        for (page in pages) {
-            val name = "%s_%04d.svg".format(baseName.replace(Regex("[^A-Za-z0-9._-]"), "_"), page.frame)
-            val target = runCatching {
-                DocumentsContract.createDocument(context.contentResolver, parent, "image/svg+xml", name)
-            }.getOrNull() ?: continue
-            if (writeBytes(target, VectorExport.toSvg(page).toByteArray(Charsets.UTF_8))) written++
+        controller.runWhenAttached {
+            val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
+            val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            var written = 0
+            for (page in pages) {
+                val name = "%s_%04d.svg".format(baseName.replace(Regex("[^A-Za-z0-9._-]"), "_"), page.frame)
+                val target = runCatching {
+                    DocumentsContract.createDocument(context.contentResolver, parent, "image/svg+xml", name)
+                }.getOrNull() ?: continue
+                if (writeBytes(target, VectorExport.toSvg(page).toByteArray(Charsets.UTF_8))) written++
+            }
+            toast(if (written == pages.size && pages.isNotEmpty()) "Exported $written files" else "Exported $written of ${pages.size} files")
+            if (written > 0) onDismiss()
         }
-        toast(if (written == pages.size && pages.isNotEmpty()) "Exported $written files" else "Exported $written of ${pages.size} files")
-        if (written > 0) onDismiss()
     }
 
     AlertDialog(

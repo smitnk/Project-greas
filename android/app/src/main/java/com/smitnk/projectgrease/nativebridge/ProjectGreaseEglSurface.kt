@@ -358,7 +358,10 @@ internal class ProjectGreaseDrawingSurfaceView(
                         abs(turn) * pinchStartDistance * 0.5f)
                     if (event.pointerCount == 2 && multiMoved > TAP_SLOP_PX && pinchStartDistance > 0f && distance > 0f) {
                         controller.view.setZoom(pinchStartZoom * (distance / pinchStartDistance))
-                        controller.view.setRotation(pinchStartRot + turn)
+                        controller.view.setRotation((pinchStartRot + turn).let { r ->
+                            // a zoom / pan pinch always turns a little: within 6 degrees of upright stays upright
+                            val k = Math.round(r / (Math.PI / 2)).toFloat() * (Math.PI / 2).toFloat()
+                            if (kotlin.math.abs(r - k) < 0.105f) k else r })
                         // the pan is applied before the view rotation: bring the finger delta into that frame
                         val (px, py) = com.smitnk.projectgrease.editor.CanvasMapping.rotate(cx - pinchStartCx, cy - pinchStartCy, 0f, 0f, -controller.view.rotation)
                         controller.view.setPan(pinchStartPanX + px, pinchStartPanY + py)

@@ -1237,6 +1237,15 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     ModalBottomSheet(onDismissRequest=onDismiss){
       Column(Modifier.verticalScroll(rememberScrollState())){
         Text("Advanced drawing",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
+        var tickA by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenA=tickA
+        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
+            Text("Draw strokes on back (new lines go under the others)",Modifier.weight(1f))
+            Switch(checked=controller.drawOnBack,onCheckedChange={controller.drawOnBack=it;tickA++})
+        }
+        Text("Random colour per stroke (Vertex Color mode): hue ${(controller.randomHue*100).toInt()}%, saturation ${(controller.randomSaturation*100).toInt()}%, value ${(controller.randomValue*100).toInt()}%",Modifier.padding(horizontal=20.dp))
+        Slider(controller.randomHue,{controller.randomHue=it;tickA++},modifier=Modifier.padding(horizontal=20.dp))
+        Slider(controller.randomSaturation,{controller.randomSaturation=it;tickA++},modifier=Modifier.padding(horizontal=20.dp))
+        Slider(controller.randomValue,{controller.randomValue=it;tickA++},modifier=Modifier.padding(horizontal=20.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically){
             Text("Stabilization",Modifier.weight(1f))
             Switch(checked=controller.stabilizerEnabled,onCheckedChange={controller.setStabilizer(it);redraw()})
@@ -1475,6 +1484,12 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
         }
 
+        // Lasso Cut (Blender's Cutter tool): the lasso cuts away the line parts inside it
+        if(tool==GreaseTool.LASSO&&!controller.warpActive){
+            var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
+            FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;cutTick++},{Text(if(controller.lassoCut)"Cut: on (lasso erases inside)" else "Cut")},
+                Modifier.align(Alignment.TopStart).padding(top=52.dp,start=8.dp).testTag("lassoCut"))
+        }
         // after a lasso selection: its transforms right away (no second tap on the tool)
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
             Row(Modifier.align(Alignment.TopCenter).padding(top=52.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){

@@ -917,6 +917,7 @@ class EditorController {
         } else if (tool != sessionTool) {
             return 0
         }
+        if (phase == ToolSession.PHASE_BEGIN && tool == ToolSession.TOOL_DRAW) jitterStrokeColor()
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
         val t0 = System.nanoTime()
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
@@ -930,6 +931,14 @@ class EditorController {
         }
         if (phase == ToolSession.PHASE_END || phase == ToolSession.PHASE_CANCEL) {
             if ((result and ToolSession.RESULT_ENDED) != 0 || sessionGestureChanged) {
+                if (phase == ToolSession.PHASE_END && tool == ToolSession.TOOL_DRAW && drawOnBack && (result and ToolSession.RESULT_ENDED) != 0) {
+                    // the new stroke is the frame's last: select only it, send it to the back
+                    val last = native.strokeCount() - 1
+                    if (last > 0 && native.selectStroke(last)) {
+                        runSelectCommand(ProjectGreaseSelect.arrange(ProjectGreaseSelect.ARRANGE_BOTTOM))
+                        runSelectCommand(ProjectGreaseSelect.all(ProjectGreaseSelect.ACTION_DESELECT))
+                    }
+                }
                 if (phase == ToolSession.PHASE_END) { val t1 = System.nanoTime(); history.markEdit(); document.markDirty(); noteIfSlow("undo step", t1, t1) }
             }
             sessionTool = -1
@@ -1077,9 +1086,21 @@ class EditorController {
     /** Paint mode for new strokes: 0 Stroke, 1 Fill, 2 Both (GPPAINT_MODE_STROKE / FILL / BOTH). */
     var drawVertexTarget = 2; private set
     fun updateDrawVertexTarget(m:Int) { drawVertexTarget = m.coerceIn(0,2); pushBrushVertexColor() }
-    private fun pushBrushVertexColor() {
+    /** Random Hue / Saturation / Value per stroke (brush random settings): the brush vertex colour
+     *  of this stroke only, the picked colour stays. */
+    private fun jitterStrokeColor() {
+        if (!vertexColorMode) return
+        if (randomHue <= 0f && randomSaturation <= 0f && randomValue <= 0f) { pushBrushVertexColor(); return }
+        val hsv = FloatArray(3); android.graphics.Color.colorToHSV(materials.colorArgb, hsv)
+        fun r() = kotlin.random.Random.nextFloat() * 2f - 1f
+        hsv[0] = ((hsv[0] + r() * randomHue * 180f) % 360f + 360f) % 360f
+        hsv[1] = (hsv[1] + r() * randomSaturation).coerceIn(0f, 1f)
+        hsv[2] = (hsv[2] + r() * randomValue).coerceIn(0f, 1f)
+        pushBrushVertexColor(android.graphics.Color.HSVToColor(hsv))
+    }
+    private fun pushBrushVertexColor(argb: Int = materials.colorArgb) {
         if (native.handle == 0L) return
-        val c = colorToFloats(materials.colorArgb)
+        val c = colorToFloats(argb)
         GPNative.nativeSetBrushVertexColor(native.handle, vertexColorMode, c[0], c[1], c[2], vertexFactor, drawVertexTarget)
     }
     /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
@@ -1367,6 +1388,14 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
+            if (lassoCut) {
+                // Cutter (gpencil_cutter): the points inside the lasso are cut out of their strokes
+                val sel = runSelectCommand(ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, noose))
+                val cut = sel && native.selectedPointCount() > 0 && deleteSelectedPoints()
+                com.smitnk.projectgrease.CrashLog.event("CUT ${noose.size} noose points -> cut=$cut")
+                if (!cut) render()
+                return
+            }
             val ok = runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), noose))
             com.smitnk.projectgrease.CrashLog.event("LASSO ${noose.size} noose points, op $selectOp, select mode $activeSelectMode -> ok=$ok, selected ${native.selectedPointCount()} of ${native.pointCount()} points")
             return
@@ -2660,6 +2689,12 @@ class EditorController {
     // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----
     var vertexPaintBrush = ProjectGreaseSelect.VPAINT_DRAW
         private set
+    /** Lasso Cut mode (Blender's Cutter tool): the lasso cuts the points inside it away. */
+    var lassoCut = false
+    /** Draw on back (GP_TOOL_FLAG_PAINT_ONBACK): new strokes go under the frame's other strokes. */
+    var drawOnBack = false
+    /** Brush random Hue / Saturation / Value per stroke (Vertex Color mode), 0..1 each. */
+    var randomHue = 0f; var randomSaturation = 0f; var randomValue = 0f
     var vertexPaintTarget = ProjectGreaseSelect.PAINT_BOTH // brush.cc: gpencil_settings->vertex_mode = GPPAINT_MODE_BOTH
         private set
     fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_TINT) vertexPaintBrush = brush }

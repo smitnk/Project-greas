@@ -319,6 +319,18 @@ internal class ProjectGreaseDrawingSurfaceView(
                     pinchStartPropSize = controller.transformSettings.size
                     return true
                 }
+                // Reported (activity log): on this phone a second touch arrived 20-40 ms after almost every
+                // stroke start, at the drawing finger's own spot, and cancelled the stroke as a pinch. A
+                // real second finger cannot land that close: ignore it and keep drawing.
+                if (event.pointerCount >= 2 && !pinchOpen && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    val a = event.findPointerIndex(activePointerId)
+                    val n = event.actionIndex
+                    if (a >= 0 && a != n && hypot(event.getX(n) - event.getX(a), event.getY(n) - event.getY(a)) <
+                        40f * resources.displayMetrics.density) {
+                        com.smitnk.projectgrease.CrashLog.event("TOUCH ignored a second touch at the drawing finger's spot")
+                        return true
+                    }
+                }
                 if (event.pointerCount >= 2) {
                     endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
                     if (strokeOpen) {

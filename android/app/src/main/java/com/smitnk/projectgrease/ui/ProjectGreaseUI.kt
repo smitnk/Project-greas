@@ -1488,7 +1488,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         if(tool==GreaseTool.LASSO&&!controller.warpActive){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;cutTick++},{Text(if(controller.lassoCut)"Cut: on (lasso erases inside)" else "Cut")},
-                Modifier.align(Alignment.TopStart).padding(top=52.dp,start=8.dp).testTag("lassoCut"))
+                Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp).testTag("lassoCut"))
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
@@ -1796,6 +1796,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 modifier=Modifier.testTag("vertexMixFactor"))
         }
         if(controller.mode==GreaseMode.VERTEX_PAINT){
+            // brushing tints the fill very slowly (Blender: strength / 1000 per sample); this sets it at once
+            Button(onClick={controller.setVertexColorAll();redraw()},Modifier.testTag("vertexSetColor")){Text("Set Color: paint the whole frame now")}
             FlowRow(itemVerticalAlignment=Alignment.CenterVertically){
                 Text("Selection mask",fontWeight=FontWeight.Bold,modifier=Modifier.padding(end=6.dp))
                 listOf(0 to "Off",com.smitnk.projectgrease.editor.ToolSession.SELECT_MASK_POINT to "Points",

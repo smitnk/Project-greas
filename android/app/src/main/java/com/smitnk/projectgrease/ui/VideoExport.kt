@@ -71,7 +71,17 @@ object VideoExport {
                 planes[0].buffer.duplicate().get(y); planes[1].buffer.duplicate().get(u); planes[2].buffer.duplicate().get(v)
                 VideoFrames.argbToYuv420(argb, srcW, w, h, y, planes[0].rowStride, planes[0].pixelStride,
                     u, v, planes[1].rowStride, planes[1].pixelStride)
-                planes[0].buffer.duplicate().put(y); planes[1].buffer.duplicate().put(u); planes[2].buffer.duplicate().put(v)
+                planes[0].buffer.duplicate().put(y)
+                // U and V share one interleaved buffer on many encoders (pixel stride 2): writing both
+                // arrays back whole put the stale copy of one over the other (blue lost: white came out
+                // yellow, sky blue green). Write only each plane's own samples.
+                val ub = planes[1].buffer; val vb = planes[2].buffer
+                val crs = planes[1].rowStride; val cps = planes[1].pixelStride
+                val vrs = planes[2].rowStride; val vps = planes[2].pixelStride
+                for (row in 0 until h / 2) for (col in 0 until w / 2) {
+                    val ui = row * crs + col * cps; val vi = row * vrs + col * vps
+                    if (ui < ub.limit()) ub.put(ui, u[ui]); if (vi < vb.limit()) vb.put(vi, v[vi])
+                }
                 codec.queueInputBuffer(index, 0, w * h * 3 / 2, VideoFrames.presentationTimeUs(frames, fps), 0)
                 frames++
                 drain(false)

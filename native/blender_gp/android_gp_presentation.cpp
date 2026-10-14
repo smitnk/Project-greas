@@ -1068,8 +1068,12 @@ void draw_reference(int w,int h){
 bool engine_wanted(const bGPdata*gpd){
   if(!g_engine_enabled||g_engine_failed||g_export_mode||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
   if(!engine_context_ok())return false;
-  // Onion skin, view rotation and the shader effects are drawn by the engine.
-  (void)gpd;
+  // The engine draws a copy holding only the shown frame of each layer, so onion ghosts (other
+  // keyframes) were lost (reported: onion skin stopped working): the presenter draws them.
+  if(gpd&&(gpd->flag&GP_DATA_SHOW_ONIONSKINS)){
+    for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next)
+      if(!(l->flag&GP_LAYER_HIDE)&&(l->onion_flag&GP_LAYER_ONIONSKIN)&&BLI_listbase_count_at_most(&l->frames,2)>1)return false;
+  }
   return true;
 }
 

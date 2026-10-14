@@ -862,15 +862,15 @@ class EditorController {
         val b = (argb and 0xFF) / 255f
         return when (tool) {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
-                ToolSession.sculptTool(sculpt.brush), sculptBrush.size / pxPerUnit.coerceAtLeast(1e-3f),
+                ToolSession.sculptTool(sculpt.brush), sculptBrush.size * uiScale / pxPerUnit.coerceAtLeast(1e-3f),
                 sculptBrush.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
                 selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
-                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), vertexBrush.size / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
+                ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), vertexBrush.size * uiScale / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
                 curvePreset = paintCurvePreset)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
-                weightPaintBrush, weightBrush.size / pxPerUnit.coerceAtLeast(1e-3f), weightBrush.strength, pxPerUnit,
+                weightPaintBrush, weightBrush.size * uiScale / pxPerUnit.coerceAtLeast(1e-3f), weightBrush.strength, pxPerUnit,
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue,
                 curvePreset = paintCurvePreset)
             ToolSession.TOOL_DRAW -> ToolSession.DrawSettings(
@@ -1130,6 +1130,9 @@ class EditorController {
     }
     /** Finger hit radius in canvas units: ~40 dp on screen (set by the canvas view on each touch). */
     var touchRadiusPx = 110f
+    /** Blender's U.pixelsize on this screen (display density): brush sizes are UI pixels, so a 25 px
+     *  brush is ~2 mm on a phone without it (vertex paint looked like it did nothing). */
+    var uiScale = 1f
     var screenPxPerUnit = 0f
     private fun curveHitRadius(): Float =
         if (screenPxPerUnit > 0f) touchRadiusPx / screenPxPerUnit else 32f / view.zoom.coerceAtLeast(0.1f)
@@ -1704,6 +1707,8 @@ class EditorController {
         native.selectFrameOrHold(original)
         animation.setFrame(original)
         render()
+        com.smitnk.projectgrease.CrashLog.event("EXPORT frames done ok=$ok: back on frame $original, ${native.strokeCount()} strokes, ${native.layerCount()} layers, " +
+            GPNative.nativeLastFrameInfo(rendererHandle))
         return ok
     }
     private fun over(fg:Int, bg:Int):Int {
@@ -2594,6 +2599,16 @@ class EditorController {
         runSelectCommand(ProjectGreaseSelect.colorModifier(mode, hue, saturation, value))
     fun arrangeSelection(direction:Int) = runSelectCommand(ProjectGreaseSelect.arrange(direction))
     fun assignActiveMaterialToSelection() = runSelectCommand(ProjectGreaseSelect.setMaterial(materials.activeMaterial))
+    /** Set Color (vertex_color_set): the brush colour on every stroke and fill of the frame at full
+     *  strength (Replace brush over the whole canvas), for the target Stroke / Fill / Both. */
+    fun setVertexColorAll():Boolean {
+        val c = colorToFloats(materials.colorArgb)
+        val w = document.canvasWidth.toFloat(); val h = document.canvasHeight.toFloat()
+        val ok = runSelectCommand(ProjectGreaseSelect.vertexPaint(ProjectGreaseSelect.VPAINT_REPLACE, w / 2f, h / 2f,
+            w + h, 1f, c[0], c[1], c[2], vertexPaintTarget))
+        com.smitnk.projectgrease.CrashLog.event("SET COLOR whole frame target $vertexPaintTarget -> $ok")
+        return ok
+    }
     fun resetSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = runSelectCommand(ProjectGreaseSelect.resetVertexColor(mode))
     fun flipSelection() = runSelectCommand(ProjectGreaseSelect.flip())
     fun setSelectionCyclic(type:Int) = runSelectCommand(ProjectGreaseSelect.cyclic(type))

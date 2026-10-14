@@ -846,14 +846,18 @@ void draw_selection_overlay(const bGPDframe*frame,int w,int h){
   if(!frame)return;
   const float px=1.0f/std::max(g_map_scale,1e-6f);
   std::vector<Vertex> sel,unsel;
-  std::vector<PGOutlinePoint> one(1);
+  // An octagon per point (6 triangles): the round outline per point cost ~1 ms each on a Mali
+  // phone, 1.8 s a frame in Edit mode at 1800 points.
+  static const float ox[8]={1.f,.7071f,0.f,-.7071f,-1.f,-.7071f,0.f,.7071f},oy[8]={0.f,.7071f,1.f,.7071f,0.f,-.7071f,-1.f,-.7071f};
   for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
     if(!s->points)continue;
     for(int i=0;i<s->totpoints;i++){
       const bool selected=(s->points[i].flag&GP_SPOINT_SELECT)!=0;
       if(!selected&&!g_overlay_unselected)continue;
-      one[0]=outline_point(s->points[i].x,s->points[i].y,selected?5.0f*px:3.0f*px);
-      append_outline(selected?sel:unsel,one,0,w,h);
+      const float r=(selected?5.0f:3.0f)*0.5f*px,x=s->points[i].x,y=s->points[i].y;
+      std::vector<Vertex>&v=selected?sel:unsel;
+      const Vertex c0=ndc(x+r*ox[0],y+r*oy[0],w,h);
+      for(int k=1;k<7;k++){v.push_back(c0);v.push_back(ndc(x+r*ox[k],y+r*oy[k],w,h));v.push_back(ndc(x+r*ox[k+1],y+r*oy[k+1],w,h));}
     }
   }
   const float dark[4]={0.0f,0.0f,0.0f,0.85f};
@@ -1218,7 +1222,15 @@ extern "C" void project_grease_android_present_set_engine(int enabled){g_engine_
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision){g_engine_revision=revision;}
 extern "C" int project_grease_android_present_engine_active(){return g_engine_drawn_frame>=0&&!g_engine_failed;}
 
+static int present_gp_document_impl(const bGPdata* gpd,int frame_number);
+static double g_last_doc_ms=0.0;
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
+  const auto t0=std::chrono::steady_clock::now();
+  const int r=present_gp_document_impl(gpd,frame_number);
+  g_last_doc_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+  return r;
+}
+static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
   if(g_export_mode==2)glClearColor(0.0f,0.0f,0.0f,0.0f);
@@ -1623,8 +1635,8 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_last_frame(){
-  static char buf[160];
-  std::snprintf(buf,sizeof buf,"engine draw %.0f ms (%s), %dx%d px%s",g_last_engine_ms,
+  static char buf[200];
+  std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s",g_last_doc_ms,g_last_engine_ms,
                 g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"");
   return buf;
 }

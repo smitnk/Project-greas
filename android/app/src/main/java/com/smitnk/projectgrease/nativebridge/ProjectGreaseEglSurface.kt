@@ -164,6 +164,8 @@ internal class ProjectGreaseDrawingSurfaceView(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                controller.screenPxPerUnit = pixelsPerUnit()
+                controller.touchRadiusPx = 40f * resources.displayMetrics.density
                 val start = canvasPoint(event.x, event.y)
                 if (controller.placingCursor2D) {
                     controller.setCursor2D(start.first, start.second)

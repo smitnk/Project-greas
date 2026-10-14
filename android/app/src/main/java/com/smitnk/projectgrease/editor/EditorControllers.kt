@@ -974,16 +974,17 @@ class EditorController {
     /** Decodes reference frames; set by the UI (needs a Context). */
     var rotoscopeLoader: com.smitnk.projectgrease.ui.RotoscopeLoader? = null
     private var rotoscopeShown = ""
+    private var rotoscopeFailed = ""
     /** On-canvas placement of the reference: drag moves it, pinch resizes and turns it. */
     var referenceAdjusting by androidx.compose.runtime.mutableStateOf(false)
-    fun rotoscopeChanged() { rotoscopeShown = ""; document.markDirty(); render() }
+    fun rotoscopeChanged() { rotoscopeShown = ""; rotoscopeFailed = ""; document.markDirty(); render() }
     fun fitTimelineToRotoscope() { if (rotoscope.frames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.frames - 1) }
     /** Uploads the reference image of the current frame when it changed. */
     private fun syncRotoscope() {
         if (rendererHandle == 0L) return
         val n = if (rotoscope.visible) rotoscope.imageFrame(animation.currentFrame) else 0
         val key = if (n == 0) "" else rotoscope.kind.name + rotoscope.uris.hashCode() + ":" + n
-        if (key != rotoscopeShown) {
+        if (key != rotoscopeShown && key != rotoscopeFailed) {
             // a still decodes at once; video frames decode in the background (the last frame stays
             // up meanwhile) so scrubbing and playback never wait on the decoder
             val loader = rotoscopeLoader
@@ -998,6 +999,11 @@ class EditorController {
             if (img != null || n == 0) {
                 GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
                 rotoscopeShown = if (img == null) "" else key
+            } else if (rotoscope.kind == Rotoscope.Kind.IMAGE) {
+                // a photo that does not decode is tried once, not on every frame
+                rotoscopeFailed = key
+                com.smitnk.projectgrease.CrashLog.noteSlow("photo reference did not decode: ${rotoscope.uris.firstOrNull()}")
+                onMessage?.invoke("Couldn't open this photo: pick it again from Photo / video")
             }
         }
         GPNative.nativeSetReferenceTransform(rendererHandle, rotoscope.dx, rotoscope.dy, rotoscope.scale, rotoscope.rotation)
@@ -1080,7 +1086,11 @@ class EditorController {
         onOverlayChanged?.invoke()
         render()
     }
-    private fun curveHitRadius(): Float = 32f / view.zoom.coerceAtLeast(0.1f)
+    /** Finger hit radius in canvas units: ~40 dp on screen (set by the canvas view on each touch). */
+    var touchRadiusPx = 110f
+    var screenPxPerUnit = 0f
+    private fun curveHitRadius(): Float =
+        if (screenPxPerUnit > 0f) touchRadiusPx / screenPxPerUnit else 32f / view.zoom.coerceAtLeast(0.1f)
     private fun showCurvePreview() {
         showPrimitivePreview(blenderPrimitivePoints(ProjectGreasePrimitive.CURVE, curve.anchors()))
         onOverlayChanged?.invoke()
@@ -2625,7 +2635,7 @@ class EditorController {
     // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----
     var vertexPaintBrush = ProjectGreaseSelect.VPAINT_DRAW
         private set
-    var vertexPaintTarget = ProjectGreaseSelect.PAINT_STROKE
+    var vertexPaintTarget = ProjectGreaseSelect.PAINT_BOTH // brush.cc: gpencil_settings->vertex_mode = GPPAINT_MODE_BOTH
         private set
     fun setVertexPaintBrush(brush:Int) { if (brush in ProjectGreaseSelect.VPAINT_DRAW..ProjectGreaseSelect.VPAINT_TINT) vertexPaintBrush = brush }
     /** Vertex colour palette (Paint.palette swatches): picking one makes it the paint colour. */

@@ -38,15 +38,23 @@ import com.smitnk.projectgrease.editor.ProjectGreaseSelect
 private val Accent21 = Color(0xFFE84F7B)
 
 /** Canvas units -> screen pixels of the overlay, as the EGL surface maps them (fit 0.92 * zoom + pan). */
-private class OverlayMap(w: Float, h: Float, controller: EditorController) {
-    private val cw = controller.document.canvasWidth.coerceAtLeast(1).toFloat()
-    private val ch = controller.document.canvasHeight.coerceAtLeast(1).toFloat()
-    private val fit = minOf(w / cw, h / ch) * 0.92f * controller.view.zoom
-    private val ox = (w - cw * fit) * 0.5f + controller.view.panX
-    private val oy = (h - ch * fit) * 0.5f + controller.view.panY
-    fun screen(p: Pair<Float, Float>) = Offset(ox + p.first * fit, oy + p.second * fit)
-    fun canvas(o: Offset) = ((o.x - ox) / fit) to ((o.y - oy) / fit)
+/** Canvas <-> overlay pixels, the same mapping (with the view rotation) as the canvas touches. */
+private class OverlayMap(private val w: Float, private val h: Float, controller: EditorController) {
+    private val cw = controller.document.canvasWidth.coerceAtLeast(1)
+    private val ch = controller.document.canvasHeight.coerceAtLeast(1)
+    private val v = controller.view
+    private val fit = com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(w, h, cw, ch, v.zoom)
+    fun screen(p: Pair<Float, Float>): Offset =
+        com.smitnk.projectgrease.editor.CanvasMapping.toView(p.first, p.second, w, h, cw, ch, v.zoom, v.panX, v.panY, v.rotation)
+            .let { Offset(it.first, it.second) }
+    fun canvas(o: Offset) =
+        com.smitnk.projectgrease.editor.CanvasMapping.toCanvas(o.x, o.y, w, h, cw, ch, v.zoom, v.panX, v.panY, clamp = false, rotation = v.rotation)
     fun scale() = fit
+    /** A finger movement on screen as a canvas movement (turned back by the view rotation). */
+    fun delta(dx: Float, dy: Float): Pair<Float, Float> {
+        val c = kotlin.math.cos(-v.rotation); val sn = kotlin.math.sin(-v.rotation)
+        return (c * dx - sn * dy) / fit to (sn * dx + c * dy) / fit
+    }
 }
 
 /**
@@ -154,7 +162,8 @@ fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
     Box(Modifier.fillMaxSize().testTag("referenceAdjust").pointerInput(Unit) {
         detectTransformGestures { _, pan, zoom, rotation ->
             val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
-            controller.rotoscope.moveBy(pan.x / m.scale(), pan.y / m.scale(), zoom, Math.toRadians(rotation.toDouble()).toFloat())
+            val dm = m.delta(pan.x, pan.y)
+            controller.rotoscope.moveBy(dm.first, dm.second, zoom, Math.toRadians(rotation.toDouble()).toFloat())
             controller.rotoscopeChanged()
         }
     }) {
@@ -187,7 +196,7 @@ fun WarpOverlay(controller: EditorController, tick: Int, redraw: () -> Unit) {
             ) { change, d ->
                 change.consume()
                 val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
-                controller.dragWarp(index, d.x / m.scale(), d.y / m.scale())
+                m.delta(d.x, d.y).let { controller.dragWarp(index, it.first, it.second) }
             }
         }) {
             val m = OverlayMap(size.width, size.height, controller)

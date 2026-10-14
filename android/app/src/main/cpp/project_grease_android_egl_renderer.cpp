@@ -368,8 +368,11 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDetachSurface(
 }
 
 /* Renders the document (and the shape preview) and presents it. */
+static double g_last_swap_ms = 0.0, g_last_frame_ms = 0.0;
 static bool render_now(Renderer *renderer)
 {
+  const auto t_frame = std::chrono::steady_clock::now();
+  struct FrameTimer { std::chrono::steady_clock::time_point t; ~FrameTimer() { g_last_frame_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count(); } } frame_timer{t_frame};
   if (!renderer || renderer->display == EGL_NO_DISPLAY ||
       renderer->surface == EGL_NO_SURFACE ||
       renderer->context == EGL_NO_CONTEXT) {
@@ -412,7 +415,10 @@ static bool render_now(Renderer *renderer)
     glClear(GL_COLOR_BUFFER_BIT);
   }
 
-  return eglSwapBuffers(renderer->display, renderer->surface) == EGL_TRUE;
+  const auto t_swap = std::chrono::steady_clock::now();
+  const bool swapped = eglSwapBuffers(renderer->display, renderer->surface) == EGL_TRUE;
+  g_last_swap_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_swap).count();
+  return swapped;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -1006,7 +1012,10 @@ extern "C" const char *project_grease_android_present_last_frame();
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLastFrameInfo(JNIEnv *env, jobject, jlong)
 {
-  return env->NewStringUTF(project_grease_android_present_last_frame());
+  char buf[320];
+  std::snprintf(buf, sizeof buf, "native frame %.0f ms: %s, swap %.0f ms", g_last_frame_ms,
+                project_grease_android_present_last_frame(), g_last_swap_ms);
+  return env->NewStringUTF(buf);
 }
 
 /* Settings > Use Blender's renderer: off draws with the Android presenter only. */

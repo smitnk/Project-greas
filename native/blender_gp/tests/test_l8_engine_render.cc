@@ -38,6 +38,7 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char 
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 
 static const int W = 200, H = 120;
+extern "C" void project_grease_android_present_set_view_rotation(float radians);
 static int failures = 0;
 #define CHECK(cond) \
   do { \
@@ -407,6 +408,13 @@ int main()
     glReadPixels(int(ox + 100 * sc), H - 1 - int(oy + 30 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
     std::printf("  line over the reference = %d %d %d (expected black)\n", c[0], c[1], c[2]);
     CHECK(c[0] < 60);
+    /* reported: with the view turned and a photo shown the canvas went black */
+    project_grease_android_present_set_view_rotation(0.02f);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    glReadPixels(int(ox + 130 * sc), H - 1 - int(oy + 50 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+    std::printf("  turned view: reference under the drawing = %d %d %d (expected red)\n", c[0], c[1], c[2]);
+    CHECK(c[0] > 200 && c[1] < 60 && c[2] < 60);
+    project_grease_android_present_set_view_rotation(0.0f);
     project_grease_android_present_set_reference(nullptr, 0, 0);
   }
 

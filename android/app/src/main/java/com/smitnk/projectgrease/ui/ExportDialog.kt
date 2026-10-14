@@ -116,10 +116,12 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         val ok = runCatching {
             val pages = controller.exportPages(frames, includeAnnotations, exportOptions)
             if (pages.isEmpty()) com.smitnk.projectgrease.CrashLog.noteSlow("export: no pages for frames $frames")
-            pages.isNotEmpty() && writeBytes(
-                uri,
-                if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
-            )
+            val bytes = if (pages.isEmpty()) ByteArray(0)
+                else if (pdf) VectorExport.toPdf(pages) else VectorExport.toSvg(pages.first()).toByteArray(Charsets.UTF_8)
+            val written = pages.isNotEmpty() && writeBytes(uri, bytes)
+            com.smitnk.projectgrease.CrashLog.noteSlow("export ${if (pdf) "pdf" else "svg"}: ${pages.size} pages, " +
+                "${pages.sumOf { p -> p.layers.size }} layers, ${bytes.size} bytes, written=$written to $uri")
+            written
         }.onFailure { com.smitnk.projectgrease.CrashLog.noteSlow("export failed: ${it.stackTraceToString().take(1500)}") }.getOrDefault(false)
         toast(if (ok) "Exported" else "Export failed")
         if (ok) onDismiss()
@@ -130,6 +132,7 @@ fun ExportDialog(controller: EditorController, context: Context, onDismiss: () -
         val h = controller.document.canvasHeight
         val pixels = controller.exportCanvasPixels(transparent)
         val ok = pixels != null && writePng(context, uri, pixels, w, h)
+        com.smitnk.projectgrease.CrashLog.noteSlow("export png ${w}x$h: pixels=${pixels != null} ok=$ok")
         toast(if (ok) "Exported PNG ${w}×$h" else "PNG export failed")
         if (ok) onDismiss()
     }

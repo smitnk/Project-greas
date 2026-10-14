@@ -3569,8 +3569,10 @@ bool Backend::render_with_gpu_context()
   // While a stroke is open (sbuffer in use) nothing committed changes, and the Android presenter
   // never draws from this batch: rebuilding and freeing Blender's whole-frame batch cache on every
   // input sample made drawing over a full frame cost ~150 ms per sample on the emulator.
-  const bool stroke_open = impl_->gpd->runtime.sbuffer && impl_->gpd->runtime.sbuffer_used > 0;
-  GPUBatch *batch = stroke_open ? nullptr : DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+  // Neither the presenter nor the engine (it keeps its own cache on a copy) reads this batch, and
+  // building then freeing it every frame cost ~150 ms per frame at 4400 points on a Mali phone.
+  (void)ob;
+  GPUBatch *batch = nullptr;
 #else
   GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
 #endif

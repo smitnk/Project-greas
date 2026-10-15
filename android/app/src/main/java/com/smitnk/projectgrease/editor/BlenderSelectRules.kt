@@ -407,7 +407,7 @@ object ProjectGreaseSelect {
         if (mode == SEPARATE_POINT || mode == SEPARATE_STROKE) Command(CMD_SEPARATE, floatArrayOf(mode.toFloat())) else null
     fun moveToLayer(index: Int): Command? = if (index >= 0) Command(CMD_MOVE_TO_LAYER, floatArrayOf(index.toFloat())) else null
     fun copy() = Command(CMD_COPY, FloatArray(0))
-    fun paste() = Command(CMD_PASTE, FloatArray(0))
+    fun paste(frame: Int = -1) = Command(CMD_PASTE, if (frame >= 0) floatArrayOf(frame.toFloat()) else FloatArray(0))
 
     // project_grease_blender_edit6.h (86..89 are edit5's segment / material / onion commands)
     const val CMD_OUTLINE = 90

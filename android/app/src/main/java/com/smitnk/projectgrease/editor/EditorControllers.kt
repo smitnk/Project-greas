@@ -817,7 +817,7 @@ class EditorController {
         setupTrace("resetDocument ok=$ok")
         if(ok){
             clearTextures()
-            rotoscope.clear()
+            references.clear(); references.add(Rotoscope()); activeReference = 0; rotoscopeShown.clear()
             projectSettings = ProjectSettings()
             reapplyOnion()
             selectedLayer=0
@@ -1016,21 +1016,52 @@ class EditorController {
     /** Called when the curve handles change, so the UI can redraw its handle overlay. */
     var onOverlayChanged: (() -> Unit)? = null
     // ---- Rotoscope reference (Image Empty as reference, under the strokes, following the timeline) ----
-    val rotoscope = Rotoscope()
+    /** References, one per photo / video, each tied to a layer (shown while that layer is visible,
+     *  drawn in layer order under the strokes). [rotoscope] is the one being edited. */
+    val references = mutableListOf(Rotoscope())
+    var activeReference = 0
+        set(v) { field = v.coerceIn(0, references.size - 1) }
+    val rotoscope: Rotoscope get() = references[activeReference.coerceIn(0, references.size - 1)]
+    /** Adds an empty reference on [layer] and makes it the edited one. */
+    fun addReference(layer: String): Rotoscope {
+        if (references.size == 1 && references[0].isEmpty) { references[0].layer = layer; return references[0] }
+        if (references.size >= 16) return rotoscope
+        val r = Rotoscope().also { it.layer = layer }
+        references.add(r); activeReference = references.size - 1; return r
+    }
+    fun removeReference() {
+        if (references.size <= 1) rotoscope.clear() else { references.removeAt(activeReference); activeReference = activeReference }
+        rotoscopeChanged()
+    }
     /** Decodes reference frames; set by the UI (needs a Context). */
     var rotoscopeLoader: com.smitnk.projectgrease.ui.RotoscopeLoader? = null
-    private var rotoscopeShown = ""
-    private var rotoscopeFailed = ""
+    private val rotoscopeShown = HashMap<Rotoscope, String>()
+    private val rotoscopeFailed = HashMap<Rotoscope, String>()
     /** On-canvas placement of the reference: drag moves it, pinch resizes and turns it. */
     var referenceAdjusting by androidx.compose.runtime.mutableStateOf(false)
-    fun rotoscopeChanged() { rotoscopeShown = ""; rotoscopeFailed = ""; document.markDirty(); render() }
+    fun rotoscopeChanged() { rotoscopeShown.clear(); rotoscopeFailed.clear(); document.markDirty(); render() }
     fun fitTimelineToRotoscope() { if (rotoscope.frames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.frames - 1) }
-    /** Uploads the reference image of the current frame when it changed. */
+    /** Uploads each reference image of the current frame when it changed, in layer order. */
     private fun syncRotoscope() {
         if (rendererHandle == 0L) return
-        val n = if (rotoscope.visible) rotoscope.imageFrame(animation.currentFrame) else 0
+        val layerCount = native.layerCount()
+        val names = (0 until layerCount).map { native.layerName(it) }
+        fun order(r: Rotoscope) = names.indexOf(r.layer).let { if (it < 0) -1 else it }
+        val ordered = references.filter { !it.isEmpty }.sortedBy { order(it) }
+        GPNative.nativeSelectReferenceSlot(rendererHandle, 0, ordered.size)
+        ordered.forEachIndexed { slot, r ->
+            GPNative.nativeSelectReferenceSlot(rendererHandle, slot, ordered.size)
+            val li = order(r)
+            val layerShown = li < 0 || (native.layerInfo(li)?.getOrNull(0) ?: 1f) != 0f
+            syncReference(r, layerShown, slot)
+        }
+    }
+    private fun syncReference(rotoscope: Rotoscope, layerShown: Boolean, slot: Int) {
+        val n = if (rotoscope.visible && layerShown) rotoscope.imageFrame(animation.currentFrame) else 0
         val key = if (n == 0) "" else rotoscope.kind.name + rotoscope.uris.hashCode() + ":" + n
-        if (key != rotoscopeShown && key != rotoscopeFailed) {
+        // native slots follow layer order, so after a reorder the slot holds another image
+        val slotKey = "$key@$slot"
+        if (slotKey != rotoscopeShown[rotoscope] && key != rotoscopeFailed[rotoscope]) {
             // a still decodes at once; video frames decode in the background (the last frame stays
             // up meanwhile) so scrubbing and playback never wait on the decoder
             val loader = rotoscopeLoader
@@ -1038,22 +1069,22 @@ class EditorController {
                 n == 0 || loader == null -> null
                 rotoscope.kind == Rotoscope.Kind.IMAGE -> loader.frame(rotoscope, n)
                 else -> loader.cached(rotoscope, n).also {
-                    if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown != key) render() }
+                    if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown[rotoscope] != slotKey) render() }
                     loader.prefetch(rotoscope, n + 1, 3)
                 }
             }
             if (img != null || n == 0) {
                 GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
-                rotoscopeShown = if (img == null) "" else key
+                if (img == null) rotoscopeShown.remove(rotoscope) else rotoscopeShown[rotoscope] = slotKey
             } else if (rotoscope.kind == Rotoscope.Kind.IMAGE) {
                 // a photo that does not decode is tried once, not on every frame
-                rotoscopeFailed = key
+                rotoscopeFailed[rotoscope] = key
                 com.smitnk.projectgrease.CrashLog.noteSlow("photo reference did not decode: ${rotoscope.uris.firstOrNull()}")
                 onMessage?.invoke("Couldn't open this photo: pick it again from Photo / video")
             }
         }
         GPNative.nativeSetReferenceTransform(rendererHandle, rotoscope.dx, rotoscope.dy, rotoscope.scale, rotoscope.rotation)
-        GPNative.nativeSetReferenceStyleEglRenderer(rendererHandle, n != 0 && rotoscopeShown.isNotEmpty(), rotoscope.opacity)
+        GPNative.nativeSetReferenceStyleEglRenderer(rendererHandle, n != 0 && rotoscopeShown.containsKey(rotoscope), rotoscope.opacity)
     }
 
     /** The UI re-reads controller state (a colour picked on the canvas changes the swatch). */
@@ -1795,7 +1826,8 @@ class EditorController {
             val obj = org.json.JSONObject(json)
             obj.put("settings", org.json.JSONObject(projectSettings.toJson()))
             if (materialTextures.isNotEmpty()) obj.put("textures", texturesJson())
-            if (!rotoscope.isEmpty) obj.put("rotoscope", rotoscope.toJson())
+            references.firstOrNull { !it.isEmpty }?.let { obj.put("rotoscope", it.toJson()) } // older readers
+            references.filter { !it.isEmpty }.takeIf { it.isNotEmpty() }?.let { l -> obj.put("references", org.json.JSONArray(l.map { it.toJson() })) }
             AnnotationData.toJson(annotationDump(), annotationStyle())?.let { obj.put("annotations", it) }
             obj.toString()
         }.getOrDefault(json)
@@ -1824,7 +1856,11 @@ class EditorController {
             animation.setFps(projectSettings.fps); animation.setSceneEnd(projectSettings.frameEnd)
         }
         loadTexturesJson(rawJson?.optJSONArray("textures"))
-        rotoscope.fromJson(rawJson?.optJSONObject("rotoscope")); rotoscopeShown = ""
+        references.clear(); activeReference = 0; rotoscopeShown.clear(); rotoscopeFailed.clear()
+        val refs = rawJson?.optJSONArray("references")
+        if (refs != null) for (i in 0 until refs.length()) references.add(Rotoscope().also { it.fromJson(refs.optJSONObject(i)) })
+        else references.add(Rotoscope().also { it.fromJson(rawJson?.optJSONObject("rotoscope")) })
+        if (references.isEmpty()) references.add(Rotoscope())
         val notes = AnnotationData.fromJson(runCatching { org.json.JSONObject(raw).optJSONObject("annotations") }.getOrNull())
         if (notes != null) {
             notes.style?.let { GPNative.nativeAnnotationCommand(native.handle, ANNOT_SET_STYLE, it) }
@@ -2607,7 +2643,7 @@ class EditorController {
     /** Copy does not change the document; call native directly so no undo step is recorded. */
     fun copySelection():Boolean = native.handle != 0L &&
         native.applyEditCommand(ProjectGreaseSelect.CMD_COPY, FloatArray(0))
-    fun pasteStrokes() = runSelectCommand(ProjectGreaseSelect.paste())
+    fun pasteStrokes() = runSelectCommand(ProjectGreaseSelect.paste(animation.currentFrame))
     fun deleteSelectedStrokes() = runSelectCommand(ProjectGreaseSelect.deleteStrokes()).also { if (it) selection.clear() }
     fun deleteSelectedPoints() = runSelectCommand(ProjectGreaseSelect.deletePoints()).also { if (it) selection.clear() }
     fun applyThicknessModifier(factor:Float, normalize:Boolean=false, thickness:Int=0) =

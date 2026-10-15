@@ -71,7 +71,10 @@ object CrashLog {
     private val stamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
     fun event(what: String) {
         val f = logFile ?: return
-        val line = "${synchronized(stamp) { stamp.format(java.util.Date()) }} $what\n"
+        val bug = detectBug(what)
+        val time = synchronized(stamp) { stamp.format(java.util.Date()) }
+        val line = "$time $what\n" + (bug?.let { "$time BUG $it\n" } ?: "")
+        if (bug != null) synchronized(bugs) { bugs.addLast("$time $bug"); while (bugs.size > 40) bugs.removeFirst() }
         synchronized(this) {
             runCatching {
                 f.appendText(line)
@@ -79,13 +82,51 @@ object CrashLog {
             }
         }
     }
-    fun readLog(): String = runCatching { logFile?.readText() }.getOrNull().orEmpty().ifEmpty { "Nothing recorded yet." }
+    // ---- Bug catcher: each log line is checked against known symptoms; a hit adds a "BUG" line that
+    // names the problem, and the list of this session's bugs heads the shared log and crash report.
+    private val bugs = ArrayDeque<String>()
+    private var engineGlErrors = 0
+    private val glInEngine = Regex("""(\d+) in engine, last (0x[0-9a-fA-F]+)""")
+    private var passGlErrors = 0
+    private val glInPass = Regex("""(\d+) in passes \(last (0x[0-9a-fA-F]+) at pass ([^)]*)\)""")
+    private val slowMs = Regex("""\] (\d+) ms|ok=\w+ (\d+) ms""")
+    internal fun detectBug(what: String): String? {
+        if (what.startsWith("BUG")) return null
+        glInPass.find(what)?.let { m ->
+            val n = m.groupValues[1].toInt()
+            val grew = n > passGlErrors; passGlErrors = n
+            if (grew) return "GL: Blender engine pass '${m.groupValues[3]}' raised GL error ${m.groupValues[2]} ($n so far)"
+        }
+        glInEngine.find(what)?.let { m ->
+            val n = m.groupValues[1].toInt()
+            val grew = n > engineGlErrors; engineGlErrors = n
+            if (grew) return "GL: Blender engine raised GL error ${m.groupValues[2]} (${n} so far) - the frame may draw wrong"
+        }
+        return when {
+            what.startsWith("CRASH") -> "CRASH: app crashed - see Last crash report"
+            what.startsWith("FREEZE") -> "FREEZE: main thread blocked over 3 s"
+            what.startsWith("LASSO 1 noose") -> "LASSO: a tap, not a loop (1 point) - selection left as it was"
+            what.startsWith("LASSO") -> null // ok=false only means the selection did not change
+            what.contains(" -> false") || what.contains("ok=false") -> "FAILED: " + what.take(90)
+            what.startsWith("SLOW") && (slowMs.find(what)?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 0) >= 1000 ->
+                "SLOW: step over 1 s - " + what.removePrefix("SLOW ").take(60)
+            what.contains("did not decode") || what.startsWith("MESSAGE Couldn't") -> "IMPORT: " + what.take(90)
+            what.startsWith("TOUCH") && what.contains("off-canvas") -> "TOUCH: stroke started off the paper - " + what.take(80)
+            else -> null
+        }
+    }
+    fun bugSummary(): String = synchronized(bugs) {
+        if (bugs.isEmpty()) "Bugs caught this session: none" else bugs.joinToString("\n", "Bugs caught this session (${bugs.size}):\n")
+    }
+
+    fun readLog(): String = bugSummary() + "\n\n" + runCatching { logFile?.readText() }.getOrNull().orEmpty().ifEmpty { "Nothing recorded yet." }
     fun clearLog() { synchronized(this) { runCatching { logFile?.writeText("") } } }
 
     fun read(context: Context): String? {
         val parts = listOfNotNull(
             file(context).takeIf { it.isFile }?.readText(),
             freezeFile(context).takeIf { it.isFile }?.readText(),
+            synchronized(bugs) { bugs.isNotEmpty() }.takeIf { it }?.let { bugSummary() },
             synchronized(slow) { slow.takeIf { it.isNotEmpty() }?.joinToString("\n", "Slow steps this session:\n") })
         return parts.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
     }

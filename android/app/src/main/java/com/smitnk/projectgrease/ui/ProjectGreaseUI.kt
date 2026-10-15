@@ -1533,7 +1533,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 OutlinedButton(onClick={controller.beginWarp(3,3);redraw()}){Text("Warp mesh")}
                 // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
                 OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){Text("Copy")}
-                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE -> $ok");redraw()}){Text("Paste")}
+                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){Text("Paste")}
                 OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){Text("Delete")}
                 OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…")}
             }
@@ -1809,7 +1809,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     text={Text(text.takeLast(20_000),fontSize=10.sp,modifier=Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState(Int.MAX_VALUE)))},
                     confirmButton={Row{
                         TextButton(onClick={saveLog.launch("project_grease_activity_log.txt")}){Text("Save file")}
-                        TextButton(onClick={com.smitnk.projectgrease.CrashLog.share(context,text.takeLast(90_000))}){Text("Share")}}},
+                        TextButton(onClick={com.smitnk.projectgrease.CrashLog.share(context,if(text.length<=90_000)text else com.smitnk.projectgrease.CrashLog.bugSummary()+"\n\n…\n"+text.takeLast(85_000))}){Text("Share")}}},
                     dismissButton={TextButton(onClick={com.smitnk.projectgrease.CrashLog.clearLog();activity=null}){Text("Clear")}})
             }
         }

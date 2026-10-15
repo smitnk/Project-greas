@@ -1249,6 +1249,9 @@ static void test_edit4(void)
   select_points(g5, c1, 0); select_points(g5, f5->strokes.last, 0);
   pg_gp_copy(g5, NULL); /* nothing selected: clipboard kept */
   CHECK(pg_gp_paste(g5, l5) == 1 && stroke_count(f5) == 3, "empty copy keeps the previous clipboard");
+  CHECK(pg_gp_paste_at(g5, l5, 50) == 1 && l5->actframe != f5 && l5->actframe->framenum == 50 &&
+            stroke_count(l5->actframe) == 1 && stroke_count(f5) == 3,
+        "paste on a frame with no keyframe adds one there (GP_GETFRAME_ADD_NEW)");
   pg_gp_clipboard_free();
   CHECK(pg_gp_paste(g5, l5) == 0, "empty clipboard pastes nothing");
 

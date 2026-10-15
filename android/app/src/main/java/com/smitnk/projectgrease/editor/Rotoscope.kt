@@ -15,6 +15,8 @@ class Rotoscope {
     /** ImageUser frames (number of frames of the sequence / movie; 1 for a still image). */
     var frames = 0; private set
     var visible = true
+    /** Name of the layer this reference belongs to ("" = none: always shown, at the bottom). */
+    var layer = ""
     var opacity = 0.5f; private set
     /** ImageUser sfra (frame_start), offset (frame_offset), cycl (use_cyclic). */
     var start = 1
@@ -46,14 +48,14 @@ class Rotoscope {
     }
 
     fun toJson(): JSONObject = JSONObject().put("kind", kind.name).put("uris", JSONArray(uris)).put("frames", frames)
-        .put("visible", visible).put("opacity", opacity.toDouble()).put("start", start).put("offset", offset).put("cyclic", cyclic)
+        .put("visible", visible).put("layer", layer).put("opacity", opacity.toDouble()).put("start", start).put("offset", offset).put("cyclic", cyclic)
         .put("dx", dx.toDouble()).put("dy", dy.toDouble()).put("scale", scale.toDouble()).put("rotation", rotation.toDouble())
 
     fun fromJson(o: JSONObject?) {
         if (o == null) { clear(); return }
         val list = o.optJSONArray("uris")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
         set(runCatching { Kind.valueOf(o.optString("kind")) }.getOrDefault(Kind.IMAGE), list, o.optInt("frames", list.size))
-        visible = o.optBoolean("visible", true); setOpacity(o.optDouble("opacity", 0.5).toFloat())
+        visible = o.optBoolean("visible", true); layer = o.optString("layer", ""); setOpacity(o.optDouble("opacity", 0.5).toFloat())
         start = o.optInt("start", 1); offset = o.optInt("offset", 0); cyclic = o.optBoolean("cyclic", false)
         dx = o.optDouble("dx", 0.0).toFloat(); dy = o.optDouble("dy", 0.0).toFloat()
         scale = o.optDouble("scale", 1.0).toFloat().coerceIn(0.05f, 20f); rotation = o.optDouble("rotation", 0.0).toFloat()

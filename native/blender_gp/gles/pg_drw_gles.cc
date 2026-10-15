@@ -780,6 +780,10 @@ static void draw_shgroup(DRWShadingGroup *g, DRWState pass_state)
   }
 }
 
+static long g_pass_gl_errors = 0;
+static unsigned g_pass_gl_last = 0;
+static char g_pass_gl_name[48] = "";
+
 void DRW_draw_pass(DRWPass *pass)
 {
   PGContext &c = pgc();
@@ -805,12 +809,22 @@ void DRW_draw_pass(DRWPass *pass)
   for (DRWShadingGroup *g : pass->groups) {
     draw_shgroup(g, pass->state);
   }
-  if (trace_enabled()) {
-    const GLenum err = glGetError();
-    if (err != GL_NO_ERROR) {
-      std::printf("[drw]   GL error 0x%x after %s\n", err, pass->name);
-    }
+  /* Always checked: names the pass in the device's frame report (an error raised before the pass,
+   * e.g. by a texture upload, shows here too). */
+  const GLenum err = glGetError();
+  if (err != GL_NO_ERROR) {
+    g_pass_gl_errors++;
+    g_pass_gl_last = err;
+    std::snprintf(g_pass_gl_name, sizeof g_pass_gl_name, "%s", pass->name ? pass->name : "?");
+    if (trace_enabled()) std::printf("[drw]   GL error 0x%x after %s\n", err, pass->name);
   }
+}
+
+extern "C" long pg_gp_engine_pass_gl_errors(unsigned *last, const char **pass)
+{
+  if (last) *last = g_pass_gl_last;
+  if (pass) *pass = g_pass_gl_name;
+  return g_pass_gl_errors;
 }
 
 /** \} */

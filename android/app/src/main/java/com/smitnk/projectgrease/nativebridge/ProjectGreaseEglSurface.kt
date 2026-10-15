@@ -187,7 +187,9 @@ internal class ProjectGreaseDrawingSurfaceView(
         if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_POINTER_DOWN || ms > 100 || late > 150) {
             val c = canvasPoint(event.x, event.y)
             com.smitnk.projectgrease.CrashLog.event("TOUCH ${MotionEvent.actionToString(a)} x${event.pointerCount} tool ${controller.tools.activeTool} " +
-                "mode ${controller.mode} canvas %.0f,%.0f late $late ms handled $ms ms".format(c.first, c.second))
+                "mode ${controller.mode} canvas %.0f,%.0f late $late ms handled $ms ms".format(c.first, c.second) +
+                (if (a == MotionEvent.ACTION_DOWN && (c.first < 0f || c.second < 0f || c.first > controller.document.canvasWidth ||
+                    c.second > controller.document.canvasHeight)) " off-canvas" else ""))
         }
         return r
     }
@@ -640,7 +642,7 @@ internal class ProjectGreaseDrawingSurfaceView(
         com.smitnk.projectgrease.editor.CanvasMapping.toCanvas(
             rawX, rawY, width.toFloat(), height.toFloat(),
             controller.document.canvasWidth, controller.document.canvasHeight,
-            controller.view.zoom, controller.view.panX, controller.view.panY, rotation = controller.view.rotation)
+            controller.view.zoom, controller.view.panX, controller.view.panY, clamp = false, rotation = controller.view.rotation)
 
     /** On-screen pixels per canvas unit: the brushes' pixel radius and hit tests use it. */
     private fun pixelsPerUnit():Float =

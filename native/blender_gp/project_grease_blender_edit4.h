@@ -18,7 +18,7 @@ enum {
   PG_EDIT4_CMD_SEPARATE_LAYER = 82,/* args: - */
   PG_EDIT4_CMD_MOVE_TO_LAYER = 83, /* args: target layer index */
   PG_EDIT4_CMD_COPY = 84,          /* args: - */
-  PG_EDIT4_CMD_PASTE = 85,         /* args: - */
+  PG_EDIT4_CMD_PASTE = 85,         /* args: [frame] */
 };
 /* GPENCIL_OT_stroke_caps_set types; GP_STROKE_CAP_ROUND = 0, GP_STROKE_CAP_FLAT = 1 */
 enum { PG_CAPS_TOGGLE_BOTH = 0, PG_CAPS_TOGGLE_START = 1, PG_CAPS_TOGGLE_END = 2, PG_CAPS_DEFAULT = 3 };
@@ -36,6 +36,7 @@ int pg_gp_separate_to_layer(struct bGPdata *gpd, struct bGPDlayer *src);
 int pg_gp_move_to_layer(struct bGPdata *gpd, struct bGPDlayer *src, int target_index);
 int pg_gp_copy(struct bGPdata *gpd, const struct bGPDlayer *only);
 int pg_gp_paste(struct bGPdata *gpd, struct bGPDlayer *target);
+int pg_gp_paste_at(struct bGPdata *gpd, struct bGPDlayer *target, int cfra);
 void pg_gp_clipboard_free(void);
 /* The clipboard strokes (gpencil_strokes_copypastebuf), read by the sculpt Clone brush. */
 const struct ListBase *pg_gp_clipboard_strokes(void);

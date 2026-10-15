@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -108,7 +109,6 @@ internal class RotoscopePickers(
  *  background before Android handed the file back; the result also waits for the restored drawing. */
 @Composable
 internal fun rememberRotoscopePickers(controller: EditorController, context: Context, redraw: () -> Unit): RotoscopePickers {
-    val r = controller.rotoscope
     fun changed() { controller.rotoscopeChanged(); redraw() }
     fun keep(uri: Uri) = runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     // one picker for photos and videos; the file's type decides which it is
@@ -124,7 +124,7 @@ internal fun rememberRotoscopePickers(controller: EditorController, context: Con
             uris.forEach(::keep)
             // sorted by name, as Blender reads a numbered sequence
             val sorted = uris.sortedBy { it.lastPathSegment ?: it.toString() }.map { it.toString() }
-            controller.afterReattach { r.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed() }
+            controller.afterReattach { controller.rotoscope.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed() }
         }
     }
     return remember(media, sequence) { RotoscopePickers(media, sequence) }
@@ -162,9 +162,24 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
             Text(if (r.isEmpty) "Pick a photo or video to draw over. It sits behind your drawing and is not exported."
                  else "${if (r.kind == Rotoscope.Kind.MOVIE) "Video" else if (r.kind == Rotoscope.Kind.SEQUENCE) "Image sequence" else "Photo"}" +
                       (if (r.kind == Rotoscope.Kind.IMAGE) "" else " · ${r.frames} frames, one per timeline frame"), Modifier.padding(vertical = 6.dp))
-            Button(onClick = { media.launch(arrayOf("image/*", "video/*")) }, Modifier.fillMaxWidth().testTag("rotoImage")) {
-                Text(if (r.isEmpty) "Import photo or video" else "Replace with another photo or video")
+            val layerNow = controller.layerName(controller.selectedLayer)
+            // one reference per photo / video, each on its layer (hidden with it, in layer order)
+            if (controller.references.count { !it.isEmpty } > 1 || controller.references.size > 1) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    controller.references.forEachIndexed { i, ref ->
+                        FilterChip(i == controller.activeReference, { controller.activeReference = i; tick++ },
+                            label = { Text((if (ref.kind == Rotoscope.Kind.IMAGE) "Photo" else "Video") + " · " + ref.layer.ifEmpty { "all" }) })
+                    }
+                }
             }
+            Button(onClick = { controller.addReference(layerNow); tick++; media.launch(arrayOf("image/*", "video/*")) },
+                Modifier.fillMaxWidth().testTag("rotoImage")) {
+                Text(if (controller.references.all { it.isEmpty }) "Import photo or video on $layerNow" else "Add photo or video on $layerNow")
+            }
+            if (!r.isEmpty) OutlinedButton(onClick = { media.launch(arrayOf("image/*", "video/*")) }, Modifier.fillMaxWidth()) {
+                Text("Replace this one")
+            }
+            if (!r.isEmpty) TextButton(onClick = { r.layer = layerNow; changed() }) { Text("Move this one to $layerNow (now: ${r.layer.ifEmpty { "all layers" }})") }
             if (!r.isEmpty) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Show", Modifier.weight(1f)); Switch(r.visible, { r.visible = it; changed() })
@@ -197,7 +212,7 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
                     }
                     OutlinedButton(onClick = { sequence.launch(arrayOf("image/*")) }) { Text("Import an image sequence instead") }
                 }
-                TextButton(onClick = { r.clear(); changed() }) { Text("Remove") }
+                TextButton(onClick = { controller.removeReference(); tick++; redraw() }) { Text("Remove") }
             }
         }
     }

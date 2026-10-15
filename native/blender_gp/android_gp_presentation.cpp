@@ -41,6 +41,7 @@
 
 /* L9: the GLES 3.2 GP draw engine (gles/). Weak so the GLES2-only presenter tests link without it. */
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
+extern "C" __attribute__((weak)) long pg_gp_engine_pass_gl_errors(unsigned *last, const char **pass);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gles_api(void);
@@ -1030,13 +1031,17 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
 /* Rotoscope reference (an Image Empty used as reference in Blender, depth "Back"): one image per
  * timeline frame, fitted inside the canvas, drawn over the paper and under the strokes with its
  * opacity. Not in exports (empties do not render). */
-GLuint g_ref_tex=0, g_ref_prog=0, g_ref_vbo=0;
-int g_ref_w=0, g_ref_h=0, g_ref_visible=0;
-float g_ref_opacity=0.5f;
-// Image Empty offset (canvas px from the fitted centre), size (x the fit) and rotation (radians)
-float g_ref_dx=0.0f,g_ref_dy=0.0f,g_ref_scale=1.0f,g_ref_rot=0.0f;
-bool reference_shown(){return g_ref_visible&&g_ref_tex&&g_ref_w>0&&g_ref_h>0&&!g_export_mode;}
-void draw_reference(int w,int h){
+/* Several references (one per layer, like other drawing apps): slot i is drawn in slot order, all
+ * under the strokes. shortcut: references cannot sit between stroke layers yet; that needs the
+ * engine to draw each layer in its own pass. */
+struct RefSlot{GLuint tex=0;int w=0,h=0,visible=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f;};
+constexpr int kRefSlots=16;
+RefSlot g_refs[kRefSlots];
+int g_ref_cur=0,g_ref_count=1;
+GLuint g_ref_prog=0, g_ref_vbo=0;
+bool slot_shown(const RefSlot&r){return r.visible&&r.tex&&r.w>0&&r.h>0&&!g_export_mode;}
+bool reference_shown(){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))return true;return false;}
+void draw_reference_slot(const RefSlot&r,int w,int h){
   if(!g_ref_prog){
     GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec4 a_p; varying vec2 v_uv; void main(){v_uv=a_p.zw;gl_Position=vec4(a_p.xy,0.0,1.0);}");
     GLuint fs=compile_shader(GL_FRAGMENT_SHADER,"precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; uniform float u_a;"
@@ -1048,22 +1053,23 @@ void draw_reference(int w,int h){
   if(!g_ref_vbo)glGenBuffers(1,&g_ref_vbo);
   // aspect fit inside the canvas, centred
   const float cw=float(g_canvas_width),ch=float(g_canvas_height);
-  const float k=std::min(cw/float(g_ref_w),ch/float(g_ref_h));
-  const float hw=float(g_ref_w)*k*g_ref_scale*0.5f,hh=float(g_ref_h)*k*g_ref_scale*0.5f;
-  const float mx=cw*0.5f+g_ref_dx,my=ch*0.5f+g_ref_dy,cs=std::cos(g_ref_rot),sn=std::sin(g_ref_rot);
+  const float k=std::min(cw/float(r.w),ch/float(r.h));
+  const float hw=float(r.w)*k*r.scale*0.5f,hh=float(r.h)*k*r.scale*0.5f;
+  const float mx=cw*0.5f+r.dx,my=ch*0.5f+r.dy,cs=std::cos(r.rot),sn=std::sin(r.rot);
   auto corner=[&](float u,float v){return ndc(mx+cs*u-sn*v,my+sn*u+cs*v,w,h);};
   const Vertex a=corner(-hw,-hh),b=corner(hw,-hh),c=corner(hw,hh),d=corner(-hw,hh);
   const float q[24]={a.x,a.y,0,0, b.x,b.y,1,0, c.x,c.y,1,1, a.x,a.y,0,0, c.x,c.y,1,1, d.x,d.y,0,1};
   glUseProgram(g_ref_prog);
   glBindBuffer(GL_ARRAY_BUFFER,g_ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
   glEnableVertexAttribArray(0);glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,0,nullptr);
-  glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_ref_tex);
+  glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,r.tex);
   glUniform1i(glGetUniformLocation(g_ref_prog,"u_tex"),0);
-  glUniform1f(glGetUniformLocation(g_ref_prog,"u_a"),g_ref_opacity);
+  glUniform1f(glGetUniformLocation(g_ref_prog,"u_a"),r.opacity);
   glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
   glDrawArrays(GL_TRIANGLES,0,6);
   glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,0);glUseProgram(0);
 }
+void draw_reference(int w,int h){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))draw_reference_slot(g_refs[i],w,h);}
 
 bool engine_wanted(const bGPdata*gpd){
   if(!g_engine_enabled||g_engine_failed||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
@@ -1609,21 +1615,29 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
   return glGetError()==GL_NO_ERROR?1:0;
 }
 extern "C" int project_grease_android_present_set_reference(const unsigned char*rgba,int w,int h){
-  if(!rgba||w<=0||h<=0){if(g_ref_tex)glDeleteTextures(1,&g_ref_tex);g_ref_tex=0;g_ref_w=g_ref_h=0;return 1;}
-  if(!g_ref_tex)glGenTextures(1,&g_ref_tex);
-  glBindTexture(GL_TEXTURE_2D,g_ref_tex);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+  RefSlot&r=g_refs[g_ref_cur];
+  if(!rgba||w<=0||h<=0){if(r.tex)glDeleteTextures(1,&r.tex);r.tex=0;r.w=r.h=0;return 1;}
+  if(!r.tex)glGenTextures(1,&r.tex);
+  glBindTexture(GL_TEXTURE_2D,r.tex);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
   glBindTexture(GL_TEXTURE_2D,0);
-  g_ref_w=w;g_ref_h=h;
+  r.w=w;r.h=h;
   return glGetError()==GL_NO_ERROR?1:0;
+}
+/* Following reference calls go to [slot]; slots at or past [count] are not drawn (their textures
+ * are freed). */
+extern "C" void project_grease_android_present_select_reference(int slot,int count){
+  g_ref_count=std::clamp(count,0,kRefSlots);
+  for(int i=g_ref_count;i<kRefSlots;i++)if(g_refs[i].tex){glDeleteTextures(1,&g_refs[i].tex);g_refs[i]=RefSlot{};}
+  g_ref_cur=std::clamp(slot,0,kRefSlots-1);
 }
 extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot){
   if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(scale)||!std::isfinite(rot))return;
-  g_ref_dx=dx;g_ref_dy=dy;g_ref_scale=std::clamp(scale,0.05f,20.0f);g_ref_rot=rot;}
+  RefSlot&r=g_refs[g_ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;}
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
-  g_ref_visible=visible?1:0;g_ref_opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
+  RefSlot&r=g_refs[g_ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
@@ -1663,10 +1677,13 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_last_frame(){
-  static char buf[300];
+  static char buf[400];
   std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x",g_last_doc_ms,g_last_engine_ms,
                 g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
                 g_gl_error_frames,g_engine_gl_errors,g_last_gl_error);
+  unsigned plast=0;const char*pname="";
+  const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;
+  if(pn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", %ld in passes (last 0x%x at pass %s)",pn,plast,pname);}
   return buf;
 }
 extern "C" const char* project_grease_android_present_renderer_info(){

@@ -397,11 +397,16 @@ int pg_gp_copy(bGPdata *gpd, const bGPDlayer *only)
   return 0; /* copying does not change the document */
 }
 
-int pg_gp_paste(bGPdata *gpd, bGPDlayer *target)
+int pg_gp_paste(bGPdata *gpd, bGPDlayer *target) { return pg_gp_paste_at(gpd, target, -1); }
+
+/* GPENCIL_OT_paste: strokes go to the frame at CFRA, adding a keyframe there when the layer has
+ * none (BKE_gpencil_layer_frame_get(gpl, CFRA, GP_GETFRAME_ADD_NEW)); cfra < 0 uses actframe. */
+int pg_gp_paste_at(bGPdata *gpd, bGPDlayer *target, int cfra)
 {
-  if (gpd == NULL || target == NULL || target->actframe == NULL || pe4_clipboard.first == NULL ||
-      !BKE_gpencil_layer_is_editable(target))
+  if (gpd == NULL || target == NULL || pe4_clipboard.first == NULL || !BKE_gpencil_layer_is_editable(target))
     return 0;
+  if (cfra >= 0) target->actframe = BKE_gpencil_layer_frame_get(target, cfra, GP_GETFRAME_ADD_NEW);
+  if (target->actframe == NULL) return 0;
   /* deselect what is there; pasted strokes become the selection */
   LISTBASE_FOREACH (bGPDstroke *, gps, &target->actframe->strokes) pe4_deselect(gps);
   LISTBASE_FOREACH (bGPDstroke *, s, &pe4_clipboard) {
@@ -434,7 +439,7 @@ int pg_gp_edit4_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
     case PG_EDIT4_CMD_SEPARATE_LAYER: changed = pg_gp_separate_to_layer(gpd, active_layer); break;
     case PG_EDIT4_CMD_MOVE_TO_LAYER: NEED(1); changed = pg_gp_move_to_layer(gpd, active_layer, I(0)); break;
     case PG_EDIT4_CMD_COPY: pg_gp_copy(gpd, scope); return 1; /* report success; nothing changed */
-    case PG_EDIT4_CMD_PASTE: changed = pg_gp_paste(gpd, active_layer); break;
+    case PG_EDIT4_CMD_PASTE: changed = pg_gp_paste_at(gpd, active_layer, arg_count > 0 ? I(0) : -1); break;
     default: return pg_gp_edit6_dispatch(gpd, active_layer, command, args, arg_count);
   }
 #undef I

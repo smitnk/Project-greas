@@ -28,6 +28,7 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_set_view_rotation(float radians);
 extern "C" int project_grease_android_present_set_reference(const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
+extern "C" void project_grease_android_present_select_reference(int slot, int count);
 extern "C" void project_grease_android_present_set_reference_transform(float dx, float dy, float scale, float rot);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_overlay_unselected(int show);
@@ -789,6 +790,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceImageEglRe
     rgba[i * 4] = (c >> 16) & 255; rgba[i * 4 + 1] = (c >> 8) & 255; rgba[i * 4 + 2] = c & 255; rgba[i * 4 + 3] = (c >> 24) & 255;
   }
   return project_grease_android_present_set_reference(rgba.data(), width, height) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Reference slot for the following reference calls; slots past [count] are freed. */
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSelectReferenceSlot(
+    JNIEnv *, jobject, jlong handle, jint slot, jint count)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return;
+  if (renderer->display != EGL_NO_DISPLAY && renderer->surface != EGL_NO_SURFACE && renderer->context != EGL_NO_CONTEXT)
+    eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context);
+  project_grease_android_present_select_reference(slot, count);
 }
 
 extern "C" JNIEXPORT void JNICALL

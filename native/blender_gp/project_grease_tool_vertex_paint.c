@@ -882,6 +882,19 @@ static bool gpencil_vertexpaint_select_stroke(tGP_BrushVertexpaintData *gso,
 
 /* ---- Project Grease adaptation of the operator loop ---------------------------------------- */
 
+struct PGVertexPaintSession {
+  tGP_BrushVertexpaintData gso;
+  Brush brush;
+  BrushGpencilSettings settings;
+  PGToolView view;
+  float ui_scale;
+};
+static float s_ui_scale(const tGP_BrushVertexpaintData *gso)
+{
+  const float k = ((const PGVertexPaintSession *)gso)->ui_scale; /* gso is the first member */
+  return (isfinite(k) && k > 0.0f) ? k : 1.0f;
+}
+
 /* gpencil_vertexpaint_brush_do_frame() without the context checks (every stroke can be used on the
  * canvas; editability uses bGPdata::mat[]). */
 static bool pgt_vpaint_do_frame(tGP_BrushVertexpaintData *gso, bGPDlayer *gpl, bGPDframe *gpf)
@@ -932,7 +945,11 @@ static bool pgt_vpaint_do_frame(tGP_BrushVertexpaintData *gso, bGPDlayer *gpl, b
     }
   }
 
-  /* Second step: apply effect. */
+  /* Second step: apply effect. brush_influence_calc multiplies by brush->size, which Blender keeps
+   * in UI pixels; ours is in device pixels (size x density), so the apply step uses the UI size
+   * to paint as fast as desktop Blender. The hit radius above stays in device pixels. */
+  const int device_size = gso->brush->size;
+  gso->brush->size = max_ii(1, (int)lroundf((float)device_size / s_ui_scale(gso)));
   bool changed = false;
   for (i = 0; i < gso->pbuffer_used; i++) {
     changed = true;
@@ -959,6 +976,7 @@ static bool pgt_vpaint_do_frame(tGP_BrushVertexpaintData *gso, bGPDlayer *gpl, b
         break;
     }
   }
+  gso->brush->size = device_size;
   gso->pbuffer = gpencil_select_buffer_ensure(
       gso->pbuffer, &gso->pbuffer_size, &gso->pbuffer_used, true);
   return changed;
@@ -987,13 +1005,6 @@ static bool pgt_vpaint_apply_to_layers(tGP_BrushVertexpaintData *gso)
   return changed;
 }
 
-struct PGVertexPaintSession {
-  tGP_BrushVertexpaintData gso;
-  Brush brush;
-  BrushGpencilSettings settings;
-  PGToolView view;
-};
-
 /* gpencil_vertexpaint_brush_init() with BKE_gpencil_brush_preset_set()'s vertex presets. */
 PGVertexPaintSession *pg_vpaint_session_begin(bGPdata *gpd, const PGToolBrushParams *params)
 {
@@ -1005,6 +1016,7 @@ PGVertexPaintSession *pg_vpaint_session_begin(bGPdata *gpd, const PGToolBrushPar
   }
   PGVertexPaintSession *s = MEM_callocN(sizeof(PGVertexPaintSession), "PGVertexPaintSession");
   tGP_BrushVertexpaintData *gso = &s->gso;
+  s->ui_scale = params->ui_scale;
   Brush *brush = &s->brush;
   brush->gpencil_settings = &s->settings;
   brush->gpencil_vertex_tool = (char)params->brush;

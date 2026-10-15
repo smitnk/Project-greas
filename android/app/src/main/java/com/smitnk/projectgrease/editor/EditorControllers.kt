@@ -883,7 +883,7 @@ class EditorController {
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
                 ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), minOf(vertexBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
-                curvePreset = paintCurvePreset)
+                curvePreset = paintCurvePreset, uiScale = uiScale)
             ToolSession.TOOL_WEIGHT_PAINT -> ToolSession.brushParams(
                 weightPaintBrush, minOf(weightBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f), weightBrush.strength, pxPerUnit,
                 invert = weightPaintSubtract, target = weightPaintGroup, weight = weightPaintValue,

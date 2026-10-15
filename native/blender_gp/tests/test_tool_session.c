@@ -500,6 +500,20 @@ static void test_vertex_paint_app_canvas(PGToolSession *ts)
   gesture(ts, d.gpd, PG_TOOL_VERTEX_PAINT, p, at, 1);
   CHECK(edge->points[0].vert_color[3] == 0.0f, "app canvas: radius scales with the view");
   free_doc(&d);
+  /* Same brush at density 2.75 adds the same colour per touch as desktop (influence uses UI px). */
+  float alpha[2];
+  for (int k = 0; k < 2; k++) {
+    Doc e = doc();
+    bGPDstroke *t = stroke(&e, 3, 100, 100, 10, 0);
+    float *q = (float *)brush(GPVERTEX_TOOL_DRAW, 25, 0.5f);
+    q[PG_TOOL_P_PX_PER_UNIT] = k ? 2.75f : 1.0f; q[PG_TOOL_P_UI_SCALE] = k ? 2.75f : 1.0f;
+    q[PG_TOOL_P_R] = 1; q[PG_TOOL_P_TARGET] = GPPAINT_MODE_STROKE;
+    const float c[1][2] = {{100, 100}};
+    gesture(ts, e.gpd, PG_TOOL_VERTEX_PAINT, q, c, 1);
+    alpha[k] = t->points[0].vert_color[3];
+    free_doc(&e);
+  }
+  CHECK(alpha[0] > 0.0f && fabsf(alpha[0] - alpha[1]) < 0.01f, "density-matched influence %g vs %g", alpha[0], alpha[1]);
 }
 
 int main(void)

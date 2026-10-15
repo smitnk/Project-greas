@@ -44,7 +44,8 @@ object ToolSession {
     const val P_SELECT_MASK = 12
     const val P_CURVE_PRESET = 13
     const val P_ACTIVE_MATERIAL = 14
-    const val P_COUNT = 15
+    const val P_UI_SCALE = 15
+    const val P_COUNT = 16
 
     // Blender tool enums (DNA_brush_enums.h)
     const val GPSCULPT_SMOOTH = 0
@@ -104,14 +105,14 @@ object ToolSession {
     fun brushParams(
         brush: Int, radius: Float, strength: Float, pxPerUnit: Float, invert: Boolean = false,
         r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0,
-        automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0
+        automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0, uiScale: Float = 1f
     ): FloatArray = FloatArray(P_COUNT).also {
         it[P_AUTOMASK] = automask.toFloat(); it[P_SELECT_MASK] = selectMask.toFloat()
         it[P_CURVE_PRESET] = curvePreset.toFloat(); it[P_ACTIVE_MATERIAL] = activeMaterial.toFloat()
         it[P_BRUSH] = brush.toFloat(); it[P_RADIUS] = radius; it[P_STRENGTH] = strength
         it[P_PX_PER_UNIT] = pxPerUnit; it[P_INVERT] = if (invert) 1f else 0f
         it[P_R] = r; it[P_G] = g; it[P_B] = b; it[P_TARGET] = target.toFloat(); it[P_WEIGHT] = weight
-        it[P_SEED] = seed.toFloat()
+        it[P_SEED] = seed.toFloat(); it[P_UI_SCALE] = uiScale
     }
 
     /** PG_DRAW_P_*: material, thickness, then the gpencil_paint.c input settings, the drawing guide

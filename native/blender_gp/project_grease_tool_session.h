@@ -46,6 +46,7 @@ enum {
   PG_TOOL_P_SELECT_MASK,     /* sculpt / vertex paint: GP_SCULPT_MASK_SELECTMODE_* / GP_VERTEX_MASK_SELECTMODE_* */
   PG_TOOL_P_CURVE_PRESET,    /* brush falloff: eBrushCurvePreset (0 = keep the tool's default) */
   PG_TOOL_P_ACTIVE_MATERIAL, /* 0-based active material slot (Active Material auto-masking) */
+  PG_TOOL_P_UI_SCALE,        /* screen density (Blender UI pixels -> device pixels), 1 = desktop */
   PG_TOOL_P_COUNT
 };
 

@@ -31,6 +31,7 @@ typedef struct PGToolBrushParams {
   int select_mask;    /* GP_SCULPT_MASK_SELECTMODE_* (sculpt) / GP_VERTEX_MASK_SELECTMODE_* (vertex paint) */
   int curve_preset;   /* eBrushCurvePreset, 0 keeps the tool default */
   int active_material;/* 0-based */
+  float ui_scale;     /* screen density; vertex paint influence uses the size in UI pixels */
 } PGToolBrushParams;
 
 typedef struct PGSculptSession PGSculptSession;

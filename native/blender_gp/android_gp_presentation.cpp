@@ -1066,14 +1066,10 @@ void draw_reference(int w,int h){
 }
 
 bool engine_wanted(const bGPdata*gpd){
-  if(!g_engine_enabled||g_engine_failed||g_export_mode||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
+  if(!g_engine_enabled||g_engine_failed||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
   if(!engine_context_ok())return false;
-  // The engine draws a copy holding only the shown frame of each layer, so onion ghosts (other
-  // keyframes) were lost (reported: onion skin stopped working): the presenter draws them.
-  if(gpd&&(gpd->flag&GP_DATA_SHOW_ONIONSKINS)){
-    for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next)
-      if(!(l->flag&GP_LAYER_HIDE)&&(l->onion_flag&GP_LAYER_ONIONSKIN)&&BLI_listbase_count_at_most(&l->frames,2)>1)return false;
-  }
+  // Onion skin is drawn by the engine (engine_draw_canvas carries the keyframes of onion layers).
+  (void)gpd;
   return true;
 }
 
@@ -1142,10 +1138,16 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   bGPdata&copy=*static_cast<bGPdata*>(MEM_mallocN(sizeof(bGPdata),"pg engine gpd"));
   std::memcpy(&copy,gpd,sizeof(bGPdata));
   BLI_listbase_clear(&copy.layers);
-  int n=0;
-  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next)n++;
+  /* Onion skin: the engine draws the ghosts itself (BKE_gpencil_visible_stroke_advanced_iter with
+   * do_onion), so the copy carries every keyframe of an onion layer, the shown one as actframe. */
+  const bool onion=(gpd->flag&GP_DATA_SHOW_ONIONSKINS)!=0;
+  int n=0,nf=0;
+  for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
+    n++;
+    nf+=(onion&&(l->onion_flag&GP_LAYER_ONIONSKIN))?std::max(1,BLI_listbase_count(&l->frames)):1;
+  }
   bGPDlayer*layers=static_cast<bGPDlayer*>(MEM_calloc_arrayN(size_t(std::max(n,1)),sizeof(bGPDlayer),"pg engine layers"));
-  bGPDframe*frames=static_cast<bGPDframe*>(MEM_calloc_arrayN(size_t(std::max(n,1)),sizeof(bGPDframe),"pg engine frames"));
+  bGPDframe*frames=static_cast<bGPDframe*>(MEM_calloc_arrayN(size_t(std::max(nf,1)),sizeof(bGPDframe),"pg engine frames"));
   int li=0,fi=0;
   std::vector<const bGPDframe*> shown_frames;
   for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
@@ -1155,7 +1157,20 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
     cl.next=cl.prev=nullptr;
     BLI_listbase_clear(&cl.frames);
     cl.actframe=nullptr;
-    if(current){
+    if(current&&onion&&(l->onion_flag&GP_LAYER_ONIONSKIN)){
+      for(const bGPDframe*f=static_cast<const bGPDframe*>(l->frames.first);f;f=f->next){
+        const bGPDframe*src=f;
+        if(f==current&&g_frame_evaluator){const bGPDframe*e=g_frame_evaluator(g_frame_evaluator_user,l,current,frame_number);if(e)src=e;}
+        bGPDframe&cf=frames[fi++];
+        std::memcpy(&cf,src,sizeof(bGPDframe));
+        cf.next=cf.prev=nullptr;
+        cf.framenum=f->framenum;
+        BLI_addtail(&cl.frames,&cf);
+        if(f==current)cl.actframe=&cf;
+        shown_frames.push_back(src);
+      }
+    }
+    else if(current){
       const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,l,current,frame_number):current;
       bGPDframe&cf=frames[fi++];
       std::memcpy(&cf,shown?shown:current,sizeof(bGPDframe));
@@ -1181,8 +1196,11 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
                       {srgb_to_linear(g_paper_color[0]),srgb_to_linear(g_paper_color[1]),srgb_to_linear(g_paper_color[2]),1.0f},
                       changed?1:0};
   // A rotoscope reference shows through: the engine image is drawn with a clear background over it.
-  const bool rotated=g_view_rotation!=0.0f;
-  const bool over=(reference_shown()||rotated)&&pg_gp_engine_present_over;
+  const bool rotated=g_view_rotation!=0.0f&&!g_export_mode;
+  /* Export (PNG / GIF / MP4 frames): the project background, or a transparent one composited over
+   * the cleared target, at canvas size, with no view rotation and no overlays. */
+  if(g_export_mode==1)for(int c=0;c<3;c++)view.background[c]=srgb_to_linear(g_export_background[c]);
+  const bool over=(reference_shown()||rotated||g_export_mode==2)&&pg_gp_engine_present_over;
   view.rotation=rotated?g_view_rotation:0.0f;
   EngineFx fx;build_engine_fx(gpd,fx);
   view.shader_fx=&fx.list;
@@ -1265,7 +1283,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
       if(layer->flag&GP_LAYER_HIDE)continue;
       bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(layer),frame_number,GP_GETFRAME_USE_PREV);
-      if(current&&g_selection_overlay&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
+      if(current&&g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
     }
   }
   for(const bGPDlayer*layer=by_engine?nullptr:static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){

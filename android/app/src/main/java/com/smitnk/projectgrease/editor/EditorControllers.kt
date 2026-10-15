@@ -1933,7 +1933,7 @@ class EditorController {
         val slot = fillMaterialSlot() ?: return false
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
-        GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, fillPrecision, fillCollide)
+        GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, (fillPrecision / uiScale.coerceAtLeast(1f)).coerceAtLeast(0.05f), fillCollide) // Blender resolution at UI scale 1: the precision is per UI pixel
         // the new slot (if one was made) is part of this fill's undo step
         val t0 = System.nanoTime()
         val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), slot, materials.thickness)

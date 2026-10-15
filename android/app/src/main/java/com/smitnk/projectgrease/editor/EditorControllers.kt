@@ -2103,11 +2103,14 @@ class EditorController {
             GPNative.nativeSetCanvasSize(rendererHandle,document.canvasWidth,document.canvasHeight)
             GPNative.nativeSetViewTransform(rendererHandle,view.zoom,view.panX,view.panY)
             GPNative.nativeSetViewRotation(rendererHandle,view.rotation)
+            val tr=System.nanoTime()
             syncRotoscope()
+            val rotoMs=(System.nanoTime()-tr)/1_000_000
             // Weight Paint mode shows the active group's weights (blue 0 .. red 1) instead of the colors.
             GPNative.nativeSetWeightView(rendererHandle, if (mode == GreaseMode.WEIGHT_PAINT) weightPaintGroup else -1)
             GPNative.nativeSetVertexOpacity(rendererHandle, vertexOpacity)
             GPNative.nativeSetEngine(rendererHandle, useBlenderRenderer && !engineTooSlow)
+            val tw=System.nanoTime()
             // Blender's edit overlay (points, selected ones highlighted) whenever selecting is possible:
             // Edit mode, or a select/lasso/transform tool picked from the rail in another mode.
             GPNative.nativeSetSelectionOverlay(rendererHandle, selectionOverlayVisible())
@@ -2115,6 +2118,7 @@ class EditorController {
             GPNative.nativeSetGuide(rendererHandle, if (tools.activeTool == GreaseTool.DRAW) view.guideType else -1,
                 view.guideCenterX, view.guideCenterY, view.guideAngle, view.guideSpacing)
             val t1=System.nanoTime()
+            if ((t1-t0)/1_000_000 >= 50) com.smitnk.projectgrease.CrashLog.event("RENDER setup ${(t1-t0)/1_000_000} ms: view ${(tr-t0)/1_000_000} ms, photo/video reference $rotoMs ms, weight/opacity/engine ${(tw-tr)/1_000_000 - rotoMs} ms, overlays/guide ${(t1-tw)/1_000_000} ms, mode $mode")
             if(!GPNative.nativeRenderEgl(rendererHandle)) com.smitnk.projectgrease.CrashLog.event("RENDER failed: ${GPNative.nativeLastFrameInfo(rendererHandle)}")
             val ms=(System.nanoTime()-t0)/1_000_000
             if(ms>=120) noteIfSlow("render [${GPNative.nativeLastFrameInfo(rendererHandle)}]", t0, t1)

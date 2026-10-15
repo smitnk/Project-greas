@@ -345,10 +345,14 @@ internal class ProjectGreaseDrawingSurfaceView(
                     val n = event.actionIndex
                     val near = (0 until event.pointerCount).any { i -> i != n &&
                         hypot(event.getX(n) - event.getX(i), event.getY(n) - event.getY(i)) < 40f * resources.displayMetrics.density }
+                    // palm rejection: a palm resting on the screen while drawing is a contact much larger
+                    // than the drawing fingertip (a pinch uses two fingertips of similar size)
+                    val a = event.findPointerIndex(activePointerId)
+                    val palm = a >= 0 && a != n && event.getTouchMajor(n) > maxOf(2f * event.getTouchMajor(a), 22f * resources.displayMetrics.density)
                     com.smitnk.projectgrease.CrashLog.event("TOUCH second touch: " + (0 until event.pointerCount).joinToString { i ->
-                        "id ${event.getPointerId(i)} at %.0f,%.0f".format(event.getX(i), event.getY(i)) } + " new index $n, active $activePointerId, pinch $pinchOpen -> " +
-                        if (near) "ignored (at another finger's spot)" else "gesture")
-                    if (near) {
+                        "id ${event.getPointerId(i)} at %.0f,%.0f size %.0f".format(event.getX(i), event.getY(i), event.getTouchMajor(i)) } + " new index $n, active $activePointerId, pinch $pinchOpen -> " +
+                        if (near) "ignored (at another finger's spot)" else if (palm) "ignored (palm)" else "gesture")
+                    if (near || palm) {
                         ghostPointers += event.getPointerId(n)
                         return true
                     }

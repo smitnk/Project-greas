@@ -1465,6 +1465,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 @Composable private fun StudioLayout(controller:EditorController,refresh:Int,overlayTick:Int,redraw:()->Unit,
                                      onSheet:(Sheet)->Unit,viewport:@Composable BoxScope.()->Unit){
     var popup by remember{mutableStateOf(StudioPopup.NONE)}
+    val context=LocalContext.current
     var layersOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
     Box(Modifier.fillMaxSize().background(CanvasBg).testTag("studioCanvas")){
@@ -1530,6 +1531,10 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             Row(Modifier.align(Alignment.TopCenter).padding(top=52.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 Button(onClick={controller.beginWarp(2,2);redraw()},Modifier.testTag("lassoWarp")){Text("Warp")}
                 OutlinedButton(onClick={controller.beginWarp(3,3);redraw()}){Text("Warp mesh")}
+                // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
+                OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){Text("Copy")}
+                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE -> $ok");redraw()}){Text("Paste")}
+                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){Text("Delete")}
                 OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…")}
             }
         if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)},

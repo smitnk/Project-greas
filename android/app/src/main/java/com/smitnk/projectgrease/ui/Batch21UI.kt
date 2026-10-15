@@ -38,22 +38,22 @@ import com.smitnk.projectgrease.editor.ProjectGreaseSelect
 private val Accent21 = Color(0xFFE84F7B)
 
 /** Canvas units -> screen pixels of the overlay, as the EGL surface maps them (fit 0.92 * zoom + pan). */
-/** Canvas <-> overlay pixels, the same mapping (with the view rotation) as the canvas touches. */
+/** Canvas <-> overlay pixels without the view rotation: these overlays sit in a layer that StudioLayout
+ *  turns with the view (graphicsLayer rotationZ), which also hands their touches back unrotated. */
 private class OverlayMap(private val w: Float, private val h: Float, controller: EditorController) {
     private val cw = controller.document.canvasWidth.coerceAtLeast(1)
     private val ch = controller.document.canvasHeight.coerceAtLeast(1)
     private val v = controller.view
     private val fit = com.smitnk.projectgrease.editor.CanvasMapping.pixelsPerUnit(w, h, cw, ch, v.zoom)
     fun screen(p: Pair<Float, Float>): Offset =
-        com.smitnk.projectgrease.editor.CanvasMapping.toView(p.first, p.second, w, h, cw, ch, v.zoom, v.panX, v.panY, v.rotation)
+        com.smitnk.projectgrease.editor.CanvasMapping.toView(p.first, p.second, w, h, cw, ch, v.zoom, v.panX, v.panY)
             .let { Offset(it.first, it.second) }
     fun canvas(o: Offset) =
-        com.smitnk.projectgrease.editor.CanvasMapping.toCanvas(o.x, o.y, w, h, cw, ch, v.zoom, v.panX, v.panY, clamp = false, rotation = v.rotation)
+        com.smitnk.projectgrease.editor.CanvasMapping.toCanvas(o.x, o.y, w, h, cw, ch, v.zoom, v.panX, v.panY, clamp = false)
     fun scale() = fit
-    /** A finger movement on screen as a canvas movement (turned back by the view rotation). */
+    /** A finger movement in this layer as a canvas movement. */
     fun delta(dx: Float, dy: Float): Pair<Float, Float> {
-        val c = kotlin.math.cos(-v.rotation); val sn = kotlin.math.sin(-v.rotation)
-        return (c * dx - sn * dy) / fit to (sn * dx + c * dy) / fit
+        return dx / fit to dy / fit
     }
 }
 

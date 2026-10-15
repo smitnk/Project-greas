@@ -478,6 +478,30 @@ static void test_vertex_select_mask(PGToolSession *ts)
   free_doc(&d);
 }
 
+/* App canvas: on-screen scale (density x zoom), strokes far from the origin, a stroke whose bounding
+ * box was never computed (loaded from a project), and the Fill target (vert_color_fill). */
+static void test_vertex_paint_app_canvas(PGToolSession *ts)
+{
+  Doc d = doc();
+  bGPDstroke *far = stroke(&d, 5, 800, 1500, 10, 0);
+  bGPDstroke *near = stroke(&d, 5, 800, 1560, 10, 0); /* 60 units below: outside a 25-unit brush */
+  memset(far->boundbox_min, 0, sizeof far->boundbox_min); memset(far->boundbox_max, 0, sizeof far->boundbox_max);
+  memset(near->boundbox_min, 0, sizeof near->boundbox_min); memset(near->boundbox_max, 0, sizeof near->boundbox_max);
+  float *p = (float *)brush(GPVERTEX_TOOL_DRAW, 25, 1.0f);
+  p[PG_TOOL_P_PX_PER_UNIT] = 2.75f * 0.6f;
+  p[PG_TOOL_P_R] = 0; p[PG_TOOL_P_G] = 0; p[PG_TOOL_P_B] = 1; p[PG_TOOL_P_TARGET] = GPPAINT_MODE_BOTH;
+  const float at[1][2] = {{820, 1500}};
+  gesture(ts, d.gpd, PG_TOOL_VERTEX_PAINT, p, at, 1);
+  CHECK(far->points[2].vert_color[3] > 0.0f && far->points[2].vert_color[2] == 1.0f, "app canvas: point under the brush painted");
+  CHECK(near->points[2].vert_color[3] == 0.0f, "app canvas: stroke outside the brush untouched");
+  CHECK(far->vert_color_fill[3] > 0.0f && near->vert_color_fill[3] == 0.0f, "app canvas: fill target");
+  /* the brush radius is in canvas units at any scale: point 3 units outside stays unpainted */
+  bGPDstroke *edge = stroke(&d, 1, 820, 1528, 0, 0);
+  gesture(ts, d.gpd, PG_TOOL_VERTEX_PAINT, p, at, 1);
+  CHECK(edge->points[0].vert_color[3] == 0.0f, "app canvas: radius scales with the view");
+  free_doc(&d);
+}
+
 int main(void)
 {
   BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
@@ -491,6 +515,7 @@ int main(void)
   test_automask_and_select_mask(ts);
   test_vertex_paint(ts);
   test_vertex_select_mask(ts);
+  test_vertex_paint_app_canvas(ts);
   test_weight_paint(ts);
   test_draw(ts);
   test_draw_guide_and_curve(ts);

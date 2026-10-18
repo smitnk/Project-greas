@@ -159,7 +159,9 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 controller.document.canvasWidth=record.width
                 controller.document.canvasHeight=record.height
                 controller.animation.setFps(record.fps)
-                projectStore.loadDocument(record.name)?.let { raw -> controller.runWhenAttached { controller.loadDocumentJson(raw) } }
+                val raw=projectStore.loadDocument(record.name)
+                com.smitnk.projectgrease.CrashLog.event("OPEN project '${record.name}' ${record.width}x${record.height}: saved drawing ${if(raw==null)"missing" else "${raw.length} chars"}")
+                raw?.let { controller.runWhenAttached { val ok=controller.loadDocumentJson(it);com.smitnk.projectgrease.CrashLog.event("OPEN loaded -> $ok, ${controller.strokeCount()} strokes") } }
                 screen=Screen.EDITOR
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},templateId,{templateId=it},controller,{screen=Screen.HOME}){

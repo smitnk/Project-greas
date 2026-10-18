@@ -1688,13 +1688,15 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_last_frame(){
-  static char buf[400];
+  static char buf[600];
   std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x",g_last_doc_ms,g_last_engine_ms,
                 g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
                 g_gl_error_frames,g_engine_gl_errors,g_last_gl_error);
   unsigned plast=0;const char*pname="";
   const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;
   if(pn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", %ld in passes (last 0x%x at pass %s)",pn,plast,pname);}
+  {const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", paper %dx%d at %.0f,%.0f x%.3f colour %.2f %.2f %.2f, export mode %d",
+    g_canvas_width,g_canvas_height,g_map_origin_x,g_map_origin_y,g_map_scale,g_paper_color[0],g_paper_color[1],g_paper_color[2],g_export_mode);}
   return buf;
 }
 extern "C" const char* project_grease_android_present_renderer_info(){

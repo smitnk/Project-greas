@@ -1088,6 +1088,13 @@ bool Backend::lattice_update(int nu, int nv, const float *ctrl, int interp)
   return true;
 }
 
+bool Backend::modal_confirm()
+{
+  if (impl_->lattice_points.empty()) return false;
+  lattice_end(true);
+  return true;
+}
+
 void Backend::lattice_end(bool keep)
 {
   if (!keep && !impl_->lattice_points.empty()) {

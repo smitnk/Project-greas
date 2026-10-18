@@ -111,7 +111,6 @@ object CrashLog {
             what.startsWith("SLOW") && (slowMs.find(what)?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 0) >= 1000 ->
                 "SLOW: step over 1 s - " + what.removePrefix("SLOW ").take(60)
             what.contains("did not decode") || what.startsWith("MESSAGE Couldn't") -> "IMPORT: " + what.take(90)
-            what.startsWith("TOUCH") && what.contains("off-canvas") -> "TOUCH: stroke started off the paper - " + what.take(80)
             else -> null
         }
     }

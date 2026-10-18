@@ -63,6 +63,7 @@ class Backend {
   bool lattice_begin(float r_bounds[4]);
   bool lattice_update(int nu, int nv, const float *ctrl, int interp);
   void lattice_end(bool keep);
+  bool modal_confirm(); // ends a running Lasso Warp, keeping its result
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);
   bool move_layer(int from_index, int to_index);

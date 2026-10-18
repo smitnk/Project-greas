@@ -2710,7 +2710,8 @@ class EditorController {
     fun beginWarp(nu:Int = warpNu, nv:Int = warpNv):Boolean {
         if (native.handle == 0L) return false
         if (warpActive) GPNative.nativeLatticeEnd(native.handle, false)
-        val b = GPNative.nativeLatticeBegin(native.handle) ?: run { warpPoints = null; return false }
+        val b = GPNative.nativeLatticeBegin(native.handle) ?: run { warpPoints = null; com.smitnk.projectgrease.CrashLog.event("WARP begin -> false"); return false }
+        com.smitnk.projectgrease.CrashLog.event("WARP begin ${nu}x$nv")
         warpNu = nu.coerceIn(2, 6); warpNv = nv.coerceIn(2, 6); warpBounds = b
         warpPoints = FloatArray(2 * warpNu * warpNv).also { p ->
             for (j in 0 until warpNv) for (i in 0 until warpNu) {
@@ -2748,6 +2749,7 @@ class EditorController {
     fun endWarp(apply:Boolean) {
         if (!warpActive) return
         GPNative.nativeLatticeEnd(native.handle, apply)
+        com.smitnk.projectgrease.CrashLog.event("WARP ${if (apply) "apply" else "cancel"}")
         warpPoints = null; warpBounds = null
         if (apply) { history.markEdit(); document.markDirty() }
         render(); onOverlayChanged?.invoke()

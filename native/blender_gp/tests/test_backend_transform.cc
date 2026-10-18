@@ -56,6 +56,17 @@ int main()
   b.lattice_end(false);
   CHECK(gps->points[10].x == x10 && gps->points[10].y == y10);
   CHECK(!b.lattice_update(2, 2, ctrl, 0)); /* no session after end */
+  /* Crash of 2026-10-15: Warp open, then an edit freed its strokes, then Cancel wrote through the
+   * freed pointers. Every editing operator now confirms the Warp first (bridge ensure_operator). */
+  CHECK(b.lattice_begin(lb));
+  CHECK(b.lattice_update(2, 2, ctrl, 0));
+  const float warped = corner->x;
+  CHECK(b.modal_confirm());                 /* what the bridge does before the edit */
+  CHECK(corner->x == warped);               /* confirm keeps the warp result */
+  CHECK(!b.modal_confirm());                /* nothing running any more */
+  CHECK(b.delete_last_stroke());            /* frees the stroke the Warp held */
+  b.lattice_end(false);                     /* late Cancel from the UI: must touch nothing */
+  CHECK(!b.lattice_update(2, 2, ctrl, 0));
   std::printf(failures ? "%d FAILURES\n" : "backend transform tests passed\n", failures);
   return failures ? 1 : 0;
 }

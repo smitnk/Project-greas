@@ -1206,7 +1206,9 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   /* Export (PNG / GIF / MP4 frames): the project background, or a transparent one composited over
    * the cleared target, at canvas size, with no view rotation and no overlays. */
   if(g_export_mode==1)for(int c=0;c<3;c++)view.background[c]=srgb_to_linear(g_export_background[c]);
-  const bool over=(reference_shown()||rotated||g_export_mode==2)&&pg_gp_engine_present_over;
+  // on screen the engine image goes over paper + surround (strokes off the paper stay visible, as in
+  // Blender's viewport); export mode 1 draws the project background itself
+  const bool over=(g_export_mode!=1||reference_shown()||rotated)&&pg_gp_engine_present_over;
   view.rotation=rotated?g_view_rotation:0.0f;
   EngineFx fx;build_engine_fx(gpd,fx);
   view.shader_fx=&fx.list;
@@ -1241,10 +1243,19 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
    * camera frame clips them in Blender). */
   const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));
   const int cw=int(std::ceil(float(g_canvas_width)*g_map_scale)), ch=int(std::ceil(float(g_canvas_height)*g_map_scale));
-  // rotated: the turned paper is already drawn, the engine image (clear background) goes over it
-  if(!rotated){glEnable(GL_SCISSOR_TEST);glScissor(x0,h-y1,cw,ch);}
+  // exports are cut to the canvas; on screen strokes outside it stay visible
+  if(g_export_mode&&!rotated){glEnable(GL_SCISSOR_TEST);glScissor(x0,h-y1,cw,ch);}
   if(over)pg_gp_engine_present_over(w,h); else pg_gp_engine_present(w,h);
   glDisable(GL_SCISSOR_TEST);
+  // Blender's camera passepartout (alpha 0.5): what lies outside the paper is dimmed, not hidden
+  if(!g_export_mode&&!rotated){
+    const float W=float(g_canvas_width),H=float(g_canvas_height),F=1e5f;
+    auto quad=[&](float ax,float ay,float bx,float by){return std::vector<Vertex>{ndc(ax,ay,w,h),ndc(bx,ay,w,h),ndc(ax,by,w,h),ndc(bx,by,w,h),ndc(ax,by,w,h),ndc(bx,ay,w,h)};};
+    std::vector<Vertex> out=quad(-F,-F,F,0);
+    for(const auto&q:{quad(-F,H,F,F),quad(-F,0,0,H),quad(W,0,F,H)})out.insert(out.end(),q.begin(),q.end());
+    const float dim[4]={0.0f,0.0f,0.0f,0.5f};
+    draw_vertices(out,dim,true);
+  }
   glViewport(0,0,w,h);
   return true;
 }

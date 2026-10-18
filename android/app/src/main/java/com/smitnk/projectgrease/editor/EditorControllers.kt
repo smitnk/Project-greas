@@ -753,7 +753,9 @@ class EditorController {
             // A destroyed surface takes its native renderer and document with it, and a new surface
             // starts from an empty "Layer 1" document: restore the document as it was at detach.
             setupTrace("attach pending=${pending != null} snapshot=${snapshot != null} layers=${native.layerCount()}")
-            if (pending != null) pending() else if (snapshot != null) {
+            // a failing setup used to vanish silently and leave the canvas black: report it
+            if (pending != null) runCatching { pending() }.onFailure { com.smitnk.projectgrease.CrashLog.event("CRASH setup failed: ${it.javaClass.simpleName}: ${it.message}"); render() }
+            else if (snapshot != null) {
                 loadDocumentJson(snapshot)
                 // the snapshot comes back on frame 1: return to the frame that was shown (strokes on
                 // another frame looked deleted after a photo import / export)
@@ -1021,7 +1023,7 @@ class EditorController {
      *  drawn in layer order under the strokes). [rotoscope] is the one being edited. */
     val references = mutableListOf(Rotoscope())
     var activeReference = 0
-        set(v) { field = v.coerceIn(0, references.size - 1) }
+        set(v) { field = if (references.isEmpty()) 0 else v.coerceIn(0, references.size - 1) }
     val rotoscope: Rotoscope get() = references[activeReference.coerceIn(0, references.size - 1)]
     /** Adds an empty reference on [layer] and makes it the edited one. */
     fun addReference(layer: String): Rotoscope {

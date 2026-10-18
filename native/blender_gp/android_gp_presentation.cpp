@@ -42,6 +42,7 @@
 /* L9: the GLES 3.2 GP draw engine (gles/). Weak so the GLES2-only presenter tests link without it. */
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
 extern "C" __attribute__((weak)) long pg_gp_engine_pass_gl_errors(unsigned *last, const char **pass);
+extern "C" __attribute__((weak)) const char *pg_gp_engine_gl_debug_message(long *count);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gles_api(void);
@@ -1688,13 +1689,15 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_last_frame(){
-  static char buf[600];
+  static char buf[900];
   std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x",g_last_doc_ms,g_last_engine_ms,
                 g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
                 g_gl_error_frames,g_engine_gl_errors,g_last_gl_error);
   unsigned plast=0;const char*pname="";
   const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;
   if(pn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", %ld in passes (last 0x%x at pass %s)",pn,plast,pname);}
+  {long dn=0;const char*dm=pg_gp_engine_gl_debug_message?pg_gp_engine_gl_debug_message(&dn):"";
+   if(dn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", driver says (%ld): %.200s",dn,dm);}}
   {const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", paper %dx%d at %.0f,%.0f x%.3f colour %.2f %.2f %.2f, export mode %d",
     g_canvas_width,g_canvas_height,g_map_origin_x,g_map_origin_y,g_map_scale,g_paper_color[0],g_paper_color[1],g_paper_color[2],g_export_mode);}
   return buf;

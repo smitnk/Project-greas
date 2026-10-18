@@ -1225,8 +1225,31 @@ static void draw_weight_overlay(PGContext &c, bGPdata *gpd, int cfra, int group)
   c.state = DRWState(~0u);
 }
 
+/* KHR_debug (core in OpenGL ES 3.2): the driver's own text for each GL error, so a device report
+ * names the failing call instead of only "0x501". */
+static char g_gl_debug_msg[256] = "";
+static long g_gl_debug_count = 0;
+static void GL_APIENTRY pg_gl_debug_cb(GLenum, GLenum type, GLuint, GLenum, GLsizei, const GLchar *msg, const void *)
+{
+  if (type != GL_DEBUG_TYPE_ERROR || msg == nullptr) return;
+  g_gl_debug_count++;
+  std::snprintf(g_gl_debug_msg, sizeof g_gl_debug_msg, "%s", msg);
+}
+extern "C" const char *pg_gp_engine_gl_debug_message(long *count)
+{
+  if (count) *count = g_gl_debug_count;
+  return g_gl_debug_msg;
+}
+
 int pg_gp_engine_draw(bGPdata *gpd, int cfra, const PGGpEngineView *view)
 {
+  static bool debug_on = false;
+  if (!debug_on) {
+    debug_on = true;
+    glEnable(GL_DEBUG_OUTPUT);
+    glDebugMessageCallback(pg_gl_debug_cb, nullptr);
+    glGetError(); /* a driver without KHR_debug only flags the calls above */
+  }
   PGContext &c = pgc();
   if (gpd == nullptr || view == nullptr || view->viewport_w <= 0 || view->viewport_h <= 0) {
     return 0;

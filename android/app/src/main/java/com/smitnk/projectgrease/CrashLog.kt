@@ -95,7 +95,8 @@ object CrashLog {
         glInPass.find(what)?.let { m ->
             val n = m.groupValues[1].toInt()
             val grew = n > passGlErrors; passGlErrors = n
-            if (grew) return "GL: Blender engine pass '${m.groupValues[3]}' raised GL error ${m.groupValues[2]} ($n so far)"
+            val driver = Regex("""driver says \(\d+\): (.*?)(, paper |$)""").find(what)?.groupValues?.get(1)?.let { " - driver: $it" } ?: ""
+            if (grew) return "GL: Blender engine pass '${m.groupValues[3]}' raised GL error ${m.groupValues[2]} ($n so far)$driver"
         }
         glInEngine.find(what)?.let { m ->
             val n = m.groupValues[1].toInt()

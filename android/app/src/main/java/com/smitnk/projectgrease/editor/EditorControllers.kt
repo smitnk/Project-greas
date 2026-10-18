@@ -789,6 +789,7 @@ class EditorController {
     val setupLog = ArrayList<String>()
     fun setupTrace(msg: String) {
         setupLog += msg
+        com.smitnk.projectgrease.CrashLog.event("SETUP $msg")
         runCatching { android.util.Log.i("ProjectGrease", "setup: $msg") }
     }
     /** The window surface is present (false while a picker or another app covers the editor). */

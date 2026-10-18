@@ -2644,11 +2644,24 @@ class EditorController {
     fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runSelectCommand(ProjectGreaseSelect.separate(mode))
     fun moveSelectionToLayer(index:Int) = runSelectCommand(ProjectGreaseSelect.moveToLayer(index))
     /** Copy does not change the document; call native directly so no undo step is recorded. */
-    fun copySelection():Boolean = native.handle != 0L &&
-        native.applyEditCommand(ProjectGreaseSelect.CMD_COPY, FloatArray(0))
-    fun pasteStrokes() = runSelectCommand(ProjectGreaseSelect.paste(animation.currentFrame))
-    fun deleteSelectedStrokes() = runSelectCommand(ProjectGreaseSelect.deleteStrokes()).also { if (it) selection.clear() }
-    fun deleteSelectedPoints() = runSelectCommand(ProjectGreaseSelect.deletePoints()).also { if (it) selection.clear() }
+    /** Runs a Blender operator by its idname through the native operator layer (poll, exec);
+     *  a FINISHED operator flagged OPTYPE_UNDO becomes one undo step, as in Blender. */
+    fun runOperator(idname:String, vararg props:Float):Boolean {
+        if (native.handle == 0L) return false
+        val r = GPNative.nativeOperatorCall(native.handle, idname, animation.currentFrame, props)
+        val finished = (r and 0xff) and 4 != 0
+        com.smitnk.projectgrease.CrashLog.event("OP $idname ${props.joinToString()} -> ${if (finished) "FINISHED" else "CANCELLED"}")
+        if (finished && ((r shr 8) and 2) != 0) { history.markEdit(); document.markDirty() }
+        if (finished) render()
+        return finished
+    }
+    fun copySelection():Boolean = runOperator("GPENCIL_OT_copy")
+    /** GPENCIL_OT_paste: type 1 = Paste to Active, -1 = Paste by Layer; onBack = behind all strokes. */
+    fun pasteStrokes(byLayer:Boolean = false, onBack:Boolean = false) =
+        runOperator("GPENCIL_OT_paste", if (byLayer) -1f else 1f, if (onBack) 1f else 0f)
+    /** GPENCIL_OT_delete type: 0 points, 1 strokes, 2 frame. */
+    fun deleteSelectedStrokes() = runOperator("GPENCIL_OT_delete", 1f).also { if (it) selection.clear() }
+    fun deleteSelectedPoints() = runOperator("GPENCIL_OT_delete", 0f).also { if (it) selection.clear() }
     fun applyThicknessModifier(factor:Float, normalize:Boolean=false, thickness:Int=0) =
         runSelectCommand(ProjectGreaseSelect.thicknessModifier(factor, normalize, thickness))
     fun applyOpacityModifier(mode:Int, factor:Float, normalize:Boolean=false, hardness:Float=1f) =

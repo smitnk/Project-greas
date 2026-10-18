@@ -12,6 +12,7 @@
 #define GP_FRAME_SELECT (1 << 1)
 #define GP_LAYER_HIDE (1 << 0)
 #define GP_LAYER_LOCKED (1 << 1)
+#define GP_LAYER_ACTIVE (1 << 2)
 #define GP_LAYER_ONIONSKIN (1 << 0) /* eGPDlayer_OnionFlag */
 #define GP_LAYER_UNLOCK_COLOR (1 << 12)
 #define GP_DATA_STROKE_MULTIEDIT (1 << 9)
@@ -27,7 +28,7 @@ typedef struct bGPDspoint {
   bGPDspoint_Runtime runtime;
 } bGPDspoint;
 
-typedef struct bGPDstroke_Runtime { struct bGPDstroke *gps_orig; } bGPDstroke_Runtime;
+typedef struct bGPDstroke_Runtime { struct bGPDstroke *gps_orig; char tmp_layerinfo[128]; } bGPDstroke_Runtime;
 typedef struct bGPDstroke {
   struct bGPDstroke *next, *prev;
   bGPDspoint *points;
@@ -78,3 +79,5 @@ typedef struct bGPdata {
 } bGPdata;
 enum { GP_ONION_GHOST_PREVCOL = (1 << 0), GP_ONION_GHOST_NEXTCOL = (1 << 1), GP_ONION_FADE = (1 << 3) };
 enum { GP_ONION_MODE_ABSOLUTE = 0, GP_ONION_MODE_RELATIVE = 1, GP_ONION_MODE_SELECTED = 2 };
+
+#define GPENCIL_MULTIEDIT_SESSIONS_ON(gpd) ((gpd) && ((gpd)->flag & GP_DATA_STROKE_MULTIEDIT))

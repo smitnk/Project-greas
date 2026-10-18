@@ -25,6 +25,7 @@
 #include "project_grease_annotations.h"
 #include <cstdio>
 #include "DNA_gpencil_legacy_types.h"
+#include "project_grease_wm.h"
 #include "DNA_material_types.h"
 
 struct ProjectGreaseGPHandle {
@@ -497,6 +498,19 @@ int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *x
   return handle->backend.lasso_select(xy, count, additive != 0);
 }
 
+
+int project_grease_gp_operator_call(ProjectGreaseGPHandle *handle, const char *idname, int cfra,
+                                    const float *props, int prop_count)
+{
+  if (!ensure_operator(handle)) return PG_OPERATOR_CANCELLED;
+  /* shortcut: auto-keying is always on (the app keys new drawing on the current frame); read it
+   * from the project settings once the app has an auto-key toggle */
+  PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), cfra, true};
+  int flag = 0;
+  const int status = pg_wm_operator_call(&C, idname, props, prop_count, &flag);
+  if (status & PG_OPERATOR_FINISHED) handle->backend.sync_active_frame(); /* paste / delete frame move actframe */
+  return (status & 0xff) | (flag << 8);
+}
 
 int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
                                          int command,

@@ -2,6 +2,7 @@
  * Fourth batch: generator modifiers baked into the selection, stroke/layer operators, clipboard.
  */
 #pragma once
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -37,6 +38,7 @@ int pg_gp_move_to_layer(struct bGPdata *gpd, struct bGPDlayer *src, int target_i
 int pg_gp_copy(struct bGPdata *gpd, const struct bGPDlayer *only);
 int pg_gp_paste(struct bGPdata *gpd, struct bGPDlayer *target);
 int pg_gp_paste_at(struct bGPdata *gpd, struct bGPDlayer *target, int cfra);
+int pg_gp_paste_ex(struct bGPdata *gpd, struct bGPDlayer *active, int cfra, int type, bool on_back, bool autokey);
 void pg_gp_clipboard_free(void);
 /* The clipboard strokes (gpencil_strokes_copypastebuf), read by the sculpt Clone brush. */
 const struct ListBase *pg_gp_clipboard_strokes(void);

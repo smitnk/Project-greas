@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "BLI_listbase.h"
+#include "BLI_string.h"
 #include "BLI_utildefines.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
@@ -381,44 +382,102 @@ void pg_gp_clipboard_free(void)
   pe4_clipboard.first = pe4_clipboard.last = NULL;
 }
 
+/* gpencil_strokes_copy_exec (gpencil_edit.c): the buffer is freed first, then every editable
+ * layer's selected strokes are copied (only their selected point runs), each remembering its
+ * layer for Paste by Layer. `only` limits the copy to one layer (NULL = all, as Blender). */
 int pg_gp_copy(bGPdata *gpd, const bGPDlayer *only)
 {
   if (gpd == NULL) return 0;
-  ListBase fresh = {NULL, NULL};
-  PE4_STROKES_BEGIN (gpd, only, gpl, gpf, gps) {
-    if (!pe4_sel(gps) || gps->points == NULL) continue;
-    bGPDstroke *c = BKE_gpencil_stroke_duplicate(gps, true, true);
-    if (c) BLI_addtail(&fresh, c);
-  }
-  PE4_STROKES_END;
-  if (fresh.first == NULL) return 0; /* keep the old clipboard when nothing is selected */
   pg_gp_clipboard_free();
-  pe4_clipboard = fresh;
+  const bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if ((only && gpl != only) || !BKE_gpencil_layer_is_editable(gpl)) continue;
+    bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
+    for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+      if (!((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit)))) continue;
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        if (!(gps->flag & GP_STROKE_SELECT) || gps->points == NULL) continue;
+        if (gps->totpoints == 1) {
+          bGPDstroke *gpsd = BKE_gpencil_stroke_duplicate(gps, true, true);
+          STRNCPY(gpsd->runtime.tmp_layerinfo, gpl->info);
+          BKE_gpencil_stroke_geometry_update(gpd, gpsd);
+          gpsd->next = gpsd->prev = NULL;
+          BLI_addtail(&pe4_clipboard, gpsd);
+        }
+        else {
+          pg_gp_duplicate_points(gpd, gps, &pe4_clipboard, gpl);
+        }
+      }
+    }
+  }
   return 0; /* copying does not change the document */
+}
+
+/* gpencil_strokes_paste_exec: type GP_COPY_TO_ACTIVE (1) or GP_COPY_BY_LAYER (-1), paste_back
+ * adds behind all strokes. The frame: with auto-keying (or no active frame) a keyframe at cfra,
+ * else the one shown at cfra (GP_GETFRAME_USE_PREV). Pasted strokes keep the copied selection;
+ * everything else is deselected. Returns 1 = OPERATOR_FINISHED, 0 = OPERATOR_CANCELLED. */
+int pg_gp_paste_ex(bGPdata *gpd, bGPDlayer *active, int cfra, int type, bool on_back, bool autokey)
+{
+  if (gpd == NULL || BLI_listbase_is_empty(&pe4_clipboard)) return 0; /* poll + empty buffer */
+  const bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+  bGPDlayer *gpl = active;
+  if (gpl == NULL) {
+    gpl = BKE_gpencil_layer_addnew(gpd, "GP_Layer", true, false);
+  }
+  else if (!BKE_gpencil_layer_is_editable(gpl) && type == 1) {
+    return 0; /* "Can not paste strokes when active layer is hidden or locked" */
+  }
+  /* Deselect all strokes first (editable_gpencil_strokes) */
+  LISTBASE_FOREACH (bGPDlayer *, l, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(l)) continue;
+    for (bGPDframe *gpf = is_multiedit ? l->frames.first : l->actframe; gpf; gpf = gpf->next) {
+      if (!((gpf == l->actframe) || ((gpf->flag & GP_FRAME_SELECT) && is_multiedit))) continue;
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) pe4_deselect(gps);
+    }
+  }
+  bGPDframe *init_gpf = is_multiedit ? gpl->frames.first : gpl->actframe;
+  for (bGPDstroke *gps = on_back ? pe4_clipboard.last : pe4_clipboard.first; gps;
+       gps = on_back ? gps->prev : gps->next)
+  {
+    if (type != 1) {
+      gpl = BLI_findstring(&gpd->layers, gps->runtime.tmp_layerinfo, offsetof(bGPDlayer, info));
+      if (gpl == NULL) gpl = BKE_gpencil_layer_active_get(gpd);
+      if (gpl == NULL) continue;
+    }
+    if (is_multiedit) {
+      for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+        if (gpl->actframe == gpf || !(gpf->flag & GP_FRAME_SELECT)) continue;
+        bGPDstroke *new_stroke = BKE_gpencil_stroke_duplicate(gps, true, true);
+        new_stroke->runtime.tmp_layerinfo[0] = '\0';
+        new_stroke->next = new_stroke->prev = NULL;
+        BKE_gpencil_stroke_geometry_update(gpd, new_stroke);
+        if (on_back) BLI_addhead(&gpf->strokes, new_stroke); else BLI_addtail(&gpf->strokes, new_stroke);
+        if (new_stroke->mat_nr >= (int)gpd->totcol) new_stroke->mat_nr = 0;
+      }
+    }
+    bGPDframe *gpf = BKE_gpencil_layer_frame_get(
+        gpl, cfra, (autokey || gpl->actframe == NULL) ? GP_GETFRAME_ADD_NEW : GP_GETFRAME_USE_PREV);
+    if (gpf) {
+      bGPDstroke *new_stroke = BKE_gpencil_stroke_duplicate(gps, true, true);
+      new_stroke->runtime.tmp_layerinfo[0] = '\0';
+      new_stroke->next = new_stroke->prev = NULL;
+      BKE_gpencil_stroke_geometry_update(gpd, new_stroke);
+      if (on_back) BLI_addhead(&gpf->strokes, new_stroke); else BLI_addtail(&gpf->strokes, new_stroke);
+      /* material remap by name: the app has one material list per document, so the slot stays */
+      if (new_stroke->mat_nr >= (int)gpd->totcol) new_stroke->mat_nr = 0;
+    }
+  }
+  return 1;
 }
 
 int pg_gp_paste(bGPdata *gpd, bGPDlayer *target) { return pg_gp_paste_at(gpd, target, -1); }
 
-/* GPENCIL_OT_paste: strokes go to the frame at CFRA, adding a keyframe there when the layer has
- * none (BKE_gpencil_layer_frame_get(gpl, CFRA, GP_GETFRAME_ADD_NEW)); cfra < 0 uses actframe. */
+/* Old entry (edit command 85): paste to the active layer, keyframe at cfra; cfra < 0 = shown frame. */
 int pg_gp_paste_at(bGPdata *gpd, bGPDlayer *target, int cfra)
 {
-  if (gpd == NULL || target == NULL || pe4_clipboard.first == NULL || !BKE_gpencil_layer_is_editable(target))
-    return 0;
-  if (cfra >= 0) target->actframe = BKE_gpencil_layer_frame_get(target, cfra, GP_GETFRAME_ADD_NEW);
-  if (target->actframe == NULL) return 0;
-  /* deselect what is there; pasted strokes become the selection */
-  LISTBASE_FOREACH (bGPDstroke *, gps, &target->actframe->strokes) pe4_deselect(gps);
-  LISTBASE_FOREACH (bGPDstroke *, s, &pe4_clipboard) {
-    bGPDstroke *c = BKE_gpencil_stroke_duplicate(s, true, true);
-    if (c == NULL) continue;
-    if (c->mat_nr >= (int)gpd->totcol) c->mat_nr = 0; /* material slot missing in this document */
-    c->flag |= GP_STROKE_SELECT;
-    for (int i = 0; i < c->totpoints; i++) c->points[i].flag |= GP_SPOINT_SELECT;
-    BLI_addtail(&target->actframe->strokes, c);
-    BKE_gpencil_stroke_geometry_update(gpd, c);
-  }
-  return 1;
+  if (target == NULL || (cfra < 0 && target->actframe == NULL)) return 0;
+  return pg_gp_paste_ex(gpd, target, cfra >= 0 ? cfra : target->actframe->framenum, 1, false, cfra >= 0);
 }
 
 int pg_gp_edit4_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, const float *args, int arg_count)

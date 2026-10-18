@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "BLI_listbase.h"
+#include "BLI_string.h"
 #include "BLI_utildefines.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
@@ -1277,7 +1278,7 @@ static MDeformWeight *pge_dw_dup(const MDeformVert *dv)
 }
 
 /* gpencil_duplicate_points() (gpencil_edit.c): copies of the selected point runs of `gps`. */
-static void pge_duplicate_points(bGPdata *gpd, bGPDstroke *gps, ListBase *new_strokes, const bGPDlayer *gpl)
+void pg_gp_duplicate_points(bGPdata *gpd, bGPDstroke *gps, ListBase *new_strokes, const bGPDlayer *gpl)
 {
   int start_idx = -1;
   for (int i = 0; i < gps->totpoints; i++) {
@@ -1298,7 +1299,7 @@ static void pge_duplicate_points(bGPdata *gpd, bGPDstroke *gps, ListBase *new_st
       if (len) {
         /* make a copy first of the entire stroke (to get the flags too) */
         bGPDstroke *gpsd = BKE_gpencil_stroke_duplicate(gps, false, true);
-        (void)gpl; /* runtime.tmp_layerinfo is only read by paste */
+        if (gpl) STRNCPY(gpsd->runtime.tmp_layerinfo, gpl->info); /* original layer, for Paste by Layer */
         gpsd->points = MEM_callocN(sizeof(bGPDspoint) * len, "gps stroke points copy");
         memcpy(gpsd->points, gps->points + start_idx, sizeof(bGPDspoint) * len);
         gpsd->totpoints = (int)len;
@@ -1342,7 +1343,7 @@ int pg_gp_duplicate(bGPdata *gpd, const bGPDlayer *only_layer)
           BLI_addtail(&new_strokes, gpsd);
         }
         else {
-          pge_duplicate_points(gpd, gps, &new_strokes, gpl);
+          pg_gp_duplicate_points(gpd, gps, &new_strokes, gpl);
         }
         for (int i = 0; i < gps->totpoints; i++) gps->points[i].flag &= ~GP_SPOINT_SELECT;
         gps->flag &= ~GP_STROKE_SELECT;

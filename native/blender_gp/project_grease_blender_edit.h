@@ -220,6 +220,8 @@ int pg_gp_edit_mirror(struct bGPdata *gpd,
                       const float *pivot_xy /* may be NULL */);
 
 int pg_gp_edit_delete_strokes(struct bGPdata *gpd, const struct bGPDlayer *only_layer);
+/* gpencil_duplicate_points(): copies of the selected point runs of gps, tagged with gpl's name. */
+void pg_gp_duplicate_points(struct bGPdata *gpd, struct bGPDstroke *gps, struct ListBase *new_strokes, const struct bGPDlayer *gpl);
 int pg_gp_edit_delete_points(struct bGPdata *gpd, const struct bGPDlayer *only_layer);
 
 /* JNI applyEditCommand entry for ids 31..37; tags the GP cache dirty on change. */

@@ -98,6 +98,8 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Separate to new layer", "Move the selection to its own layer") { controller.separateSelectionToLayer() },
                 Op("Copy", "To the clipboard") { controller.copySelection() },
                 Op("Paste", "From the clipboard") { controller.pasteStrokes() },
+                Op("Paste by layer", "Each stroke back to the layer it was copied from") { controller.pasteStrokes(byLayer = true) },
+                Op("Paste on back", "Behind all strokes") { controller.pasteStrokes(onBack = true) },
                 Op("Delete", "Remove the selected points") { controller.deleteSelectedPoints() },
             ),
             "Select" to listOf(

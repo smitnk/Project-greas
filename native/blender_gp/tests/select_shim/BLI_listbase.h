@@ -1,5 +1,6 @@
 /* Test-only stand-in for BLI_listbase.h. */
 #pragma once
+#include <stdbool.h>
 #include "DNA_listBase.h"
 #define LISTBASE_FOREACH(type, var, list) \
   for (type var = (type)((list)->first); var != NULL; var = (type)(((Link *)(var))->next))
@@ -12,4 +13,7 @@ static inline void BLI_remlink(ListBase *listbase, void *vlink)
   if (listbase->first == link) listbase->first = link->next;
 }
 void BLI_addtail(ListBase *listbase, void *vlink);
+void BLI_addhead(ListBase *listbase, void *vlink);
+void *BLI_findstring(const ListBase *listbase, const char *id, int offset);
+static inline bool BLI_listbase_is_empty(const ListBase *lb) { return lb->first == 0; }
 void *BLI_findlink(const ListBase *listbase, int number);

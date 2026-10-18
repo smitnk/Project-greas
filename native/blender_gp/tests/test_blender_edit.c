@@ -16,6 +16,7 @@
 #include "project_grease_blender_edit3.h"
 #include "BLI_rand.h"
 #include "project_grease_blender_edit4.h"
+#include "project_grease_wm.h"
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_blender_edit9.h"
@@ -264,6 +265,23 @@ bGPDframe *BKE_gpencil_layer_frame_get(bGPDlayer *gpl, int cframe, int addnew)
   return f;
 }
 
+void BLI_addhead(ListBase *lb, void *vlink)
+{
+  Link *link = vlink;
+  link->prev = NULL; link->next = lb->first;
+  if (lb->first) ((Link *)lb->first)->prev = link; else lb->last = link;
+  lb->first = link;
+}
+void *BLI_findstring(const ListBase *lb, const char *id, int offset)
+{
+  for (Link *l = lb->first; l; l = l->next) if (strcmp((const char *)l + offset, id) == 0) return l;
+  return NULL;
+}
+bGPDlayer *BKE_gpencil_layer_active_get(bGPdata *gpd)
+{
+  LISTBASE_FOREACH (bGPDlayer *, l, &gpd->layers) if (l->flag & GP_LAYER_ACTIVE) return l;
+  return NULL;
+}
 void BLI_addtail(ListBase *lb, void *vlink)
 {
   Link *link = vlink;
@@ -1247,10 +1265,13 @@ static void test_edit4(void)
   CHECK(pg_gp_paste(g5, l5) == 1 && stroke_count(f5) == 2 && sel_mask(c1) == 0 && sel_mask(f5->strokes.last) == 7,
         "paste adds a selected copy and deselects the rest");
   select_points(g5, c1, 0); select_points(g5, f5->strokes.last, 0);
-  pg_gp_copy(g5, NULL); /* nothing selected: clipboard kept */
-  CHECK(pg_gp_paste(g5, l5) == 1 && stroke_count(f5) == 3, "empty copy keeps the previous clipboard");
+  pg_gp_copy(g5, NULL); /* nothing selected: Blender frees the buffer first */
+  CHECK(BLI_listbase_is_empty(pg_gp_clipboard_strokes()) && pg_gp_paste(g5, l5) == 0,
+        "copy with nothing selected empties the buffer (gpencil_strokes_copy_exec)");
+  select_points(g5, c1, 7);
+  pg_gp_copy(g5, NULL);
   CHECK(pg_gp_paste_at(g5, l5, 50) == 1 && l5->actframe != f5 && l5->actframe->framenum == 50 &&
-            stroke_count(l5->actframe) == 1 && stroke_count(f5) == 3,
+            stroke_count(l5->actframe) == 1 && stroke_count(f5) == 2,
         "paste on a frame with no keyframe adds one there (GP_GETFRAME_ADD_NEW)");
   pg_gp_clipboard_free();
   CHECK(pg_gp_paste(g5, l5) == 0, "empty clipboard pastes nothing");
@@ -1534,8 +1555,54 @@ static void test_edit9(void)
 }
 
 
+/* Operator layer (project_grease_wm.c): Blender's GPENCIL_OT_copy / paste / delete rules. */
+static void test_operator_layer(void)
+{
+  bGPdata *g = make_gpd();
+  bGPDlayer *la = add_layer(g, GP_LAYER_ACTIVE); strcpy(la->info, "A"); bGPDframe *fa = add_frame(la);
+  bGPDlayer *lb = add_layer(g, 0); strcpy(lb->info, "B"); bGPDframe *fb = add_frame(lb);
+  bGPDstroke *s = add_stroke(fb, 5, 0, 0, 0, 10, 0);
+  PGOpContext C = {g, la, 1, false};
+  int flag = 0;
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_nothing", NULL, 0, NULL) == PG_OPERATOR_CANCELLED, "unknown operator");
+  CHECK(!pg_wm_operator_poll(&C, "GPENCIL_OT_paste") &&
+            pg_wm_operator_call(&C, "GPENCIL_OT_paste", NULL, 0, &flag) == PG_OPERATOR_CANCELLED &&
+            (flag & PG_OPTYPE_UNDO),
+        "paste polls false on an empty buffer; it is an undo step");
+  /* copy takes only the selected point run, tagged with its layer */
+  select_points(g, s, 1 | 2);
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_copy", NULL, 0, &flag) == PG_OPERATOR_FINISHED && !(flag & PG_OPTYPE_UNDO),
+        "copy finishes, no undo step");
+  const bGPDstroke *buf = pg_gp_clipboard_strokes()->first;
+  CHECK(buf && buf->totpoints == 2 && strcmp(buf->runtime.tmp_layerinfo, "B") == 0, "copy: 2 selected points from layer B");
+  /* Paste to Active lands on A; Paste by Layer goes back to B; Paste on Back goes first */
+  const float to_active[2] = {1, 0}, by_layer[2] = {-1, 0}, on_back[2] = {1, 1};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_paste", to_active, 2, NULL) == PG_OPERATOR_FINISHED &&
+            stroke_count(fa) == 1 && sel_mask(s) == 0 && sel_mask(fa->strokes.first) == 3,
+        "paste to active: a selected copy on A, the original deselected");
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_paste", by_layer, 2, NULL) == PG_OPERATOR_FINISHED &&
+            stroke_count(fb) == 2 && fb->strokes.last != s,
+        "paste by layer: back on B");
+  add_stroke(fa, 4, 0, 0, 50, 10, 0);
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_paste", on_back, 2, NULL) == PG_OPERATOR_FINISHED &&
+            stroke_count(fa) == 3 && ((bGPDstroke *)fa->strokes.first)->totpoints == 2,
+        "paste on back: first in the frame");
+  la->flag |= GP_LAYER_LOCKED;
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_paste", to_active, 2, NULL) == PG_OPERATOR_CANCELLED,
+        "paste to a locked active layer is cancelled");
+  la->flag &= ~GP_LAYER_LOCKED;
+  /* delete: selected strokes on every editable layer (type STROKES = 1) */
+  const float del_strokes[1] = {1};
+  const int before = stroke_count(fa) + stroke_count(fb);
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_delete", del_strokes, 1, &flag) == PG_OPERATOR_FINISHED &&
+            (flag & PG_OPTYPE_UNDO) && stroke_count(fa) + stroke_count(fb) == before - 1,
+        "delete strokes removes the selected one");
+  pg_gp_clipboard_free();
+}
+
 int main(void)
 {
+  test_operator_layer();
   test_pick();
   test_pick_radius_is_strict();
   test_pick_respects_editability();

@@ -1027,6 +1027,21 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPoint(
       from_handle(handle), stroke_index, point_index, point) != 0;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeOperatorCall(
+    JNIEnv *env, jobject, jlong handle, jstring idname, jint cfra, jfloatArray props)
+{
+  if (!idname) return 2; /* OPERATOR_CANCELLED */
+  const char *name = env->GetStringUTFChars(idname, nullptr);
+  if (!name) return 2;
+  const jsize count = props ? env->GetArrayLength(props) : 0;
+  std::vector<float> values(static_cast<size_t>(count));
+  if (count > 0) env->GetFloatArrayRegion(props, 0, count, values.data());
+  const int result = project_grease_gp_operator_call(from_handle(handle), name, cfra, values.data(), static_cast<int>(count));
+  env->ReleaseStringUTFChars(idname, name);
+  return result;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyEditCommand(
     JNIEnv *env, jobject, jlong handle, jint command, jfloatArray args)

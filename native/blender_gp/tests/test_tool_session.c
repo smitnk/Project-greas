@@ -400,7 +400,8 @@ static void test_clone(PGToolSession *ts)
   bGPDstroke *s = stroke(&d, 5, 0, 0, 10, 0); /* x 0..40, y 0: midpoint (20, 0) */
   const float tap[1][2] = {{100, 100}};
   CHECK(gesture(ts, d.gpd, PG_TOOL_SCULPT, brush(GPSCULPT_TOOL_CLONE, 20, 1.0f), tap, 1) == 0, "clone without clipboard");
-  s->flag |= GP_STROKE_SELECT;
+  s->flag |= GP_STROKE_SELECT; /* Blender's selection marks the stroke and its points */
+  for (int i = 0; i < s->totpoints; i++) s->points[i].flag |= GP_SPOINT_SELECT;
   pg_gp_copy(d.gpd, NULL);
   CHECK(pg_gp_clipboard_strokes()->first != NULL, "copy filled the clipboard");
   gesture(ts, d.gpd, PG_TOOL_SCULPT, brush(GPSCULPT_TOOL_CLONE, 20, 1.0f), tap, 1);

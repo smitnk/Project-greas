@@ -42,6 +42,7 @@
 /* L9: the GLES 3.2 GP draw engine (gles/). Weak so the GLES2-only presenter tests link without it. */
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
 extern "C" __attribute__((weak)) long pg_gp_engine_pass_gl_errors(unsigned *last, const char **pass);
+extern "C" __attribute__((weak)) void pg_gp_engine_reset(void);
 extern "C" __attribute__((weak)) const char *pg_gp_engine_gl_debug_message(long *count);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
@@ -1674,7 +1675,12 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom,flo
 }
 extern "C" void project_grease_android_present_set_view_rotation(float radians){g_view_rotation=std::isfinite(radians)?radians:0.0f;}
 extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
-extern "C" void project_grease_android_present_reset(){if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
+extern "C" void project_grease_android_present_reset(){
+  // the engine and its stroke cache belong to this context too: a new context rebuilds them
+  // shortcut: the old GpencilBatchCache CPU memory leaks once per context; free it with a gpd once one is at hand here
+  if(pg_gp_engine_reset)pg_gp_engine_reset();
+  g_engine_batch_cache=nullptr;g_engine_drawn_revision=~0ull;g_engine_drawn_frame=-1;g_engine_drawn_frames.clear();
+if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
   if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
   for(auto&kv:g_mat_tex)if(kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;

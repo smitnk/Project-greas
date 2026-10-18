@@ -418,6 +418,34 @@ int main()
     project_grease_android_present_set_reference(nullptr, 0, 0);
   }
 
+  /* Editor surface recreated (log 18): the presenter resets the engine while the old context is
+   * current, a new context replaces it, and the next frame still draws the strokes. */
+  {
+    EGLDisplay d = eglGetCurrentDisplay();
+    EGLContext old_ctx = eglGetCurrentContext();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    EGLConfig cfg;
+    EGLint n = 0;
+    const EGLint ca[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT_KHR,
+                         EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+                         EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8, EGL_NONE};
+    eglChooseConfig(d, ca, &cfg, 1, &n);
+    pg_gp_engine_reset();
+    const EGLint xa[] = {EGL_CONTEXT_MAJOR_VERSION_KHR, 3, EGL_CONTEXT_MINOR_VERSION_KHR, 2, EGL_NONE};
+    EGLContext fresh = eglCreateContext(d, cfg, EGL_NO_CONTEXT, xa);
+    CHECK(fresh != EGL_NO_CONTEXT && eglMakeCurrent(d, surf, surf, fresh));
+    eglDestroyContext(d, old_ctx);
+    gpd->runtime.gpencil_cache = nullptr; /* the presenter drops its cache with the context */
+    gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+    PGGpEngineView v2 = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
+    v2.weight_group = -1;
+    v2.vertex_opacity = 1.0f;
+    CHECK(pg_gp_engine_draw(gpd, 1, &v2) == 1);
+    read_result();
+    dump("line after a new context", 100, 30);
+    CHECK(near4(px(100, 30), 0, 0, 0, 1));
+  }
+
   {
     const char *rep = pg_gles_shader_report();
     std::printf("  shader report: %s\n", rep);

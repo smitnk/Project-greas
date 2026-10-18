@@ -1433,6 +1433,10 @@ void pg_gp_engine_reset(void)
   /* shortcut: after a context loss the GL names are gone; the CPU side objects are leaked once
    * per loss rather than freed with a dead context. Free them properly when the presenter's
    * reset path grows a "context still alive" flag. */
+  /* Blender frees engine shaders when the draw manager drops a context (DRW_engines_free calls
+   * DrawEngineType.engine_free): without it a new EGL context drew with dead GL names and the
+   * strokes stayed invisible after the editor surface was recreated. */
+  if (draw_engine_gpencil_type.engine_free) draw_engine_gpencil_type.engine_free();
   if (G_pg != nullptr) {
     G_pg = nullptr;
   }

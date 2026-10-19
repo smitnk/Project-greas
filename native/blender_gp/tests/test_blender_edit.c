@@ -1635,6 +1635,17 @@ static void test_operator_layer(void)
   const float bad_mode[1] = {5};
   CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_vertex_color_invert", bad_mode, 1, NULL) == PG_OPERATOR_CANCELLED,
         "vertex colour ops reject an unknown mode");
+  /* select linked: one selected point selects its whole stroke */
+  pg_wm_operator_call(&C, "GPENCIL_OT_select_all", deselect, 1, NULL);
+  bGPDstroke *one = fb->strokes.first;
+  select_points(g, one, 1);
+  one->flag |= GP_STROKE_SELECT;
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_linked", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
+            sel_mask(one) == (1u << one->totpoints) - 1,
+        "select linked selects the whole stroke");
+  const float bad_group[1] = {9};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_grouped", bad_group, 1, NULL) == PG_OPERATOR_CANCELLED,
+        "select grouped rejects an unknown type");
   pg_gp_clipboard_free();
 }
 

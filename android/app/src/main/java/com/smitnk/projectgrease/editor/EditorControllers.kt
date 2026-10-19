@@ -1565,10 +1565,10 @@ class EditorController {
     fun selectAll(action:Int = ProjectGreaseSelect.ACTION_SELECT) = runOperator("GPENCIL_OT_select_all", action.toFloat())
     fun deselectAll() = selectAll(ProjectGreaseSelect.ACTION_DESELECT)
     fun invertSelection() = selectAll(ProjectGreaseSelect.ACTION_INVERT)
-    fun selectLinked() = runSelectCommand(ProjectGreaseSelect.linked())
-    fun selectAlternate(unselectEnds:Boolean=false) = runSelectCommand(ProjectGreaseSelect.alternate(unselectEnds))
-    fun selectMore() = runSelectCommand(ProjectGreaseSelect.more())
-    fun selectLess() = runSelectCommand(ProjectGreaseSelect.less())
+    fun selectLinked() = runOperator("GPENCIL_OT_select_linked")
+    fun selectAlternate(unselectEnds:Boolean=false) = runOperator("GPENCIL_OT_select_alternate", if (unselectEnds) 1f else 0f)
+    fun selectMore() = runOperator("GPENCIL_OT_select_more")
+    fun selectLess() = runOperator("GPENCIL_OT_select_less")
     fun selectLastPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false) =
         runSelectCommand(ProjectGreaseSelect.last(onlySelectedStrokes, extend))
     fun selectBox(x0:Float, y0:Float, x1:Float, y1:Float) =
@@ -2532,9 +2532,9 @@ class EditorController {
     fun selectFirstPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false):Boolean =
         runSelectCommand(ProjectGreaseSelect.first(onlySelectedStrokes, extend))
     fun selectGroupedByLayer():Boolean =
-        runSelectCommand(ProjectGreaseSelect.grouped(ProjectGreaseSelect.GROUP_LAYER))
+        runOperator("GPENCIL_OT_select_grouped", 0f)
     fun selectGroupedByMaterial():Boolean =
-        runSelectCommand(ProjectGreaseSelect.grouped(ProjectGreaseSelect.GROUP_MATERIAL))
+        runOperator("GPENCIL_OT_select_grouped", 1f)
     fun moveSelectedStroke(dx:Float,dy:Float):Boolean {
         val i=selection.selectedStroke
         if(i<0) return false

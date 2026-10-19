@@ -233,6 +233,40 @@ static int exec_vcolor_reset(PGOpContext *C, const float *props, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- Select menu (gpencil_select.c): each finishes once there is GP data, changed or not. */
+static int exec_select_linked(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  pg_gp_select_linked(C->gpd, NULL);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_select_more(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  pg_gp_select_more(C->gpd, NULL);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_select_less(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  pg_gp_select_less(C->gpd, NULL);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_select_alternate: prop unselect_ends (true) */
+static int exec_select_alternate(PGOpContext *C, const float *props, int n)
+{
+  pg_gp_select_alternate(C->gpd, prop_i(props, n, 0, 1), NULL);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_select_grouped: prop type LAYER (0) / MATERIAL (1) */
+static int exec_select_grouped(PGOpContext *C, const float *props, int n)
+{
+  const int type = prop_i(props, n, 0, 0);
+  if (type < 0 || type > 1) return PG_OPERATOR_CANCELLED;
+  pg_gp_select_grouped(C->gpd, type, NULL);
+  return PG_OPERATOR_FINISHED;
+}
+
 static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_copy", 0, poll_stroke_edit, exec_copy},
     {"GPENCIL_OT_paste", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_paste, exec_paste},
@@ -253,6 +287,11 @@ static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_vertex_color_hsv", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_hsv},
     {"GPENCIL_OT_vertex_color_brightness_contrast", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_bc},
     {"GPENCIL_OT_stroke_reset_vertex_color", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_reset},
+    {"GPENCIL_OT_select_linked", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_linked},
+    {"GPENCIL_OT_select_more", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_more},
+    {"GPENCIL_OT_select_less", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_less},
+    {"GPENCIL_OT_select_alternate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_alternate},
+    {"GPENCIL_OT_select_grouped", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_grouped},
 };
 
 static const PGOperatorType *find_type(const char *idname)

@@ -153,6 +153,7 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
     var tick by remember { mutableIntStateOf(0) }
     @Suppress("UNUSED_VARIABLE") val observed = tick
     fun changed() { controller.rotoscopeChanged(); tick++; redraw() }
+    fun placed() { controller.rotoscopeChanged(imageChanged = false); tick++; redraw() }
     var more by remember { mutableStateOf(false) }
     val media = pickers.media
     val sequence = pickers.sequence
@@ -185,17 +186,17 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
                     Text("Show", Modifier.weight(1f)); Switch(r.visible, { r.visible = it; changed() })
                 }
                 Text("Opacity ${(r.opacity * 100).toInt()}%")
-                Slider(r.opacity, { r.setOpacity(it); changed() }, valueRange = 0f..1f, modifier = Modifier.testTag("rotoOpacity"))
+                Slider(r.opacity, { r.setOpacity(it); placed() }, valueRange = 0f..1f, modifier = Modifier.testTag("rotoOpacity"))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { controller.referenceAdjusting = true; onDismiss() }, Modifier.testTag("rotoAdjust")) { Text("Move / resize on canvas") }
-                    OutlinedButton(onClick = { r.resetPlacement(); changed() }) { Text("Reset") }
+                    OutlinedButton(onClick = { r.resetPlacement(); placed() }) { Text("Reset") }
                 }
                 TextButton(onClick = { more = !more }) { Text(if (more) "Fewer options ▴" else "More options ▾") }
                 if (more) {
                     Text("Size ${(r.scale * 100).toInt()}%")
-                    Slider(r.scale, { r.scale = it; changed() }, valueRange = 0.1f..4f, modifier = Modifier.testTag("rotoScale"))
+                    Slider(r.scale, { r.scale = it; placed() }, valueRange = 0.1f..4f, modifier = Modifier.testTag("rotoScale"))
                     Text("Rotation ${Math.toDegrees(r.rotation.toDouble()).toInt()}°")
-                    Slider(r.rotation, { r.rotation = it; changed() }, valueRange = -3.1416f..3.1416f)
+                    Slider(r.rotation, { r.rotation = it; placed() }, valueRange = -3.1416f..3.1416f)
                     if (r.kind != Rotoscope.Kind.IMAGE) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Starts at frame ${r.start}", Modifier.weight(1f))

@@ -4944,27 +4944,25 @@ bool Backend::fill_at_screen(const float* rgba,
     return false;
   }
 
-  legacy_gp_fill::Image image(width, height);
-  const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-  std::copy(rgba, rgba + count, image.rgba().begin());
-
-  // Blender's fill operator works on a stroke-only render mask. The Android
-  // presentation layer supplies that mask (red = boundary, lower-left origin).
-  legacy_gp_fill::normalize_to_legacy_mask(image, 0.5f);
-
   // gpencil_render_offscreen() renders at region size * fill_factor (min 128 px). The presenter
   // renders at view size, so the mask is resampled on the CPU to that size
   // (project_grease_blender_fill.c documents the adaptation).
   const float factor = impl_->fill_factor;
   const int sx = pg_fill_render_size(width, factor);
   const int sy = pg_fill_render_size(height, factor);
-  std::vector<float> scaled;
+  // Blender's fill operator works on a stroke-only render mask (red = boundary, lower-left
+  // origin). The resample keeps each cell's most opaque pixel, so thresholding after it equals
+  // thresholding before: only the (smaller) fill-size image is copied and normalized, not the
+  // whole screen (the full-screen copy + pass made each fill tap take about a second).
+  legacy_gp_fill::Image image(sx, sy);
   float *mask = image.rgba().data();
   if (sx != width || sy != height) {
-    scaled.resize(static_cast<size_t>(sx) * static_cast<size_t>(sy) * 4u);
-    pg_fill_resample_mask(mask, width, height, scaled.data(), sx, sy);
-    mask = scaled.data();
+    pg_fill_resample_mask(rgba, width, height, mask, sx, sy);
   }
+  else {
+    std::copy(rgba, rgba + static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, mask);
+  }
+  legacy_gp_fill::normalize_to_legacy_mask(image, 0.5f);
   // GLES readback has its origin at the lower-left; Android touch coordinates are top-left based.
   const int raster_seed_y = height - 1 - seed_y;
   const int img_seed_x = std::min(sx - 1, static_cast<int>(static_cast<float>(seed_x) * sx / width));

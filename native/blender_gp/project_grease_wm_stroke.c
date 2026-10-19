@@ -20,6 +20,8 @@
 #include "project_grease_blender_edit6.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_blender_select.h"
+#include "project_grease_blender_interp.h"
+#include <stdlib.h>
 #include "project_grease_wm.h"
 
 static int prop_i(const float *props, int n, int i, int def)
@@ -452,6 +454,76 @@ static int exec_snap_to_grid(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- batch 10: selection tools and interpolation (exec with their properties) ---------- */
+/* shortcut: the select mode (ts->gpencil_selectmode_edit) is the last prop; read it from tool settings
+ * once PGOpContext carries them. Coordinates are canvas units. */
+static bool valid_sel_op(int op) { return op >= 1 && op <= 5; } /* ADD 1, SUB 2, SET 3, AND 4, XOR 5 */
+
+/* GPENCIL_OT_select_box: xmin, ymin, xmax, ymax, mode, selectmode */
+static int exec_select_box(PGOpContext *C, const float *p, int n)
+{
+  if (n < 6) return PG_OPERATOR_CANCELLED;
+  const int op = prop_i(p, n, 4, 3);
+  if (!valid_sel_op(op)) return PG_OPERATOR_CANCELLED;
+  pg_gp_select_box(C->gpd, prop_i(p, n, 0, 0), prop_i(p, n, 1, 0), prop_i(p, n, 2, 0), prop_i(p, n, 3, 0), op,
+                   prop_i(p, n, 5, 0), NULL);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_select_lasso: mode, selectmode, then the path as x y pairs */
+static int exec_select_lasso(PGOpContext *C, const float *p, int n)
+{
+  const int count = (n - 2) / 2;
+  const int op = prop_i(p, n, 0, 0);
+  if (count < 3 || !valid_sel_op(op)) return PG_OPERATOR_CANCELLED; /* Blender: no path, nothing done */
+  int(*coords)[2] = malloc(sizeof(int[2]) * (size_t)count);
+  if (coords == NULL) return PG_OPERATOR_CANCELLED;
+  for (int i = 0; i < count; i++) {
+    coords[i][0] = prop_i(p, n, 2 + i * 2, 0);
+    coords[i][1] = prop_i(p, n, 3 + i * 2, 0);
+  }
+  pg_gp_select_lasso(C->gpd, (const int(*)[2])coords, count, op, prop_i(p, n, 1, 0), NULL);
+  free(coords);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_select_circle: x, y, radius, mode, is_first (ED_select_op_modal), selectmode */
+static int exec_select_circle(PGOpContext *C, const float *p, int n)
+{
+  if (n < 3) return PG_OPERATOR_CANCELLED;
+  const int op = prop_i(p, n, 3, 0), radius = prop_i(p, n, 2, 25);
+  if (!valid_sel_op(op) || radius < 1) return PG_OPERATOR_CANCELLED;
+  pg_gp_select_circle(C->gpd, prop_i(p, n, 0, 0), prop_i(p, n, 1, 0), radius, op, prop_i(p, n, 4, 1),
+                      prop_i(p, n, 5, 0), NULL);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_interpolate_sequence / GPENCIL_OT_interpolate (its confirm step): step (1), layers
+ * ACTIVE 0 / ALL 1, interpolate_selected_only, exclude_breakdowns, flip (AUTO 2), smooth_steps (1),
+ * smooth_factor (0), type (easing preset, 0 linear), easing (mode), then factor for the single one */
+static int interpolate(PGOpContext *C, const float *p, int n, int single)
+{
+  PGInterpSettings st;
+  memset(&st, 0, sizeof(st));
+  st.step = prop_i(p, n, 0, 1);
+  st.all_layers = prop_i(p, n, 1, 0);
+  st.only_selected = prop_i(p, n, 2, 0);
+  st.exclude_breakdowns = prop_i(p, n, 3, 0);
+  st.flipmode = prop_i(p, n, 4, PG_INTERP_FLIPAUTO);
+  st.smooth_steps = prop_i(p, n, 5, 1);
+  st.smooth_factor = prop_f(p, n, 6, 0.0f);
+  st.easing_type = prop_i(p, n, 7, 0);
+  st.easing_mode = prop_i(p, n, 8, 0);
+  st.single = single;
+  st.factor = prop_f(p, n, 9, -1.0f);
+  if (st.step < 1 || st.flipmode < PG_INTERP_NOFLIP || st.flipmode > PG_INTERP_FLIPAUTO ||
+      st.smooth_steps < 1 || st.smooth_steps > 3 || st.smooth_factor < 0.0f || st.smooth_factor > 2.0f)
+    return PG_OPERATOR_CANCELLED;
+  /* Blender reports "Cannot find valid keyframes to interpolate" and cancels */
+  return pg_gp_interpolate_run(C->gpd, BKE_gpencil_layer_active_get(C->gpd), C->cfra, &st) > 0 ?
+             PG_OPERATOR_FINISHED : PG_OPERATOR_CANCELLED;
+}
+static int exec_interpolate_sequence(PGOpContext *C, const float *p, int n) { return interpolate(C, p, n, 0); }
+static int exec_interpolate(PGOpContext *C, const float *p, int n) { return interpolate(C, p, n, 1); }
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -489,6 +561,11 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_vertex_group_invert", RU, poll_gpd, exec_vg_invert},
     {"GPENCIL_OT_vertex_group_normalize", RU, poll_gpd, exec_vg_normalize},
     {"GPENCIL_OT_snap_to_grid", RU, poll_stroke_edit, exec_snap_to_grid},
+    {"GPENCIL_OT_select_box", RU, poll_gpd, exec_select_box},
+    {"GPENCIL_OT_select_lasso", RU, poll_gpd, exec_select_lasso},
+    {"GPENCIL_OT_select_circle", RU, poll_gpd, exec_select_circle},
+    {"GPENCIL_OT_interpolate_sequence", RU, poll_active_layer, exec_interpolate_sequence},
+    {"GPENCIL_OT_interpolate", RU, poll_active_layer, exec_interpolate},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

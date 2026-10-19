@@ -470,6 +470,33 @@ int main()
     CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_active_frames_delete_all", nullptr, 0, nullptr) == PG_OPERATOR_CANCELLED);
   }
 
+  /* batch 10: box / lasso select, interpolation */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);      /* x 0..80, y 0..6 */
+    add_line(b, 0.0f, 100.0f);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    bGPDframe *f = static_cast<bGPDlayer *>(C.gpd->layers.first)->actframe;
+    bGPDstroke *s0 = static_cast<bGPDstroke *>(f->strokes.first), *s1 = s0->next;
+    float box[6] = {-5, -5, 90, 20, 3 /* SET */, 1 /* stroke */};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_box", box, 6, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK((s0->flag & GP_STROKE_SELECT) && !(s1->flag & GP_STROKE_SELECT));
+    float lasso[8] = {3, 1, -5, 90, 90, 90, 40, 130};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_lasso", lasso, 8, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(!(s0->flag & GP_STROKE_SELECT) && (s1->flag & GP_STROKE_SELECT));
+    float bad[6] = {0, 0, 1, 1, 9, 1};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_box", bad, 6, nullptr) == PG_OPERATOR_CANCELLED);
+    /* one keyframe: nothing to interpolate between */
+    C.cfra = 3;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_interpolate_sequence", nullptr, 0, nullptr) == PG_OPERATOR_CANCELLED);
+    /* a second key at 5: in-betweens 2..4 */
+    CHECK(b.create_frame(5));
+    add_line(b, 10.0f, 0.0f);
+    add_line(b, 10.0f, 100.0f);
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_interpolate_sequence", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(BLI_listbase_count(&static_cast<bGPDlayer *>(C.gpd->layers.first)->frames) == 5);
+  }
+
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */
   {
     CHECK(b.reset_document());

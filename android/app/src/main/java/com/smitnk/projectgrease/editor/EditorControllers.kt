@@ -343,9 +343,12 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         if (native.handle == 0L) return 0
         ProjectGreaseSelect.easingParams(elasticAmplitude, elasticPeriod).let { native.applyEditCommand(it.id, it.args) }
         val before = native.frameNumbers().toSet()
-        val c = ProjectGreaseSelect.interpolate(frame, interpolateStep, interpolateFlip, interpolateOnlySelected,
-            interpolateExcludeBreakdowns, easingType, easingMode, interpolateSmoothFactor, interpolateSmoothSteps, single)
-        if (!native.applyEditCommand(c.id, c.args)) return 0
+        // GPENCIL_OT_interpolate_sequence / GPENCIL_OT_interpolate at `frame` (the undo step is the caller's)
+        val r = GPNative.nativeOperatorCall(native.handle, if (single) "GPENCIL_OT_interpolate" else "GPENCIL_OT_interpolate_sequence", frame, 0,
+            floatArrayOf(interpolateStep.coerceAtLeast(1).toFloat(), 0f, if (interpolateOnlySelected) 1f else 0f, if (interpolateExcludeBreakdowns) 1f else 0f,
+                interpolateFlip.coerceIn(0, 2).toFloat(), interpolateSmoothSteps.coerceIn(1, 3).toFloat(), interpolateSmoothFactor.coerceIn(0f, 2f), easingType.toFloat(), easingMode.toFloat()))
+        com.smitnk.projectgrease.CrashLog.event("OP interpolate${if (single) "" else "_sequence"} at $frame -> ${if ((r and 4) != 0) "FINISHED" else "CANCELLED"}")
+        if ((r and 4) == 0) return 0
         val made = native.frameNumbers().count { it !in before }.coerceAtLeast(if (single) 1 else 0)
         frameCount = native.frameCount().coerceAtLeast(1)
         timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
@@ -1042,7 +1045,9 @@ class EditorController {
     private val rotoscopeFailed = HashMap<Rotoscope, String>()
     /** On-canvas placement of the reference: drag moves it, pinch resizes and turns it. */
     var referenceAdjusting by androidx.compose.runtime.mutableStateOf(false)
-    fun rotoscopeChanged() { rotoscopeShown.clear(); rotoscopeFailed.clear(); document.markDirty(); render() }
+    /** imageChanged = false for placement / opacity only: the uploaded image stays (re-uploading it
+     *  took ~90 ms per frame while a reference was dragged). */
+    fun rotoscopeChanged(imageChanged:Boolean = true) { if (imageChanged) { rotoscopeShown.clear(); rotoscopeFailed.clear() }; document.markDirty(); render() }
     fun fitTimelineToRotoscope() { if (rotoscope.frames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.frames - 1) }
     /** Uploads each reference image of the current frame when it changed, in layer order. */
     private fun syncRotoscope() {
@@ -1466,7 +1471,7 @@ class EditorController {
                 if (!cut) render()
                 return
             }
-            val ok = runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), noose))
+            val ok = lassoSelect(noose)
             com.smitnk.projectgrease.CrashLog.event("LASSO ${noose.size} noose points, op $selectOp, select mode $activeSelectMode -> ok=$ok, selected ${native.selectedPointCount()} of ${native.pointCount()} points")
             return
         }
@@ -1535,8 +1540,15 @@ class EditorController {
             showPrimitivePreview(null)
         }
     }
-    fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean =
-        runSelectCommand(ProjectGreaseSelect.lasso(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), points))
+    fun selectStrokeInLasso(points:List<Pair<Float,Float>>):Boolean = lassoSelect(points)
+    /** GPENCIL_OT_select_lasso: mode, select mode, then the path. */
+    private fun lassoSelect(points:List<Pair<Float,Float>>):Boolean {
+        if (points.size < 3 || points.any { !it.first.isFinite() || !it.second.isFinite() }) return false
+        val props = FloatArray(2 + points.size * 2)
+        props[0] = selectOp.toFloat(); props[1] = ProjectGreaseSelect.areaMode(activeSelectMode).toFloat()
+        points.forEachIndexed { i, p -> props[2 + i * 2] = p.first; props[3 + i * 2] = p.second }
+        return runOperator("GPENCIL_OT_select_lasso", *props)
+    }
 
     // ---- Blender 3.6.23 Legacy GP selection (native/blender_gp/project_grease_blender_select.c) ----
     // Point vs. stroke select mode and the eSelectOp used by lasso/box/circle selection.
@@ -1585,7 +1597,7 @@ class EditorController {
     fun selectLastPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false) =
         runOperator("GPENCIL_OT_select_last", if (onlySelectedStrokes) 1f else 0f, if (extend) 1f else 0f)
     fun selectBox(x0:Float, y0:Float, x1:Float, y1:Float) =
-        runSelectCommand(ProjectGreaseSelect.box(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), x0, y0, x1, y1))
+        runOperator("GPENCIL_OT_select_box", x0, y0, x1, y1, selectOp.toFloat(), ProjectGreaseSelect.areaMode(activeSelectMode).toFloat())
     /** One dab of a circle-select gesture; only the first dab of a SET gesture replaces the selection. */
     fun selectCircleAt(x:Float, y:Float, radius:Float, isFirst:Boolean) =
         runSelectCommand(ProjectGreaseSelect.circle(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), x, y, radius, isFirst))

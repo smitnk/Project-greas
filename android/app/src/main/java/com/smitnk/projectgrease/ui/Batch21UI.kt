@@ -164,7 +164,7 @@ fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
             val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
             val dm = m.delta(pan.x, pan.y)
             controller.rotoscope.moveBy(dm.first, dm.second, zoom, Math.toRadians(rotation.toDouble()).toFloat())
-            controller.rotoscopeChanged()
+            controller.rotoscopeChanged(imageChanged = false)
         }
     }) {
         Text("Drag to move the reference, pinch to resize and turn it", Modifier.align(Alignment.TopCenter).padding(top = 56.dp)
@@ -172,7 +172,7 @@ fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
         // at the top, under the hint: at the bottom the timeline bar covered Done and the editor stayed stuck here
         Row(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { controller.referenceAdjusting = false; redraw() }, Modifier.testTag("referenceAdjustDone")) { Text("Done") }
-            OutlinedButton(onClick = { controller.rotoscope.resetPlacement(); controller.rotoscopeChanged() }) { Text("Reset") }
+            OutlinedButton(onClick = { controller.rotoscope.resetPlacement(); controller.rotoscopeChanged(imageChanged = false) }) { Text("Reset") }
         }
     }
 }

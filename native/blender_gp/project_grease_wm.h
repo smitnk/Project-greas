@@ -29,6 +29,18 @@ int pg_wm_operator_call(PGOpContext *C, const char *idname, const float *props, 
 /* The poll alone (WM_operator_poll), e.g. to grey out a button. */
 bool pg_wm_operator_poll(const PGOpContext *C, const char *idname);
 
+typedef struct PGOperatorType {
+  const char *idname;
+  int flag;
+  bool (*poll)(const PGOpContext *C);
+  int (*exec)(PGOpContext *C, const float *props, int n);
+} PGOperatorType;
+/* Layer operators (project_grease_wm_layer.c, built against the real BKE): looked up after the
+ * operators of project_grease_wm.c. Weak, so builds without that file still link. */
+const PGOperatorType *pg_wm_layer_operator_find(const char *idname) __attribute__((weak));
+/* Layer operators change the layer list: the caller re-syncs what it keeps per layer. */
+bool pg_wm_operator_changes_layers(const char *idname);
+
 #ifdef __cplusplus
 }
 #endif

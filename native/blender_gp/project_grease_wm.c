@@ -16,12 +16,6 @@
 #include "project_grease_blender_edit3.h"
 #include "project_grease_wm.h"
 
-typedef struct PGOperatorType {
-  const char *idname;
-  int flag;
-  bool (*poll)(const PGOpContext *C);
-  int (*exec)(PGOpContext *C, const float *props, int n);
-} PGOperatorType;
 
 static int prop_i(const float *props, int n, int i, int def)
 {
@@ -398,7 +392,12 @@ static const PGOperatorType *find_type(const char *idname)
   if (idname == NULL) return NULL;
   for (size_t i = 0; i < sizeof(pg_operators) / sizeof(pg_operators[0]); i++)
     if (strcmp(pg_operators[i].idname, idname) == 0) return &pg_operators[i];
-  return NULL;
+  return pg_wm_layer_operator_find ? pg_wm_layer_operator_find(idname) : NULL;
+}
+
+bool pg_wm_operator_changes_layers(const char *idname)
+{
+  return idname && pg_wm_layer_operator_find && pg_wm_layer_operator_find(idname) != NULL;
 }
 
 bool pg_wm_operator_poll(const PGOpContext *C, const char *idname)

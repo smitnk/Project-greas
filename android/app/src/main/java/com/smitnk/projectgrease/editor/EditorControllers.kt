@@ -1639,12 +1639,15 @@ class EditorController {
     fun invertGroupWeights() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_INVERT, weightPaintGroup))
     fun normalizeGroupWeights() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_NORMALIZE, weightPaintGroup))
     /** Merges the active layer into the one below; native makes the lower layer active, so does the editor. */
-    fun mergeLayerDown():Boolean {
-        if (selectedLayer <= 0) return false
-        val ok = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LAYER_MERGE))
+    /** GPENCIL_OT_layer_merge (Active): the active layer into the one below. */
+    fun mergeLayerDown():Boolean = layerOperator("GPENCIL_OT_layer_merge", 0f)
+    /** Blender's layer operators (project_grease_wm_layer.c); the active layer follows Blender's. */
+    private fun layerOperator(idname:String, vararg props:Float):Boolean {
+        if (native.handle == 0L) return false
+        native.selectLayer(selectedLayer)
+        val ok = runOperator(idname, *props)
         if (ok) {
-            selectedLayer = (selectedLayer - 1).coerceIn(0, (native.layerCount() - 1).coerceAtLeast(0))
-            native.selectLayer(selectedLayer)
+            selectedLayer = native.activeLayer().coerceAtLeast(0)
             animation.refreshFromNative()
             render()
         }
@@ -2253,21 +2256,17 @@ class EditorController {
         return ok
     }
     fun moveLayer(from:Int,to:Int):Boolean {
+        // one step: GPENCIL_OT_layer_move (UP = -1 towards the top, DOWN = 1)
+        if (to == from + 1 || to == from - 1) { selectedLayer = from; return layerOperator("GPENCIL_OT_layer_move", if (to > from) -1f else 1f) }
+        // shortcut: a jump of several places keeps the app's own move (Blender moves one step per call)
         val ok=native.moveLayer(from,to)
         if(ok){selectedLayer=to;history.markEdit();document.markDirty();render()}
         return ok
     }
-    fun duplicateLayer(index:Int=selectedLayer):Boolean {
-        val ok=native.duplicateLayer(index)
-        if(ok){selectedLayer=(index+1).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
-        return ok
-    }
-    fun deleteLayer(index:Int=selectedLayer):Boolean {
-        if(native.layerCount()<=1)return false
-        val ok=native.deleteLayer(index)
-        if(ok){selectedLayer=(index-1).coerceAtLeast(0).coerceAtMost(native.layerCount()-1);history.markEdit();document.markDirty();render()}
-        return ok
-    }
+    /** GPENCIL_OT_layer_duplicate: empty = keyframes only, below the layer (Blender's "Empty Keyframes"). */
+    fun duplicateLayer(index:Int=selectedLayer, empty:Boolean=false):Boolean { selectedLayer = index; return layerOperator("GPENCIL_OT_layer_duplicate", if (empty) 1f else 0f) }
+    /** GPENCIL_OT_layer_remove: locked layers stay; the layer below becomes active. */
+    fun deleteLayer(index:Int=selectedLayer):Boolean { selectedLayer = index; return layerOperator("GPENCIL_OT_layer_remove") }
     fun renameLayer(index:Int=selectedLayer,name:String):Boolean {
         val ok=native.renameLayer(index,name)
         if(ok){history.markEdit();document.markDirty();render()}
@@ -2483,19 +2482,13 @@ class EditorController {
         return importStrokes(StrokeImport.plan(sources, fit, existingMaterials()), newLayer = "Trace")
     }
 
+    /** GPENCIL_OT_layer_add (above the active layer, keyed at the current frame), then named: one undo step. */
     fun createLayer(name:String):Boolean {
-        val ok = native.createLayer(name)
-        if (ok) {
-            selectedLayer = (native.layerCount() - 1).coerceAtLeast(0)
-            val frameReady = native.createFrame(animation.currentFrame)
-            animation.initialize()
-            if (!frameReady && native.frameCount() == 0) {
-                return false
-            }
-            history.markEdit()
-            document.markDirty()
-            render()
-        }
+        history.beginBatch()
+        val ok = layerOperator("GPENCIL_OT_layer_add")
+        if (ok && name.isNotBlank()) native.renameLayer(selectedLayer, name)
+        if (ok) { history.markEdit(); animation.initialize(); render() }
+        history.endBatch()
         return ok
     }
     fun selectLayer(index:Int):Boolean {

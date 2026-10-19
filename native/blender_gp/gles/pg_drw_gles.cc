@@ -1033,9 +1033,11 @@ static void context_init(PGContext &c)
   std::memset(infos.data(), 0, sizeof(ObjectInfos) * infos.size());
   c.infos_ubo = GPU_uniformbuf_create_ex(sizeof(ObjectInfos) * infos.size(), infos.data(), "drw_infos");
   c.handles[&c.ob] = 1;
-  /* As the draw manager registers them (DRW_engines_register). */
-  BKE_gpencil_batch_cache_dirty_tag_cb = DRW_gpencil_batch_cache_dirty_tag;
-  BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
+  /* As the draw manager registers them (DRW_engines_register), unless the app installed its own:
+   * overwriting the backend's callback stopped sculpt / paint edits from bumping the document
+   * revision, so they stayed undrawn until the frame changed. */
+  if (BKE_gpencil_batch_cache_dirty_tag_cb == nullptr) BKE_gpencil_batch_cache_dirty_tag_cb = DRW_gpencil_batch_cache_dirty_tag;
+  if (BKE_gpencil_batch_cache_free_cb == nullptr) BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
   glGenVertexArrays(1, &c.vao);
   c.initialized = true;
 }

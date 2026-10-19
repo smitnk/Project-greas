@@ -5044,6 +5044,49 @@ void Backend::set_annotations_visible(bool visible) { impl_->annotations_visible
 bool Backend::annotations_visible() const { return impl_->annotations_visible; }
 int Backend::current_frame_number() const { return impl_->frame ? impl_->frame->framenum : 1; }
 
+std::vector<bGPDlayer *> Backend::layer_list() const
+{
+  std::vector<bGPDlayer *> out;
+  if (impl_->gpd) LISTBASE_FOREACH (bGPDlayer *, l, &impl_->gpd->layers) out.push_back(l);
+  return out;
+}
+
+void Backend::remap_layers(const std::vector<bGPDlayer *> &before, const bGPDlayer *copy_from)
+{
+  if (!impl_->gpd) return;
+  impl_->stacks.resize(before.size());
+  impl_->fx_stacks.resize(before.size());
+  auto old_index = [&](const bGPDlayer *l) -> int {
+    for (size_t i = 0; i < before.size(); i++) if (before[i] == l) return static_cast<int>(i);
+    return -1;
+  };
+  const std::vector<bGPDlayer *> after = layer_list();
+  ModifierStacks stacks(after.size());
+  FxStacks fx(after.size());
+  for (size_t i = 0; i < after.size(); i++) {
+    const int o = old_index(after[i]);
+    const int src = o >= 0 ? o : old_index(copy_from); /* a new layer: a duplicate's source, or empty */
+    if (src < 0) continue;
+    stacks[i] = impl_->stacks[static_cast<size_t>(src)];
+    fx[i] = impl_->fx_stacks[static_cast<size_t>(src)];
+  }
+  /* effects are the drawing's: a removed layer's effects stay, on the bottom layer (keep_drawing_fx) */
+  for (size_t o = 0; o < before.size(); o++) {
+    bool kept = false;
+    for (bGPDlayer *l : after) kept |= l == before[o];
+    if (!kept && !fx.empty()) fx.front().insert(fx.front().end(), impl_->fx_stacks[o].begin(), impl_->fx_stacks[o].end());
+  }
+  impl_->stacks = std::move(stacks);
+  impl_->fx_stacks = std::move(fx);
+  impl_->stack_revision++;
+  eval_cache_clear(impl_);
+  bGPDlayer *active = BKE_gpencil_layer_active_get(impl_->gpd);
+  impl_->layer = active ? active : static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+  impl_->stroke = nullptr;
+  impl_->layer_created = impl_->layer != nullptr;
+  sync_active_frame();
+}
+
 void Backend::sync_active_frame()
 {
   impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;

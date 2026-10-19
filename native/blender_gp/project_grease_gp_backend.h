@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 #include <cstdint>
 #include "project_grease_tool_brushes.h"
@@ -346,6 +347,11 @@ class Backend {
   /* Re-reads the active frame from the active layer's actframe after an edit command that adds,
    * moves or removes frames behind the backend (blank keyframe, clean duplicate frames). */
   void sync_active_frame();
+  /* The layer list before a layer operator; after it, remap_layers() moves each layer's modifier
+   * and effect lists to its new place (copy_from: the source of a duplicated layer) and follows
+   * Blender's active layer. */
+  std::vector<bGPDlayer *> layer_list() const;
+  void remap_layers(const std::vector<bGPDlayer *> &before, const bGPDlayer *copy_from);
   /* Annotation data (project_grease_annotations.h), owned by the document; never null after
    * the document is created. */
   bGPdata* annotation_data() const;

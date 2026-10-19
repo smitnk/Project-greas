@@ -26,6 +26,8 @@
 #include <cstdio>
 #include "DNA_gpencil_legacy_types.h"
 #include "project_grease_wm.h"
+#include "BKE_gpencil_legacy.h"
+#include <cstring>
 #include "DNA_material_types.h"
 
 struct ProjectGreaseGPHandle {
@@ -507,8 +509,18 @@ int project_grease_gp_operator_call(ProjectGreaseGPHandle *handle, const char *i
    * from the project settings once the app has an auto-key toggle */
   PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), cfra, true};
   int flag = 0;
+  const bool layers = pg_wm_operator_changes_layers(idname);
+  std::vector<bGPDlayer *> before;
+  if (layers && C.gpd) {
+    before = handle->backend.layer_list();
+    if (C.active_layer) BKE_gpencil_layer_active_set(C.gpd, C.active_layer); /* Blender reads the flag */
+  }
   const int status = pg_wm_operator_call(&C, idname, props, prop_count, &flag);
-  if (status & PG_OPERATOR_FINISHED) handle->backend.sync_active_frame(); /* paste / delete frame move actframe */
+  if ((status & PG_OPERATOR_FINISHED) && layers) {
+    const bool dup = std::strcmp(idname, "GPENCIL_OT_layer_duplicate") == 0;
+    handle->backend.remap_layers(before, dup ? C.active_layer : nullptr);
+  }
+  else if (status & PG_OPERATOR_FINISHED) handle->backend.sync_active_frame(); /* paste / delete frame move actframe */
   return (status & 0xff) | (flag << 8);
 }
 

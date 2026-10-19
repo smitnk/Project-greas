@@ -14,6 +14,8 @@
 #include "project_grease_gp_backend.h"
 #include "project_grease_modifier_stack.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_wm.h"
+#include "BKE_gpencil_legacy.h"
 
 /* The draw module is not part of this host test: the backend only needs these two to be non-null. */
 extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *) {}
@@ -41,6 +43,18 @@ static void add_line(Backend &b, float x0, float y0)
   info.material_index = 0;
   info.thickness = 8.0f;
   CHECK(b.add_stroke(pts, 5, info));
+}
+
+/* As project_grease_gp_operator_call does for layer operators. */
+static int run_layer_op(Backend &b, const char *idname, float prop = NAN)
+{
+  PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true};
+  const std::vector<bGPDlayer *> before = b.layer_list();
+  if (C.active_layer) BKE_gpencil_layer_active_set(C.gpd, C.active_layer);
+  const int st = pg_wm_operator_call(&C, idname, &prop, std::isnan(prop) ? 0 : 1, nullptr);
+  if (st & PG_OPERATOR_FINISHED)
+    b.remap_layers(before, std::strcmp(idname, "GPENCIL_OT_layer_duplicate") == 0 ? C.active_layer : nullptr);
+  return st;
 }
 
 static float first_x(const bGPDframe *f)
@@ -356,6 +370,37 @@ int main()
     CHECK(b.active_layer_data() == b.document_data()->layers.first);
     CHECK(b.stroke_count() == 2);                     /* both strokes on the lower layer's frame */
     CHECK(!b.merge_layer_down());                     /* nothing below the bottom layer */
+  }
+
+  /* --- layer operators (project_grease_wm_layer.c): modifier lists follow their layer --- */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);                         /* A: 1 modifier */
+    CHECK(b.create_layer("B") && b.select_layer(1) && b.create_frame(1));
+    CHECK(b.modifier_add(1, PG_MOD_OFFSET) == 0 && b.modifier_add(1, PG_MOD_OFFSET) == 1); /* B: 2 */
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_move", 1) == PG_OPERATOR_FINISHED); /* B down */
+    CHECK(b.modifier_count(0) == 2 && b.modifier_count(1) == 1);
+    CHECK(b.active_layer_data() == b.document_data()->layers.first);
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_duplicate", 0) == PG_OPERATOR_FINISHED);
+    CHECK(b.layer_count() == 3 && b.modifier_count(1) == 2 && b.modifier_count(2) == 1); /* copy above B */
+    CHECK(b.active_layer_data() == BLI_findlink(&b.document_data()->layers, 1));
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_remove") == PG_OPERATOR_FINISHED);
+    CHECK(b.layer_count() == 2 && b.modifier_count(0) == 2 && b.modifier_count(1) == 1);
+    CHECK(b.active_layer_data() == b.document_data()->layers.first);
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_add") == PG_OPERATOR_FINISHED);
+    CHECK(b.layer_count() == 3 && b.modifier_count(1) == 0 && b.modifier_count(2) == 1); /* new after active */
+    CHECK(b.active_layer_data() == BLI_findlink(&b.document_data()->layers, 1));
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_merge", 0) == PG_OPERATOR_FINISHED);
+    CHECK(b.layer_count() == 2 && b.modifier_count(0) == 2 && b.modifier_count(1) == 1);
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_merge", 1) == PG_OPERATOR_CANCELLED); /* ALL not ported */
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_active", 1) == PG_OPERATOR_FINISHED &&
+          b.active_layer_data() == b.document_data()->layers.last);
+    CHECK(b.select_layer(0));
+    bGPDlayer *bottom = static_cast<bGPDlayer *>(b.document_data()->layers.first);
+    bottom->flag |= GP_LAYER_LOCKED;
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_remove") == PG_OPERATOR_CANCELLED); /* locked layers stay */
+    bottom->flag &= ~GP_LAYER_LOCKED;
   }
 
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */

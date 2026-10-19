@@ -10,12 +10,15 @@
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_material_types.h"
 #include "BKE_gpencil_legacy.h"
+#include "BKE_gpencil_geom_legacy.h"
+#include "MEM_guardedalloc.h"
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit2.h"
 #include "project_grease_blender_edit3.h"
 #include "project_grease_blender_edit4.h"
 #include "project_grease_blender_edit6.h"
+#include "project_grease_blender_edit7.h"
 #include "project_grease_blender_select.h"
 #include "project_grease_wm.h"
 
@@ -306,6 +309,149 @@ static int exec_reveal(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- batch 9 ---------------------------------------------------------------------------- */
+/* GP_EDITABLE_STROKES_BEGIN: editable layers, the active frame (every selected frame in multiframe) */
+#define PGW_EDITABLE_STROKES_BEGIN(gpd_, gpl, gps)                                                   \
+  {                                                                                                  \
+    const bool multi_ = GPENCIL_MULTIEDIT_SESSIONS_ON(gpd_);                                         \
+    LISTBASE_FOREACH (bGPDlayer *, gpl, &(gpd_)->layers) {                                           \
+      if (!BKE_gpencil_layer_is_editable(gpl)) continue;                                             \
+      for (bGPDframe *gpf_ = multi_ ? gpl->frames.first : gpl->actframe; gpf_;                       \
+           gpf_ = multi_ ? gpf_->next : NULL) {                                                      \
+        if (gpf_ != gpl->actframe && !(gpf_->flag & GP_FRAME_SELECT)) continue;                      \
+        LISTBASE_FOREACH_MUTABLE (bGPDstroke *, gps, &gpf_->strokes) {
+#define PGW_EDITABLE_STROKES_END }}}}
+
+/* GPENCIL_OT_stroke_simplify: factor (0) - Ramer-Douglas-Peucker on each selected stroke */
+static int exec_simplify(PGOpContext *C, const float *p, int n)
+{
+  const float factor = prop_f(p, n, 0, 0.0f);
+  if (factor < 0.0f) return PG_OPERATOR_CANCELLED;
+  bool changed = false;
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    (void)gpl;
+    if (gps->flag & GP_STROKE_SELECT) { BKE_gpencil_stroke_simplify_adaptive(C->gpd, gps, factor); changed = true; }
+  } PGW_EDITABLE_STROKES_END
+  if (changed) BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_stroke_smooth: repeat (2), factor (1), only_selected (true), smooth_position (true),
+ * smooth_thickness (true), smooth_strength (false), smooth_uv (false) - gpencil_smooth_stroke() */
+static int exec_smooth(PGOpContext *C, const float *p, int n)
+{
+  const int repeat = prop_i(p, n, 0, 2);
+  const float factor = prop_f(p, n, 1, 1.0f);
+  const bool only_selected = prop_i(p, n, 2, 1), pos = prop_i(p, n, 3, 1), thick = prop_i(p, n, 4, 1),
+             strength = prop_i(p, n, 5, 0), uv = prop_i(p, n, 6, 0);
+  if (repeat < 1 || repeat > 50 || factor < 0.0f || factor > 2.0f) return PG_OPERATOR_CANCELLED;
+  if (factor == 0.0f) return PG_OPERATOR_FINISHED;
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    (void)gpl;
+    if (!(gps->flag & GP_STROKE_SELECT)) continue;
+    bGPDstroke gps_old = *gps;
+    gps_old.points = (bGPDspoint *)MEM_dupallocN(gps->points);
+    bool need_update = false;
+    for (int r = 0; r < repeat; r++) {
+      for (int i = 0; i < gps->totpoints; i++) {
+        if (only_selected && (gps->points[i].flag & GP_SPOINT_SELECT) == 0) continue;
+        if (pos) { BKE_gpencil_stroke_smooth_point(&gps_old, i, factor, 1, false, false, gps); need_update = true; }
+        if (strength) BKE_gpencil_stroke_smooth_strength(&gps_old, i, factor, 1, gps);
+        if (thick) BKE_gpencil_stroke_smooth_thickness(&gps_old, i, 1.0f - factor, 1, gps);
+        if (uv) { BKE_gpencil_stroke_smooth_uv(&gps_old, i, factor, 1, gps); need_update = true; }
+      }
+      if (r < repeat - 1) memcpy(gps_old.points, gps->points, sizeof(bGPDspoint) * gps->totpoints);
+    }
+    MEM_freeN(gps_old.points);
+    if (need_update) BKE_gpencil_stroke_geometry_update(C->gpd, gps);
+  } PGW_EDITABLE_STROKES_END
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_active_frame_delete: the active layer's frame shown at cfra */
+static int exec_active_frame_delete(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(C->gpd);
+  bGPDframe *gpf = gpl ? BKE_gpencil_layer_frame_get(gpl, C->cfra, GP_GETFRAME_USE_PREV) : NULL;
+  if (gpf == NULL) return PG_OPERATOR_CANCELLED; /* "No active frame to delete" */
+  BKE_gpencil_layer_frame_delete(gpl, gpf);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_active_frames_delete_all: that frame on every editable layer */
+static int exec_active_frames_delete_all(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  bool success = false;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl)) continue;
+    bGPDframe *gpf = BKE_gpencil_layer_frame_get(gpl, C->cfra, GP_GETFRAME_USE_PREV);
+    if (gpf == NULL) continue;
+    BKE_gpencil_layer_frame_delete(gpl, gpf);
+    success = true;
+  }
+  return success ? PG_OPERATOR_FINISHED : PG_OPERATOR_CANCELLED; /* "No active frame(s) to delete" */
+}
+
+/* Vertex group operators (gpencil_data.c). shortcut: the active group (ob->actdef) and the assign
+ * weight (ts->vgroup_weight) come as props 0 and 1; move them into PGOpContext with a settings struct. */
+static int vg_index(const PGOpContext *C, const float *p, int n)
+{
+  const int def_nr = prop_i(p, n, 0, -1);
+  return (def_nr >= 0 && def_nr < BLI_listbase_count(&C->gpd->vertex_group_names)) ? def_nr : -1;
+}
+static int exec_vg_assign(PGOpContext *C, const float *p, int n)
+{
+  const int g = vg_index(C, p, n);
+  if (g < 0) return PG_OPERATOR_CANCELLED;
+  pg_gp_vgroup_assign(C->gpd, NULL, g, fminf(fmaxf(prop_f(p, n, 1, 1.0f), 0.0f), 1.0f));
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_vg_remove_from(PGOpContext *C, const float *p, int n)
+{
+  const int g = vg_index(C, p, n);
+  if (g < 0) return PG_OPERATOR_CANCELLED;
+  pg_gp_vgroup_remove(C->gpd, NULL, g);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_vg_select(PGOpContext *C, const float *p, int n)
+{
+  const int g = vg_index(C, p, n);
+  if (g < 0) return PG_OPERATOR_CANCELLED;
+  pg_gp_vgroup_select(C->gpd, NULL, g, 1);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_vg_deselect(PGOpContext *C, const float *p, int n)
+{
+  const int g = vg_index(C, p, n);
+  if (g < 0) return PG_OPERATOR_CANCELLED;
+  pg_gp_vgroup_select(C->gpd, NULL, g, 0);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_vg_invert(PGOpContext *C, const float *p, int n)
+{
+  const int g = vg_index(C, p, n);
+  if (g < 0) return PG_OPERATOR_CANCELLED;
+  pg_gp_vgroup_invert(C->gpd, NULL, g);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_vg_normalize(PGOpContext *C, const float *p, int n)
+{
+  const int g = vg_index(C, p, n);
+  if (g < 0) return PG_OPERATOR_CANCELLED;
+  pg_gp_vgroup_normalize(C->gpd, NULL, g);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_snap_to_grid: the canvas grid size as prop 0 (Blender reads the viewport grid) */
+static int exec_snap_to_grid(PGOpContext *C, const float *p, int n)
+{
+  const float grid = prop_f(p, n, 0, 0.0f);
+  if (grid <= 0.0f) return PG_OPERATOR_CANCELLED;
+  pg_gp_snap_to_grid(C->gpd, NULL, grid);
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -332,6 +478,17 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_set_active_material", RU, poll_material, exec_set_active_material},
     {"GPENCIL_OT_hide", RU, poll_active_layer, exec_hide},
     {"GPENCIL_OT_reveal", RU, poll_gpd, exec_reveal},
+    {"GPENCIL_OT_stroke_simplify", RU, poll_stroke_edit, exec_simplify},
+    {"GPENCIL_OT_stroke_smooth", RU, poll_stroke_edit, exec_smooth},
+    {"GPENCIL_OT_active_frame_delete", RU, poll_active_layer, exec_active_frame_delete},
+    {"GPENCIL_OT_active_frames_delete_all", RU, poll_gpd, exec_active_frames_delete_all},
+    {"GPENCIL_OT_vertex_group_assign", RU, poll_gpd, exec_vg_assign},
+    {"GPENCIL_OT_vertex_group_remove_from", RU, poll_gpd, exec_vg_remove_from},
+    {"GPENCIL_OT_vertex_group_select", RU, poll_gpd, exec_vg_select},
+    {"GPENCIL_OT_vertex_group_deselect", RU, poll_gpd, exec_vg_deselect},
+    {"GPENCIL_OT_vertex_group_invert", RU, poll_gpd, exec_vg_invert},
+    {"GPENCIL_OT_vertex_group_normalize", RU, poll_gpd, exec_vg_normalize},
+    {"GPENCIL_OT_snap_to_grid", RU, poll_stroke_edit, exec_snap_to_grid},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

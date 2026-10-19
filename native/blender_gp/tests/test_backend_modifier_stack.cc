@@ -451,6 +451,23 @@ int main()
     CHECK(static_cast<bGPDlayer *>(gpd->layers.last)->flag & GP_LAYER_HIDE);
     CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_reveal", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
     CHECK(!(static_cast<bGPDlayer *>(gpd->layers.last)->flag & GP_LAYER_HIDE));
+
+    /* batch 9: smooth moves the zig-zag points, invalid repeat cancelled; simplify finishes;
+     * vertex group ops reject a missing group; active frames delete all */
+    s0->flag |= GP_STROKE_SELECT;
+    const float y1 = s0->points[1].y;
+    float sm[3] = {2, 1, 0}; /* only_selected off: the stroke is selected, its points are not */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_smooth", sm, 3, nullptr) == PG_OPERATOR_FINISHED && s0->points[1].y != y1);
+    float sm_bad[1] = {0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_smooth", sm_bad, 1, nullptr) == PG_OPERATOR_CANCELLED);
+    float eps = 0.5f;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_simplify", &eps, 1, nullptr) == PG_OPERATOR_FINISHED);
+    float g5 = 5;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_vertex_group_assign", &g5, 1, nullptr) == PG_OPERATOR_CANCELLED);
+    C.cfra = 1;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_active_frames_delete_all", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(static_cast<bGPDlayer *>(gpd->layers.first)->frames.first == nullptr);
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_active_frames_delete_all", nullptr, 0, nullptr) == PG_OPERATOR_CANCELLED);
   }
 
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */

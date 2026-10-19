@@ -1632,12 +1632,12 @@ class EditorController {
         return true
     }
     // ---- Vertex-group operators on the selection (active group) and layer operators (edit7) ----
-    fun assignSelectionToGroup(weight:Float = 1f) = runSelectCommand(ProjectGreaseSelect.vgAssign(weightPaintGroup, weight))
-    fun removeSelectionFromGroup() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_REMOVE, weightPaintGroup))
-    fun selectGroupPoints() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_SELECT, weightPaintGroup))
-    fun deselectGroupPoints() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_DESELECT, weightPaintGroup))
-    fun invertGroupWeights() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_INVERT, weightPaintGroup))
-    fun normalizeGroupWeights() = runSelectCommand(ProjectGreaseSelect.vgOp(ProjectGreaseSelect.CMD_VG_NORMALIZE, weightPaintGroup))
+    fun assignSelectionToGroup(weight:Float = 1f) = runOperator("GPENCIL_OT_vertex_group_assign", weightPaintGroup.toFloat(), weight)
+    fun removeSelectionFromGroup() = runOperator("GPENCIL_OT_vertex_group_remove_from", weightPaintGroup.toFloat())
+    fun selectGroupPoints() = runOperator("GPENCIL_OT_vertex_group_select", weightPaintGroup.toFloat())
+    fun deselectGroupPoints() = runOperator("GPENCIL_OT_vertex_group_deselect", weightPaintGroup.toFloat())
+    fun invertGroupWeights() = runOperator("GPENCIL_OT_vertex_group_invert", weightPaintGroup.toFloat())
+    fun normalizeGroupWeights() = runOperator("GPENCIL_OT_vertex_group_normalize", weightPaintGroup.toFloat())
     /** Merges the active layer into the one below; native makes the lower layer active, so does the editor. */
     /** GPENCIL_OT_layer_merge (Active): the active layer into the one below. */
     fun mergeLayerDown():Boolean = layerOperator("GPENCIL_OT_layer_merge", 0f)
@@ -2012,13 +2012,13 @@ class EditorController {
         return ok
     }
 
-    fun smoothSelectedStroke(influence:Float=0.5f,iterations:Int=2):Boolean {
-        val i=selection.selectedStroke
-        if(i<0) return false
-        val ok=native.smoothStroke(i,influence,iterations)
-        if(ok){history.markEdit();document.markDirty();render()}
-        return ok
-    }
+    /** GPENCIL_OT_stroke_smooth on the selected strokes (position and thickness). */
+    fun smoothSelectedStroke(influence:Float=0.5f,iterations:Int=2):Boolean =
+        runOperator("GPENCIL_OT_stroke_smooth", iterations.toFloat(), influence, 0f, 1f, 1f, 0f, 0f)
+    /** GPENCIL_OT_stroke_simplify (adaptive): fewer points where the line stays within `factor`. */
+    fun simplifySelectionAdaptive(factor:Float=2f) = runOperator("GPENCIL_OT_stroke_simplify", factor)
+    /** GPENCIL_OT_active_frames_delete_all: the drawing shown here, on every editable layer. */
+    fun deleteActiveFramesAllLayers() = runOperator("GPENCIL_OT_active_frames_delete_all").also { if (it) animation.refreshFromNative() }
     fun pickColorAt(x:Int,y:Int):Boolean {
         if (rendererHandle == 0L) return false
         val argb = GPNative.nativePickColorEglRenderer(rendererHandle, x, y)
@@ -2708,7 +2708,7 @@ class EditorController {
     fun resetSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = paintOp("GPENCIL_OT_stroke_reset_vertex_color", mode.toFloat())
     fun flipSelection() = runOperator("GPENCIL_OT_stroke_flip")
     fun setSelectionCyclic(type:Int) = runOperator("GPENCIL_OT_stroke_cyclical_set", type.toFloat())
-    fun snapSelectionToGrid() = runSelectCommand(ProjectGreaseSelect.snapToGrid(view.gridSize))
+    fun snapSelectionToGrid() = runOperator("GPENCIL_OT_snap_to_grid", view.gridSize)
     fun duplicateSelection() = runOperator("GPENCIL_OT_duplicate")
     fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runOperator("GPENCIL_OT_dissolve", type.toFloat())
     fun splitSelection() = runOperator("GPENCIL_OT_stroke_split")

@@ -60,6 +60,8 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
             "Points" to listOf(
                 Op("Subdivide", "Add a point between every two points (the last tapped stroke)") { controller.subdivideSelectedStroke(1) },
                 Op("Simplify ($simplifySteps step${if (simplifySteps > 1) "s" else ""})", "Remove every second point, this many times") { controller.simplifySelectionFixed(simplifySteps) },
+                Op("Simplify (adaptive)", "Fewer points where the line keeps its shape") { controller.simplifySelectionAdaptive() },
+                Op("Smooth", "Smooth the selected strokes' shape and thickness") { controller.smoothSelectedStroke() },
                 Op("Resample (${resample.toInt()} px)", "Even point spacing of this length") { controller.sampleSelection(resample) },
                 Op("Merge by distance (${"%.1f".format(mergeDist)} px)", "Join points closer than this") { controller.mergeSelectionByDistance(mergeDist) },
                 Op("Dissolve points", "Delete the selected points, keep the stroke") { controller.dissolveSelection(S.DISSOLVE_POINTS) },
@@ -122,6 +124,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Hide layer", "Hide the active layer") { controller.hideLayers() },
                 Op("Hide other layers", "Hide every layer but the active one") { controller.hideLayers(others = true) },
                 Op("Show all layers", "Reveal hidden layers") { controller.revealLayers() },
+                Op("Delete this frame (all layers)", "Remove the drawing shown here from every editable layer") { controller.deleteActiveFramesAllLayers() },
             ),
         )
         for ((name, ops) in groups) {

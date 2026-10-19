@@ -161,7 +161,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 controller.animation.setFps(record.fps)
                 val raw=projectStore.loadDocument(record.name)
                 com.smitnk.projectgrease.CrashLog.event("OPEN project '${record.name}' ${record.width}x${record.height}: saved drawing ${if(raw==null)"missing" else "${raw.length} chars"}")
-                raw?.let { controller.runWhenAttached { val ok=controller.loadDocumentJson(it);com.smitnk.projectgrease.CrashLog.event("OPEN loaded -> $ok, ${controller.strokeCount()} strokes") } }
+                raw?.let { controller.runWhenAttached { val ok=controller.loadDocumentJson(it);controller.setMode(GreaseMode.DRAW);controller.fitCanvas();com.smitnk.projectgrease.CrashLog.event("OPEN loaded -> $ok, ${controller.strokeCount()} strokes") } }
                 screen=Screen.EDITOR
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},templateId,{templateId=it},controller,{screen=Screen.HOME}){
@@ -189,7 +189,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 state=state.copy(projectName=controller.document.projectName)
                 screen=Screen.EDITOR
             }
-            Screen.EDITOR->Editor(controller,state,{state=it},{screen=Screen.HOME},{screen=Screen.SETTINGS},blenderViewport)
+            Screen.EDITOR->Editor(controller,state,{state=it},{saveCurrentProject();screen=Screen.HOME},{saveCurrentProject();screen=Screen.SETTINGS},blenderViewport)
             Screen.SETTINGS->Settings(
                 controller,
                 themeMode,

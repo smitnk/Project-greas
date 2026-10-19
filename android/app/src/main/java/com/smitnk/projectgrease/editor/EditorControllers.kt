@@ -2640,8 +2640,8 @@ class EditorController {
     fun mergeSelectionByDistance(threshold:Float=2f) = runSelectCommand(ProjectGreaseSelect.mergeByDistance(threshold))
     fun toggleSelectionCaps(type:Int=ProjectGreaseSelect.CAPS_TOGGLE_BOTH) = runSelectCommand(ProjectGreaseSelect.caps(type))
     fun setSelectionStartPoint() = runSelectCommand(ProjectGreaseSelect.startSet())
-    fun separateSelectionToLayer() = runSelectCommand(ProjectGreaseSelect.separateToLayer())
-    fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runSelectCommand(ProjectGreaseSelect.separate(mode))
+    fun separateSelectionToLayer() = runOperator("GPENCIL_OT_stroke_separate", 2f)
+    fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runOperator("GPENCIL_OT_stroke_separate", mode.toFloat())
     fun moveSelectionToLayer(index:Int) = runOperator("GPENCIL_OT_move_to_layer", index.toFloat())
     /** Copy does not change the document; call native directly so no undo step is recorded. */
     /** Runs a Blender operator by its idname through the native operator layer (poll, exec);
@@ -2675,7 +2675,10 @@ class EditorController {
     }
     fun applyColorModifier(hue:Float=0.5f, saturation:Float=1f, value:Float=1f, mode:Int=ProjectGreaseSelect.MODIFY_BOTH) =
         runSelectCommand(ProjectGreaseSelect.colorModifier(mode, hue, saturation, value))
-    fun arrangeSelection(direction:Int) = runSelectCommand(ProjectGreaseSelect.arrange(direction))
+    /** direction: ProjectGreaseSelect.ARRANGE_*; the operator takes Blender's UP -1, DOWN 1, TOP 2, BOTTOM 3. */
+    fun arrangeSelection(direction:Int) = runOperator("GPENCIL_OT_stroke_arrange", when (direction) {
+        ProjectGreaseSelect.ARRANGE_TOP -> 2f; ProjectGreaseSelect.ARRANGE_UP -> -1f
+        ProjectGreaseSelect.ARRANGE_DOWN -> 1f; else -> 3f })
     fun assignActiveMaterialToSelection() = runSelectCommand(ProjectGreaseSelect.setMaterial(materials.activeMaterial))
     fun resetSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = paintOp(ProjectGreaseSelect.resetVertexColor(mode))
     fun flipSelection() = runSelectCommand(ProjectGreaseSelect.flip())
@@ -2683,7 +2686,7 @@ class EditorController {
     fun snapSelectionToGrid() = runSelectCommand(ProjectGreaseSelect.snapToGrid(view.gridSize))
     fun duplicateSelection() = runOperator("GPENCIL_OT_duplicate")
     fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runOperator("GPENCIL_OT_dissolve", type.toFloat())
-    fun splitSelection() = runSelectCommand(ProjectGreaseSelect.split())
+    fun splitSelection() = runOperator("GPENCIL_OT_stroke_split")
     // ---- Lasso actions: break off, cut, shear (TFM_SHEAR), perspective ----
     /** Break off: the selected points become their own stroke (GPENCIL_OT_stroke_split), so moving
      *  them no longer stretches the rest of the stroke. */
@@ -2856,11 +2859,11 @@ class EditorController {
     fun normalizeSelection(mode:Int, value:Float) = runSelectCommand(ProjectGreaseSelect.normalize(mode, value))
     fun simplifySelectionFixed(steps:Int=1) = runSelectCommand(ProjectGreaseSelect.simplifyFixed(steps))
     fun sampleSelection(length:Float) = runSelectCommand(ProjectGreaseSelect.sample(length))
-    fun extrudeSelection() = runSelectCommand(ProjectGreaseSelect.extrude())
+    fun extrudeSelection() = runOperator("GPENCIL_OT_extrude")
     private var randomSeed = 0
     fun selectRandom(ratio:Float=0.5f) = runSelectCommand(ProjectGreaseSelect.selectRandom(ratio, randomSeed++))
     /** Insert a blank keyframe at the current frame, shifting later frames (GPENCIL_OT_blank_frame_add). */
-    fun insertBlankFrame() = runSelectCommand(ProjectGreaseSelect.blankFrame(animation.currentFrame))
+    fun insertBlankFrame() = runOperator("GPENCIL_OT_blank_frame_add", 0f)
         .also { if (it) { animation.refreshFromNative(); render() } }
     fun setFillColor(argb:Int) = linearRgb(argb).let { c -> runSelectCommand(ProjectGreaseSelect.fillColor(materials.activeMaterial,
         c[0], c[1], c[2], ((argb ushr 24) and 0xFF)/255f)) }

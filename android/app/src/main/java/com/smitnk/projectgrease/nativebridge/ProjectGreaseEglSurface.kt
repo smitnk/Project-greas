@@ -159,6 +159,9 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var pendingPointer = MotionEvent.INVALID_POINTER_ID
     private var pendingX = 0f
     private var pendingY = 0f
+    /** Where the drawing contact touched down (screen px): a contact still there is resting. */
+    private var activeDownX = 0f
+    private var activeDownY = 0f
     private var pinchStartDistance = 0f
     private var pinchStartZoom = 1f
     /** Pinch during a proportional transform changes the proportional size (Blender: wheel / PageUp). */
@@ -216,6 +219,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     return true
                 }
                 activePointerId = event.getPointerId(0)
+                activeDownX = event.x; activeDownY = event.y
                 // Draw, Sculpt, Vertex Paint and Weight Paint run in the native tool session: one call
                 // per input batch with every sample; native applies the tool and renders.
                 val tool = controller.sessionToolForTouch()
@@ -379,6 +383,24 @@ internal class ProjectGreaseDrawingSurfaceView(
                     val i = event.findPointerIndex(pendingPointer)
                     if (i >= 0 && event.pointerCount >= 2 &&
                         hypot(event.getX(i) - pendingX, event.getY(i) - pendingY) > 24f * resources.displayMetrics.density) {
+                        val slop = 24f * resources.displayMetrics.density
+                        val a = event.findPointerIndex(activePointerId)
+                        // log 21: the first contact was a thumb / palm resting low on the screen and the
+                        // finger that landed second drew; the resting one hands the touch over
+                        if (a >= 0 && hypot(event.getX(a) - activeDownX, event.getY(a) - activeDownY) < slop) {
+                            com.smitnk.projectgrease.CrashLog.event("TOUCH first contact resting, second moves -> the second draws")
+                            val resting = activePointerId
+                            val mover = pendingPointer
+                            endSession(cancel = true)
+                            if (strokeOpen) { controller.cancelStroke(); strokeOpen = false }
+                            val down = MotionEvent.obtain(event.downTime, event.eventTime, MotionEvent.ACTION_DOWN,
+                                pendingX, pendingY, event.metaState)
+                            handleTouch(down)
+                            down.recycle()
+                            if (activePointerId != MotionEvent.INVALID_POINTER_ID) activePointerId = mover
+                            ghostPointers += resting
+                            return true
+                        }
                         com.smitnk.projectgrease.CrashLog.event("TOUCH pending second touch moved -> gesture")
                         ghostPointers.remove(pendingPointer)
                         pendingPointer = MotionEvent.INVALID_POINTER_ID

@@ -1610,6 +1610,22 @@ static void test_operator_layer(void)
   const float bad_dissolve[1] = {7};
   CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_dissolve", bad_dissolve, 1, NULL) == PG_OPERATOR_CANCELLED,
         "dissolve rejects an unknown type");
+  /* arrange in Blender's values: BOTTOM (3) moves the selected strokes first in the frame */
+  bGPDstroke *last = fb->strokes.last;
+  pg_wm_operator_call(&C, "GPENCIL_OT_select_all", deselect, 1, NULL);
+  select_points(g, last, 1);
+  last->flag |= GP_STROKE_SELECT;
+  const float bottom[1] = {3}, bad_dir[1] = {0};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_arrange", bottom, 1, NULL) == PG_OPERATOR_FINISHED &&
+            fb->strokes.first == last,
+        "arrange BOTTOM puts the stroke first");
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_arrange", bad_dir, 1, NULL) == PG_OPERATOR_CANCELLED,
+        "arrange rejects 0 (not a Blender direction)");
+  /* blank keyframe on the active layer at cfra 5 */
+  C.cfra = 5;
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_blank_frame_add", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
+            la->actframe && la->actframe->framenum == 5 && stroke_count(la->actframe) == 0,
+        "blank keyframe added at the current frame");
   pg_gp_clipboard_free();
 }
 

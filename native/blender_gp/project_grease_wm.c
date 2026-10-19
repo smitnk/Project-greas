@@ -12,6 +12,8 @@
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit4.h"
 #include "project_grease_blender_select.h"
+#include "project_grease_blender_edit2.h"
+#include "project_grease_blender_edit3.h"
 #include "project_grease_wm.h"
 
 typedef struct PGOperatorType {
@@ -121,6 +123,55 @@ static int exec_select_all(PGOpContext *C, const float *props, int n)
   return PG_OPERATOR_FINISHED; /* gpencil_select_all_exec finishes even when nothing changed */
 }
 
+/* GPENCIL_OT_stroke_arrange: prop direction in Blender's values UP -1, DOWN 1, TOP 2, BOTTOM 3 */
+static int exec_arrange(PGOpContext *C, const float *props, int n)
+{
+  int dir;
+  switch (prop_i(props, n, 0, -1)) {
+    case -1: dir = PG_ARRANGE_UP; break;
+    case 1: dir = PG_ARRANGE_DOWN; break;
+    case 2: dir = PG_ARRANGE_TOP; break;
+    case 3: dir = PG_ARRANGE_BOTTOM; break;
+    default: return PG_OPERATOR_CANCELLED;
+  }
+  return FINISHED_IF(pg_gp_stroke_arrange(C->gpd, NULL, dir));
+}
+/* GPENCIL_OT_stroke_split */
+static int exec_split(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  return FINISHED_IF(pg_gp_split(C->gpd, NULL));
+}
+/* GPENCIL_OT_extrude */
+static int exec_extrude(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  return FINISHED_IF(pg_gp_extrude(C->gpd, NULL));
+}
+/* GPENCIL_OT_stroke_separate: prop mode POINT 0, STROKE 1, LAYER 2. Blender moves the result to a
+ * new object; the app has one drawing, so it goes to a new layer of it. */
+static int exec_separate(PGOpContext *C, const float *props, int n)
+{
+  const int mode = prop_i(props, n, 0, 0);
+  if (mode == 2) return FINISHED_IF(C->active_layer && pg_gp_separate_to_layer(C->gpd, C->active_layer));
+  if (mode < 0 || mode > 1) return PG_OPERATOR_CANCELLED;
+  return FINISHED_IF(pg_gp_stroke_separate(C->gpd, NULL, mode));
+}
+/* gpencil_add_poll / active layer: GPENCIL_OT_blank_frame_add, prop all_layers */
+static bool poll_active_layer(const PGOpContext *C) { return C->gpd && C->active_layer; }
+static int exec_blank_frame(PGOpContext *C, const float *props, int n)
+{
+  bool any = false;
+  if (prop_i(props, n, 0, 0)) {
+    LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers)
+      if (BKE_gpencil_layer_is_editable(gpl)) any |= pg_gp_blank_frame_add(C->gpd, gpl, C->cfra) != 0;
+  }
+  else {
+    any = pg_gp_blank_frame_add(C->gpd, C->active_layer, C->cfra) != 0;
+  }
+  return FINISHED_IF(any);
+}
+
 static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_copy", 0, poll_stroke_edit, exec_copy},
     {"GPENCIL_OT_paste", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_paste, exec_paste},
@@ -130,6 +181,11 @@ static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_stroke_join", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_join},
     {"GPENCIL_OT_move_to_layer", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_move_to_layer},
     {"GPENCIL_OT_select_all", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_all},
+    {"GPENCIL_OT_stroke_arrange", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_arrange},
+    {"GPENCIL_OT_stroke_split", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_split},
+    {"GPENCIL_OT_extrude", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_extrude},
+    {"GPENCIL_OT_stroke_separate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_separate},
+    {"GPENCIL_OT_blank_frame_add", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_blank_frame},
 };
 
 static const PGOperatorType *find_type(const char *idname)

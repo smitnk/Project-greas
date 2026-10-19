@@ -948,15 +948,23 @@ static bool gpencil_sculpt_brush_do_stroke(tGP_BrushEditData *gso,
 /* gpencil_recalc_geometry_tag() / gpencil_update_geometry() without DEG / notifiers. */
 static void pgt_sculpt_update_geometry(bGPdata *gpd)
 {
+  bool changed = false;
   LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
     LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
       LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
         if (gps->flag & GP_STROKE_TAG) {
           BKE_gpencil_stroke_geometry_update(gpd, gps);
           gps->flag &= ~GP_STROKE_TAG;
+          changed = true;
         }
       }
     }
+  }
+  /* Blender tags the data for redraw here (DEG_id_tag_update + NC_GPENCIL notifier): without it the
+   * recalculated strokes stayed undrawn until the frame changed. */
+  if (changed) {
+    gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+    BKE_gpencil_batch_cache_dirty_tag(gpd);
   }
 }
 

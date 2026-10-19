@@ -1441,6 +1441,19 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
+            if (lassoCutInside && mode == GreaseMode.DRAW) {
+                // Project Grease's own mode (not Blender's): lasso-select the points inside, then
+                // GPENCIL_OT_delete (points), one undo step; the rest of each stroke stays
+                val before = native.strokeCount(); val pointsBefore = native.pointCount()
+                history.beginBatch()
+                val pick = ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, noose)
+                val picked = pick != null && native.applyEditCommand(pick.id, pick.args)
+                val cut = picked && native.selectedPointCount() > 0 && deleteSelectedPoints()
+                history.endBatch()
+                com.smitnk.projectgrease.CrashLog.event("CUT INSIDE ${noose.size} noose points -> cut=$cut, strokes $before -> ${native.strokeCount()}, points $pointsBefore -> ${native.pointCount()}")
+                if (!cut) { runOperator("GPENCIL_OT_select_all", ProjectGreaseSelect.ACTION_DESELECT.toFloat()); render() }
+                return
+            }
             if (lassoCut && mode == GreaseMode.DRAW) {
                 // Cutter (GPENCIL_OT_stroke_cutter, Draw mode): the segment under the lasso is cut out up
                 // to the crossings, with points inserted exactly there
@@ -1637,9 +1650,10 @@ class EditorController {
         }
         return ok
     }
-    fun isolateLayer() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LAYER_ISOLATE))
-    fun lockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_LOCK_ALL))
-    fun unlockAllLayers() = runSelectCommand(ProjectGreaseSelect.layerOp(ProjectGreaseSelect.CMD_UNLOCK_ALL))
+    /** GPENCIL_OT_layer_isolate with Affect Visibility: the other layers locked and hidden, again to restore. */
+    fun isolateLayer() = runOperator("GPENCIL_OT_layer_isolate", 1f)
+    fun lockAllLayers() = runOperator("GPENCIL_OT_lock_all")
+    fun unlockAllLayers() = runOperator("GPENCIL_OT_unlock_all")
 
     /** Outline modifier, baked: each selected open stroke becomes the closed perimeter of its shape. */
     fun outlineSelection(thickness:Int = 2) = runSelectCommand(ProjectGreaseSelect.outline(thickness))
@@ -2782,6 +2796,8 @@ class EditorController {
         private set
     /** Lasso Cut mode (Blender's Cutter tool): the lasso cuts the points inside it away. */
     var lassoCut = false
+    /** Lasso erases exactly the points inside the loop (not Blender's cutter). */
+    var lassoCutInside = false
     /** Draw on back (GP_TOOL_FLAG_PAINT_ONBACK): new strokes go under the frame's other strokes. */
     var drawOnBack = false
     /** Brush random Hue / Saturation / Value per stroke (Vertex Color mode), 0..1 each. */
@@ -2870,9 +2886,19 @@ class EditorController {
         .also { if (it) { animation.refreshFromNative(); render() } }
     fun setFillColor(argb:Int) = linearRgb(argb).let { c -> runSelectCommand(ProjectGreaseSelect.fillColor(materials.activeMaterial,
         c[0], c[1], c[2], ((argb ushr 24) and 0xFF)/255f)) }
-    fun cleanLoosePoints(limit:Int=1) = runSelectCommand(ProjectGreaseSelect.cleanLoose(limit))
-    fun cleanDuplicateFrames() = runSelectCommand(ProjectGreaseSelect.cleanDuplicateFrames())
+    fun cleanLoosePoints(limit:Int=1) = runOperator("GPENCIL_OT_frame_clean_loose", limit.toFloat())
+    /** GPENCIL_OT_frame_clean_fill: deletes the "no fill" boundary strokes (active frame or all frames). */
+    fun cleanFillBoundaries(allFrames:Boolean=false) = runOperator("GPENCIL_OT_frame_clean_fill", if (allFrames) 1f else 0f)
+    fun cleanDuplicateFrames() = runOperator("GPENCIL_OT_frame_clean_duplicate")
         .also { if (it) { animation.refreshFromNative(); render() } }
+    /** GPENCIL_OT_frame_duplicate (Active): go to the next frame, the held drawing is copied there
+     *  (nothing when that frame already has a key, as in Blender). */
+    fun duplicateFrameToNext():Boolean {
+        if (!animation.setFrame(animation.currentFrame + 1)) return false
+        val ok = runOperator("GPENCIL_OT_frame_duplicate", 0f)
+        animation.refreshFromNative(); render()
+        return ok
+    }
     /** Paint menu operators (gpencil_vertex_ops.c): with the Vertex Paint selection mask off Blender
      *  treats nothing as selected and the operator applies to every stroke. */
     /** Vertex Paint menu operators (gpencil_vertex_ops.c): with the selection mask off, Blender

@@ -8,6 +8,7 @@
 #define GP_SPOINT_TAG (1 << 1)
 #define GP_STROKE_SELECT (1 << 1)
 #define GP_STROKE_CYCLIC (1 << 7)
+#define GP_STROKE_NOFILL (1 << 8)
 #define GP_STROKE_NEEDS_CURVE_UPDATE (1 << 12)
 #define GP_FRAME_SELECT (1 << 1)
 #define GP_LAYER_HIDE (1 << 0)

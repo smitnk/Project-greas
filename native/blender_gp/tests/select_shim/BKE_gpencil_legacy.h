@@ -15,3 +15,4 @@ void BKE_gpencil_layer_copy_settings(const bGPDlayer *gpl_src, bGPDlayer *gpl_ds
 void BKE_gpencil_layer_mask_copy(const bGPDlayer *gpl_src, bGPDlayer *gpl_dst);
 enum { GP_GETFRAME_USE_PREV = 0, GP_GETFRAME_ADD_NEW = 1, GP_GETFRAME_ADD_COPY = 2 };
 bGPDframe *BKE_gpencil_layer_frame_get(bGPDlayer *gpl, int cframe, int addnew);
+bGPDframe *BKE_gpencil_frame_addcopy(bGPDlayer *gpl, int cframe);

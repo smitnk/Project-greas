@@ -746,7 +746,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 ){Text("Interpolate")}
                 FilterChip(selected=controller.animation.loop,onClick={controller.animation.toggleLoop();redraw()},label={Text("Loop")})
                 TextButton(onClick={controller.createFrame(controller.animation.currentFrame+1);redraw()}){Text("+ Frame")}
-                TextButton(onClick={controller.duplicateFrame(controller.animation.currentFrame,controller.animation.currentFrame+1);redraw()}){Text("Duplicate")}
+                TextButton(onClick={controller.duplicateFrameToNext();redraw()}){Text("Duplicate")}
                 TextButton(onClick={if(controller.animation.frameCount>1){controller.deleteFrame(controller.animation.currentFrame);redraw()}}){Text("Delete")}
                 // GPENCIL_OT_blank_frame_add / GPENCIL_OT_frame_clean_duplicate; the strip below re-reads
                 // the native frame numbers, and the controller refreshes frame count/end.
@@ -1525,8 +1525,12 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         // Lasso Cut (Blender's Cutter tool): the lasso cuts away the line parts inside it
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&controller.mode==GreaseMode.DRAW){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
-            FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;cutTick++},{Text(if(controller.lassoCut)"Cut: on (lasso erases inside)" else "Cut")},
-                Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp).testTag("lassoCut"))
+            Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
+                    Modifier.testTag("lassoCut"))
+                FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
+                    Modifier.testTag("lassoCutInside"))
+            }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)

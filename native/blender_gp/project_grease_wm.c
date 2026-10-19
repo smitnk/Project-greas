@@ -267,6 +267,98 @@ static int exec_select_grouped(PGOpContext *C, const float *props, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- Frames and layer flags (gpencil_data.c) ---------------------------------------------- */
+static bool poll_gpd(const PGOpContext *C) { return C->gpd != NULL; } /* gpencil_reveal_poll */
+
+/* GPENCIL_OT_frame_duplicate: mode ACTIVE (0) / ALL (1). The held frame is copied to cfra; with a
+ * key already there BKE_gpencil_frame_addcopy() does nothing (Blender's frame-lock case). */
+static int exec_frame_duplicate(PGOpContext *C, const float *props, int n)
+{
+  if (prop_i(props, n, 0, 0) == 0) {
+    BKE_gpencil_frame_addcopy(C->active_layer, C->cfra);
+  }
+  else {
+    LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+      if ((gpl->flag & GP_LAYER_LOCKED) == 0) BKE_gpencil_frame_addcopy(gpl, C->cfra);
+    }
+  }
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_frame_clean_duplicate: type ALL (0) / SELECTED (1, layers whose first frame is selected) */
+static int exec_frame_clean_duplicate(PGOpContext *C, const float *props, int n)
+{
+  const int type = prop_i(props, n, 0, 0);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    const bGPDframe *first = gpl->frames.first;
+    if (first == NULL || (type == 1 && (first->flag & GP_FRAME_SELECT) == 0)) continue;
+    pg_gp_frame_clean_duplicate(C->gpd, gpl);
+  }
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_frame_clean_loose: limit (1) */
+static int exec_frame_clean_loose(PGOpContext *C, const float *props, int n)
+{
+  const int limit = prop_i(props, n, 0, 1);
+  if (limit < 1) return PG_OPERATOR_CANCELLED;
+  pg_gp_frame_clean_loose(C->gpd, NULL, limit);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_frame_clean_fill: mode ACTIVE (0) / ALL (1): deletes the "no fill" boundary strokes */
+static int exec_frame_clean_fill(PGOpContext *C, const float *props, int n)
+{
+  const bool all = prop_i(props, n, 0, 0) == 1;
+  bool changed = false;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl)) continue;
+    for (bGPDframe *gpf = all ? gpl->frames.first : gpl->actframe; gpf; gpf = all ? gpf->next : NULL) {
+      LISTBASE_FOREACH_MUTABLE (bGPDstroke *, gps, &gpf->strokes) {
+        if (gps->flag & GP_STROKE_NOFILL) {
+          BLI_remlink(&gpf->strokes, gps);
+          BKE_gpencil_free_stroke(gps);
+          changed = true;
+        }
+      }
+    }
+  }
+  if (changed) BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_lock_all / GPENCIL_OT_unlock_all */
+static int exec_lock_all(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) gpl->flag |= GP_LAYER_LOCKED;
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_unlock_all(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) gpl->flag &= ~GP_LAYER_LOCKED;
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_layer_isolate: affect_visibility (false). Locks (and hides) every other layer, or
+ * clears those flags on all layers when the others already have them. */
+static int exec_layer_isolate(PGOpContext *C, const float *props, int n)
+{
+  bGPDlayer *layer = C->active_layer;
+  int flags = GP_LAYER_LOCKED;
+  if (prop_i(props, n, 0, 0)) flags |= GP_LAYER_HIDE;
+  bool isolate = false;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (gpl != layer && (gpl->flag & flags) == 0) { isolate = true; break; }
+  }
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (isolate) { if (gpl != layer) gpl->flag |= flags; }
+    else gpl->flag &= ~flags;
+  }
+  return PG_OPERATOR_FINISHED;
+}
+
 static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_copy", 0, poll_stroke_edit, exec_copy},
     {"GPENCIL_OT_paste", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_paste, exec_paste},
@@ -292,6 +384,13 @@ static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_select_less", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_less},
     {"GPENCIL_OT_select_alternate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_alternate},
     {"GPENCIL_OT_select_grouped", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_grouped},
+    {"GPENCIL_OT_frame_duplicate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_frame_duplicate},
+    {"GPENCIL_OT_frame_clean_duplicate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_frame_clean_duplicate},
+    {"GPENCIL_OT_frame_clean_loose", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_frame_clean_loose},
+    {"GPENCIL_OT_frame_clean_fill", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_frame_clean_fill},
+    {"GPENCIL_OT_lock_all", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_lock_all},
+    {"GPENCIL_OT_unlock_all", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_unlock_all},
+    {"GPENCIL_OT_layer_isolate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_layer_isolate},
 };
 
 static const PGOperatorType *find_type(const char *idname)

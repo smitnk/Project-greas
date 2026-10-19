@@ -226,6 +226,21 @@ static bGPDstroke *add_stroke(bGPDframe *gpf, int n, int mat, float x0, float y0
   list_add(&gpf->strokes, gps);
   return gps;
 }
+/* BKE_gpencil_frame_addcopy(): a copy of the active frame at cframe, nothing when a key is there */
+bGPDframe *BKE_gpencil_frame_addcopy(bGPDlayer *gpl, int cframe)
+{
+  if (gpl == NULL) return NULL;
+  LISTBASE_FOREACH (bGPDframe *, f, &gpl->frames) if (f->framenum == cframe) return NULL;
+  bGPDframe *src = gpl->actframe, *n = BKE_gpencil_frame_addnew(gpl, cframe);
+  if (src) LISTBASE_FOREACH (bGPDstroke *, s, &src->strokes) {
+    bGPDstroke *c = malloc(sizeof(*c)); *c = *s;
+    c->points = malloc(sizeof(bGPDspoint) * (size_t)s->totpoints);
+    memcpy(c->points, s->points, sizeof(bGPDspoint) * (size_t)s->totpoints);
+    c->dvert = NULL; c->next = c->prev = NULL;
+    list_add(&n->strokes, c);
+  }
+  return n;
+}
 static int merge_calls = 0;
 void BKE_gpencil_stroke_merge_distance(bGPdata *gpd, bGPDframe *gpf, bGPDstroke *gps, float threshold, bool use_unselected)
 {
@@ -1646,6 +1661,36 @@ static void test_operator_layer(void)
   const float bad_group[1] = {9};
   CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_grouped", bad_group, 1, NULL) == PG_OPERATOR_CANCELLED,
         "select grouped rejects an unknown type");
+
+  /* batch 6: frames and layer flags */
+  C.cfra = 8;
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_frame_duplicate", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
+            ((bGPDframe *)la->frames.last)->framenum == 8 &&
+            BLI_listbase_count(&((bGPDframe *)la->frames.last)->strokes) == BLI_listbase_count(&la->actframe->strokes),
+        "frame duplicate copies the held frame to the current frame");
+  const int frames_before = BLI_listbase_count(&la->frames);
+  pg_wm_operator_call(&C, "GPENCIL_OT_frame_duplicate", NULL, 0, NULL);
+  CHECK(BLI_listbase_count(&la->frames) == frames_before, "no second key on the same frame");
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_frame_clean_duplicate", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
+            BLI_listbase_count(&la->frames) == frames_before - 1,
+        "clean duplicate frames removes the identical copy");
+  bGPDstroke *bound = add_stroke(fb, 3, 0, 0, 50, 10, 0);
+  bound->flag |= GP_STROKE_NOFILL;
+  const int strokes_b = BLI_listbase_count(&fb->strokes);
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_frame_clean_fill", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
+            BLI_listbase_count(&fb->strokes) == strokes_b - 1,
+        "clean fill boundaries deletes no-fill strokes");
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_lock_all", NULL, 0, &flag) == PG_OPERATOR_FINISHED &&
+            (la->flag & GP_LAYER_LOCKED) && (lb->flag & GP_LAYER_LOCKED) && (flag & PG_OPTYPE_UNDO),
+        "lock all");
+  pg_wm_operator_call(&C, "GPENCIL_OT_unlock_all", NULL, 0, NULL);
+  CHECK(!(la->flag & GP_LAYER_LOCKED) && !(lb->flag & GP_LAYER_LOCKED), "unlock all");
+  const float vis[1] = {1};
+  pg_wm_operator_call(&C, "GPENCIL_OT_layer_isolate", vis, 1, NULL);
+  CHECK(!(la->flag & (GP_LAYER_LOCKED | GP_LAYER_HIDE)) && (lb->flag & GP_LAYER_LOCKED) && (lb->flag & GP_LAYER_HIDE),
+        "isolate locks and hides the other layers");
+  pg_wm_operator_call(&C, "GPENCIL_OT_layer_isolate", vis, 1, NULL);
+  CHECK(!(lb->flag & (GP_LAYER_LOCKED | GP_LAYER_HIDE)), "isolate again restores them");
   pg_gp_clipboard_free();
 }
 

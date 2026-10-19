@@ -3506,6 +3506,15 @@ bool Backend::cancel_stroke()
   impl_->pending_points.clear();
   impl_->stroke = nullptr;
   impl_->stroke_open = false;
+  // Empty the paint buffer too: a cancelled stroke (palm, second finger) left it filled, and the
+  // presenter kept drawing its open-stroke snapshot, hiding later sculpt / edit changes.
+  if (impl_->gpd && impl_->gpd->runtime.sbuffer) {
+    impl_->gpd->runtime.sbuffer = ED_gpencil_sbuffer_ensure(
+        static_cast<tGPspoint *>(impl_->gpd->runtime.sbuffer),
+        &impl_->gpd->runtime.sbuffer_size,
+        &impl_->gpd->runtime.sbuffer_used,
+        true);
+  }
   impl_->last_error.clear();
   return true;
 }

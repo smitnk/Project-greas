@@ -21,6 +21,7 @@ typedef struct PGOpContext {
   struct bGPDlayer *active_layer;
   int cfra;     /* scene->r.cfra */
   bool autokey; /* IS_AUTOKEY_ON(scene) */
+  int actcol;   /* ob->actcol: active material slot, 1-based (0 = none); material operators set it */
 } PGOpContext;
 
 /* WM_operator_call_ex: unknown idname or failed poll -> CANCELLED; else exec's status.
@@ -38,6 +39,8 @@ typedef struct PGOperatorType {
 /* Layer operators (project_grease_wm_layer.c, built against the real BKE): looked up after the
  * operators of project_grease_wm.c. Weak, so builds without that file still link. */
 const PGOperatorType *pg_wm_layer_operator_find(const char *idname) __attribute__((weak));
+/* Stroke and material operators (project_grease_wm_stroke.c), likewise weak. */
+const PGOperatorType *pg_wm_stroke_operator_find(const char *idname) __attribute__((weak));
 /* Layer operators change the layer list: the caller re-syncs what it keeps per layer. */
 bool pg_wm_operator_changes_layers(const char *idname);
 

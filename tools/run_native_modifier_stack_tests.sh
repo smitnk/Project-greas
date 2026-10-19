@@ -23,6 +23,7 @@ BSRC_C=(
   "$ROOT/native/blender_gp/project_grease_document_state.c"
   "$ROOT/native/blender_gp/project_grease_wm.c"
   "$ROOT/native/blender_gp/project_grease_wm_layer.c"
+  "$ROOT/native/blender_gp/project_grease_wm_stroke.c"
 )
 BOBJS=()
 for s in "${BSRC_CXX[@]}"; do o="$OUT/b_$(basename "$s").o"; g++ "${XF[@]}" -D__ANDROID__ -DWITH_OPENGL "${INC[@]}" -c "$s" -o "$o"; BOBJS+=("$o"); done
@@ -49,6 +50,7 @@ BSRC_C=(
   "$ROOT/native/blender_gp/project_grease_document_state.c"
   "$ROOT/native/blender_gp/project_grease_wm.c"
   "$ROOT/native/blender_gp/project_grease_wm_layer.c"
+  "$ROOT/native/blender_gp/project_grease_wm_stroke.c"
 )
 BOBJS=()
 for s in "${BSRC_CXX[@]}"; do o="$OUT/b_$(basename "$s").o"; g++ "${XF[@]}" -D__ANDROID__ -DWITH_OPENGL "${INC[@]}" -c "$s" -o "$o"; BOBJS+=("$o"); done

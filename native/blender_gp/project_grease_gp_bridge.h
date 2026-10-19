@@ -135,9 +135,10 @@ int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, flo
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);
 int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive);
 /* Blender operator by idname (project_grease_wm.h): returns the WM status (FINISHED 4 /
- * CANCELLED 2) in the low byte and the operator type flags (OPTYPE_UNDO 2) shifted by 8. */
+ * CANCELLED 2) in the low byte, the operator type flags (OPTYPE_UNDO 2) shifted by 8 and the
+ * active material slot afterwards (actcol, 1-based; material operators change it) shifted by 16. */
 int project_grease_gp_operator_call(ProjectGreaseGPHandle *handle, const char *idname, int cfra,
-                                    const float *props, int prop_count);
+                                    int actcol, const float *props, int prop_count);
 int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,
                                          int command,
                                          const float *args,

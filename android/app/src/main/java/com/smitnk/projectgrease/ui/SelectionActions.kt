@@ -107,6 +107,22 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Clean loose points", "Delete strokes of one or two points") { controller.cleanLoosePoints() },
                 Op("Clean fill boundaries", "Delete the no-fill boundary strokes of this frame") { controller.cleanFillBoundaries() },
             ),
+            "Materials" to listOf(
+                Op("Select by material", "Select the strokes of the active material") { controller.selectByActiveMaterial() },
+                Op("Pick material", "Make the selected stroke's material active") { controller.pickMaterialFromSelection() },
+                Op("Hide material", "Hide the active material") { controller.hideActiveMaterial() },
+                Op("Hide other materials", "Hide every material but the active one") { controller.hideActiveMaterial(others = true) },
+                Op("Show all materials", "Reveal hidden materials") { controller.revealMaterials() },
+                Op("Isolate material", "Lock and hide the other materials; again to restore") { controller.isolateMaterial() },
+                Op("Lock all materials", "No stroke can be edited") { controller.lockAllMaterials() },
+                Op("Unlock all materials", "Every material editable again") { controller.unlockAllMaterials() },
+                Op("Lock unused materials", "Lock materials no selected stroke uses") { controller.lockUnusedMaterials() },
+            ),
+            "Layers" to listOf(
+                Op("Hide layer", "Hide the active layer") { controller.hideLayers() },
+                Op("Hide other layers", "Hide every layer but the active one") { controller.hideLayers(others = true) },
+                Op("Show all layers", "Reveal hidden layers") { controller.revealLayers() },
+            ),
         )
         for ((name, ops) in groups) {
             Row(Modifier.fillMaxWidth().clickable { open = if (open == name) "" else name }.padding(vertical = 6.dp).testTag("opGroup_$name"),

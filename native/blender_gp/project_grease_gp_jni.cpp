@@ -1029,7 +1029,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetPoint(
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeOperatorCall(
-    JNIEnv *env, jobject, jlong handle, jstring idname, jint cfra, jfloatArray props)
+    JNIEnv *env, jobject, jlong handle, jstring idname, jint cfra, jint actcol, jfloatArray props)
 {
   if (!idname) return 2; /* OPERATOR_CANCELLED */
   const char *name = env->GetStringUTFChars(idname, nullptr);
@@ -1037,7 +1037,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeOperatorCall(
   const jsize count = props ? env->GetArrayLength(props) : 0;
   std::vector<float> values(static_cast<size_t>(count));
   if (count > 0) env->GetFloatArrayRegion(props, 0, count, values.data());
-  const int result = project_grease_gp_operator_call(from_handle(handle), name, cfra, values.data(), static_cast<int>(count));
+  const int result = project_grease_gp_operator_call(from_handle(handle), name, cfra, actcol, values.data(), static_cast<int>(count));
   env->ReleaseStringUTFChars(idname, name);
   return result;
 }

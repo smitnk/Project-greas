@@ -502,12 +502,12 @@ int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *x
 
 
 int project_grease_gp_operator_call(ProjectGreaseGPHandle *handle, const char *idname, int cfra,
-                                    const float *props, int prop_count)
+                                    int actcol, const float *props, int prop_count)
 {
   if (!ensure_operator(handle)) return PG_OPERATOR_CANCELLED;
   /* shortcut: auto-keying is always on (the app keys new drawing on the current frame); read it
    * from the project settings once the app has an auto-key toggle */
-  PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), cfra, true};
+  PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), cfra, true, actcol};
   int flag = 0;
   const bool layers = pg_wm_operator_changes_layers(idname);
   std::vector<bGPDlayer *> before;
@@ -521,7 +521,7 @@ int project_grease_gp_operator_call(ProjectGreaseGPHandle *handle, const char *i
     handle->backend.remap_layers(before, dup ? C.active_layer : nullptr);
   }
   else if (status & PG_OPERATOR_FINISHED) handle->backend.sync_active_frame(); /* paste / delete frame move actframe */
-  return (status & 0xff) | (flag << 8);
+  return (status & 0xff) | (flag << 8) | ((C.actcol & 0xffff) << 16);
 }
 
 int project_grease_gp_apply_edit_command(ProjectGreaseGPHandle *handle,

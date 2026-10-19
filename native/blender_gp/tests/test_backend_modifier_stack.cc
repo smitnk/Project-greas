@@ -16,6 +16,7 @@
 #include "project_grease_shader_fx.h"
 #include "project_grease_wm.h"
 #include "BKE_gpencil_legacy.h"
+#include "DNA_material_types.h"
 
 /* The draw module is not part of this host test: the backend only needs these two to be non-null. */
 extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *) {}
@@ -401,6 +402,55 @@ int main()
     bottom->flag |= GP_LAYER_LOCKED;
     CHECK(run_layer_op(b, "GPENCIL_OT_layer_remove") == PG_OPERATOR_CANCELLED); /* locked layers stay */
     bottom->flag &= ~GP_LAYER_LOCKED;
+  }
+
+  /* --- stroke / material operators (project_grease_wm_stroke.c) --- */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    add_line(b, 0.0f, 40.0f);
+    while (b.material_count() < 3) CHECK(b.create_material());
+    bGPdata *gpd = b.document_data();
+    bGPDframe *f = static_cast<bGPDlayer *>(gpd->layers.first)->actframe;
+    bGPDstroke *s0 = static_cast<bGPDstroke *>(f->strokes.first), *s1 = s0->next;
+    s1->mat_nr = 2;
+    PGOpContext C = {gpd, b.active_layer_data(), 1, true, 3};
+    float on = 1;
+    /* material_select: strokes of slot 3 */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_select", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK((s1->flag & GP_STROKE_SELECT) && !(s0->flag & GP_STROKE_SELECT));
+    /* flip reverses the selected stroke only */
+    const float x0 = s1->points[0].x, xl = s1->points[s1->totpoints - 1].x;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_flip", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(s1->points[0].x == xl && s1->points[s1->totpoints - 1].x == x0);
+    /* set_active_material reads the selected stroke; material_set validates the slot */
+    C.actcol = 1;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_set_active_material", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED && C.actcol == 3);
+    float nine = 9, two = 2;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_set", &nine, 1, nullptr) == PG_OPERATOR_CANCELLED);
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_set", &two, 1, nullptr) == PG_OPERATOR_FINISHED && C.actcol == 2);
+    /* isolate locks and hides the others, again restores */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_isolate", &on, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK((gpd->mat[0]->gp_style->flag & GP_MATERIAL_HIDE) && !(gpd->mat[1]->gp_style->flag & GP_MATERIAL_HIDE));
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_isolate", &on, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(!(gpd->mat[0]->gp_style->flag & (GP_MATERIAL_HIDE | GP_MATERIAL_LOCKED)));
+    /* lock unused keeps the selected stroke's material (slot 3) editable */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_lock_unused", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK((gpd->mat[0]->gp_style->flag & GP_MATERIAL_LOCKED) && !(gpd->mat[2]->gp_style->flag & GP_MATERIAL_LOCKED));
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_material_unlock_all", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(!(gpd->mat[0]->gp_style->flag & GP_MATERIAL_LOCKED));
+    /* change_color: the selected stroke takes the active material (slot 2) */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_change_color", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED && s1->mat_nr == 1);
+    /* cyclic: invalid type cancelled */
+    float bad = 7;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_cyclical_set", &bad, 1, nullptr) == PG_OPERATOR_CANCELLED);
+    /* hide others / reveal */
+    CHECK(b.create_layer("B") && b.select_layer(0));
+    BKE_gpencil_layer_active_set(gpd, static_cast<bGPDlayer *>(gpd->layers.first));
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_hide", &on, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(static_cast<bGPDlayer *>(gpd->layers.last)->flag & GP_LAYER_HIDE);
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_reveal", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(!(static_cast<bGPDlayer *>(gpd->layers.last)->flag & GP_LAYER_HIDE));
   }
 
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */

@@ -176,7 +176,7 @@ object GPNative {
     external fun nativeApplyEditCommand(handle: Long, command: Int, args: FloatArray = floatArrayOf()): Boolean
     /** Blender operator by idname (pg_wm): low byte = WM status (FINISHED 4 / CANCELLED 2),
      *  bits 8+ = operator type flags (OPTYPE_UNDO 2). */
-    external fun nativeOperatorCall(handle: Long, idname: String, cfra: Int, props: FloatArray): Int
+    external fun nativeOperatorCall(handle: Long, idname: String, cfra: Int, actcol: Int, props: FloatArray): Int
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
     external fun nativeSetPoint(

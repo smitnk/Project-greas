@@ -392,7 +392,9 @@ static const PGOperatorType *find_type(const char *idname)
   if (idname == NULL) return NULL;
   for (size_t i = 0; i < sizeof(pg_operators) / sizeof(pg_operators[0]); i++)
     if (strcmp(pg_operators[i].idname, idname) == 0) return &pg_operators[i];
-  return pg_wm_layer_operator_find ? pg_wm_layer_operator_find(idname) : NULL;
+  const PGOperatorType *ot = pg_wm_layer_operator_find ? pg_wm_layer_operator_find(idname) : NULL;
+  if (ot == NULL && pg_wm_stroke_operator_find) ot = pg_wm_stroke_operator_find(idname);
+  return ot;
 }
 
 bool pg_wm_operator_changes_layers(const char *idname)

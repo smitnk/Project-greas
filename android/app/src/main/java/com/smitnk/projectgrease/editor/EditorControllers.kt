@@ -1583,7 +1583,7 @@ class EditorController {
     fun selectMore() = runOperator("GPENCIL_OT_select_more")
     fun selectLess() = runOperator("GPENCIL_OT_select_less")
     fun selectLastPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false) =
-        runSelectCommand(ProjectGreaseSelect.last(onlySelectedStrokes, extend))
+        runOperator("GPENCIL_OT_select_last", if (onlySelectedStrokes) 1f else 0f, if (extend) 1f else 0f)
     fun selectBox(x0:Float, y0:Float, x1:Float, y1:Float) =
         runSelectCommand(ProjectGreaseSelect.box(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), x0, y0, x1, y1))
     /** One dab of a circle-select gesture; only the first dab of a SET gesture replaces the selection. */
@@ -1659,7 +1659,7 @@ class EditorController {
     fun unlockAllLayers() = runOperator("GPENCIL_OT_unlock_all")
 
     /** Outline modifier, baked: each selected open stroke becomes the closed perimeter of its shape. */
-    fun outlineSelection(thickness:Int = 2) = runSelectCommand(ProjectGreaseSelect.outline(thickness))
+    fun outlineSelection(thickness:Int = 2) = runOperator("GPENCIL_OT_stroke_outline", thickness.toFloat(), 8f)
 
     // ---- Project settings (ProjectSettings.java), saved in the project file under "settings" ----
     var projectSettings = ProjectSettings(); private set
@@ -2537,7 +2537,7 @@ class EditorController {
         return ok
     }
     fun selectFirstPoints(onlySelectedStrokes:Boolean=false, extend:Boolean=false):Boolean =
-        runSelectCommand(ProjectGreaseSelect.first(onlySelectedStrokes, extend))
+        runOperator("GPENCIL_OT_select_first", if (onlySelectedStrokes) 1f else 0f, if (extend) 1f else 0f)
     fun selectGroupedByLayer():Boolean =
         runOperator("GPENCIL_OT_select_grouped", 0f)
     fun selectGroupedByMaterial():Boolean =
@@ -2647,9 +2647,9 @@ class EditorController {
     fun dashSelection(dash:Int=3, gap:Int=2) = runSelectCommand(ProjectGreaseSelect.dash(dash, gap))
     fun multiplySelection(copies:Int=2, distance:Float=8f) = runSelectCommand(ProjectGreaseSelect.multiply(copies, distance))
     fun arraySelection(count:Int=3, dx:Float=60f, dy:Float=0f) = runSelectCommand(ProjectGreaseSelect.array(count, dx, dy))
-    fun mergeSelectionByDistance(threshold:Float=2f) = runSelectCommand(ProjectGreaseSelect.mergeByDistance(threshold))
-    fun toggleSelectionCaps(type:Int=ProjectGreaseSelect.CAPS_TOGGLE_BOTH) = runSelectCommand(ProjectGreaseSelect.caps(type))
-    fun setSelectionStartPoint() = runSelectCommand(ProjectGreaseSelect.startSet())
+    fun mergeSelectionByDistance(threshold:Float=2f) = runOperator("GPENCIL_OT_stroke_merge_by_distance", threshold, 0f)
+    fun toggleSelectionCaps(type:Int=ProjectGreaseSelect.CAPS_TOGGLE_BOTH) = runOperator("GPENCIL_OT_stroke_caps_set", type.toFloat())
+    fun setSelectionStartPoint() = runOperator("GPENCIL_OT_stroke_start_set")
     fun separateSelectionToLayer() = runOperator("GPENCIL_OT_stroke_separate", 2f)
     fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runOperator("GPENCIL_OT_stroke_separate", mode.toFloat())
     fun moveSelectionToLayer(index:Int) = runOperator("GPENCIL_OT_move_to_layer", index.toFloat())
@@ -2658,14 +2658,29 @@ class EditorController {
      *  a FINISHED operator flagged OPTYPE_UNDO becomes one undo step, as in Blender. */
     fun runOperator(idname:String, vararg props:Float):Boolean {
         if (native.handle == 0L) return false
-        val r = GPNative.nativeOperatorCall(native.handle, idname, animation.currentFrame, props)
+        val r = GPNative.nativeOperatorCall(native.handle, idname, animation.currentFrame, materials.activeMaterial + 1, props)
         val finished = (r and 0xff) and 4 != 0
+        // material operators change ob->actcol (material_set, set_active_material)
+        val actcol = (r ushr 16) and 0xffff
+        if (finished && actcol >= 1 && actcol - 1 != materials.activeMaterial) selectMaterial(actcol - 1)
         com.smitnk.projectgrease.CrashLog.event("OP $idname ${props.joinToString()} -> ${if (finished) "FINISHED" else "CANCELLED"}")
         if (finished && ((r shr 8) and 2) != 0) { history.markEdit(); document.markDirty() }
         if (finished) render()
         return finished
     }
     fun copySelection():Boolean = runOperator("GPENCIL_OT_copy")
+    /** Blender's material slot operators (gpencil_data.c) on the active material. */
+    fun hideActiveMaterial(others:Boolean=false) = runOperator("GPENCIL_OT_material_hide", if (others) 1f else 0f)
+    fun revealMaterials() = runOperator("GPENCIL_OT_material_reveal")
+    fun lockAllMaterials() = runOperator("GPENCIL_OT_material_lock_all")
+    fun unlockAllMaterials() = runOperator("GPENCIL_OT_material_unlock_all")
+    fun lockUnusedMaterials() = runOperator("GPENCIL_OT_material_lock_unused")
+    fun isolateMaterial(affectVisibility:Boolean=true) = runOperator("GPENCIL_OT_material_isolate", if (affectVisibility) 1f else 0f)
+    fun selectByActiveMaterial(deselect:Boolean=false) = runOperator("GPENCIL_OT_material_select", if (deselect) 1f else 0f)
+    fun pickMaterialFromSelection() = runOperator("GPENCIL_OT_set_active_material")
+    /** GPENCIL_OT_hide / GPENCIL_OT_reveal (layers). */
+    fun hideLayers(others:Boolean=false) = runOperator("GPENCIL_OT_hide", if (others) 1f else 0f)
+    fun revealLayers() = runOperator("GPENCIL_OT_reveal", 1f)
     /** GPENCIL_OT_paste: type 1 = Paste to Active, -1 = Paste by Layer; onBack = behind all strokes. */
     fun pasteStrokes(byLayer:Boolean = false, onBack:Boolean = false) =
         runOperator("GPENCIL_OT_paste", if (byLayer) -1f else 1f, if (onBack) 1f else 0f)
@@ -2689,10 +2704,10 @@ class EditorController {
     fun arrangeSelection(direction:Int) = runOperator("GPENCIL_OT_stroke_arrange", when (direction) {
         ProjectGreaseSelect.ARRANGE_TOP -> 2f; ProjectGreaseSelect.ARRANGE_UP -> -1f
         ProjectGreaseSelect.ARRANGE_DOWN -> 1f; else -> 3f })
-    fun assignActiveMaterialToSelection() = runSelectCommand(ProjectGreaseSelect.setMaterial(materials.activeMaterial))
+    fun assignActiveMaterialToSelection() = runOperator("GPENCIL_OT_stroke_change_color")
     fun resetSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = paintOp("GPENCIL_OT_stroke_reset_vertex_color", mode.toFloat())
-    fun flipSelection() = runSelectCommand(ProjectGreaseSelect.flip())
-    fun setSelectionCyclic(type:Int) = runSelectCommand(ProjectGreaseSelect.cyclic(type))
+    fun flipSelection() = runOperator("GPENCIL_OT_stroke_flip")
+    fun setSelectionCyclic(type:Int) = runOperator("GPENCIL_OT_stroke_cyclical_set", type.toFloat())
     fun snapSelectionToGrid() = runSelectCommand(ProjectGreaseSelect.snapToGrid(view.gridSize))
     fun duplicateSelection() = runOperator("GPENCIL_OT_duplicate")
     fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runOperator("GPENCIL_OT_dissolve", type.toFloat())
@@ -2868,12 +2883,12 @@ class EditorController {
         val c = linearRgb(materials.colorArgb)
         return runSelectCommand(ProjectGreaseSelect.selectVertexColor(c[0], c[1], c[2], threshold, extend))
     }
-    fun normalizeSelection(mode:Int, value:Float) = runSelectCommand(ProjectGreaseSelect.normalize(mode, value))
-    fun simplifySelectionFixed(steps:Int=1) = runSelectCommand(ProjectGreaseSelect.simplifyFixed(steps))
-    fun sampleSelection(length:Float) = runSelectCommand(ProjectGreaseSelect.sample(length))
+    fun normalizeSelection(mode:Int, value:Float) = runOperator("GPENCIL_OT_stroke_normalize", mode.toFloat(), value)
+    fun simplifySelectionFixed(steps:Int=1) = runOperator("GPENCIL_OT_stroke_simplify_fixed", steps.toFloat())
+    fun sampleSelection(length:Float) = runOperator("GPENCIL_OT_stroke_sample", length, 0.1f)
     fun extrudeSelection() = runOperator("GPENCIL_OT_extrude")
     private var randomSeed = 0
-    fun selectRandom(ratio:Float=0.5f) = runSelectCommand(ProjectGreaseSelect.selectRandom(ratio, randomSeed++))
+    fun selectRandom(ratio:Float=0.5f) = runOperator("GPENCIL_OT_select_random", ratio, (randomSeed++).toFloat(), 1f)
     /** Insert a blank keyframe at the current frame, shifting later frames (GPENCIL_OT_blank_frame_add). */
     fun insertBlankFrame() = runOperator("GPENCIL_OT_blank_frame_add", 0f)
         .also { if (it) { animation.refreshFromNative(); render() } }

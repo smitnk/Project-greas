@@ -200,6 +200,26 @@ int main()
     BKE_gpencil_free_layers(&d.gpd->layers);
     MEM_freeN(d.gpd);
   }
+  /* Log 22: a stroke drawn bottom to top (y 100 -> 0, canvas y down) crossed in the middle; a lasso
+   * around the upper end only must cut the upper piece (y 0..50), not the lower one. */
+  {
+    Doc d = doc();
+    bGPDstroke *v = add_stroke(d.gpf, 11, 0.0f, 0);
+    for (int i = 0; i < 11; i++) { v->points[i].x = 50.0f; v->points[i].y = 100.0f - 10.0f * i; }
+    bGPDstroke *h = add_stroke(d.gpf, 11, 0.0f, 0);
+    for (int i = 0; i < 11; i++) { h->points[i].x = 10.0f * i; h->points[i].y = 52.0f; }
+    const int lasso[4][2] = {{40, -5}, {60, -5}, {60, 20}, {40, 20}};
+    CHECK(pg_gp_cutter(d.gpd, lasso, 4, 0) == 1);
+    float miny = 1e9f, maxy = -1e9f;
+    LISTBASE_FOREACH (bGPDstroke *, s, &d.gpf->strokes) {
+      if (s->totpoints < 1 || std::fabs(s->points[0].x - 50.0f) > 1e-3f) continue; /* the vertical one */
+      for (int i = 0; i < s->totpoints; i++) { miny = std::min(miny, s->points[i].y); maxy = std::max(maxy, s->points[i].y); }
+    }
+    printf("  cutter upper lasso: vertical stroke left y %g..%g\n", miny, maxy);
+    CHECK(maxy > 99.0f && miny > 45.0f); /* the lower piece (y 52..100) stays */
+    BKE_gpencil_free_layers(&d.gpd->layers);
+    MEM_freeN(d.gpd);
+  }
   if (failures) {
     printf("%d edit10 failures\n", failures);
     return 1;

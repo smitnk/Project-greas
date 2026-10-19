@@ -1626,6 +1626,15 @@ static void test_operator_layer(void)
   CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_blank_frame_add", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
             la->actframe && la->actframe->framenum == 5 && stroke_count(la->actframe) == 0,
         "blank keyframe added at the current frame");
+  /* vertex colour set: nothing selected paints every editable stroke (Blender), mode STROKE */
+  pg_wm_operator_call(&C, "GPENCIL_OT_select_all", deselect, 1, NULL);
+  const float vset[5] = {0, 1.0f, 1.0f, 0.0f, 0.0f};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_vertex_color_set", vset, 5, NULL) == PG_OPERATOR_FINISHED &&
+            s->points[0].vert_color[0] == 1.0f && s->points[0].vert_color[3] == 1.0f,
+        "vertex colour set paints red with nothing selected");
+  const float bad_mode[1] = {5};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_vertex_color_invert", bad_mode, 1, NULL) == PG_OPERATOR_CANCELLED,
+        "vertex colour ops reject an unknown mode");
   pg_gp_clipboard_free();
 }
 

@@ -1444,9 +1444,12 @@ class EditorController {
             if (lassoCut && mode == GreaseMode.DRAW) {
                 // Cutter (GPENCIL_OT_stroke_cutter, Draw mode): the segment under the lasso is cut out up
                 // to the crossings, with points inserted exactly there
+                val before = native.strokeCount(); val pointsBefore = native.pointCount()
                 val cut = runSelectCommand(ProjectGreaseSelect.cutter(noose))
                 if (cut) selection.clear()
-                com.smitnk.projectgrease.CrashLog.event("CUT ${noose.size} noose points -> cut=$cut")
+                // which part went: lasso bounds (canvas) and strokes / points before -> after
+                com.smitnk.projectgrease.CrashLog.event("CUT ${noose.size} noose points in x %.0f..%.0f y %.0f..%.0f -> cut=$cut, strokes $before -> ${native.strokeCount()}, points $pointsBefore -> ${native.pointCount()}".format(
+                    noose.minOfOrNull { it.first } ?: 0f, noose.maxOfOrNull { it.first } ?: 0f, noose.minOfOrNull { it.second } ?: 0f, noose.maxOfOrNull { it.second } ?: 0f))
                 if (!cut) render()
                 return
             }
@@ -2680,7 +2683,7 @@ class EditorController {
         ProjectGreaseSelect.ARRANGE_TOP -> 2f; ProjectGreaseSelect.ARRANGE_UP -> -1f
         ProjectGreaseSelect.ARRANGE_DOWN -> 1f; else -> 3f })
     fun assignActiveMaterialToSelection() = runSelectCommand(ProjectGreaseSelect.setMaterial(materials.activeMaterial))
-    fun resetSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = paintOp(ProjectGreaseSelect.resetVertexColor(mode))
+    fun resetSelectionVertexColor(mode:Int=ProjectGreaseSelect.PAINT_BOTH) = paintOp("GPENCIL_OT_stroke_reset_vertex_color", mode.toFloat())
     fun flipSelection() = runSelectCommand(ProjectGreaseSelect.flip())
     fun setSelectionCyclic(type:Int) = runSelectCommand(ProjectGreaseSelect.cyclic(type))
     fun snapSelectionToGrid() = runSelectCommand(ProjectGreaseSelect.snapToGrid(view.gridSize))
@@ -2872,21 +2875,23 @@ class EditorController {
         .also { if (it) { animation.refreshFromNative(); render() } }
     /** Paint menu operators (gpencil_vertex_ops.c): with the Vertex Paint selection mask off Blender
      *  treats nothing as selected and the operator applies to every stroke. */
-    private fun paintOp(cmd: ProjectGreaseSelect.Command?): Boolean {
-        if (mode == GreaseMode.VERTEX_PAINT && vertexSelectMask == 0) runSelectCommand(ProjectGreaseSelect.all(ProjectGreaseSelect.ACTION_DESELECT))
-        return runSelectCommand(cmd).also { com.smitnk.projectgrease.CrashLog.event("PAINT OP ${cmd?.id} target -> $it") }
+    /** Vertex Paint menu operators (gpencil_vertex_ops.c): with the selection mask off, Blender
+     *  works on every stroke, so the selection is cleared first. */
+    private fun paintOp(idname:String, vararg props:Float): Boolean {
+        if (mode == GreaseMode.VERTEX_PAINT && vertexSelectMask == 0) runOperator("GPENCIL_OT_select_all", ProjectGreaseSelect.ACTION_DESELECT.toFloat())
+        return runOperator(idname, *props)
     }
     fun setSelectionVertexColor(mode:Int=vertexPaintTarget):Boolean {
         val c = linearRgb(materials.colorArgb)
-        return paintOp(ProjectGreaseSelect.vcolorSet(mode, c[0], c[1], c[2]))
+        return paintOp("GPENCIL_OT_vertex_color_set", mode.toFloat(), 1f, c[0], c[1], c[2])
     }
-    fun invertSelectionVertexColor(mode:Int=vertexPaintTarget) = paintOp(ProjectGreaseSelect.vcolorInvert(mode))
+    fun invertSelectionVertexColor(mode:Int=vertexPaintTarget) = paintOp("GPENCIL_OT_vertex_color_invert", mode.toFloat())
     fun selectionVertexColorBrightnessContrast(b:Float, c:Float, mode:Int=vertexPaintTarget) =
-        paintOp(ProjectGreaseSelect.vcolorBrightnessContrast(mode, b, c))
+        paintOp("GPENCIL_OT_vertex_color_brightness_contrast", mode.toFloat(), b, c)
     fun selectionVertexColorHsv(h:Float=0.5f, s:Float=1f, v:Float=1f, mode:Int=vertexPaintTarget) =
-        paintOp(ProjectGreaseSelect.vcolorHsv(mode, h, s, v))
+        paintOp("GPENCIL_OT_vertex_color_hsv", mode.toFloat(), h, s, v)
     fun selectionVertexColorLevels(offset:Float, gain:Float, mode:Int=vertexPaintTarget) =
-        paintOp(ProjectGreaseSelect.vcolorLevels(mode, offset, gain))
+        paintOp("GPENCIL_OT_vertex_color_levels", mode.toFloat(), offset, gain)
     fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_ROTATE,snapRotation(radians),0f,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}

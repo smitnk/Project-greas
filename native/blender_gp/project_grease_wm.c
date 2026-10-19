@@ -172,6 +172,67 @@ static int exec_blank_frame(PGOpContext *C, const float *props, int n)
   return FINISHED_IF(any);
 }
 
+/* ---- Vertex Paint menu (gpencil_vertex_ops.c): first prop mode STROKE 0 / FILL 1 / BOTH 2. As
+ * in Blender, nothing selected means every editable stroke, and each exec finishes. */
+static bool poll_vertex(const PGOpContext *C) { return C->gpd != NULL; }
+static bool vmode(const float *props, int n, int *r_mode)
+{
+  *r_mode = prop_i(props, n, 0, 2);
+  return *r_mode >= 0 && *r_mode <= 2;
+}
+static float prop_f(const float *props, int n, int i, float def)
+{
+  return (i < n && isfinite(props[i])) ? props[i] : def;
+}
+/* GPENCIL_OT_vertex_color_set: mode, factor, then the brush colour r g b (scene linear) */
+static int exec_vcolor_set(PGOpContext *C, const float *props, int n)
+{
+  int m;
+  if (!vmode(props, n, &m) || n < 5) return PG_OPERATOR_CANCELLED;
+  const float rgb[3] = {prop_f(props, n, 2, 0), prop_f(props, n, 3, 0), prop_f(props, n, 4, 0)};
+  pg_gp_vcolor_set(C->gpd, NULL, m, rgb, prop_f(props, n, 1, 1.0f));
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_vcolor_invert(PGOpContext *C, const float *props, int n)
+{
+  int m;
+  if (!vmode(props, n, &m)) return PG_OPERATOR_CANCELLED;
+  pg_gp_vcolor_invert(C->gpd, NULL, m);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_vertex_color_levels: mode, offset (0), gain (1) */
+static int exec_vcolor_levels(PGOpContext *C, const float *props, int n)
+{
+  int m;
+  if (!vmode(props, n, &m)) return PG_OPERATOR_CANCELLED;
+  pg_gp_vcolor_levels(C->gpd, NULL, m, prop_f(props, n, 1, 0.0f), prop_f(props, n, 2, 1.0f));
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_vertex_color_hsv: mode, h (0.5), s (1), v (1) */
+static int exec_vcolor_hsv(PGOpContext *C, const float *props, int n)
+{
+  int m;
+  if (!vmode(props, n, &m)) return PG_OPERATOR_CANCELLED;
+  pg_gp_vcolor_hsv(C->gpd, NULL, m, prop_f(props, n, 1, 0.5f), prop_f(props, n, 2, 1.0f), prop_f(props, n, 3, 1.0f));
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_vertex_color_brightness_contrast: mode, brightness (0), contrast (0) */
+static int exec_vcolor_bc(PGOpContext *C, const float *props, int n)
+{
+  int m;
+  if (!vmode(props, n, &m)) return PG_OPERATOR_CANCELLED;
+  pg_gp_vcolor_brightness_contrast(C->gpd, NULL, m, prop_f(props, n, 1, 0.0f), prop_f(props, n, 2, 0.0f));
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_stroke_reset_vertex_color: mode */
+static int exec_vcolor_reset(PGOpContext *C, const float *props, int n)
+{
+  int m;
+  if (!vmode(props, n, &m)) return PG_OPERATOR_CANCELLED;
+  pg_gp_stroke_reset_vertex_color(C->gpd, NULL, m);
+  return PG_OPERATOR_FINISHED;
+}
+
 static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_copy", 0, poll_stroke_edit, exec_copy},
     {"GPENCIL_OT_paste", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_paste, exec_paste},
@@ -186,6 +247,12 @@ static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_extrude", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_extrude},
     {"GPENCIL_OT_stroke_separate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_separate},
     {"GPENCIL_OT_blank_frame_add", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_blank_frame},
+    {"GPENCIL_OT_vertex_color_set", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_set},
+    {"GPENCIL_OT_vertex_color_invert", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_invert},
+    {"GPENCIL_OT_vertex_color_levels", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_levels},
+    {"GPENCIL_OT_vertex_color_hsv", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_hsv},
+    {"GPENCIL_OT_vertex_color_brightness_contrast", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_bc},
+    {"GPENCIL_OT_stroke_reset_vertex_color", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_vertex, exec_vcolor_reset},
 };
 
 static const PGOperatorType *find_type(const char *idname)

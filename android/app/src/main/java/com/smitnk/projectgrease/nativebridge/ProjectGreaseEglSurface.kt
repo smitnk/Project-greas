@@ -154,6 +154,11 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var pinchOpen = false
     /** Pointer ids of ghost touches (second contacts at a finger's own spot), ignored until they lift. */
     private val ghostPointers = HashSet<Int>()
+    /** A second contact that landed while drawing: it only becomes a pinch / pan once it moves
+     *  (log 20: a resting finger or palm, size 0 on this phone, cancelled every stroke). */
+    private var pendingPointer = MotionEvent.INVALID_POINTER_ID
+    private var pendingX = 0f
+    private var pendingY = 0f
     private var pinchStartDistance = 0f
     private var pinchStartZoom = 1f
     /** Pinch during a proportional transform changes the proportional size (Blender: wheel / PageUp). */
@@ -200,6 +205,7 @@ internal class ProjectGreaseDrawingSurfaceView(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 ghostPointers.clear()
+                pendingPointer = MotionEvent.INVALID_POINTER_ID
                 controller.screenPxPerUnit = pixelsPerUnit()
                 controller.touchRadiusPx = 40f * resources.displayMetrics.density
                 controller.uiScale = resources.displayMetrics.density
@@ -353,37 +359,33 @@ internal class ProjectGreaseDrawingSurfaceView(
                     val palm = a >= 0 && a != n && event.getTouchMajor(n) > maxOf(2f * event.getTouchMajor(a), 22f * resources.displayMetrics.density)
                     com.smitnk.projectgrease.CrashLog.event("TOUCH second touch: " + (0 until event.pointerCount).joinToString { i ->
                         "id ${event.getPointerId(i)} at %.0f,%.0f size %.0f".format(event.getX(i), event.getY(i), event.getTouchMajor(i)) } + " new index $n, active $activePointerId, pinch $pinchOpen -> " +
-                        if (near) "ignored (at another finger's spot)" else if (palm) "ignored (palm)" else "gesture")
+                        if (near) "ignored (at another finger's spot)" else if (palm) "ignored (palm)"
+                        else if (event.pointerCount == 2 && (sessionTool >= 0 || strokeOpen)) "pending (gesture only if it moves)" else "gesture")
                     if (near || palm) {
                         ghostPointers += event.getPointerId(n)
                         return true
                     }
-                }
-                if (event.pointerCount >= 2) {
-                    endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
-                    if (strokeOpen) {
-                        controller.cancelStroke()
-                        strokeOpen = false
+                    if (event.pointerCount == 2 && (sessionTool >= 0 || strokeOpen)) {
+                        pendingPointer = event.getPointerId(n); pendingX = event.getX(n); pendingY = event.getY(n)
+                        ghostPointers += pendingPointer
+                        return true
                     }
-                    panOpen = false
-                    if (multiMax < 2) {
-                        // the first finger's erase was not meant: revert it before the gesture
-                        if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && controller.endErase()) controller.undo()
-                        multiStartMs = event.eventTime
-                    }
-                    multiMax = maxOf(multiMax, event.pointerCount)
-                    pinchOpen = true
-                    pinchStartDistance = pointerDistance(event).coerceAtLeast(1f)
-                    pinchStartZoom = controller.view.zoom
-                    pinchStartAngle = pointerAngle(event)
-                    centroid(event).let { pinchStartCx = it.first; pinchStartCy = it.second }
-                    pinchStartRot = controller.view.rotation
-                    pinchStartPanX = controller.view.panX
-                    pinchStartPanY = controller.view.panY
                 }
+                startGesture(event)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (pendingPointer != MotionEvent.INVALID_POINTER_ID) {
+                    val i = event.findPointerIndex(pendingPointer)
+                    if (i >= 0 && event.pointerCount >= 2 &&
+                        hypot(event.getX(i) - pendingX, event.getY(i) - pendingY) > 24f * resources.displayMetrics.density) {
+                        com.smitnk.projectgrease.CrashLog.event("TOUCH pending second touch moved -> gesture")
+                        ghostPointers.remove(pendingPointer)
+                        pendingPointer = MotionEvent.INVALID_POINTER_ID
+                        startGesture(event)
+                        return true
+                    }
+                }
                 if (propPinch && event.pointerCount >= 2) {
                     val distance = pointerDistance(event)
                     if (distance > 0f) controller.setProportionalSize(pinchStartPropSize * (distance / pinchStartDistance))
@@ -504,6 +506,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
+                if (event.getPointerId(event.actionIndex) == pendingPointer) pendingPointer = MotionEvent.INVALID_POINTER_ID
                 if (ghostPointers.remove(event.getPointerId(event.actionIndex))) return true
                 if (propPinch) {
                     propPinch = false
@@ -636,6 +639,32 @@ internal class ProjectGreaseDrawingSurfaceView(
         val dx = event.getX(0) - event.getX(1)
         val dy = event.getY(0) - event.getY(1)
         return hypot(dx, dy)
+    }
+
+    /** Two or more fingers: the stroke in progress is dropped and the pinch / pan / turn starts. */
+    private fun startGesture(event: MotionEvent) {
+                if (event.pointerCount >= 2) {
+                    endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
+                    if (strokeOpen) {
+                        controller.cancelStroke()
+                        strokeOpen = false
+                    }
+                    panOpen = false
+                    if (multiMax < 2) {
+                        // the first finger's erase was not meant: revert it before the gesture
+                        if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && controller.endErase()) controller.undo()
+                        multiStartMs = event.eventTime
+                    }
+                    multiMax = maxOf(multiMax, event.pointerCount)
+                    pinchOpen = true
+                    pinchStartDistance = pointerDistance(event).coerceAtLeast(1f)
+                    pinchStartZoom = controller.view.zoom
+                    pinchStartAngle = pointerAngle(event)
+                    centroid(event).let { pinchStartCx = it.first; pinchStartCy = it.second }
+                    pinchStartRot = controller.view.rotation
+                    pinchStartPanX = controller.view.panX
+                    pinchStartPanY = controller.view.panY
+                }
     }
 
     private fun canvasPoint(rawX:Float,rawY:Float):Pair<Float,Float> =

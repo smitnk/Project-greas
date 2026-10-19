@@ -11,6 +11,7 @@
 
 #include "project_grease_blender_edit.h"
 #include "project_grease_blender_edit4.h"
+#include "project_grease_blender_select.h"
 #include "project_grease_wm.h"
 
 typedef struct PGOperatorType {
@@ -81,10 +82,54 @@ static int exec_delete(PGOpContext *C, const float *props, int n)
   }
 }
 
+#define FINISHED_IF(x) ((x) ? PG_OPERATOR_FINISHED : PG_OPERATOR_CANCELLED)
+
+/* GPENCIL_OT_duplicate */
+static int exec_duplicate(PGOpContext *C, const float *props, int n)
+{
+  (void)props; (void)n;
+  return FINISHED_IF(pg_gp_duplicate(C->gpd, NULL));
+}
+/* GPENCIL_OT_dissolve: prop type POINTS (0, default), BETWEEN (1), UNSELECT (2) */
+static int exec_dissolve(PGOpContext *C, const float *props, int n)
+{
+  const int type = prop_i(props, n, 0, PG_DISSOLVE_POINTS);
+  if (type < PG_DISSOLVE_POINTS || type > PG_DISSOLVE_UNSELECT) return PG_OPERATOR_CANCELLED;
+  return FINISHED_IF(pg_gp_dissolve(C->gpd, NULL, type));
+}
+/* GPENCIL_OT_stroke_join: props type (JOIN 0; JOINCOPY 1 is not ported), leave_gaps */
+static int exec_join(PGOpContext *C, const float *props, int n)
+{
+  if (prop_i(props, n, 0, 0) != 0) return PG_OPERATOR_CANCELLED; /* shortcut: JOINCOPY not ported; port it when the UI offers it */
+  return FINISHED_IF(pg_gp_join(C->gpd, NULL, prop_i(props, n, 1, 0)));
+}
+/* GPENCIL_OT_move_to_layer: prop layer (target index) */
+static int exec_move_to_layer(PGOpContext *C, const float *props, int n)
+{
+  const int target = prop_i(props, n, 0, -1);
+  if (target < 0 || C->active_layer == NULL) return PG_OPERATOR_CANCELLED;
+  return FINISHED_IF(pg_gp_move_to_layer(C->gpd, C->active_layer, target));
+}
+/* gpencil_select_poll: GP data present */
+static bool poll_select(const PGOpContext *C) { return C->gpd != NULL; }
+/* GPENCIL_OT_select_all: prop action TOGGLE (0, default), SELECT 1, DESELECT 2, INVERT 3 */
+static int exec_select_all(PGOpContext *C, const float *props, int n)
+{
+  const int action = prop_i(props, n, 0, PG_SEL_TOGGLE);
+  if (action < PG_SEL_TOGGLE || action > PG_SEL_INVERT) return PG_OPERATOR_CANCELLED;
+  pg_gp_select_all(C->gpd, action, NULL);
+  return PG_OPERATOR_FINISHED; /* gpencil_select_all_exec finishes even when nothing changed */
+}
+
 static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_copy", 0, poll_stroke_edit, exec_copy},
     {"GPENCIL_OT_paste", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_paste, exec_paste},
     {"GPENCIL_OT_delete", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_delete},
+    {"GPENCIL_OT_duplicate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_duplicate},
+    {"GPENCIL_OT_dissolve", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_dissolve},
+    {"GPENCIL_OT_stroke_join", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_join},
+    {"GPENCIL_OT_move_to_layer", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_move_to_layer},
+    {"GPENCIL_OT_select_all", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_all},
 };
 
 static const PGOperatorType *find_type(const char *idname)

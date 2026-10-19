@@ -1559,7 +1559,7 @@ class EditorController {
         }
         return changed
     }
-    fun selectAll(action:Int = ProjectGreaseSelect.ACTION_SELECT) = runSelectCommand(ProjectGreaseSelect.all(action))
+    fun selectAll(action:Int = ProjectGreaseSelect.ACTION_SELECT) = runOperator("GPENCIL_OT_select_all", action.toFloat())
     fun deselectAll() = selectAll(ProjectGreaseSelect.ACTION_DESELECT)
     fun invertSelection() = selectAll(ProjectGreaseSelect.ACTION_INVERT)
     fun selectLinked() = runSelectCommand(ProjectGreaseSelect.linked())
@@ -2642,7 +2642,7 @@ class EditorController {
     fun setSelectionStartPoint() = runSelectCommand(ProjectGreaseSelect.startSet())
     fun separateSelectionToLayer() = runSelectCommand(ProjectGreaseSelect.separateToLayer())
     fun separateSelection(mode:Int=ProjectGreaseSelect.SEPARATE_POINT) = runSelectCommand(ProjectGreaseSelect.separate(mode))
-    fun moveSelectionToLayer(index:Int) = runSelectCommand(ProjectGreaseSelect.moveToLayer(index))
+    fun moveSelectionToLayer(index:Int) = runOperator("GPENCIL_OT_move_to_layer", index.toFloat())
     /** Copy does not change the document; call native directly so no undo step is recorded. */
     /** Runs a Blender operator by its idname through the native operator layer (poll, exec);
      *  a FINISHED operator flagged OPTYPE_UNDO becomes one undo step, as in Blender. */
@@ -2681,8 +2681,8 @@ class EditorController {
     fun flipSelection() = runSelectCommand(ProjectGreaseSelect.flip())
     fun setSelectionCyclic(type:Int) = runSelectCommand(ProjectGreaseSelect.cyclic(type))
     fun snapSelectionToGrid() = runSelectCommand(ProjectGreaseSelect.snapToGrid(view.gridSize))
-    fun duplicateSelection() = runSelectCommand(ProjectGreaseSelect.duplicate())
-    fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runSelectCommand(ProjectGreaseSelect.dissolve(type))
+    fun duplicateSelection() = runOperator("GPENCIL_OT_duplicate")
+    fun dissolveSelection(type:Int=ProjectGreaseSelect.DISSOLVE_POINTS) = runOperator("GPENCIL_OT_dissolve", type.toFloat())
     fun splitSelection() = runSelectCommand(ProjectGreaseSelect.split())
     // ---- Lasso actions: break off, cut, shear (TFM_SHEAR), perspective ----
     /** Break off: the selected points become their own stroke (GPENCIL_OT_stroke_split), so moving
@@ -2770,7 +2770,7 @@ class EditorController {
         if (apply) { history.markEdit(); document.markDirty() }
         render(); onOverlayChanged?.invoke()
     }
-    fun joinSelection(leaveGaps:Boolean=false) = runSelectCommand(ProjectGreaseSelect.join(leaveGaps))
+    fun joinSelection(leaveGaps:Boolean=false) = runOperator("GPENCIL_OT_stroke_join", 0f, if (leaveGaps) 1f else 0f)
     // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----
     var vertexPaintBrush = ProjectGreaseSelect.VPAINT_DRAW
         private set

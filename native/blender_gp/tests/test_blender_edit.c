@@ -1597,6 +1597,19 @@ static void test_operator_layer(void)
   CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_delete", del_strokes, 1, &flag) == PG_OPERATOR_FINISHED &&
             (flag & PG_OPTYPE_UNDO) && stroke_count(fa) + stroke_count(fb) == before - 1,
         "delete strokes removes the selected one");
+  /* select all (DESELECT), duplicate (cancelled with nothing selected, then two strokes) */
+  const float deselect[1] = {2}, select_all[1] = {1};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_all", deselect, 1, NULL) == PG_OPERATOR_FINISHED &&
+            pg_wm_operator_call(&C, "GPENCIL_OT_duplicate", NULL, 0, NULL) == PG_OPERATOR_CANCELLED,
+        "deselect all, then duplicate has nothing to do");
+  const int fb_before = stroke_count(fb);
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select_all", select_all, 1, NULL) == PG_OPERATOR_FINISHED &&
+            pg_wm_operator_call(&C, "GPENCIL_OT_duplicate", NULL, 0, NULL) == PG_OPERATOR_FINISHED &&
+            stroke_count(fb) == 2 * fb_before,
+        "select all + duplicate doubles layer B's strokes");
+  const float bad_dissolve[1] = {7};
+  CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_dissolve", bad_dissolve, 1, NULL) == PG_OPERATOR_CANCELLED,
+        "dissolve rejects an unknown type");
   pg_gp_clipboard_free();
 }
 

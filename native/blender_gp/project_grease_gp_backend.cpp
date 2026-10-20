@@ -167,6 +167,12 @@ static bool gp_material_ensure_slot(bGPdata *gpd, int index)
   return true;
 }
 
+/* for the material operators of project_grease_wm_stroke.c */
+extern "C" bool pg_gp_material_ensure_slot(bGPdata *gpd, int index)
+{
+  return gp_material_ensure_slot(gpd, index);
+}
+
 static void gp_materials_free(bGPdata *gpd)
 {
   if (!gpd || !gpd->mat) {

@@ -245,6 +245,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
                         // one undo step per erase gesture (endErase), so a second finger can still revert it
+                        controller.beginErase()
                         if (controller.eraseAt(start.first, start.second, controller.eraserRadius(pixelsPerUnit()), false)) controller.render()
                         eraseLastX = start.first
                         eraseLastY = start.second

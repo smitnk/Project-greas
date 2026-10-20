@@ -54,6 +54,7 @@ extern "C" int project_grease_android_present_pending_stroke(
 
 // Fill, step 1 (GL thread): the stroke mask rendered and read back, downsampled to the fill size.
 struct FillCapture {
+  std::vector<GLubyte> pixels;  // raw screen readback; shrunk to rgba off the UI thread
   std::vector<float> rgba;
   int mw = 0, mh = 0, width = 0, height = 0, seed_x = 0, seed_y = 0;
 };
@@ -633,6 +634,35 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearPreviewStrokeEglR
 
 
 // Fill, step 1 (GL thread): the stroke mask rendered and read back, downsampled to the fill size.
+static void fill_downsample(FillCapture &c)
+{
+  const int width = c.width, height = c.height, mw = c.mw, mh = c.mh;
+  const std::vector<GLubyte> &pixels = c.pixels;
+  // Down to the fill image size on the bytes: each cell keeps its block's most opaque pixel (only
+  // alpha decides the boundary), as pg_fill_resample_mask does on floats. Converting the whole
+  // screen to floats first (50 MB at 1220x2590) made every fill tap take most of a second.
+  std::vector<float> rgba(static_cast<size_t>(mw) * static_cast<size_t>(mh) * 4u, 0.0f);
+  for (int y = 0; y < mh; ++y) {
+    const int y0 = static_cast<int>(static_cast<long long>(y) * height / mh);
+    const int y1 = std::max(y0 + 1, static_cast<int>(static_cast<long long>(y + 1) * height / mh));
+    for (int x = 0; x < mw; ++x) {
+      const int x0 = static_cast<int>(static_cast<long long>(x) * width / mw);
+      const int x1 = std::max(x0 + 1, static_cast<int>(static_cast<long long>(x + 1) * width / mw));
+      const GLubyte *best = &pixels[(static_cast<size_t>(y0) * width + x0) * 4];
+      for (int sy = y0; sy < y1 && sy < height; ++sy)
+        for (int sx = x0; sx < x1 && sx < width; ++sx) {
+          const GLubyte *p = &pixels[(static_cast<size_t>(sy) * width + sx) * 4];
+          if (p[3] > best[3]) best = p;
+        }
+      float *d = &rgba[(static_cast<size_t>(y) * mw + x) * 4];
+      for (int c = 0; c < 4; ++c) d[c] = static_cast<float>(best[c]) / 255.0f;
+    }
+  }
+
+  c.rgba = std::move(rgba);
+  c.pixels = std::vector<GLubyte>();
+}
+
 static bool fill_capture(Renderer *renderer, int seed_x, int seed_y, FillCapture &out)
 {
   if (!renderer || !renderer->gp_connected ||
@@ -663,33 +693,13 @@ static bool fill_capture(Renderer *renderer, int seed_x, int seed_y, FillCapture
     return false;
   }
 
-  // Down to the fill image size on the bytes: each cell keeps its block's most opaque pixel (only
-  // alpha decides the boundary), as pg_fill_resample_mask does on floats. Converting the whole
-  // screen to floats first (50 MB at 1220x2590) made every fill tap take most of a second.
   const int mw = project_grease_gp_fill_render_size(renderer->gp_handle, width);
   const int mh = project_grease_gp_fill_render_size(renderer->gp_handle, height);
-  std::vector<float> rgba(static_cast<size_t>(mw) * static_cast<size_t>(mh) * 4u, 0.0f);
-  for (int y = 0; y < mh; ++y) {
-    const int y0 = static_cast<int>(static_cast<long long>(y) * height / mh);
-    const int y1 = std::max(y0 + 1, static_cast<int>(static_cast<long long>(y + 1) * height / mh));
-    for (int x = 0; x < mw; ++x) {
-      const int x0 = static_cast<int>(static_cast<long long>(x) * width / mw);
-      const int x1 = std::max(x0 + 1, static_cast<int>(static_cast<long long>(x + 1) * width / mw));
-      const GLubyte *best = &pixels[(static_cast<size_t>(y0) * width + x0) * 4];
-      for (int sy = y0; sy < y1 && sy < height; ++sy)
-        for (int sx = x0; sx < x1 && sx < width; ++sx) {
-          const GLubyte *p = &pixels[(static_cast<size_t>(sy) * width + sx) * 4];
-          if (p[3] > best[3]) best = p;
-        }
-      float *d = &rgba[(static_cast<size_t>(y) * mw + x) * 4];
-      for (int c = 0; c < 4; ++c) d[c] = static_cast<float>(best[c]) / 255.0f;
-    }
-  }
 
   float map_scale = 1.0f, map_ox = 0.0f, map_oy = 0.0f, map_rot = 0.0f;
   project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy, &map_rot);
   project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy, map_rot);
-  out.rgba = std::move(rgba);
+  out.pixels = std::move(pixels);
   out.mw = mw; out.mh = mh; out.width = width; out.height = height; out.seed_x = seed_x; out.seed_y = seed_y;
   project_grease_gp_render_external_context(renderer->gp_handle);
   return true;
@@ -702,6 +712,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
   Renderer *renderer = from_handle(handle);
   FillCapture cap;
   if (!fill_capture(renderer, seed_x, seed_y, cap)) return JNI_FALSE;
+  fill_downsample(cap);
   PGFillJob *job = project_grease_gp_fill_outline(renderer->gp_handle, cap.rgba.data(), cap.mw, cap.mh, cap.width,
                                                   cap.height, cap.seed_x, cap.seed_y, renderer->fill_leak,
                                                   renderer->fill_dilate);
@@ -739,6 +750,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillComputeEglRenderer
     leak = renderer->fill_leak; dilate = renderer->fill_dilate;
   }
   if (!cap) return JNI_FALSE;
+  fill_downsample(*cap);
   PGFillJob *job = project_grease_gp_fill_outline(renderer->gp_handle, cap->rgba.data(), cap->mw, cap->mh, cap->width,
                                                   cap->height, cap->seed_x, cap->seed_y, leak, dilate);
   std::lock_guard<std::mutex> lock(g_fill_mutex);

@@ -132,6 +132,12 @@ int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int 
 void project_grease_gp_lattice_end(ProjectGreaseGPHandle *handle, int keep);
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness);
+/* Eraser drag as Blender's modal GPENCIL_OT_draw (eraser): phase 0 begin / 1 move / 2 end / 3 cancel;
+ * returns the WM status (RUNNING_MODAL 1, CANCELLED 2, FINISHED 4). */
+int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int changed);
+/* Last palette from GPENCIL_OT_extract_palette_vertex / material_to_vertex_color: count, and up to
+ * capacity 0xRRGGBB colours in out. */
+int project_grease_gp_last_palette(int *out, int capacity);
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);
 int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive);
 /* Blender operator by idname (project_grease_wm.h): returns the WM status (FINISHED 4 /

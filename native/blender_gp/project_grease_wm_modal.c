@@ -17,10 +17,30 @@ static const char *const pg_modal_idnames[] = {
     [PG_TOOL_WEIGHT_PAINT] = "GPENCIL_OT_weight_paint",
 };
 static int pg_modal_running = -1; /* tool of the running modal operator */
+static bool pg_modal_erasing = false; /* GPENCIL_OT_draw in eraser mode (gpencil_paint.c) */
 
 const char *pg_wm_modal_running(void)
 {
+  if (pg_modal_erasing) return "GPENCIL_OT_draw";
   return pg_modal_running >= 0 ? pg_modal_idnames[pg_modal_running] : NULL;
+}
+
+int pg_wm_modal_erase(PGOpContext *C, int phase, bool changed)
+{
+  if (phase == PG_TOOL_PHASE_BEGIN) {
+    /* invoke cancels a running paint operator, as for the other modal tools */
+    if (pg_modal_running >= 0 && C && C->tool_session) {
+      pg_tool_session_samples(C->tool_session, NULL, pg_modal_running, NULL, 0, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL);
+    }
+    pg_modal_running = -1;
+    if (C == NULL || C->gpd == NULL) return PG_OPERATOR_CANCELLED; /* gpencil_draw_poll */
+    pg_modal_erasing = true;
+    return PG_OPERATOR_RUNNING_MODAL;
+  }
+  if (!pg_modal_erasing) return PG_OPERATOR_CANCELLED;
+  if (phase == PG_TOOL_PHASE_MOVE) return PG_OPERATOR_RUNNING_MODAL;
+  pg_modal_erasing = false;
+  return (phase == PG_TOOL_PHASE_END && changed) ? PG_OPERATOR_FINISHED : PG_OPERATOR_CANCELLED;
 }
 
 int pg_wm_modal_tool(PGOpContext *C, int tool, int phase, const float *samples, int count,
@@ -34,6 +54,7 @@ int pg_wm_modal_tool(PGOpContext *C, int tool, int phase, const float *samples, 
   }
   if (phase == PG_TOOL_PHASE_BEGIN) {
     /* invoke: a running modal operator is cancelled first (its gesture was cut off) */
+    pg_modal_erasing = false;
     if (pg_modal_running >= 0) {
       pg_tool_session_samples(C->tool_session, NULL, pg_modal_running, NULL, 0, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL);
       pg_modal_running = -1;

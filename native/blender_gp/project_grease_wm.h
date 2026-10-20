@@ -37,6 +37,12 @@ typedef struct PGOpContext {
  * RUNNING_MODAL, FINISHED (confirmed with a change) or CANCELLED. */
 int pg_wm_modal_tool(PGOpContext *C, int tool, int phase, const float *samples, int count,
                      const float *params, int n_params, int *r_status) __attribute__((weak));
+/* GPENCIL_OT_draw in eraser mode, one drag: BEGIN (invoke) -> MOVE ... -> END (confirm; FINISHED
+ * when the drag erased something) or CANCEL. The erasing itself is the backend's eraser per sample. */
+int pg_wm_modal_erase(PGOpContext *C, int phase, bool changed) __attribute__((weak));
+/* Colours (sRGB 0xRRGGBB, hue sorted) of the palette made by the last extract_palette_vertex or
+ * material_to_vertex_color call. */
+int pg_wm_last_palette(const unsigned int **r_colors) __attribute__((weak));
 /* idname of the running modal operator, NULL when none. */
 const char *pg_wm_modal_running(void) __attribute__((weak));
 

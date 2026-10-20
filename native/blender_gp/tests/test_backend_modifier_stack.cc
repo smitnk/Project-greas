@@ -563,6 +563,48 @@ int main()
     CHECK(b.stroke_count() == 1);
   }
 
+  /* batch 18: stroke merge, merge similar materials, materials to vertex colour + palette */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    add_line(b, 100.0f, 0.0f);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    int total = 0;
+    LISTBASE_FOREACH (bGPDstroke *, g, &b.active_layer_data()->actframe->strokes) {
+      g->flag |= GP_STROKE_SELECT;
+      for (int i = 0; i < g->totpoints; i++) g->points[i].flag |= GP_SPOINT_SELECT;
+      total += g->totpoints;
+    }
+    float merge[6] = {-1, 0, 0, 0, 0, 1}; /* STROKE, delete the old strokes */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_merge", merge, 6, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(b.stroke_count() == 1);
+    CHECK(static_cast<bGPDstroke *>(b.active_layer_data()->actframe->strokes.first)->totpoints == total);
+
+    /* two slots of the same colour merge into the first */
+    CHECK(b.reset_document());
+    CHECK(b.create_material() && b.create_material());
+    const float red[4] = {1, 0, 0, 1};
+    CHECK(b.set_material_colors(1, red, red) && b.set_material_colors(2, red, red));
+    add_line(b, 0.0f, 0.0f);
+    bGPDstroke *g = static_cast<bGPDstroke *>(b.active_layer_data()->actframe->strokes.first);
+    g->mat_nr = 2;
+    PGOpContext M = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    CHECK(pg_wm_operator_call(&M, "GPENCIL_OT_stroke_merge_material", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(g->mat_nr == 1);
+
+    /* materials to vertex colour: the stroke gets red points, a plain material, and a one-colour palette */
+    float to_vertex[3] = {1, 1, 0};
+    CHECK(pg_wm_operator_call(&M, "GPENCIL_OT_material_to_vertex_color", to_vertex, 3, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(g->points[0].vert_color[0] == 1.0f && g->points[0].vert_color[1] == 0.0f && g->points[0].vert_color[3] == 1.0f);
+    CHECK(M.gpd->totcol == 1 && g->mat_nr == 0); /* unused slots removed */
+    const unsigned int *pal = nullptr;
+    CHECK(pg_wm_last_palette(&pal) == 1 && pal[0] == 0xFF0000u);
+    float extract[2] = {0, 1};
+    CHECK(pg_wm_operator_call(&M, "GPENCIL_OT_extract_palette_vertex", extract, 2, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(pg_wm_last_palette(&pal) == 1);
+
+  }
+
   /* batch 16: primitives (confirm step) */
   {
     CHECK(b.reset_document());

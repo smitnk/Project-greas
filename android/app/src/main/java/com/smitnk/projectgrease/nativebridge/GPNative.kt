@@ -181,6 +181,10 @@ object GPNative {
     /** Blender operator by idname (pg_wm): low byte = WM status (FINISHED 4 / CANCELLED 2),
      *  bits 8+ = operator type flags (OPTYPE_UNDO 2). */
     external fun nativeOperatorCall(handle: Long, idname: String, cfra: Int, actcol: Int, props: FloatArray): Int
+    /** Eraser drag as the modal GPENCIL_OT_draw: phase 0 begin / 1 move / 2 end / 3 cancel; returns the WM status. */
+    external fun nativeEraseModal(handle: Long, phase: Int, changed: Boolean): Int
+    /** 0xRRGGBB colours of the palette made by the last extract_palette_vertex / material_to_vertex_color. */
+    external fun nativeLastPalette(): IntArray
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
     external fun nativeSetPoint(

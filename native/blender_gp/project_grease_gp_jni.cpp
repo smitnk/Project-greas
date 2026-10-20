@@ -1042,6 +1042,23 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeOperatorCall(
   return result;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseModal(JNIEnv *, jobject, jlong handle, jint phase, jboolean changed)
+{
+  return project_grease_gp_erase_modal(from_handle(handle), phase, changed ? 1 : 0);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLastPalette(JNIEnv *env, jobject)
+{
+  const int n = project_grease_gp_last_palette(nullptr, 0);
+  std::vector<int> cols(static_cast<size_t>(n));
+  if (n > 0) project_grease_gp_last_palette(cols.data(), n);
+  jintArray out = env->NewIntArray(n);
+  if (out && n > 0) env->SetIntArrayRegion(out, 0, n, reinterpret_cast<const jint *>(cols.data()));
+  return out;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeApplyEditCommand(
     JNIEnv *env, jobject, jlong handle, jint command, jfloatArray args)

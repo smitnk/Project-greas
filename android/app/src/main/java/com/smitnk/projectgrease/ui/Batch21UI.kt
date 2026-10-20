@@ -495,6 +495,7 @@ fun DrawingGuideSection(controller: EditorController, redraw: () -> Unit) {
         Slider(v.guideSpacing, { v.setDrawingGuide(v.guideType, spacing = it); controller.render(); tick++ }, valueRange = 4f..400f, modifier = Modifier.padding(horizontal = 20.dp))
         Text("Angle " + Math.round(Math.toDegrees(v.guideAngle.toDouble())) + "°", Modifier.padding(horizontal = 20.dp))
         Slider(v.guideAngle, { v.setDrawingGuide(v.guideType, angle = it); controller.render(); tick++ }, valueRange = -3.1415927f..3.1415927f, modifier = Modifier.padding(horizontal = 20.dp))
+        TextButton(onClick = { controller.rotateGuide(); tick++ }, modifier = Modifier.padding(horizontal = 12.dp).testTag("guideRotate")) { Text("Rotate 90°") }
         TextButton(onClick = {
             v.setDrawingGuide(v.guideType, controller.document.canvasWidth / 2f, controller.document.canvasHeight / 2f); controller.render(); tick++
         }, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Center on the canvas") }
@@ -737,5 +738,6 @@ fun VertexPaletteBar(controller: EditorController, redraw: () -> Unit) {
                 .testTag("palette_$i"))
         }
         TextButton(onClick = { controller.addPaletteColor(); redraw() }, modifier = Modifier.testTag("paletteAdd")) { Text("+ colour", fontSize = 10.sp) }
+        TextButton(onClick = { controller.extractPaletteFromVertexColors(); redraw() }, modifier = Modifier.testTag("paletteExtract")) { Text("From drawing", fontSize = 10.sp) }
     }
 }

@@ -490,6 +490,22 @@ int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, flo
                                                        era_strength, era_thickness) ? 1 : 0;
 }
 
+int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int changed)
+{
+  if (!ensure_operator(handle) || !pg_wm_modal_erase) return PG_OPERATOR_CANCELLED;
+  PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), 0, true, 0,
+                   handle->tool_session, nullptr};
+  return pg_wm_modal_erase(&C, phase, changed != 0);
+}
+
+int project_grease_gp_last_palette(int *out, int capacity)
+{
+  const unsigned int *cols = nullptr;
+  const int n = pg_wm_last_palette ? pg_wm_last_palette(&cols) : 0;
+  for (int i = 0; i < n && i < capacity && out; i++) out[i] = static_cast<int>(cols[i]);
+  return n;
+}
+
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle)
 {
   if (ensure_ready(handle)) handle->backend.clear_selection();

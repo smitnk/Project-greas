@@ -2680,9 +2680,12 @@ class EditorController {
         }
         return ok
     }
-    /** Ends an erase gesture: one undo step when it changed the document; true then. */
+    /** Starts an erase drag: Blender's modal GPENCIL_OT_draw in eraser mode (cancels a running paint operator). */
+    fun beginErase() { if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 0, false) }
+    /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
         val changed = eraseGestureChanged
+        if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, changed)
         if (changed) history.markEdit()
         eraseGestureChanged = false
         return changed
@@ -2755,6 +2758,43 @@ class EditorController {
     fun isolateMaterial(affectVisibility:Boolean=true) = runOperator("GPENCIL_OT_material_isolate", if (affectVisibility) 1f else 0f)
     fun selectByActiveMaterial(deselect:Boolean=false) = runOperator("GPENCIL_OT_material_select", if (deselect) 1f else 0f)
     fun pickMaterialFromSelection() = runOperator("GPENCIL_OT_set_active_material")
+    /** GPENCIL_OT_stroke_merge: one new stroke from the selected points (byPoint = POINT mode, ordered
+     *  around their centre; else stroke by stroke, nearest end first). deleteOld = clear_stroke. */
+    fun mergeSelectedStrokes(byPoint:Boolean = false, deleteOld:Boolean = true, cyclic:Boolean = false) =
+        runOperator("GPENCIL_OT_stroke_merge", if (byPoint) 1f else -1f, 0f, 0f, if (cyclic) 1f else 0f, 0f,
+            if (deleteOld) 1f else 0f, brushes.size)
+    /** GPENCIL_OT_stroke_merge_material: strokes of near-identical materials move to one slot. */
+    fun mergeSimilarMaterials(hue:Float = 0.001f, sat:Float = 0.001f, value:Float = 0.001f) =
+        runOperator("GPENCIL_OT_stroke_merge_material", hue, sat, value)
+    /** Adds the palette the last palette operator made to the vertex colour palette; how many were new. */
+    private fun takeNativePalette():Int {
+        var added = 0
+        for (rgb in GPNative.nativeLastPalette()) if (addPaletteColor(rgb or 0xFF000000.toInt())) added++
+        return added
+    }
+    /** GPENCIL_OT_extract_palette_vertex: the vertex colours in use become palette swatches. */
+    fun extractPaletteFromVertexColors(onlySelected:Boolean = false, threshold:Int = 1):Int {
+        if (!runOperator("GPENCIL_OT_extract_palette_vertex", if (onlySelected) 1f else 0f, threshold.toFloat())) return 0
+        return takeNativePalette()
+    }
+    /** GPENCIL_OT_material_to_vertex_color: material colours move into vertex colours (plain
+     *  materials per type), a palette of them is made and unused materials are removed. */
+    fun materialsToVertexColor(onlySelected:Boolean = false, removeUnused:Boolean = true):Boolean {
+        val ok = runOperator("GPENCIL_OT_material_to_vertex_color", if (removeUnused) 1f else 0f, 1f, if (onlySelected) 1f else 0f)
+        if (ok) { takeNativePalette(); selectMaterial(materials.activeMaterial.coerceIn(0, (native.materialCount() - 1).coerceAtLeast(0))) }
+        return ok
+    }
+    /** GPENCIL_OT_brush_reset: the active brush back to its preset (BKE_gpencil_brush_preset_set). */
+    fun resetBrush() { if (mode == GreaseMode.WEIGHT_PAINT) { weightPaintValue = 1f; weightPaintSubtract = false } else selectBrush(brushes.preset) }
+    /** GPENCIL_OT_guide_rotate: angle (radians), increment adds to the current angle; angle_compat_rad(a, pi). */
+    fun rotateGuide(angle:Float = (Math.PI / 2).toFloat(), increment:Boolean = true) {
+        val a = if (increment) view.guideAngle + angle else angle
+        val pi = Math.PI.toFloat()
+        view.setDrawingGuide(view.guideType, angle = a + kotlin.math.floor((pi - a) / (2f * pi) + 0.5f) * 2f * pi)
+        render()
+    }
+    /** GPENCIL_OT_weight_toggle_direction: Add / Subtract of the weight Draw brush. */
+    fun toggleWeightDirection() { weightPaintSubtract = !weightPaintSubtract }
     /** GPENCIL_OT_hide / GPENCIL_OT_reveal (layers). */
     fun hideLayers(others:Boolean=false) = runOperator("GPENCIL_OT_hide", if (others) 1f else 0f)
     fun revealLayers() = runOperator("GPENCIL_OT_reveal", 1f)

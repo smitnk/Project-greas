@@ -565,6 +565,19 @@ static void test_modal_operators(PGToolSession *ts)
   CHECK(st == PG_OPERATOR_RUNNING_MODAL, "a second invoke replaces the first");
   pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL, 0, &st);
   CHECK(st == PG_OPERATOR_CANCELLED && pg_wm_modal_running() == NULL, "cancel");
+  /* eraser drag (GPENCIL_OT_draw, eraser): needs GP data, finishes only when it erased */
+  CHECK(pg_wm_modal_erase(&C, PG_TOOL_PHASE_BEGIN, false) == PG_OPERATOR_CANCELLED, "erase polls false without GP data");
+  bGPdata gpd_stub; /* the eraser polls for GP data only */
+  memset(&gpd_stub, 0, sizeof gpd_stub);
+  C.gpd = &gpd_stub;
+  pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_BEGIN, smp, 1, p, PG_DRAW_P_COUNT, &st);
+  CHECK(pg_wm_modal_erase(&C, PG_TOOL_PHASE_BEGIN, false) == PG_OPERATOR_RUNNING_MODAL &&
+            strcmp(pg_wm_modal_running(), "GPENCIL_OT_draw") == 0, "erase invoke cancels draw and runs");
+  CHECK(pg_wm_modal_erase(&C, PG_TOOL_PHASE_MOVE, false) == PG_OPERATOR_RUNNING_MODAL, "erase move");
+  CHECK(pg_wm_modal_erase(&C, PG_TOOL_PHASE_END, true) == PG_OPERATOR_FINISHED && pg_wm_modal_running() == NULL, "erase confirm");
+  CHECK(pg_wm_modal_erase(&C, PG_TOOL_PHASE_BEGIN, false) == PG_OPERATOR_RUNNING_MODAL &&
+            pg_wm_modal_erase(&C, PG_TOOL_PHASE_END, false) == PG_OPERATOR_CANCELLED, "an erase that changed nothing cancels");
+  C.gpd = NULL;
 }
 
 int main(void)

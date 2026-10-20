@@ -1051,6 +1051,642 @@ static int exec_stroke_join(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- batch 18: stroke merge, merge similar materials, materials to vertex colour, palette ---- */
+#define GP_MERGE_STROKE -1
+#define GP_MERGE_POINT 1
+/* BEGIN VERBATIM source/blender/editors/gpencil_legacy/gpencil_merge.c */
+typedef struct tGPencilPointCache {
+  float factor; /* value to sort */
+  bGPDstroke *gps;
+  float x, y, z;
+  float pressure;
+  float strength;
+  float vert_color[4];
+} tGPencilPointCache;
+
+/* helper function to sort points */
+static int gpencil_sort_points(const void *a1, const void *a2)
+{
+  const tGPencilPointCache *ps1 = a1, *ps2 = a2;
+
+  if (ps1->factor < ps2->factor) {
+    return -1;
+  }
+
+  if (ps1->factor > ps2->factor) {
+    return 1;
+  }
+
+  return 0;
+}
+
+static void gpencil_insert_points_to_stroke(bGPDstroke *gps,
+                                            tGPencilPointCache *points_array,
+                                            int totpoints)
+{
+  tGPencilPointCache *point_elem = NULL;
+
+  for (int i = 0; i < totpoints; i++) {
+    point_elem = &points_array[i];
+    bGPDspoint *pt_dst = &gps->points[i];
+
+    copy_v3_v3(&pt_dst->x, &point_elem->x);
+    pt_dst->pressure = point_elem->pressure;
+    pt_dst->strength = point_elem->strength;
+    pt_dst->uv_fac = 1.0f;
+    pt_dst->uv_rot = 0;
+    pt_dst->flag |= GP_SPOINT_SELECT;
+    copy_v4_v4(pt_dst->vert_color, point_elem->vert_color);
+  }
+}
+/* END VERBATIM */
+
+/* BEGIN VERBATIM source/blender/editors/gpencil_legacy/gpencil_merge.c */
+/* insert a group of points in destination array */
+static int gpencil_insert_to_array(tGPencilPointCache *src_array,
+                                   tGPencilPointCache *dst_array,
+                                   int totpoints,
+                                   bGPDstroke *gps_filter,
+                                   bool reverse,
+                                   int last)
+{
+  tGPencilPointCache *src_elem = NULL;
+  tGPencilPointCache *dst_elem = NULL;
+  int idx = 0;
+
+  for (int i = 0; i < totpoints; i++) {
+    if (!reverse) {
+      idx = i;
+    }
+    else {
+      idx = totpoints - i - 1;
+    }
+    src_elem = &src_array[idx];
+    /* check if all points or only a stroke */
+    if (!ELEM(gps_filter, NULL, src_elem->gps)) {
+      continue;
+    }
+
+    dst_elem = &dst_array[last];
+    last++;
+
+    copy_v3_v3(&dst_elem->x, &src_elem->x);
+    dst_elem->gps = src_elem->gps;
+    dst_elem->pressure = src_elem->pressure;
+    dst_elem->strength = src_elem->strength;
+    dst_elem->factor = src_elem->factor;
+    copy_v4_v4(dst_elem->vert_color, src_elem->vert_color);
+  }
+
+  return last;
+}
+
+/* get first and last point location */
+static void gpencil_get_extremes(
+    tGPencilPointCache *src_array, int totpoints, bGPDstroke *gps_filter, float *start, float *end)
+{
+  tGPencilPointCache *array_pt = NULL;
+
+  /* find first point */
+  for (int i = 0; i < totpoints; i++) {
+    array_pt = &src_array[i];
+    if (gps_filter == array_pt->gps) {
+      copy_v3_v3(start, &array_pt->x);
+      break;
+    }
+  }
+  /* find last point */
+  for (int i = totpoints - 1; i >= 0; i--) {
+    array_pt = &src_array[i];
+    if (gps_filter == array_pt->gps) {
+      copy_v3_v3(end, &array_pt->x);
+      break;
+    }
+  }
+}
+
+static int gpencil_analyze_strokes(tGPencilPointCache *src_array,
+                                   int totstrokes,
+                                   int totpoints,
+                                   tGPencilPointCache *dst_array)
+{
+  int i;
+  int last = 0;
+  GHash *all_strokes = BLI_ghash_ptr_new(__func__);
+  /* add first stroke to array */
+  tGPencilPointCache *sort_pt = &src_array[0];
+  bGPDstroke *gps = sort_pt->gps;
+  last = gpencil_insert_to_array(src_array, dst_array, totpoints, gps, false, last);
+  float start[3];
+  float end[3];
+  float end_prv[3];
+  gpencil_get_extremes(src_array, totpoints, gps, start, end);
+  copy_v3_v3(end_prv, end);
+  BLI_ghash_insert(all_strokes, sort_pt->gps, sort_pt->gps);
+
+  /* look for near stroke */
+  bool loop = (bool)(totstrokes > 1);
+  while (loop) {
+    bGPDstroke *gps_next = NULL;
+    GHash *strokes = BLI_ghash_ptr_new(__func__);
+    float dist_start = 0.0f;
+    float dist_end = 0.0f;
+    float dist = FLT_MAX;
+    bool reverse = false;
+
+    for (i = 0; i < totpoints; i++) {
+      sort_pt = &src_array[i];
+      /* avoid dups */
+      if (BLI_ghash_haskey(all_strokes, sort_pt->gps)) {
+        continue;
+      }
+      if (!BLI_ghash_haskey(strokes, sort_pt->gps)) {
+        gpencil_get_extremes(src_array, totpoints, sort_pt->gps, start, end);
+        /* distances to previous end */
+        dist_start = len_v3v3(end_prv, start);
+        dist_end = len_v3v3(end_prv, end);
+
+        if (dist > dist_start) {
+          gps_next = sort_pt->gps;
+          dist = dist_start;
+          reverse = false;
+        }
+        if (dist > dist_end) {
+          gps_next = sort_pt->gps;
+          dist = dist_end;
+          reverse = true;
+        }
+        BLI_ghash_insert(strokes, sort_pt->gps, sort_pt->gps);
+      }
+    }
+    BLI_ghash_free(strokes, NULL, NULL);
+
+    /* add the stroke to array */
+    if (gps_next != NULL) {
+      BLI_ghash_insert(all_strokes, gps_next, gps_next);
+      last = gpencil_insert_to_array(src_array, dst_array, totpoints, gps_next, reverse, last);
+      /* replace last end */
+      sort_pt = &dst_array[last - 1];
+      copy_v3_v3(end_prv, &sort_pt->x);
+    }
+
+    /* loop exit */
+    if (last >= totpoints) {
+      loop = false;
+    }
+  }
+
+  BLI_ghash_free(all_strokes, NULL, NULL);
+  return last;
+}
+/* END VERBATIM */
+
+/* gpencil_calc_points_factor() over the active frames of the editable layers (CTX
+ * editable_gpencil_layers); the angle / distance factor is Blender's, line for line. */
+static void pgw_merge_points_factor(bGPdata *gpd, const int mode, int totpoints, const bool clear_point,
+                                    const bool clear_stroke, tGPencilPointCache *src_array)
+{
+  bGPDspoint *pt;
+  int idx = 0;
+  bGPDstroke **gps_array = MEM_callocN(sizeof(bGPDstroke *) * totpoints, __func__);
+  bGPDspoint *pt_array = MEM_callocN(sizeof(bGPDspoint) * totpoints, __func__);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
+      if (!(gps->flag & GP_STROKE_SELECT)) continue;
+      int i;
+      for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
+        if (clear_stroke) pt->flag |= GP_SPOINT_TAG;
+        else pt->flag &= ~GP_SPOINT_TAG;
+        if (pt->flag & GP_SPOINT_SELECT) {
+          bGPDspoint *pt2 = &pt_array[idx];
+          copy_v3_v3(&pt2->x, &pt->x);
+          pt2->pressure = pt->pressure;
+          pt2->strength = pt->strength;
+          copy_v4_v4(pt2->vert_color, pt->vert_color);
+          pt->flag &= ~GP_SPOINT_SELECT;
+          if (clear_point) pt->flag |= GP_SPOINT_TAG;
+          gps_array[idx] = gps;
+          idx++;
+        }
+      }
+      gps->flag &= ~GP_STROKE_SELECT;
+      BKE_gpencil_stroke_select_index_reset(gps);
+    }
+  }
+  int direction = 0;
+  float(*points2d)[2] = MEM_mallocN(sizeof(*points2d) * totpoints, "GP Stroke temp 2d points");
+  BKE_gpencil_stroke_2d_flat(pt_array, totpoints, points2d, &direction);
+  float center[2] = {0.0f, 0.0f};
+  for (int i = 0; i < totpoints; i++) {
+    center[0] += points2d[i][0];
+    center[1] += points2d[i][1];
+  }
+  mul_v2_fl(center, 1.0f / totpoints);
+  const float axis[2] = {1.0f, 0.0f};
+  float v1[3];
+  for (int i = 0; i < totpoints; i++) {
+    float ln = len_v2v2(center, points2d[i]);
+    sub_v2_v2v2(v1, points2d[i], center);
+    float angle = angle_signed_v2v2(axis, v1);
+    if (angle < 0.0f) angle = fabsf(angle);
+    else angle = (M_PI * 2.0) - angle;
+    tGPencilPointCache *sort_pt = &src_array[i];
+    bGPDspoint *pt2 = &pt_array[i];
+    copy_v3_v3(&sort_pt->x, &pt2->x);
+    sort_pt->pressure = pt2->pressure;
+    sort_pt->strength = pt2->strength;
+    copy_v4_v4(sort_pt->vert_color, pt2->vert_color);
+    sort_pt->gps = gps_array[i];
+    sort_pt->factor = (mode == GP_MERGE_STROKE) ? angle : (angle * 100000.0f) + ln;
+  }
+  MEM_SAFE_FREE(points2d);
+  MEM_SAFE_FREE(gps_array);
+  MEM_SAFE_FREE(pt_array);
+}
+
+/* gpencil_strokes_merge_poll(): active material usable, active layer unlocked and shown */
+static bool poll_stroke_merge(const PGOpContext *C)
+{
+  const MaterialGPencilStyle *st = C->gpd ? slot_style(C->gpd, C->actcol) : NULL;
+  if (st == NULL || (st->flag & (GP_MATERIAL_HIDE | GP_MATERIAL_LOCKED))) return false;
+  const bGPDlayer *gpl = BKE_gpencil_layer_active_get(C->gpd);
+  return gpl != NULL && !(gpl->flag & (GP_LAYER_LOCKED | GP_LAYER_HIDE));
+}
+
+/* GPENCIL_OT_stroke_merge: mode (STROKE -1 / POINT 1), back, additive, cyclic, clear_point,
+ * clear_stroke. The new stroke takes the active material and the default brush size
+ * (gpencil_prepare_stroke uses brush->size; the app's brush lives in the UI). */
+static int exec_stroke_merge(PGOpContext *C, const float *p, int n)
+{
+  const int mode = prop_i(p, n, 0, GP_MERGE_STROKE) == GP_MERGE_POINT ? GP_MERGE_POINT : GP_MERGE_STROKE;
+  const bool back = prop_i(p, n, 1, 0) != 0;
+  const bool additive = prop_i(p, n, 2, 0) != 0;
+  const bool cyclic = prop_i(p, n, 3, 0) != 0;
+  const bool clear_point = prop_i(p, n, 4, 0) != 0;
+  const bool clear_stroke = prop_i(p, n, 5, 0) != 0;
+  const int brush_size = prop_i(p, n, 6, 3);
+  bGPdata *gpd = C->gpd;
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(gpd);
+  if (gpl == NULL) return PG_OPERATOR_CANCELLED;
+  int totstrokes = 0, totpoints = 0;
+  LISTBASE_FOREACH (bGPDlayer *, l, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(l) || l->actframe == NULL) continue;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &l->actframe->strokes) {
+      if (!(gps->flag & GP_STROKE_SELECT)) continue;
+      totstrokes++;
+      for (int i = 0; i < gps->totpoints; i++)
+        if (gps->points[i].flag & GP_SPOINT_SELECT) totpoints++;
+    }
+  }
+  if (totpoints == 0) return PG_OPERATOR_CANCELLED;
+
+  tGPencilPointCache *sorted_array = NULL;
+  tGPencilPointCache *original_array = MEM_callocN(sizeof(tGPencilPointCache) * totpoints, __func__);
+  pgw_merge_points_factor(gpd, mode, totpoints, clear_point, clear_stroke, original_array);
+  if (mode == GP_MERGE_STROKE) {
+    sorted_array = MEM_callocN(sizeof(tGPencilPointCache) * totpoints, __func__);
+    totpoints = gpencil_analyze_strokes(original_array, totstrokes, totpoints, sorted_array);
+  }
+  else {
+    sorted_array = MEM_dupallocN(original_array);
+    qsort(sorted_array, totpoints, sizeof(tGPencilPointCache), gpencil_sort_points);
+  }
+
+  /* gpencil_prepare_stroke() */
+  bGPDframe *gpf = BKE_gpencil_layer_frame_get(gpl, C->cfra, additive ? GP_GETFRAME_ADD_COPY : GP_GETFRAME_ADD_NEW);
+  if (gpf == NULL) {
+    MEM_SAFE_FREE(original_array);
+    MEM_SAFE_FREE(sorted_array);
+    return PG_OPERATOR_CANCELLED;
+  }
+  bGPDstroke *gps = BKE_gpencil_stroke_new(MAX2(C->actcol - 1, 0), totpoints, (short)brush_size);
+  gps->flag |= GP_STROKE_SELECT;
+  BKE_gpencil_stroke_select_index_set(gpd, gps);
+  if (cyclic) gps->flag |= GP_STROKE_CYCLIC;
+  if (back) BLI_addhead(&gpf->strokes, gps);
+  else BLI_addtail(&gpf->strokes, gps);
+
+  gpencil_insert_points_to_stroke(gps, sorted_array, totpoints);
+  /* gpencil_dissolve_points() */
+  if (clear_point || clear_stroke) {
+    LISTBASE_FOREACH (bGPDlayer *, l, &gpd->layers) {
+      if (!BKE_gpencil_layer_is_editable(l) || l->actframe == NULL) continue;
+      LISTBASE_FOREACH_MUTABLE (bGPDstroke *, s, &l->actframe->strokes)
+        BKE_gpencil_stroke_delete_tagged_points(gpd, l->actframe, s, s->next, GP_SPOINT_TAG, false, false, 0);
+    }
+  }
+  BKE_gpencil_stroke_geometry_update(gpd, gps);
+  MEM_SAFE_FREE(original_array);
+  MEM_SAFE_FREE(sorted_array);
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* BKE_gpencil_merge_materials_table_get() on the document's slots: r_table[secondary] = primary
+ * (-1 = kept), the same tests in the same order. */
+static bool pgw_merge_materials_table(const bGPdata *gpd, float hue_threshold, float sat_threshold,
+                                      float val_threshold, int *r_table)
+{
+  bool changed = false;
+  const int totcol = gpd->totcol;
+  bool *mat_used = MEM_callocN(sizeof(bool) * MAX2(totcol, 1), __func__);
+  for (int i = 0; i < totcol; i++) r_table[i] = -1;
+  for (int idx_primary = 0; idx_primary < totcol; idx_primary++) {
+    const MaterialGPencilStyle *a = slot_style(gpd, idx_primary + 1);
+    if (a == NULL) continue;
+    for (int idx_secondary = 0; idx_secondary < totcol; idx_secondary++) {
+      if (idx_secondary == idx_primary || r_table[idx_secondary] >= 0 || mat_used[idx_secondary]) continue;
+      const MaterialGPencilStyle *b = slot_style(gpd, idx_secondary + 1);
+      if (b == NULL || (b->flag & GP_MATERIAL_LOCKED)) continue;
+      if (a->mode != b->mode) continue;
+      if ((a->flag & GP_MATERIAL_STROKE_SHOW) != (b->flag & GP_MATERIAL_STROKE_SHOW)) continue;
+      if ((a->flag & GP_MATERIAL_FILL_SHOW) != (b->flag & GP_MATERIAL_FILL_SHOW)) continue;
+      if (a->stroke_style != b->stroke_style || a->fill_style != b->fill_style) continue;
+      float s_hsv_a[3], s_hsv_b[3], f_hsv_a[3], f_hsv_b[3], col[3];
+      zero_v3(s_hsv_a); zero_v3(s_hsv_b); zero_v3(f_hsv_a); zero_v3(f_hsv_b);
+      copy_v3_v3(col, a->stroke_rgba); rgb_to_hsv_compat_v(col, s_hsv_a);
+      copy_v3_v3(col, b->stroke_rgba); rgb_to_hsv_compat_v(col, s_hsv_b);
+      copy_v3_v3(col, a->fill_rgba); rgb_to_hsv_compat_v(col, f_hsv_a);
+      copy_v3_v3(col, b->fill_rgba); rgb_to_hsv_compat_v(col, f_hsv_b);
+      if (!compare_ff(s_hsv_a[0], s_hsv_b[0], hue_threshold) || !compare_ff(s_hsv_a[1], s_hsv_b[1], sat_threshold) ||
+          !compare_ff(s_hsv_a[2], s_hsv_b[2], val_threshold) || !compare_ff(f_hsv_a[0], f_hsv_b[0], hue_threshold) ||
+          !compare_ff(f_hsv_a[1], f_hsv_b[1], sat_threshold) || !compare_ff(f_hsv_a[2], f_hsv_b[2], val_threshold) ||
+          !compare_ff(a->stroke_rgba[3], b->stroke_rgba[3], val_threshold) ||
+          !compare_ff(a->fill_rgba[3], b->fill_rgba[3], val_threshold))
+        continue;
+      r_table[idx_secondary] = idx_primary;
+      changed = true;
+      mat_used[idx_primary] = true;
+    }
+  }
+  MEM_freeN(mat_used);
+  return changed;
+}
+
+/* GPENCIL_OT_stroke_merge_material: hue, sat, val thresholds (0.001). BKE_gpencil_merge_materials:
+ * strokes of visible layers move to the primary slot; the merged slots stay (Blender keeps them). */
+static int exec_merge_material(PGOpContext *C, const float *p, int n)
+{
+  bGPdata *gpd = C->gpd;
+  if (gpd->totcol == 0) return PG_OPERATOR_CANCELLED;
+  int *table = MEM_malloc_arrayN(gpd->totcol, sizeof(int), __func__);
+  const bool changed = pgw_merge_materials_table(gpd, prop_f(p, n, 0, 0.001f), prop_f(p, n, 1, 0.001f),
+                                                 prop_f(p, n, 2, 0.001f), table);
+  if (changed) {
+    LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+      if (gpl->flag & GP_LAYER_HIDE) continue;
+      LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+        LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+          const MaterialGPencilStyle *st = slot_style(gpd, gps->mat_nr + 1);
+          if (st && ((st->flag & GP_MATERIAL_HIDE) ||
+                     (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+            continue;
+          if (gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol && table[gps->mat_nr] >= 0) gps->mat_nr = table[gps->mat_nr];
+        }
+      }
+    }
+    BKE_gpencil_batch_cache_dirty_tag(gpd);
+  }
+  MEM_freeN(table);
+  return PG_OPERATOR_FINISHED; /* "Nothing to merge" also finishes */
+}
+
+/* The last palette made by extract_palette_vertex / material_to_vertex_color, sRGB 0xRRGGBB sorted
+ * like BKE_palette_sort_hsv; the app keeps palettes in the UI, which reads it after the call. */
+static unsigned int *pgw_palette = NULL;
+static int pgw_palette_len = 0;
+int pg_wm_last_palette(const unsigned int **r_colors)
+{
+  if (r_colors) *r_colors = pgw_palette;
+  return pgw_palette_len;
+}
+typedef struct { unsigned int rgb; float h, s, v; } PGWPaletteHSV;
+static int pgw_palette_cmp(const void *a1, const void *a2)
+{
+  const PGWPaletteHSV *ps1 = a1, *ps2 = a2; /* palettecolor_compare_hsv */
+  if (ps1->h > ps2->h) return 1;
+  if (ps1->h < ps2->h) return -1;
+  if (ps1->s > ps2->s) return 1;
+  if (ps1->s < ps2->s) return -1;
+  if (1.0f - ps1->v > 1.0f - ps2->v) return 1;
+  if (1.0f - ps1->v < 1.0f - ps2->v) return -1;
+  return 0;
+}
+static void pgw_palette_key(GHash *table, const float c[3], float range)
+{
+  float col[3];
+  for (int k = 0; k < 3; k++) col[k] = truncf(c[k] * range) / range;
+  const unsigned int key = rgb_to_cpack(col[0], col[1], col[2]);
+  if (!BLI_ghash_haskey(table, POINTER_FROM_INT(key))) BLI_ghash_insert(table, POINTER_FROM_INT(key), POINTER_FROM_INT(key));
+}
+/* gpencil_extract_palette_from_vertex(). Colours stay sRGB: the app stores vertex colours in sRGB,
+ * so Blender's linear-to-sRGB step (BKE_palette_from_hash linear=true) is not needed. */
+static bool pgw_extract_palette(bGPdata *gpd, bool selected, int threshold)
+{
+  const float range = powf(10.0f, (float)threshold);
+  GHash *color_table = BLI_ghash_int_new(__func__);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl)) continue;
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        const MaterialGPencilStyle *gp_style = slot_style(gpd, gps->mat_nr + 1);
+        if (gp_style == NULL || (gp_style->flag & GP_MATERIAL_HIDE) ||
+            (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (gp_style->flag & GP_MATERIAL_LOCKED)))
+          continue;
+        if (selected && !(gps->flag & GP_STROKE_SELECT)) continue;
+        const bool use_stroke = gp_style->flag & GP_MATERIAL_STROKE_SHOW;
+        const bool use_fill = gp_style->flag & GP_MATERIAL_FILL_SHOW;
+        if (!use_fill && !use_stroke) continue;
+        if (use_stroke && gp_style->stroke_style == GP_MATERIAL_STROKE_STYLE_TEXTURE &&
+            !(gp_style->flag & GP_MATERIAL_STROKE_PATTERN))
+          continue;
+        if (use_fill && gp_style->fill_style != GP_MATERIAL_FILL_STYLE_SOLID) continue;
+        if (gps->vert_color_fill[3] > 0.0f) pgw_palette_key(color_table, gps->vert_color_fill, range);
+        for (int i = 0; i < gps->totpoints; i++) pgw_palette_key(color_table, gps->points[i].vert_color, range);
+      }
+    }
+  }
+  const int totpal = (int)BLI_ghash_len(color_table);
+  if (totpal > 0) {
+    PGWPaletteHSV *arr = MEM_calloc_arrayN(totpal, sizeof(PGWPaletteHSV), __func__);
+    GHashIterator gh_iter;
+    int t = 0;
+    GHASH_ITER (gh_iter, color_table) {
+      const unsigned int col = POINTER_AS_INT(BLI_ghashIterator_getValue(&gh_iter));
+      float r, g, b;
+      cpack_to_rgb(col, &r, &g, &b);
+      rgb_to_hsv(r, g, b, &arr[t].h, &arr[t].s, &arr[t].v);
+      arr[t].rgb = ((unsigned)(r * 255.0f + 0.5f) << 16) | ((unsigned)(g * 255.0f + 0.5f) << 8) | (unsigned)(b * 255.0f + 0.5f);
+      t++;
+    }
+    qsort(arr, totpal, sizeof(PGWPaletteHSV), pgw_palette_cmp);
+    MEM_SAFE_FREE(pgw_palette);
+    pgw_palette = MEM_malloc_arrayN(totpal, sizeof(unsigned int), __func__);
+    for (int i = 0; i < totpal; i++) pgw_palette[i] = arr[i].rgb;
+    pgw_palette_len = totpal;
+    MEM_freeN(arr);
+  }
+  BLI_ghash_free(color_table, NULL, NULL);
+  return totpal > 0;
+}
+/* GPENCIL_OT_extract_palette_vertex: selected (false), threshold (1, 1..4) */
+static int exec_extract_palette(PGOpContext *C, const float *p, int n)
+{
+  const int threshold = prop_i(p, n, 1, 1);
+  if (threshold < 1 || threshold > 4) return PG_OPERATOR_CANCELLED;
+  pgw_palette_len = 0;
+  pgw_extract_palette(C->gpd, prop_i(p, n, 0, 0) != 0, threshold);
+  return PG_OPERATOR_FINISHED; /* "Unable to find Vertex Information" also finishes; palette length 0 */
+}
+
+/* The backend's material slot maker (project_grease_gp_backend.cpp); weak for the host tests. */
+bool pg_gp_material_ensure_slot(bGPdata *gpd, int index) __attribute__((weak));
+
+/* get_material_type(): key TSSSSFFFF and the new material's name */
+static unsigned int pgw_material_type(const MaterialGPencilStyle *gp_style, bool use_stroke, bool use_fill, char *name)
+{
+  unsigned int r_i = 0;
+  static const char *const names[] = {"", "Line Stroke-Fill", "Dots Stroke-Fill", "Squares Stroke-Fill",
+                                      "Line Stroke", "Dots Stroke", "Squares Stroke", "Solid Fill"};
+  if (use_stroke) {
+    const int base = use_fill ? 1 : 4;
+    switch (gp_style->mode) {
+      case GP_MATERIAL_MODE_LINE: r_i = base; break;
+      case GP_MATERIAL_MODE_DOT: r_i = base + 1; break;
+      case GP_MATERIAL_MODE_SQUARE: r_i = base + 2; break;
+      default: break;
+    }
+  }
+  else r_i = 7;
+  strcpy(name, names[r_i]);
+  r_i *= 1e8;
+  if (use_stroke) r_i += gp_style->stroke_rgba[3] * 1e7;
+  if (use_fill) r_i += gp_style->fill_rgba[3] * 1e3;
+  return r_i;
+}
+
+/* OBJECT_OT_material_slot_remove_unused: drop slots no stroke uses (one is always kept), remap
+ * mat_nr, keep the active slot on the same material when it survives. */
+static void pgw_remove_unused_slots(PGOpContext *C)
+{
+  bGPdata *gpd = C->gpd;
+  if (gpd->totcol <= 1) return;
+  int *remap = MEM_calloc_arrayN(gpd->totcol, sizeof(int), __func__);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers)
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames)
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes)
+        if (gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol) remap[gps->mat_nr] = 1;
+  int kept = 0;
+  for (int i = 0; i < gpd->totcol; i++) kept += remap[i];
+  if (kept == 0) remap[MAX2(C->actcol - 1, 0)] = 1;
+  int j = 0;
+  for (int i = 0; i < gpd->totcol; i++) {
+    if (remap[i]) {
+      gpd->mat[j] = gpd->mat[i];
+      remap[i] = j++;
+    }
+    else {
+      if (gpd->mat[i]) {
+        MEM_SAFE_FREE(gpd->mat[i]->gp_style);
+        MEM_freeN(gpd->mat[i]);
+      }
+      remap[i] = -1;
+    }
+  }
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers)
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames)
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes)
+        if (gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol) gps->mat_nr = remap[gps->mat_nr];
+  int act = C->actcol - 1;
+  if (act >= 0 && act < gpd->totcol) act = remap[act];
+  for (int i = j; i < gpd->totcol; i++) gpd->mat[i] = NULL;
+  gpd->totcol = j;
+  C->actcol = (act >= 0 ? act : 0) + 1;
+  MEM_freeN(remap);
+}
+
+/* GPENCIL_OT_material_to_vertex_color: remove (true), palette (true), selected (false),
+ * threshold (unused by Blender's exec). Each stroke's material colours move into its vertex colours and the stroke takes a
+ * plain material of the same type and alpha (made once per type). */
+static int exec_material_to_vertex(PGOpContext *C, const float *p, int n)
+{
+  bGPdata *gpd = C->gpd;
+  const bool remove = prop_i(p, n, 0, 1) != 0;
+  const bool palette = prop_i(p, n, 1, 1) != 0;
+  const bool selected = prop_i(p, n, 2, 0) != 0;
+  if (gpd->totcol == 0 || pg_gp_material_ensure_slot == NULL) return PG_OPERATOR_CANCELLED;
+  const int totmat = gpd->totcol;
+  struct { unsigned int key; int index; bool used; } *mat_table = MEM_calloc_arrayN(totmat, sizeof(*mat_table), __func__);
+  char name[32] = "";
+  bool changed = false;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl)) continue;
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        const MaterialGPencilStyle *src = slot_style(gpd, gps->mat_nr + 1);
+        if (src == NULL || (src->flag & GP_MATERIAL_HIDE) ||
+            (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (src->flag & GP_MATERIAL_LOCKED)))
+          continue;
+        if (selected && !(gps->flag & GP_STROKE_SELECT)) continue;
+        /* copy: a new slot may move gpd->mat */
+        MaterialGPencilStyle gp_style = *src;
+        const bool use_stroke = (gp_style.flag & GP_MATERIAL_STROKE_SHOW) && gp_style.stroke_rgba[3] > 0.0f;
+        const bool use_fill = (gp_style.flag & GP_MATERIAL_FILL_SHOW) && gp_style.fill_rgba[3] > 0.0f;
+        const bool is_stencil = gp_style.stroke_style == GP_MATERIAL_STROKE_STYLE_TEXTURE &&
+                                (gp_style.flag & GP_MATERIAL_STROKE_PATTERN);
+        if (!use_fill && !use_stroke) continue;
+        if (use_stroke && gp_style.stroke_style == GP_MATERIAL_STROKE_STYLE_TEXTURE &&
+            !(gp_style.flag & GP_MATERIAL_STROKE_PATTERN))
+          continue;
+        if (use_fill && gp_style.fill_style != GP_MATERIAL_FILL_STYLE_SOLID) continue;
+        if (!is_stencil) {
+          const unsigned int key = pgw_material_type(&gp_style, use_stroke, use_fill, name);
+          int i;
+          bool found = false;
+          for (i = 0; i < totmat; i++) {
+            if (!mat_table[i].used) break;
+            if (mat_table[i].key == key) { found = true; break; }
+          }
+          if (!found) {
+            if (i >= totmat || !pg_gp_material_ensure_slot(gpd, gpd->totcol)) continue;
+            Material *ma = gpd->mat[gpd->totcol - 1];
+            snprintf(ma->id.name + 2, sizeof(ma->id.name) - 2, "%s", name);
+            ma->id.name[0] = 'M';
+            ma->id.name[1] = 'A';
+            MaterialGPencilStyle *st = ma->gp_style;
+            st->mode = gp_style.mode;
+            SET_FLAG_FROM_TEST(st->flag, use_stroke, GP_MATERIAL_STROKE_SHOW);
+            SET_FLAG_FROM_TEST(st->flag, use_fill, GP_MATERIAL_FILL_SHOW);
+            /* BKE_gpencil_material_add: white stroke and fill under the vertex colours */
+            copy_v3_fl(st->stroke_rgba, 1.0f);
+            copy_v3_fl(st->fill_rgba, 1.0f);
+            st->stroke_rgba[3] = gp_style.stroke_rgba[3];
+            st->fill_rgba[3] = gp_style.fill_rgba[3];
+            mat_table[i].key = key;
+            mat_table[i].index = gpd->totcol - 1;
+            mat_table[i].used = true;
+          }
+          gps->mat_nr = mat_table[i].index;
+        }
+        changed = true;
+        copy_v3_v3(gps->vert_color_fill, gp_style.fill_rgba);
+        gps->vert_color_fill[3] = 1.0f;
+        for (int k = 0; k < gps->totpoints; k++) {
+          copy_v3_v3(gps->points[k].vert_color, gp_style.stroke_rgba);
+          gps->points[k].vert_color[3] = 1.0f;
+        }
+      }
+    }
+  }
+  MEM_freeN(mat_table);
+  pgw_palette_len = 0;
+  if (palette) pgw_extract_palette(gpd, selected, 1); /* Blender passes threshold 1 here */
+  if (remove) pgw_remove_unused_slots(C);
+  if (changed || remove) BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -1107,6 +1743,10 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_primitive_box", RU, poll_active_layer, exec_prim_box},
     {"GPENCIL_OT_primitive_circle", RU, poll_active_layer, exec_prim_circle},
     {"GPENCIL_OT_primitive_curve", RU, poll_active_layer, exec_prim_curve},
+    {"GPENCIL_OT_stroke_merge", RU, poll_stroke_merge, exec_stroke_merge},
+    {"GPENCIL_OT_stroke_merge_material", RU, poll_gpd, exec_merge_material},
+    {"GPENCIL_OT_extract_palette_vertex", RU, poll_gpd, exec_extract_palette},
+    {"GPENCIL_OT_material_to_vertex_color", RU, poll_gpd, exec_material_to_vertex},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

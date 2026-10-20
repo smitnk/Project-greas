@@ -438,7 +438,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             FilterChip(selected=controller.weightPaintBrush==brush,onClick={controller.setWeightPaintBrush(brush);redraw()},
                 label={Text(label,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp))
         }
-        FilterChip(selected=controller.weightPaintSubtract,onClick={controller.setWeightPaintSubtract(!controller.weightPaintSubtract);redraw()},
+        FilterChip(selected=controller.weightPaintSubtract,onClick={controller.toggleWeightDirection();redraw()},
             label={Text("Subtract",fontSize=10.sp)},modifier=Modifier.padding(end=6.dp))
         Text("Group",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         groups.forEachIndexed{index,name->
@@ -583,6 +583,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                         modifier=Modifier.padding(end=3.dp).testTag("brush_"+preset.name)
                     )
                 }
+                TextButton(onClick={controller.resetBrush();redraw()},modifier=Modifier.testTag("brushReset")){Text("Reset",fontSize=10.sp)}
                 }
             }
             if (controller.mode == GreaseMode.SCULPT) SculptOptions(controller,redraw)

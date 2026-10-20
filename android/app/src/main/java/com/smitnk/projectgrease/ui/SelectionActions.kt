@@ -52,6 +52,8 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Set start point", "The selected point becomes the start of the closed stroke") { controller.setSelectionStartPoint() },
                 Op("Join", "Connect the selected strokes into one") { controller.joinSelection() },
                 Op("Join and copy", "A new stroke joining the selected ones; the originals stay") { controller.joinCopySelection() },
+                Op("Merge", "One new stroke through the selected points, stroke by stroke; the old strokes go") { controller.mergeSelectedStrokes() },
+                Op("Merge by points", "One new stroke through the selected points, ordered around their centre") { controller.mergeSelectedStrokes(byPoint = true) },
                 Op("Split", "Cut the selected points out as their own stroke") { controller.splitSelection() },
                 Op("Extrude ends", "Add a point at the selected end, ready to drag") { controller.extrudeSelection() },
                 Op("Outline", "Turn the stroke into the closed outline of its thick shape") { controller.outlineSelection() },
@@ -121,6 +123,9 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Lock all materials", "No stroke can be edited") { controller.lockAllMaterials() },
                 Op("Unlock all materials", "Every material editable again") { controller.unlockAllMaterials() },
                 Op("Lock unused materials", "Lock materials no selected stroke uses") { controller.lockUnusedMaterials() },
+                Op("Merge similar materials", "Strokes of near-identical materials share one") { controller.mergeSimilarMaterials() },
+                Op("Materials to vertex colour", "Material colours become vertex colours and palette swatches; unused materials removed") { controller.materialsToVertexColor() },
+                Op("Palette from vertex colours", "Every vertex colour in use becomes a palette swatch") { controller.extractPaletteFromVertexColors() > 0 },
             ),
             "Layers" to listOf(
                 Op("Hide layer", "Hide the active layer") { controller.hideLayers() },

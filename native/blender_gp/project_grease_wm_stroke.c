@@ -826,6 +826,56 @@ static int exec_select_vertex_color(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- layer masks (gpencil_data.c). shortcut: the app picks masks by index, so the mask layer
+ * (name prop) and the active mask (act_mask) come as indexes in props 0 / 0 and 1. */
+/* GPENCIL_OT_layer_mask_add: the layer at index prop 0 masks the active layer */
+static int exec_layer_mask_add(PGOpContext *C, const float *p, int n)
+{
+  bGPDlayer *gpl_active = BKE_gpencil_layer_active_get(C->gpd);
+  bGPDlayer *gpl = BLI_findlink(&C->gpd->layers, prop_i(p, n, 0, -1));
+  if (gpl == NULL) return PG_OPERATOR_CANCELLED;                      /* "Unable to find layer to add" */
+  if (gpl == gpl_active) return PG_OPERATOR_CANCELLED;                /* "Cannot add active layer as mask" */
+  if (BKE_gpencil_layer_mask_named_get(gpl_active, gpl->info)) return PG_OPERATOR_CANCELLED; /* "Layer already added" */
+  if (gpl_active->act_mask == 256) return PG_OPERATOR_CANCELLED;     /* "Maximum number of masking layers reached" */
+  BKE_gpencil_layer_mask_add(gpl_active, gpl->info);
+  BKE_gpencil_layer_mask_sort(C->gpd, gpl_active);
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_layer_mask_remove: the active layer's mask at index prop 0 (made act_mask) */
+static int exec_layer_mask_remove(PGOpContext *C, const float *p, int n)
+{
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(C->gpd);
+  const int index = prop_i(p, n, 0, gpl->act_mask - 1);
+  if (index >= 0) gpl->act_mask = index + 1;
+  if (gpl->act_mask > 0) {
+    bGPDlayer_Mask *mask = BLI_findlink(&gpl->mask_layers, gpl->act_mask - 1);
+    if (mask != NULL) {
+      BKE_gpencil_layer_mask_remove(gpl, mask);
+      if ((gpl->mask_layers.first != NULL) && (gpl->act_mask == 0)) gpl->act_mask = 1;
+    }
+  }
+  BKE_gpencil_layer_mask_sort(C->gpd, gpl);
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+/* GPENCIL_OT_layer_mask_move: mask index prop 0 (made act_mask), type UP -1 / DOWN 1 */
+static int exec_layer_mask_move(PGOpContext *C, const float *p, int n)
+{
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(C->gpd);
+  const int index = prop_i(p, n, 0, gpl->act_mask - 1), direction = prop_i(p, n, 1, -1);
+  if (direction != -1 && direction != 1) return PG_OPERATOR_CANCELLED;
+  if (index >= 0) gpl->act_mask = index + 1;
+  if (gpl->act_mask > 0) {
+    bGPDlayer_Mask *mask = BLI_findlink(&gpl->mask_layers, gpl->act_mask - 1);
+    if (mask != NULL && BLI_listbase_link_move(&gpl->mask_layers, mask, direction)) {
+      gpl->act_mask += direction;
+      BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+    }
+  }
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -873,6 +923,9 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_cutter", RU, poll_gpd, exec_cutter},
     {"GPENCIL_OT_select", RU, poll_gpd, exec_select_pick},
     {"GPENCIL_OT_select_vertex_color", RU, poll_gpd, exec_select_vertex_color},
+    {"GPENCIL_OT_layer_mask_add", RU, poll_active_layer, exec_layer_mask_add},
+    {"GPENCIL_OT_layer_mask_remove", RU, poll_active_layer, exec_layer_mask_remove},
+    {"GPENCIL_OT_layer_mask_move", RU, poll_active_layer, exec_layer_mask_move},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

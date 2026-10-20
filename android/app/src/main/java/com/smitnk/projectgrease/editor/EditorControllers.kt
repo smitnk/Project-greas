@@ -1945,12 +1945,24 @@ class EditorController {
     }
     fun setLayerUsesMask(enabled:Boolean, layer:Int = selectedLayer) = maskChanged(native.setLayerUseMask(layer, enabled))
     fun addLayerMask(maskLayer:Int, layer:Int = selectedLayer):Boolean {
+        if (layer == selectedLayer) {
+            // GPENCIL_OT_layer_mask_add on the active layer; the mask switch in the same undo step
+            history.beginBatch()
+            val ok = runOperator("GPENCIL_OT_layer_mask_add", maskLayer.toFloat())
+            if (ok && !native.layerUseMask(layer)) { native.setLayerUseMask(layer, true); history.markEdit(); render() }
+            history.endBatch()
+            return ok
+        }
         val ok = native.maskAdd(layer, maskLayer)
         // Adding a first mask turns the mask on, as picking a mask layer in Blender's UI does.
         if (ok && !native.layerUseMask(layer)) native.setLayerUseMask(layer, true)
         return maskChanged(ok)
     }
-    fun removeLayerMask(index:Int, layer:Int = selectedLayer) = maskChanged(native.maskRemove(layer, index))
+    fun removeLayerMask(index:Int, layer:Int = selectedLayer) =
+        if (layer == selectedLayer) runOperator("GPENCIL_OT_layer_mask_remove", index.toFloat())
+        else maskChanged(native.maskRemove(layer, index))
+    /** GPENCIL_OT_layer_mask_move: the active layer's mask `index` one place up (-1) or down (1). */
+    fun moveLayerMask(index:Int, direction:Int) = runOperator("GPENCIL_OT_layer_mask_move", index.toFloat(), direction.toFloat())
     fun setLayerMaskFlags(index:Int, hidden:Boolean, inverted:Boolean, layer:Int = selectedLayer) =
         maskChanged(native.maskSetFlags(layer, index, (if (hidden) 1 else 0) or (if (inverted) 2 else 0)))
 
@@ -2682,7 +2694,7 @@ class EditorController {
         // material operators change ob->actcol (material_set, set_active_material)
         val actcol = (r ushr 16) and 0xffff
         if (finished && actcol >= 1 && actcol - 1 != materials.activeMaterial) selectMaterial(actcol - 1)
-        com.smitnk.projectgrease.CrashLog.event("OP $idname ${props.joinToString()} -> ${if (finished) "FINISHED" else "CANCELLED"}")
+        com.smitnk.projectgrease.CrashLog.event("OP $idname ${props.take(8).joinToString()}${if (props.size > 8) " … (${props.size} values)" else ""} -> ${if (finished) "FINISHED" else "CANCELLED"}")
         if (finished && ((r shr 8) and 2) != 0) { history.markEdit(); document.markDirty() }
         if (finished) render()
         return finished

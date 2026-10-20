@@ -4,6 +4,10 @@ Project Grease is a focused Android 2D animation/drawing application using a sel
 
 It is **not** a full Blender Android port.
 
+**Download:** the newest build is [ProjectGrease.apk](https://github.com/smitnk/Project-greas/releases/download/latest-build/ProjectGrease.apk) (Releases → "Project Grease - Latest build").
+
+**Licence:** GNU General Public License v3 or later ([LICENSE](LICENSE)). The app includes code from Blender (GPL-2.0-or-later), so it is distributed under the GPL with its source; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Project Grease is not made or endorsed by the Blender Foundation.
+
 ## Architecture
 
 Android UI

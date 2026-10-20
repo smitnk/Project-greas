@@ -32,6 +32,7 @@ class RotoscopeLoader(private val context: Context) {
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val pending = java.util.Collections.synchronizedSet(HashSet<String>())
+    private val failed = java.util.Collections.synchronizedSet(HashSet<String>())
     private fun key(kind: Rotoscope.Kind, uris: List<String>, n: Int) = kind.name + "|" + uris.firstOrNull() + "|" + n
 
     fun cached(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = synchronized(cache) { cache[key(r.kind, r.uris, n)] }
@@ -41,10 +42,11 @@ class RotoscopeLoader(private val context: Context) {
     fun decodeAsync(r: Rotoscope, n: Int, done: () -> Unit = {}) {
         val kind = r.kind; val uris = r.uris.toList()
         val k = key(kind, uris, n)
-        if (uris.isEmpty() || n < 1 || n > r.frames || cached(r, n) != null || !pending.add(k)) return
+        if (uris.isEmpty() || n < 1 || n > r.frames || cached(r, n) != null || k in failed || !pending.add(k)) return
         worker.execute {
-            try { decode(kind, uris, n) } catch (_: Throwable) { } finally { pending.remove(k) }
-            main.post(done)
+            // a frame that does not decode is not retried: each failure re-rendered, which asked again
+            val ok = try { decode(kind, uris, n) != null } catch (_: Throwable) { false } finally { pending.remove(k) }
+            if (ok) main.post(done) else failed.add(k)
         }
     }
     fun prefetch(r: Rotoscope, from: Int, count: Int) { for (n in from until from + count) decodeAsync(r, n) }

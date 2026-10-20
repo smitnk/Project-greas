@@ -21,6 +21,9 @@
 #include "project_grease_blender_edit7.h"
 #include "project_grease_blender_select.h"
 #include "project_grease_blender_interp.h"
+#include "project_grease_blender_edit10.h"
+#include "BLI_math.h"
+#include "DNA_meshdata_types.h"
 #include <stdlib.h>
 #include "project_grease_wm.h"
 
@@ -340,14 +343,10 @@ static int exec_simplify(PGOpContext *C, const float *p, int n)
 
 /* GPENCIL_OT_stroke_smooth: repeat (2), factor (1), only_selected (true), smooth_position (true),
  * smooth_thickness (true), smooth_strength (false), smooth_uv (false) - gpencil_smooth_stroke() */
-static int exec_smooth(PGOpContext *C, const float *p, int n)
+static void smooth_selected(PGOpContext *C, int repeat, float factor, bool only_selected, bool pos, bool thick,
+                            bool strength, bool uv)
 {
-  const int repeat = prop_i(p, n, 0, 2);
-  const float factor = prop_f(p, n, 1, 1.0f);
-  const bool only_selected = prop_i(p, n, 2, 1), pos = prop_i(p, n, 3, 1), thick = prop_i(p, n, 4, 1),
-             strength = prop_i(p, n, 5, 0), uv = prop_i(p, n, 6, 0);
-  if (repeat < 1 || repeat > 50 || factor < 0.0f || factor > 2.0f) return PG_OPERATOR_CANCELLED;
-  if (factor == 0.0f) return PG_OPERATOR_FINISHED;
+  if (factor == 0.0f) return;
   PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
     (void)gpl;
     if (!(gps->flag & GP_STROKE_SELECT)) continue;
@@ -368,6 +367,14 @@ static int exec_smooth(PGOpContext *C, const float *p, int n)
     if (need_update) BKE_gpencil_stroke_geometry_update(C->gpd, gps);
   } PGW_EDITABLE_STROKES_END
   BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+}
+static int exec_smooth(PGOpContext *C, const float *p, int n)
+{
+  const int repeat = prop_i(p, n, 0, 2);
+  const float factor = prop_f(p, n, 1, 1.0f);
+  if (repeat < 1 || repeat > 50 || factor < 0.0f || factor > 2.0f) return PG_OPERATOR_CANCELLED;
+  smooth_selected(C, repeat, factor, prop_i(p, n, 2, 1), prop_i(p, n, 3, 1), prop_i(p, n, 4, 1), prop_i(p, n, 5, 0),
+                  prop_i(p, n, 6, 0));
   return PG_OPERATOR_FINISHED;
 }
 
@@ -524,6 +531,236 @@ static int interpolate(PGOpContext *C, const float *p, int n, int single)
 static int exec_interpolate_sequence(PGOpContext *C, const float *p, int n) { return interpolate(C, p, n, 0); }
 static int exec_interpolate(PGOpContext *C, const float *p, int n) { return interpolate(C, p, n, 1); }
 
+/* ---- batch 11 ------------------------------------------------------------------------- */
+/* BEGIN VERBATIM gpencil_edit.c (Blender 3.6.23): gpencil_count_subdivision_cuts / gpencil_stroke_subdivide */
+static int gpencil_count_subdivision_cuts(bGPDstroke *gps)
+{
+  bGPDspoint *pt;
+  int i;
+  int totnewpoints = 0;
+  for (i = 0, pt = gps->points; i < gps->totpoints && pt; i++, pt++) {
+    if (pt->flag & GP_SPOINT_SELECT) {
+      if (i + 1 < gps->totpoints) {
+        if (gps->points[i + 1].flag & GP_SPOINT_SELECT) {
+          totnewpoints++;
+        }
+      }
+    }
+  }
+
+  if ((gps->flag & GP_STROKE_CYCLIC) && (gps->points[0].flag & GP_SPOINT_SELECT) &&
+      (gps->points[gps->totpoints - 1].flag & GP_SPOINT_SELECT))
+  {
+    totnewpoints++;
+  }
+
+  return totnewpoints;
+}
+
+static void gpencil_stroke_subdivide(bGPDstroke *gps, const int cuts)
+{
+  bGPDspoint *temp_points;
+  int totnewpoints, oldtotpoints;
+  int i2;
+  /* loop as many times as cuts */
+  for (int s = 0; s < cuts; s++) {
+    totnewpoints = gpencil_count_subdivision_cuts(gps);
+    if (totnewpoints == 0) {
+      continue;
+    }
+    /* duplicate points in a temp area */
+    temp_points = MEM_dupallocN(gps->points);
+    oldtotpoints = gps->totpoints;
+
+    MDeformVert *temp_dverts = NULL;
+    MDeformVert *dvert_final = NULL;
+    MDeformVert *dvert = NULL;
+    MDeformVert *dvert_next = NULL;
+    if (gps->dvert != NULL) {
+      temp_dverts = MEM_dupallocN(gps->dvert);
+    }
+
+    /* resize the points arrays */
+    gps->totpoints += totnewpoints;
+    gps->points = MEM_recallocN(gps->points, sizeof(*gps->points) * gps->totpoints);
+    if (gps->dvert != NULL) {
+      gps->dvert = MEM_recallocN(gps->dvert, sizeof(*gps->dvert) * gps->totpoints);
+    }
+
+    /* loop and interpolate */
+    i2 = 0;
+    for (int i = 0; i < oldtotpoints; i++) {
+      bGPDspoint *pt = &temp_points[i];
+      bGPDspoint *pt_final = &gps->points[i2];
+
+      /* copy current point */
+      copy_v3_v3(&pt_final->x, &pt->x);
+      pt_final->pressure = pt->pressure;
+      pt_final->strength = pt->strength;
+      pt_final->time = pt->time;
+      pt_final->flag = pt->flag;
+      copy_v4_v4(pt_final->vert_color, pt->vert_color);
+
+      if (gps->dvert != NULL) {
+        dvert = &temp_dverts[i];
+        dvert_final = &gps->dvert[i2];
+        dvert_final->totweight = dvert->totweight;
+        dvert_final->dw = dvert->dw;
+      }
+      i2++;
+
+      /* if next point is selected add a half way point */
+      if (pt->flag & GP_SPOINT_SELECT) {
+        if (i + 1 < oldtotpoints) {
+          if (temp_points[i + 1].flag & GP_SPOINT_SELECT) {
+            pt_final = &gps->points[i2];
+            if (gps->dvert != NULL) {
+              dvert_final = &gps->dvert[i2];
+            }
+            /* Interpolate all values */
+            bGPDspoint *next = &temp_points[i + 1];
+            interp_v3_v3v3(&pt_final->x, &pt->x, &next->x, 0.5f);
+            pt_final->pressure = interpf(pt->pressure, next->pressure, 0.5f);
+            pt_final->strength = interpf(pt->strength, next->strength, 0.5f);
+            CLAMP(pt_final->strength, GPENCIL_STRENGTH_MIN, 1.0f);
+            interp_v4_v4v4(pt_final->vert_color, pt->vert_color, next->vert_color, 0.5f);
+            pt_final->time = interpf(pt->time, next->time, 0.5f);
+            pt_final->flag |= GP_SPOINT_SELECT;
+
+            /* interpolate weights */
+            if (gps->dvert != NULL) {
+              dvert = &temp_dverts[i];
+              dvert_next = &temp_dverts[i + 1];
+              dvert_final = &gps->dvert[i2];
+
+              dvert_final->totweight = dvert->totweight;
+              dvert_final->dw = MEM_dupallocN(dvert->dw);
+
+              /* interpolate weight values */
+              for (int d = 0; d < dvert->totweight; d++) {
+                MDeformWeight *dw_a = &dvert->dw[d];
+                if (dvert_next->totweight > d) {
+                  MDeformWeight *dw_b = &dvert_next->dw[d];
+                  MDeformWeight *dw_final = &dvert_final->dw[d];
+                  dw_final->weight = interpf(dw_a->weight, dw_b->weight, 0.5f);
+                }
+              }
+            }
+
+            i2++;
+          }
+        }
+      }
+    }
+
+    /* Subdivide between last and first point. */
+    if (gps->flag & GP_STROKE_CYCLIC) {
+      bGPDspoint *pt = &temp_points[oldtotpoints - 1];
+      bGPDspoint *next = &temp_points[0];
+      if ((pt->flag & GP_SPOINT_SELECT) && (next->flag & GP_SPOINT_SELECT)) {
+        bGPDspoint *pt_final = &gps->points[i2];
+        if (gps->dvert != NULL) {
+          dvert_final = &gps->dvert[i2];
+        }
+        /* Interpolate all values */
+        interp_v3_v3v3(&pt_final->x, &pt->x, &next->x, 0.5f);
+        pt_final->pressure = interpf(pt->pressure, next->pressure, 0.5f);
+        pt_final->strength = interpf(pt->strength, next->strength, 0.5f);
+        CLAMP(pt_final->strength, GPENCIL_STRENGTH_MIN, 1.0f);
+        interp_v4_v4v4(pt_final->vert_color, pt->vert_color, next->vert_color, 0.5f);
+        pt_final->time = interpf(pt->time, next->time, 0.5f);
+        pt_final->flag |= GP_SPOINT_SELECT;
+
+        /* interpolate weights */
+        if (gps->dvert != NULL) {
+          dvert = &temp_dverts[oldtotpoints - 1];
+          dvert_next = &temp_dverts[0];
+          dvert_final = &gps->dvert[i2];
+
+          dvert_final->totweight = dvert->totweight;
+          dvert_final->dw = MEM_dupallocN(dvert->dw);
+
+          /* interpolate weight values */
+          for (int d = 0; d < dvert->totweight; d++) {
+            MDeformWeight *dw_a = &dvert->dw[d];
+            if (dvert_next->totweight > d) {
+              MDeformWeight *dw_b = &dvert_next->dw[d];
+              MDeformWeight *dw_final = &dvert_final->dw[d];
+              dw_final->weight = interpf(dw_a->weight, dw_b->weight, 0.5f);
+            }
+          }
+        }
+      }
+    }
+
+    /* free temp memory */
+    MEM_SAFE_FREE(temp_points);
+    MEM_SAFE_FREE(temp_dverts);
+  }
+}
+/* END VERBATIM */
+
+/* GPENCIL_OT_stroke_subdivide: number_cuts (1, 1..10), then the smooth props factor (0), repeat (1),
+ * only_selected (true), smooth_position, smooth_thickness (true), smooth_strength, smooth_uv (false) */
+static int exec_subdivide(PGOpContext *C, const float *p, int n)
+{
+  const int cuts = prop_i(p, n, 0, 1), repeat = prop_i(p, n, 2, 1);
+  const float factor = prop_f(p, n, 1, 0.0f);
+  if (cuts < 1 || cuts > 10 || repeat < 1 || repeat > 10 || factor < 0.0f || factor > 2.0f) return PG_OPERATOR_CANCELLED;
+  bool changed = false;
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    (void)gpl;
+    if (gps->flag & GP_STROKE_SELECT) {
+      gpencil_stroke_subdivide(gps, cuts);
+      BKE_gpencil_stroke_geometry_update(C->gpd, gps);
+      changed = true;
+    }
+  } PGW_EDITABLE_STROKES_END
+  if (changed) {
+    smooth_selected(C, repeat, factor, prop_i(p, n, 3, 1), prop_i(p, n, 4, 1), prop_i(p, n, 5, 1), prop_i(p, n, 6, 0),
+                    prop_i(p, n, 7, 0));
+    BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  }
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_stroke_trim: each selected stroke trimmed at its own self-intersection */
+static int exec_trim(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    (void)gpl;
+    if (gps->flag & GP_STROKE_SELECT) BKE_gpencil_stroke_trim(C->gpd, gps);
+  } PGW_EDITABLE_STROKES_END
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_stroke_cutter: flat_caps, then the lasso path (canvas units). No path: CANCELLED. */
+static int exec_cutter(PGOpContext *C, const float *p, int n)
+{
+  const int count = (n - 1) / 2;
+  if (count < 3) return PG_OPERATOR_CANCELLED;
+  int(*co)[2] = malloc(sizeof(int[2]) * (size_t)count);
+  if (co == NULL) return PG_OPERATOR_CANCELLED;
+  for (int i = 0; i < count; i++) {
+    co[i][0] = prop_i(p, n, 1 + i * 2, 0);
+    co[i][1] = prop_i(p, n, 2 + i * 2, 0);
+  }
+  pg_gp_cutter(C->gpd, (const int(*)[2])co, count, prop_i(p, n, 0, 0));
+  free(co);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_select (click): x, y, radius_squared, flags (PG_PICK_*: extend, deselect, toggle,
+ * entire_strokes, deselect_all, ...), selectmode */
+static int exec_select_pick(PGOpContext *C, const float *p, int n)
+{
+  if (n < 5 || !isfinite(p[0]) || !isfinite(p[1])) return PG_OPERATOR_CANCELLED;
+  pg_gp_edit_pick(C->gpd, NULL, p[0], p[1], prop_i(p, n, 2, 0), prop_i(p, n, 3, 0), prop_i(p, n, 4, 0));
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -566,6 +803,10 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_select_circle", RU, poll_gpd, exec_select_circle},
     {"GPENCIL_OT_interpolate_sequence", RU, poll_active_layer, exec_interpolate_sequence},
     {"GPENCIL_OT_interpolate", RU, poll_active_layer, exec_interpolate},
+    {"GPENCIL_OT_stroke_subdivide", RU, poll_active_layer, exec_subdivide},
+    {"GPENCIL_OT_stroke_trim", RU, poll_stroke_edit, exec_trim},
+    {"GPENCIL_OT_stroke_cutter", RU, poll_gpd, exec_cutter},
+    {"GPENCIL_OT_select", RU, poll_gpd, exec_select_pick},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

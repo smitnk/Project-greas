@@ -1082,7 +1082,10 @@ class EditorController {
                 }
             }
             if (img != null || n == 0) {
+                val tu = System.nanoTime()
                 GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
+                val um = (System.nanoTime() - tu) / 1_000_000
+                if (um >= 20) com.smitnk.projectgrease.CrashLog.event("REF upload frame $n ${img?.second}x${img?.third} slot $slot: $um ms")
                 if (img == null) rotoscopeShown.remove(rotoscope) else rotoscopeShown[rotoscope] = slotKey
             } else if (rotoscope.kind == Rotoscope.Kind.IMAGE) {
                 // a photo that does not decode is tried once, not on every frame
@@ -1463,7 +1466,9 @@ class EditorController {
                 // Cutter (GPENCIL_OT_stroke_cutter, Draw mode): the segment under the lasso is cut out up
                 // to the crossings, with points inserted exactly there
                 val before = native.strokeCount(); val pointsBefore = native.pointCount()
-                val cut = runSelectCommand(ProjectGreaseSelect.cutter(noose))
+                val path = FloatArray(1 + noose.size * 2)
+                noose.forEachIndexed { i, p -> path[1 + i * 2] = p.first; path[2 + i * 2] = p.second }
+                val cut = runOperator("GPENCIL_OT_stroke_cutter", *path) && native.pointCount() != pointsBefore
                 if (cut) selection.clear()
                 // which part went: lasso bounds (canvas) and strokes / points before -> after
                 com.smitnk.projectgrease.CrashLog.event("CUT ${noose.size} noose points in x %.0f..%.0f y %.0f..%.0f -> cut=$cut, strokes $before -> ${native.strokeCount()}, points $pointsBefore -> ${native.pointCount()}".format(
@@ -2649,9 +2654,11 @@ class EditorController {
         val flags = ProjectGreaseSelect.PICK_DESELECT_ALL or
             (if (if (mode == GreaseMode.VERTEX_PAINT) activeSelectMode == ProjectGreaseSelect.MODE_STROKE else pickEntireStrokes) ProjectGreaseSelect.PICK_ENTIRE else 0)
         val radiusSquared = ProjectGreaseSelect.pickRadiusSquared(view.zoom)
-        val changed = runSelectCommand(
-            if (activeSelectMode == ProjectGreaseSelect.MODE_SEGMENT) ProjectGreaseSelect.segmentPick(x, y, radiusSquared, ProjectGreaseSelect.PICK_DESELECT_ALL)
-            else ProjectGreaseSelect.pick(x, y, radiusSquared, flags, ProjectGreaseSelect.areaMode(activeSelectMode)))
+        val before = native.selectedPointCount()
+        val changed = if (activeSelectMode == ProjectGreaseSelect.MODE_SEGMENT)
+            runSelectCommand(ProjectGreaseSelect.segmentPick(x, y, radiusSquared, ProjectGreaseSelect.PICK_DESELECT_ALL))
+        else runOperator("GPENCIL_OT_select", x, y, radiusSquared.toFloat(), flags.toFloat(),
+            ProjectGreaseSelect.areaMode(activeSelectMode).toFloat()) && native.selectedPointCount() != before
         val index = native.hitTestStroke(x, y, 24f)
         if (index >= 0) selection.note(index) else if (changed) selection.clear()
         return changed || index >= 0
@@ -2944,7 +2951,8 @@ class EditorController {
     fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_SCALE,scaleX,scaleY,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStroke(mirrorX:Boolean,mirrorY:Boolean):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStroke(i,mirrorX,mirrorY);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.mirror(mirrorX,mirrorY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun subdivideSelectedStroke(level:Int=1):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.subdivideStroke(i,level);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    /** GPENCIL_OT_stroke_subdivide: a point between each pair of selected points, `level` times. */
+    fun subdivideSelectedStroke(level:Int=1):Boolean = runOperator("GPENCIL_OT_stroke_subdivide", level.coerceIn(1, 10).toFloat())
     fun closeSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.closeStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun trimSelectedStroke(from:Int,to:Int,keepSinglePoint:Boolean=true):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStroke(i,from,to,keepSinglePoint);if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun reverseSelectedStroke():Boolean {
@@ -2976,7 +2984,8 @@ class EditorController {
         return ok
     }
 
-    fun trimSelectedStrokeToIntersection():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.trimStrokeToIntersection(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    /** GPENCIL_OT_stroke_trim: each selected stroke trimmed at its self-intersection. */
+    fun trimSelectedStrokeToIntersection():Boolean = runOperator("GPENCIL_OT_stroke_trim")
     fun splitSelectedStroke(beforeIndex:Int):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.splitStroke(i,beforeIndex);if(ok){history.markEdit();document.markDirty();render()};return ok}
     /**
      * Undo/redo restore the selection with the document (GP_STROKE_SELECT is stroke data): the

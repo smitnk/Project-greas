@@ -497,6 +497,29 @@ int main()
     CHECK(BLI_listbase_count(&static_cast<bGPDlayer *>(C.gpd->layers.first)->frames) == 5);
   }
 
+  /* batch 11: click select, subdivide, cutter */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);       /* 5 points, x 0..80 */
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    bGPDstroke *s0 = static_cast<bGPDstroke *>(static_cast<bGPDlayer *>(C.gpd->layers.first)->actframe->strokes.first);
+    float pick[5] = {40, 0, 400, 8 | 16 /* entire, deselect_all */, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_select", pick, 5, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK((s0->flag & GP_STROKE_SELECT) && (s0->points[4].flag & GP_SPOINT_SELECT));
+    float cuts = 1;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_subdivide", &cuts, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(s0->totpoints == 9 && s0->points[1].x == 10.0f);
+    float bad = 20;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_subdivide", &bad, 1, nullptr) == PG_OPERATOR_CANCELLED);
+    /* the cutter's lasso around the middle of the line: fewer points remain */
+    const int before = s0->totpoints;
+    float path[9] = {0, 30, -20, 50, -20, 50, 20, 30, 20};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_cutter", path, 9, nullptr) == PG_OPERATOR_FINISHED);
+    int pts = 0;
+    LISTBASE_FOREACH (bGPDstroke *, s, &static_cast<bGPDlayer *>(C.gpd->layers.first)->actframe->strokes) pts += s->totpoints;
+    CHECK(pts < before);
+  }
+
   /* --- layer masks: names, flags, rename/duplicate/delete bookkeeping --- */
   {
     CHECK(b.reset_document());

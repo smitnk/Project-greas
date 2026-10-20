@@ -159,6 +159,7 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var pendingPointer = MotionEvent.INVALID_POINTER_ID
     private var pendingX = 0f
     private var pendingY = 0f
+    private var pendingLateMs = 0L // second touch's delay after the first
     /** Where the drawing contact touched down (screen px): a contact still there is resting. */
     private var activeDownX = 0f
     private var activeDownY = 0f
@@ -372,6 +373,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     if (event.pointerCount == 2 && (sessionTool >= 0 || strokeOpen)) {
                         pendingPointer = event.getPointerId(n); pendingX = event.getX(n); pendingY = event.getY(n)
+                        pendingLateMs = event.eventTime - event.downTime
                         ghostPointers += pendingPointer
                         return true
                     }
@@ -388,7 +390,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                         val a = event.findPointerIndex(activePointerId)
                         // log 21: the first contact was a thumb / palm resting low on the screen and the
                         // finger that landed second drew; the resting one hands the touch over
-                        if (a >= 0 && hypot(event.getX(a) - activeDownX, event.getY(a) - activeDownY) < slop) {
+                        // log 26: a pinch whose anchor finger stays still looked the same; pinch fingers land
+                        // together (14-36 ms apart there), a resting palm is there well before the drawing finger
+                        if (a >= 0 && pendingLateMs >= 150L && hypot(event.getX(a) - activeDownX, event.getY(a) - activeDownY) < slop) {
                             com.smitnk.projectgrease.CrashLog.event("TOUCH first contact resting, second moves -> the second draws")
                             val resting = activePointerId
                             val mover = pendingPointer

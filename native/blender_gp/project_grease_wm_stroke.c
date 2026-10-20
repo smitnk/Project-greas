@@ -12,6 +12,9 @@
 #include "DNA_material_types.h"
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
+#include "BKE_deform.h"
+#include "DNA_object_types.h"
+#include "DNA_curve_types.h"
 #include "MEM_guardedalloc.h"
 
 #include "project_grease_blender_edit.h"
@@ -1687,6 +1690,231 @@ static int exec_material_to_vertex(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- batch 19 ------------------------------------------------------------------------------ */
+/* GPENCIL_OT_lock_layer: lock and hide every material, then unlock / show those the strokes of the
+ * active layer's current frame use. */
+static int exec_lock_layer(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  bGPdata *gpd = C->gpd;
+  if (gpd->totcol == 0) return PG_OPERATOR_CANCELLED;
+  for (int i = 1; i <= gpd->totcol; i++) {
+    MaterialGPencilStyle *st = slot_style(gpd, i);
+    if (st) st->flag |= GP_MATERIAL_LOCKED | GP_MATERIAL_HIDE;
+  }
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (BKE_gpencil_layer_is_editable(gpl) && gpl->actframe != NULL && (gpl->flag & GP_LAYER_ACTIVE)) {
+      for (bGPDstroke *gps = gpl->actframe->strokes.last; gps; gps = gps->prev) {
+        MaterialGPencilStyle *st = slot_style(gpd, gps->mat_nr + 1);
+        if (st != NULL) st->flag &= ~(GP_MATERIAL_LOCKED | GP_MATERIAL_HIDE);
+      }
+    }
+  }
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_recalc_geometry: every stroke's triangles and lengths */
+static int exec_recalc_geometry(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers)
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames)
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) BKE_gpencil_stroke_geometry_update(C->gpd, gps);
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_stroke_apply_thickness: the active layer's thickness change goes into its strokes */
+static int exec_apply_thickness(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(C->gpd);
+  if (gpl == NULL || gpl->frames.first == NULL) return PG_OPERATOR_CANCELLED;
+  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+      if ((gps->thickness == 0) && (gpl->line_change == 0)) gps->thickness = gpl->thickness;
+      else gps->thickness = gps->thickness + gpl->line_change;
+    }
+  }
+  gpl->thickness = 0.0f;
+  gpl->line_change = 0;
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_reset_transform_fill: mode ROTATE 0 / TRANSLATE 1 / SCALE 2 / ALL 3 (default ALL) */
+static int exec_reset_transform_fill(PGOpContext *C, const float *p, int n)
+{
+  const int mode = prop_i(p, n, 0, 3);
+  if (mode < 0 || mode > 3) return PG_OPERATOR_CANCELLED;
+  bool changed = false;
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    if (gps->flag & GP_STROKE_SELECT) {
+      if (mode == 1 || mode == 3) zero_v2(gps->uv_translation);
+      if (mode == 0 || mode == 3) gps->uv_rotation = 0.0f;
+      if (mode == 2 || mode == 3) gps->uv_scale = 1.0f;
+      BKE_gpencil_stroke_geometry_update(C->gpd, gps);
+      changed = true;
+    }
+  }
+  PGW_EDITABLE_STROKES_END
+  if (changed) BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_vertex_group_smooth: group (the app's active group), factor (0.5), repeat (1) */
+static int exec_vg_smooth(PGOpContext *C, const float *p, int n)
+{
+  const int def_nr = vg_index(C, p, n);
+  const float fac = prop_f(p, n, 1, 0.5f);
+  const int repeat = prop_i(p, n, 2, 1);
+  if (def_nr < 0 || repeat < 1 || repeat > 10000 || fac < 0.0f || fac > 1.0f) return PG_OPERATOR_CANCELLED;
+  bDeformGroup *defgroup = BLI_findlink(&C->gpd->vertex_group_names, def_nr);
+  if (defgroup == NULL || (defgroup->flag & DG_LOCK_WEIGHT)) return PG_OPERATOR_CANCELLED; /* "locked" */
+  bGPDspoint *pta, *ptb, *ptc;
+  MDeformVert *dverta, *dvertb;
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    if ((gps->totpoints == 0) || (gps->dvert == NULL)) continue;
+    for (int s = 0; s < repeat; s++) {
+      for (int i = 0; i < gps->totpoints; i++) {
+        pta = &gps->points[i > 0 ? i - 1 : i];
+        dverta = &gps->dvert[i > 0 ? i - 1 : i];
+        ptb = &gps->points[i];
+        dvertb = &gps->dvert[i];
+        ptc = &gps->points[i + 1 < gps->totpoints ? i + 1 : i];
+        float wa = BKE_defvert_find_weight(dverta, def_nr);
+        float wb = BKE_defvert_find_weight(dvertb, def_nr);
+        const float opfac = line_point_factor_v3(&ptb->x, &pta->x, &ptc->x);
+        const float optimal = interpf(wa, wb, opfac);
+        MDeformWeight *dw = BKE_defvert_ensure_index(dvertb, def_nr);
+        if (dw) {
+          dw->weight = interpf(wb, optimal, fac);
+          CLAMP(dw->weight, 0.0, 1.0f);
+        }
+      }
+    }
+  }
+  PGW_EDITABLE_STROKES_END
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_vertex_group_normalize_all: lock_active (true), active group (prop 1): each point's
+ * weights over all groups sum to 1, locked groups (and the active one with lock_active) kept. */
+static int exec_vg_normalize_all(PGOpContext *C, const float *p, int n)
+{
+  const bool lock_active = prop_i(p, n, 0, 1) != 0;
+  const int def_nr = prop_i(p, n, 1, -1);
+  bGPdata *gpd = C->gpd;
+  const int defbase_tot = BLI_listbase_count(&gpd->vertex_group_names);
+  if (defbase_tot == 0) return PG_OPERATOR_CANCELLED;
+  PGW_EDITABLE_STROKES_BEGIN (gpd, gpl, gps) {
+    if ((gps->totpoints == 0) || (gps->dvert == NULL)) continue;
+    for (int i = 0; i < gps->totpoints; i++) {
+      float sum = 0.0f, sum_lock = 0.0f, sum_unlock = 0.0f;
+      MDeformVert *dvert = &gps->dvert[i];
+      int v = 0;
+      LISTBASE_FOREACH_INDEX (bDeformGroup *, defgroup, &gpd->vertex_group_names, v) {
+        MDeformWeight *dw = BKE_defvert_find_index(dvert, v);
+        if (dw == NULL) continue;
+        sum += dw->weight;
+        if ((defgroup->flag & DG_LOCK_WEIGHT) || (lock_active && v == def_nr)) sum_lock += dw->weight;
+        else sum_unlock += dw->weight;
+      }
+      if ((sum == 1.0f) || (sum_unlock == 0.0f)) continue;
+      float fac = MAX2(0, (1.0f - sum_lock) / sum_unlock);
+      LISTBASE_FOREACH_INDEX (bDeformGroup *, defgroup, &gpd->vertex_group_names, v) {
+        MDeformWeight *dw = BKE_defvert_find_index(dvert, v);
+        if (dw == NULL) continue;
+        if (!((defgroup->flag & DG_LOCK_WEIGHT) || (lock_active && v == def_nr))) {
+          dw->weight *= fac;
+          CLAMP(dw->weight, 0.0f, 1.0f);
+        }
+      }
+    }
+  }
+  PGW_EDITABLE_STROKES_END
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_interpolate_reverse: delete the run of breakdown frames around the current one on
+ * each editable layer, when there is a key before and after it. */
+static int exec_interpolate_reverse(PGOpContext *C, const float *p, int n)
+{
+  (void)p; (void)n;
+  bGPdata *gpd = C->gpd;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || (gpl->actframe == NULL)) {
+      continue;
+    }
+/* BEGIN VERBATIM source/blender/editors/gpencil_legacy/gpencil_interpolate.c */
+    bGPDframe *start_key = NULL;
+    bGPDframe *end_key = NULL;
+    bGPDframe *gpf, *gpfn;
+
+    /* Only continue if we're currently on a breakdown keyframe */
+    if ((gpl->actframe == NULL) || (gpl->actframe->key_type != BEZT_KEYTYPE_BREAKDOWN)) {
+      continue;
+    }
+
+    /* Search left for "start_key" (i.e. the first breakdown to remove) */
+    gpf = gpl->actframe;
+    while (gpf) {
+      if (gpf->key_type == BEZT_KEYTYPE_BREAKDOWN) {
+        /* A breakdown... keep going left */
+        start_key = gpf;
+        gpf = gpf->prev;
+      }
+      else {
+        /* Not a breakdown (may be a key, or an extreme,
+         * or something else that wasn't generated)... stop */
+        break;
+      }
+    }
+
+    /* Search right for "end_key" (i.e. the last breakdown to remove) */
+    gpf = gpl->actframe;
+    while (gpf) {
+      if (gpf->key_type == BEZT_KEYTYPE_BREAKDOWN) {
+        /* A breakdown... keep going right */
+        end_key = gpf;
+        gpf = gpf->next;
+      }
+      else {
+        /* Not a breakdown... stop */
+        break;
+      }
+    }
+
+    /* Did we find anything? */
+    /* NOTE: We should only proceed if there's something before/after these extents...
+     * Otherwise, there's just an extent of breakdowns with no keys to interpolate between
+     */
+    if ((start_key && end_key) && ELEM(NULL, start_key->prev, end_key->next) == false) {
+      /* Set actframe to the key before start_key, since the keys have been removed now */
+      gpl->actframe = start_key->prev;
+
+      /* Free each frame we're removing (except the last one) */
+      for (gpf = start_key; gpf && gpf != end_key; gpf = gpfn) {
+        gpfn = gpf->next;
+
+        /* free strokes and their associated memory */
+        BKE_gpencil_free_strokes(gpf);
+        BLI_freelinkN(&gpl->frames, gpf);
+      }
+
+      /* Now free the last one... */
+      BKE_gpencil_free_strokes(end_key);
+      BLI_freelinkN(&gpl->frames, end_key);
+    }
+/* END VERBATIM */
+  }
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -1747,6 +1975,13 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_merge_material", RU, poll_gpd, exec_merge_material},
     {"GPENCIL_OT_extract_palette_vertex", RU, poll_gpd, exec_extract_palette},
     {"GPENCIL_OT_material_to_vertex_color", RU, poll_gpd, exec_material_to_vertex},
+    {"GPENCIL_OT_lock_layer", RU, poll_gpd, exec_lock_layer},
+    {"GPENCIL_OT_recalc_geometry", RU, poll_gpd, exec_recalc_geometry},
+    {"GPENCIL_OT_stroke_apply_thickness", RU, poll_active_layer, exec_apply_thickness},
+    {"GPENCIL_OT_reset_transform_fill", RU, poll_gpd, exec_reset_transform_fill},
+    {"GPENCIL_OT_vertex_group_smooth", RU, poll_gpd, exec_vg_smooth},
+    {"GPENCIL_OT_vertex_group_normalize_all", RU, poll_gpd, exec_vg_normalize_all},
+    {"GPENCIL_OT_interpolate_reverse", RU, poll_gpd, exec_interpolate_reverse},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

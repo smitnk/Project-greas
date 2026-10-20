@@ -122,7 +122,26 @@ static int exec_layer_active(PGOpContext *C, const float *props, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* GPENCIL_OT_layer_change: layer index, -1 = a new "GP_Layer" (made active) */
+static int exec_layer_change(PGOpContext *C, const float *props, int n)
+{
+  const int layer_num = prop_i(props, n, 0, -1);
+  bGPDlayer *gpl;
+  if (layer_num == -1) {
+    gpl = BKE_gpencil_layer_addnew(C->gpd, "GP_Layer", true, false);
+    if (gpl != NULL) gpl->actframe = BKE_gpencil_layer_frame_get(gpl, C->cfra, GP_GETFRAME_ADD_NEW);
+  }
+  else {
+    gpl = BLI_findlink(&C->gpd->layers, layer_num);
+    if (gpl == NULL) return PG_OPERATOR_CANCELLED; /* "Cannot change to non-existent layer" */
+  }
+  if (gpl == NULL) return PG_OPERATOR_CANCELLED;
+  BKE_gpencil_layer_active_set(C->gpd, gpl);
+  return PG_OPERATOR_FINISHED;
+}
+
 static const PGOperatorType pg_layer_operators[] = {
+    {"GPENCIL_OT_layer_change", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_layer_change},
     {"GPENCIL_OT_layer_add", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_layer_add},
     {"GPENCIL_OT_layer_remove", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_layer_remove},
     {"GPENCIL_OT_layer_move", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_layer_move},

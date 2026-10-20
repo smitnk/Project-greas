@@ -1674,6 +1674,22 @@ class EditorController {
     fun deselectGroupPoints() = runOperator("GPENCIL_OT_vertex_group_deselect", weightPaintGroup.toFloat())
     fun invertGroupWeights() = runOperator("GPENCIL_OT_vertex_group_invert", weightPaintGroup.toFloat())
     fun normalizeGroupWeights() = runOperator("GPENCIL_OT_vertex_group_normalize", weightPaintGroup.toFloat())
+    /** GPENCIL_OT_vertex_group_smooth on the active group. */
+    fun smoothGroupWeights(factor:Float = 0.5f, repeat:Int = 1) = runOperator("GPENCIL_OT_vertex_group_smooth", weightPaintGroup.toFloat(), factor, repeat.toFloat())
+    /** GPENCIL_OT_vertex_group_normalize_all: each point's weights over all groups sum to 1 (active group kept). */
+    fun normalizeAllGroups(lockActive:Boolean = true) = runOperator("GPENCIL_OT_vertex_group_normalize_all", if (lockActive) 1f else 0f, weightPaintGroup.toFloat())
+    /** GPENCIL_OT_layer_change: switch to layer [index], or -1 for a new layer. */
+    fun changeLayer(index:Int):Boolean = layerOperator("GPENCIL_OT_layer_change", index.toFloat())
+    /** GPENCIL_OT_lock_layer: lock and hide the materials the active layer does not use here. */
+    fun lockMaterialsUnusedByLayer() = runOperator("GPENCIL_OT_lock_layer")
+    /** GPENCIL_OT_recalc_geometry: rebuild every stroke's fill triangles and lengths. */
+    fun recalcGeometry() = runOperator("GPENCIL_OT_recalc_geometry")
+    /** GPENCIL_OT_stroke_apply_thickness: the layer's thickness change goes into its strokes. */
+    fun applyLayerThickness() = runOperator("GPENCIL_OT_stroke_apply_thickness")
+    /** GPENCIL_OT_reset_transform_fill: fill texture offset / rotation / scale of the selection back to default. */
+    fun resetFillTransform() = runOperator("GPENCIL_OT_reset_transform_fill", 3f)
+    /** GPENCIL_OT_interpolate_reverse: delete the interpolated (breakdown) frames around this frame. */
+    fun deleteBreakdowns():Boolean { val ok = runOperator("GPENCIL_OT_interpolate_reverse"); if (ok) onUiChanged?.invoke(); return ok }
     /** Merges the active layer into the one below; native makes the lower layer active, so does the editor. */
     /** GPENCIL_OT_layer_merge (Active): the active layer into the one below. */
     fun mergeLayerDown():Boolean = layerOperator("GPENCIL_OT_layer_merge", 0f)

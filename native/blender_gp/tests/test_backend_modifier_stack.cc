@@ -1,3 +1,4 @@
+#include "DNA_curve_types.h"
 /* Host test for the modifier-stack wiring in Backend: storage per layer index, layer operations,
  * undo/redo, Apply and the evaluated-frame cache (project_grease_gp_backend.cpp compiled with
  * __ANDROID__ against the real pinned Blender legacy GP code; the GPU/draw layer is stubbed because
@@ -603,6 +604,38 @@ int main()
     CHECK(pg_wm_operator_call(&M, "GPENCIL_OT_extract_palette_vertex", extract, 2, nullptr) == PG_OPERATOR_FINISHED);
     CHECK(pg_wm_last_palette(&pal) == 1);
 
+  }
+
+  /* batch 19: layer change, lock layer, reset fill transform, delete breakdowns */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    float newlayer = -1;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_layer_change", &newlayer, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(b.layer_count() == 2 && BKE_gpencil_layer_active_get(C.gpd) == C.gpd->layers.last);
+    float first = 0, missing = 9;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_layer_change", &missing, 1, nullptr) == PG_OPERATOR_CANCELLED);
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_layer_change", &first, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(b.create_material());
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_lock_layer", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(!(C.gpd->mat[0]->gp_style->flag & GP_MATERIAL_LOCKED)); /* the line uses slot 0 */
+    CHECK(C.gpd->mat[1]->gp_style->flag & GP_MATERIAL_LOCKED && C.gpd->mat[1]->gp_style->flag & GP_MATERIAL_HIDE);
+    bGPDlayer *l0 = static_cast<bGPDlayer *>(C.gpd->layers.first);
+    bGPDstroke *g = static_cast<bGPDstroke *>(l0->actframe->strokes.first);
+    g->flag |= GP_STROKE_SELECT;
+    g->uv_scale = 3.0f; g->uv_rotation = 1.0f;
+    float rot = 0;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_reset_transform_fill", &rot, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(g->uv_rotation == 0.0f && g->uv_scale == 3.0f);
+    /* key 1, breakdowns 2-3, key 4: on frame 2 they go */
+    bGPDframe *k1 = l0->actframe;
+    bGPDframe *b2 = BKE_gpencil_frame_addnew(l0, 2); b2->key_type = BEZT_KEYTYPE_BREAKDOWN;
+    bGPDframe *b3 = BKE_gpencil_frame_addnew(l0, 3); b3->key_type = BEZT_KEYTYPE_BREAKDOWN;
+    BKE_gpencil_frame_addnew(l0, 4);
+    l0->actframe = b2;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_interpolate_reverse", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(BLI_listbase_count(&l0->frames) == 2 && l0->actframe == k1);
   }
 
   /* batch 16: primitives (confirm step) */

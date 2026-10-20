@@ -273,7 +273,14 @@ jobs:
 
       - name: Build Android GP application
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon
+        shell: bash
+        run: |
+          set -o pipefail
+          # compiler errors also become annotations (readable without the full log)
+          ./gradlew :app:assembleDebug --no-daemon 2>&1 | tee build.log || {
+            grep -E "error:|^e: |FAILED|undefined reference" build.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          }
 
       - name: Verify Android GP native link closure
         shell: bash

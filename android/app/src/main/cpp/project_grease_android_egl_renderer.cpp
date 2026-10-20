@@ -57,8 +57,6 @@ struct FillCapture {
   std::vector<float> rgba;
   int mw = 0, mh = 0, width = 0, height = 0, seed_x = 0, seed_y = 0;
 };
-struct PGFillJob;
-
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
   EGLContext context = EGL_NO_CONTEXT;
@@ -80,7 +78,7 @@ struct Renderer {
   int fill_draw_mode = 0;
   float fill_extend = 0.0f; // brush fill_extend_fac
   std::unique_ptr<FillCapture> fill_capture; // background fill: captured mask
-  struct PGFillJob *fill_job = nullptr;             // background fill: computed outline
+  PGFillJob *fill_job = nullptr;                    // background fill: computed outline
 
 };
 

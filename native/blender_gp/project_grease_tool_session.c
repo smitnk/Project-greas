@@ -116,12 +116,13 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
     ds.input_samples = (int)param(p, n, PG_DRAW_P_INPUT_SAMPLES, 0);
     ds.lazy_enabled = param(p, n, PG_DRAW_P_LAZY, 0) != 0.0f;
     ds.smooth_stroke_radius = param(p, n, PG_DRAW_P_LAZY_RADIUS, 0);
-    /* RNA smooth_stroke_factor 0.5..0.99, smooth_stroke_radius 10..200 px: a factor of 1 never moves
+    /* RNA smooth_stroke_factor 0.5..0.99, smooth_stroke_radius 10..200 UI px (the app sends device px,
+     * UI px x density, so up to 1600): a factor of 1 never moves
      * the lazy point, so a stroke drew as a single dot (reported) */
     ds.smooth_stroke_factor = param(p, n, PG_DRAW_P_LAZY_FACTOR, 0);
     if (ds.lazy_enabled) {
       ds.smooth_stroke_factor = ds.smooth_stroke_factor < 0.5f ? 0.5f : (ds.smooth_stroke_factor > 0.99f ? 0.99f : ds.smooth_stroke_factor);
-      ds.smooth_stroke_radius = ds.smooth_stroke_radius < 10.0f ? 10.0f : (ds.smooth_stroke_radius > 200.0f ? 200.0f : ds.smooth_stroke_radius);
+      ds.smooth_stroke_radius = ds.smooth_stroke_radius < 10.0f ? 10.0f : (ds.smooth_stroke_radius > 1600.0f ? 1600.0f : ds.smooth_stroke_radius);
     }
     ds.disable_stabilizer = param(p, n, PG_DRAW_P_DISABLE_STABILIZER, 0) != 0.0f;
     ds.manhattan_threshold = (int)param(p, n, PG_DRAW_P_MANHATTAN, 1);

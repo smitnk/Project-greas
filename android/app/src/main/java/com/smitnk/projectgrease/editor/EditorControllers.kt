@@ -899,7 +899,9 @@ class EditorController {
                 strength = brushes.strength, usePressure = brushes.usePressure,
                 useStrengthPressure = brushes.useStrengthPressure,
                 pressureCurve = brushes.pressureCurve, inputSamples = legacyInputSamples,
-                lazy = legacyLazyEnabled, lazyRadius = legacyLazyRadius, lazyFactor = legacyLazyFactor,
+                // the radius is in Blender's UI pixels: on a phone screen that is uiScale device pixels each
+                // (12 device px at 2.75x density moved the line by under 2 mm: the stabilizer looked off)
+                lazy = legacyLazyEnabled, lazyRadius = legacyLazyRadius * uiScale.coerceAtLeast(1f), lazyFactor = legacyLazyFactor,
                 disableStabilizer = legacyDisableStabilizer, manhattan = legacyManhattanThreshold,
                 euclidean = legacyEuclideanThreshold, activeSmooth = maxOf(legacyActiveSmooth, brushes.activeSmooth),
                 jitter = legacyJitter,
@@ -1204,8 +1206,8 @@ class EditorController {
 
     private var legacyInputSamples = 4
     private var legacyLazyEnabled = false
-    private var legacyLazyRadius = 12f
-    private var legacyLazyFactor = 0.75f
+    private var legacyLazyRadius = 75f // Blender's brush defaults: smooth_stroke_radius 75 px, factor 0.9
+    private var legacyLazyFactor = 0.9f
     private var legacyDisableStabilizer = false
     private var legacyManhattanThreshold = 1
     private var legacyEuclideanThreshold = 1f
@@ -1216,9 +1218,9 @@ class EditorController {
 
     var stabilizerEnabled = false
         private set
-    var stabilizerFactor = 0.75f
+    var stabilizerFactor = 0.9f
         private set
-    var stabilizerRadius = 12f
+    var stabilizerRadius = 75f
         private set
     var spacing = 0f
         private set
@@ -1658,6 +1660,8 @@ class EditorController {
     /** Merges the active layer into the one below; native makes the lower layer active, so does the editor. */
     /** GPENCIL_OT_layer_merge (Active): the active layer into the one below. */
     fun mergeLayerDown():Boolean = layerOperator("GPENCIL_OT_layer_merge", 0f)
+    /** GPENCIL_OT_layer_merge (All): every layer combined into the active one. */
+    fun mergeAllLayers():Boolean = layerOperator("GPENCIL_OT_layer_merge", 1f)
     /** Blender's layer operators (project_grease_wm_layer.c); the active layer follows Blender's. */
     private fun layerOperator(idname:String, vararg props:Float):Boolean {
         if (native.handle == 0L) return false

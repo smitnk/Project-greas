@@ -125,6 +125,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Hide layer", "Hide the active layer") { controller.hideLayers() },
                 Op("Hide other layers", "Hide every layer but the active one") { controller.hideLayers(others = true) },
                 Op("Show all layers", "Reveal hidden layers") { controller.revealLayers() },
+                Op("Merge all layers", "Combine every layer into the active one") { controller.mergeAllLayers() },
                 Op("Delete this frame (all layers)", "Remove the drawing shown here from every editable layer") { controller.deleteActiveFramesAllLayers() },
             ),
         )

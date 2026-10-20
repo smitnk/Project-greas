@@ -411,7 +411,11 @@ int main()
     CHECK(b.active_layer_data() == BLI_findlink(&b.document_data()->layers, 1));
     CHECK(run_layer_op(b, "GPENCIL_OT_layer_merge", 0) == PG_OPERATOR_FINISHED);
     CHECK(b.layer_count() == 2 && b.modifier_count(0) == 2 && b.modifier_count(1) == 1);
-    CHECK(run_layer_op(b, "GPENCIL_OT_layer_merge", 1) == PG_OPERATOR_CANCELLED); /* ALL not ported */
+    CHECK(b.create_layer("Top") && b.create_frame(1));
+    CHECK(b.select_layer(0));
+    CHECK(run_layer_op(b, "GPENCIL_OT_layer_merge", 1) == PG_OPERATOR_FINISHED); /* ALL into the active one */
+    CHECK(b.layer_count() == 1 && b.active_layer_data() == b.document_data()->layers.first);
+    CHECK(b.create_layer("C") && b.create_frame(1));
     CHECK(run_layer_op(b, "GPENCIL_OT_layer_active", 1) == PG_OPERATOR_FINISHED &&
           b.active_layer_data() == b.document_data()->layers.last);
     CHECK(b.select_layer(0));

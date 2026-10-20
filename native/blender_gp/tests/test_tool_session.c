@@ -389,6 +389,18 @@ static void test_stabilizer_full_factor(PGToolSession *ts)
   float span = 0;
   for (int i = 0; i < k.n; i++) span = fmaxf(span, k.x[i] - k.x[0]);
   CHECK(k.n > 3 && span > 100.0f, "stabilizer 100%% still draws a line (%d points, %.0f long)", k.n, span);
+
+  /* Reported: the stabilizer did nothing. The app sends the radius in device pixels (UI px x
+   * density): 75 UI px x 2.75 = 206 px must not be clamped back to 200 and must hold the line back */
+  SinkXY k2;
+  memset(&k2, 0, sizeof k2);
+  const PGToolDrawSink sink2 = {&k2, kxy_begin, kxy_add, kxy_end, NULL};
+  p[PG_DRAW_P_LAZY_FACTOR] = 0.9f; p[PG_DRAW_P_LAZY_RADIUS] = 206;
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, smp, 40, PG_TOOL_PHASE_BEGIN, p, PG_DRAW_P_COUNT, &sink2);
+  pg_tool_session_samples(ts, NULL, PG_TOOL_DRAW, NULL, 0, PG_TOOL_PHASE_END, NULL, 0, &sink2);
+  float end2 = 0;
+  for (int i = 0; i < k2.n; i++) end2 = fmaxf(end2, k2.x[i]);
+  CHECK(k2.n > 1 && end2 < 780.0f - 150.0f, "a 206 px stabilizer trails the finger (line ends at %.0f of 780)", end2);
 }
 
 /* Clone (gpencil_brush_clone_add / adjust): the clipboard is pasted centred on the brush, then

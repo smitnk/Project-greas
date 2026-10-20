@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "BLI_listbase.h"
+#include "BLI_string.h"
 #include "BLI_string_utils.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "BKE_gpencil_legacy.h"
@@ -76,7 +77,34 @@ static int exec_layer_duplicate(PGOpContext *C, const float *props, int n)
  * shortcut: mode ALL (flatten) is not ported yet -> CANCELLED; port gpencil_merge_layer_exec's ALL branch. */
 static int exec_layer_merge(PGOpContext *C, const float *props, int n)
 {
-  if (prop_i(props, n, 0, 0) != 0) return PG_OPERATOR_CANCELLED;
+  const int mode = prop_i(props, n, 0, 0);
+  if (mode == 1) {
+    /* ALL: every layer combined into the active one, layers above drawn over it, layers below
+     * under it, then the layer settings reset (gpencil_merge_layer_exec, GP_LAYER_MERGE_ALL).
+     * shortcut: the layers below are merged by moving the active layer down into them, so the
+     * result keeps the bottom layer's modifiers / effects (Blender keeps the active layer's
+     * settings, reset to defaults as here); port ED_gpencil_layer_merge(reverse) to match exactly. */
+    bGPDlayer *active = BKE_gpencil_layer_active_get(C->gpd), *below = NULL;
+    if (active == NULL || (active->prev == NULL && active->next == NULL)) return PG_OPERATOR_CANCELLED;
+    char name[sizeof(active->info)];
+    STRNCPY(name, active->info);
+    while (C->gpd->layers.last != active) {
+      if (!pg_gp_layer_merge_down(C->gpd, C->gpd->layers.last, &below)) return PG_OPERATOR_CANCELLED;
+    }
+    while (active->prev != NULL) {
+      if (!pg_gp_layer_merge_down(C->gpd, active, &below) || below == NULL) return PG_OPERATOR_CANCELLED;
+      active = below;
+    }
+    STRNCPY(active->info, name);
+    active->blend_mode = eGplBlendMode_Regular;
+    active->flag &= ~(GP_LAYER_LOCKED | GP_LAYER_HIDE);
+    active->flag |= GP_LAYER_USE_LIGHTS;
+    active->onion_flag |= GP_LAYER_ONIONSKIN;
+    BKE_gpencil_layer_active_set(C->gpd, active);
+    LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) BKE_gpencil_layer_mask_cleanup(C->gpd, gpl);
+    return PG_OPERATOR_FINISHED;
+  }
+  if (mode != 0) return PG_OPERATOR_CANCELLED;
   bGPDlayer *active = BKE_gpencil_layer_active_get(C->gpd), *below = NULL;
   if (active->prev == NULL) return PG_OPERATOR_CANCELLED; /* "No layers to merge" */
   if (!pg_gp_layer_merge_down(C->gpd, active, &below) || below == NULL) return PG_OPERATOR_CANCELLED;

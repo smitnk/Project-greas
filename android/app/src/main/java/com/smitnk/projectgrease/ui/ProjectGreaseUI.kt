@@ -1534,14 +1534,14 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
-            Row(Modifier.align(Alignment.TopCenter).padding(top=52.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                Button(onClick={controller.beginWarp(2,2);redraw()},Modifier.testTag("lassoWarp")){Text("Warp")}
-                OutlinedButton(onClick={controller.beginWarp(3,3);redraw()}){Text("Warp mesh")}
+            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){Text("Warp",maxLines=1)}
+                OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){Text("Warp mesh",maxLines=1)}
                 // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
                 OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){Text("Copy")}
                 OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){Text("Paste")}
-                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){Text("Delete")}
-                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…")}
+                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){Text("Delete",maxLines=1)}
+                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…",maxLines=1)}
             }
         if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)},
             {onSheet(Sheet.LAYER_ADVANCED)},{onSheet(Sheet.ROTOSCOPE)})

@@ -20,6 +20,7 @@
 #include "project_grease_blender_edit4.h"
 #include "project_grease_draw_input.h"
 #include "project_grease_tool_session.h"
+#include "project_grease_wm.h"
 
 static int failures = 0;
 #define CHECK(c, ...) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s:%d: ", __FILE__, __LINE__); fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
@@ -529,6 +530,43 @@ static void test_vertex_paint_app_canvas(PGToolSession *ts)
   CHECK(alpha[0] > 0.0f && fabsf(alpha[0] - alpha[1]) < 0.01f, "density-matched influence %g vs %g", alpha[0], alpha[1]);
 }
 
+/* The paint tools as Blender's modal operators: one runs at a time, an invoke cancels a running one,
+ * events of another operator are refused, release confirms (FINISHED when the stroke was made). */
+static void test_modal_operators(PGToolSession *ts)
+{
+  SinkXY k;
+  memset(&k, 0, sizeof k);
+  const PGToolDrawSink sink = {&k, kxy_begin, kxy_add, kxy_end, NULL};
+  PGOpContext C;
+  memset(&C, 0, sizeof C);
+  C.tool_session = ts;
+  C.sink = &sink;
+  float p[PG_DRAW_P_COUNT];
+  memset(p, 0, sizeof p);
+  p[PG_DRAW_P_THICKNESS] = 3; p[PG_DRAW_P_STRENGTH] = 1; p[PG_DRAW_P_PRESSURE_CURVE] = 1; p[PG_DRAW_P_STRENGTH_CURVE] = 1;
+  p[PG_DRAW_P_MANHATTAN] = 1; p[PG_DRAW_P_EUCLIDEAN] = 1; p[PG_DRAW_P_PX_PER_UNIT] = 1;
+  float smp[10 * 4];
+  for (int i = 0; i < 10; i++) { smp[i * 4] = 20.0f * i; smp[i * 4 + 1] = 50; smp[i * 4 + 2] = 1; smp[i * 4 + 3] = 0.01f * i; }
+  int st = 0;
+  CHECK(pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_BEGIN, smp, 1, p, PG_DRAW_P_COUNT, &st) != 0 &&
+            st == PG_OPERATOR_RUNNING_MODAL && pg_wm_modal_running() != NULL,
+        "draw invoke runs modal");
+  CHECK(pg_wm_modal_tool(&C, PG_TOOL_SCULPT, PG_TOOL_PHASE_MOVE, smp, 1, NULL, 0, &st) == 0 && st == PG_OPERATOR_CANCELLED,
+        "events of another operator are refused");
+  pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_MOVE, smp + 4, 9, NULL, 0, &st);
+  CHECK(st == PG_OPERATOR_RUNNING_MODAL, "move keeps it running");
+  pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_END, NULL, 0, NULL, 0, &st);
+  CHECK(st == PG_OPERATOR_FINISHED && pg_wm_modal_running() == NULL, "release confirms: FINISHED");
+  CHECK(pg_wm_modal_tool(&C, PG_TOOL_SCULPT, PG_TOOL_PHASE_BEGIN, smp, 1, NULL, 0, &st) == 0 && st == PG_OPERATOR_CANCELLED,
+        "sculpt polls false without GP data");
+  /* invoke while another runs: the running one is cancelled */
+  pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_BEGIN, smp, 1, p, PG_DRAW_P_COUNT, &st);
+  pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_BEGIN, smp, 1, p, PG_DRAW_P_COUNT, &st);
+  CHECK(st == PG_OPERATOR_RUNNING_MODAL, "a second invoke replaces the first");
+  pg_wm_modal_tool(&C, PG_TOOL_DRAW, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL, 0, &st);
+  CHECK(st == PG_OPERATOR_CANCELLED && pg_wm_modal_running() == NULL, "cancel");
+}
+
 int main(void)
 {
   BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
@@ -547,6 +585,7 @@ int main(void)
   test_draw(ts);
   test_draw_guide_and_curve(ts);
   test_stabilizer_full_factor(ts);
+  test_modal_operators(ts);
   pg_tool_session_free(ts);
   if (failures) { fprintf(stderr, "%d tool session check(s) failed\n", failures); return 1; }
   printf("tool session tests passed\n");

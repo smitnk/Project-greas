@@ -6,7 +6,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/native_host_closure.sh" "tool session test"
 G="$ROOT/native/blender_gp"
 SESSION=(project_grease_tool_session.c project_grease_draw_input.c project_grease_tool_util.c
-         project_grease_tool_sculpt.c project_grease_tool_vertex_paint.c project_grease_tool_weight_paint.c)
+         project_grease_tool_sculpt.c project_grease_tool_vertex_paint.c project_grease_tool_weight_paint.c
+         project_grease_wm_modal.c)
 REST=()
 for o in "${OBJS[@]}"; do
   skip=0

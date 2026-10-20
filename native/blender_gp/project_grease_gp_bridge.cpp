@@ -1246,15 +1246,16 @@ int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle,
     if (!handle->tool_session) return 0;
   }
   bGPdata *gpd = handle->backend.document_data();
+  const PGToolDrawSink sink = {handle, tool_sink_begin, tool_sink_add, tool_sink_end, tool_sink_cancel};
+  // The paint tools run as Blender's modal operators (GPENCIL_OT_draw / sculpt_paint / ...).
+  PGOpContext C = {gpd, handle->backend.active_layer_data(), 0, true, 0, handle->tool_session, &sink};
+  int status = 0;
   // A gesture never survives a document replacement (reset / load / undo): cancel it.
   if (phase != PG_TOOL_PHASE_BEGIN && handle->tool_gpd != gpd) {
-    pg_tool_session_samples(handle->tool_session, nullptr, tool, nullptr, 0, PG_TOOL_PHASE_CANCEL,
-                            nullptr, 0, nullptr);
+    pg_wm_modal_tool(&C, tool, PG_TOOL_PHASE_CANCEL, nullptr, 0, nullptr, 0, &status);
     handle->tool_gpd = nullptr;
     return 0;
   }
   if (phase == PG_TOOL_PHASE_BEGIN) handle->tool_gpd = gpd;
-  const PGToolDrawSink sink = {handle, tool_sink_begin, tool_sink_add, tool_sink_end, tool_sink_cancel};
-  return pg_tool_session_samples(handle->tool_session, gpd, tool, samples, count, phase, params,
-                                 param_count, &sink);
+  return pg_wm_modal_tool(&C, tool, phase, samples, count, params, param_count, &status);
 }

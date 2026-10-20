@@ -106,6 +106,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
             ),
             "Select" to listOf(
                 Op("Select random 50%", "Keep half of the selection, at random") { controller.selectRandom() },
+                Op("Select same vertex colour", "Add points painted the same hue as the selected ones") { controller.selectSameVertexColor() },
                 Op("Clean loose points", "Delete strokes of one or two points") { controller.cleanLoosePoints() },
                 Op("Clean fill boundaries", "Delete the no-fill boundary strokes of this frame") { controller.cleanFillBoundaries() },
             ),

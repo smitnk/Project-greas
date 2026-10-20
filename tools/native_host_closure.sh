@@ -67,7 +67,7 @@ C_SRC=(
   "$BL/blenlib/intern/lasso_2d.c" "$BL/blenlib/intern/polyfill_2d.c" "$BL/blenlib/intern/BLI_memarena.c"
   "$BL/blenlib/intern/BLI_heap.c" "$BL/blenlib/intern/string_utils.c" "$BL/blenlib/intern/stack.c"
   "$BL/blenlib/intern/BLI_ghash.c" "$BL/blenlib/intern/BLI_ghash_utils.c" "$BL/blenlib/intern/BLI_mempool.c"
-  "$BL/blenlib/intern/hash_mm2a.c" "$BL/blenlib/intern/rct.c" "$BL/blenlib/intern/kdtree_2d.c"
+  "$BL/blenlib/intern/hash_mm2a.c" "$BL/blenlib/intern/rct.c" "$BL/blenlib/intern/kdtree_2d.c" "$BL/blenlib/intern/math_color.c"
   "$BL/blenkernel/intern/gpencil_curve_legacy.c" "$BL/blenkernel/intern/gpencil_legacy.c"
   "$B/extern/curve_fit_nd/intern/curve_fit_cubic.c" "$B/extern/curve_fit_nd/intern/curve_fit_cubic_refit.c"
   "$B/extern/curve_fit_nd/intern/curve_fit_corners_detect.c" "$B/extern/curve_fit_nd/intern/generic_heap.c"

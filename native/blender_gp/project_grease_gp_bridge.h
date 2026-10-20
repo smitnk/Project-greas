@@ -192,6 +192,13 @@ int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
                                      int dilate_pixels,
                                      int material_index,
                                      float thickness);
+/* As fill_at_screen with the mask already at fill size (mask_w x mask_h, see
+ * project_grease_gp_fill_render_size); seed in view pixels of width x height. */
+int project_grease_gp_fill_at_mask(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w, int mask_h,
+                                   int width, int height, int seed_x, int seed_y, int fill_leak,
+                                   int dilate_pixels, int material_index, float thickness);
+/* Fill image size for a view dimension at the current fill factor. */
+int project_grease_gp_fill_render_size(const ProjectGreaseGPHandle *handle, int view_size);
 /* Save/load state (stroke style, layer state, palette); structs live in project_grease_document_state.h. */
 int project_grease_gp_get_stroke_info(const ProjectGreaseGPHandle *handle, int stroke_index, PGStrokeInfo *out);
 /* Vertex colors are passed separately: `colors` holds 4 floats (RGBA) per point and may be NULL

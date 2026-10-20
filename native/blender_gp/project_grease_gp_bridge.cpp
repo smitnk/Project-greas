@@ -26,6 +26,7 @@
 #include <cstdio>
 #include "DNA_gpencil_legacy_types.h"
 #include "project_grease_wm.h"
+#include "project_grease_blender_fill.h"
 #include "BKE_gpencil_legacy.h"
 #include <cstring>
 #include "DNA_material_types.h"
@@ -1165,6 +1166,20 @@ int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
       fill_leak,
       dilate_pixels,
       {material_index, thickness}) ? 1 : 0;
+}
+
+int project_grease_gp_fill_at_mask(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w, int mask_h,
+                                   int width, int height, int seed_x, int seed_y, int fill_leak,
+                                   int dilate_pixels, int material_index, float thickness)
+{
+  if (!ensure_operator(handle)) return 0;
+  return handle->backend.fill_at_screen(rgba, width, height, seed_x, seed_y, fill_leak, dilate_pixels,
+                                        {material_index, thickness}, mask_w, mask_h) ? 1 : 0;
+}
+
+int project_grease_gp_fill_render_size(const ProjectGreaseGPHandle *handle, int view_size)
+{
+  return handle ? pg_fill_render_size(view_size, handle->backend.fill_factor()) : view_size;
 }
 
 int project_grease_gp_frame_end(const ProjectGreaseGPHandle *handle)

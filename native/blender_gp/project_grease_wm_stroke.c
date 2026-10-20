@@ -23,7 +23,9 @@
 #include "project_grease_blender_interp.h"
 #include "project_grease_blender_edit10.h"
 #include "BLI_math.h"
+#include "BLI_ghash.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_scene_types.h"
 #include <stdlib.h>
 #include "project_grease_wm.h"
 
@@ -761,6 +763,69 @@ static int exec_select_pick(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- batch 12 ------------------------------------------------------------------------- */
+/* gpencil_selected_hue_table(): rounded hues of the selected points' vertex colours */
+static void selected_hue_table(bGPdata *gpd, int threshold, GHash *hue_table)
+{
+  const float range = powf(10.0f, 5 - threshold);
+  float hsv[3];
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl)) continue;
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        const MaterialGPencilStyle *st = slot_style(gpd, gps->mat_nr + 1);
+        if (st && ((st->flag & GP_MATERIAL_HIDE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+          continue;
+        if ((gps->flag & GP_STROKE_SELECT) == 0) continue;
+        for (int i = 0; i < gps->totpoints; i++) {
+          const bGPDspoint *pt = &gps->points[i];
+          if (((pt->flag & GP_SPOINT_SELECT) == 0) || (pt->vert_color[3] == 0.0f)) continue;
+          rgb_to_hsv_compat_v(pt->vert_color, hsv);
+          const unsigned int key = (unsigned int)truncf(hsv[0] * range);
+          if (!BLI_ghash_haskey(hue_table, POINTER_FROM_INT(key)))
+            BLI_ghash_insert(hue_table, POINTER_FROM_INT(key), POINTER_FROM_INT(key));
+        }
+      }
+    }
+  }
+}
+/* GPENCIL_OT_select_vertex_color: threshold (0, 0..5), selectmode (vertex paint select mode as the
+ * last prop): every stroke point whose vertex colour hue matches a selected point's is selected */
+static int exec_select_vertex_color(PGOpContext *C, const float *p, int n)
+{
+  const int threshold = prop_i(p, n, 0, 0);
+  if (threshold < 0 || threshold > 5) return PG_OPERATOR_CANCELLED;
+  const int selectmode = prop_i(p, n, 1, 0);
+  const float range = powf(10.0f, 5 - threshold);
+  GHash *hue_table = BLI_ghash_int_new(__func__);
+  selected_hue_table(C->gpd, threshold, hue_table);
+  if (BLI_ghash_len(hue_table) == 0) { /* "Select before some Vertex to use as a filter color" */
+    BLI_ghash_free(hue_table, NULL, NULL);
+    return PG_OPERATOR_CANCELLED;
+  }
+  PGW_EDITABLE_STROKES_BEGIN (C->gpd, gpl, gps) {
+    (void)gpl;
+    bool gps_selected = false;
+    for (int i = 0; i < gps->totpoints; i++) {
+      bGPDspoint *pt = &gps->points[i];
+      if (pt->vert_color[3] == 0.0f) continue;
+      float hsv[3];
+      rgb_to_hsv_compat_v(pt->vert_color, hsv);
+      const unsigned int key = (unsigned int)truncf(hsv[0] * range);
+      if (BLI_ghash_haskey(hue_table, POINTER_FROM_INT(key))) { pt->flag |= GP_SPOINT_SELECT; gps_selected = true; }
+    }
+    if (gps_selected) {
+      gps->flag |= GP_STROKE_SELECT;
+      BKE_gpencil_stroke_select_index_set(C->gpd, gps);
+      if (selectmode == GP_SELECTMODE_STROKE)
+        for (int i = 0; i < gps->totpoints; i++) gps->points[i].flag |= GP_SPOINT_SELECT;
+    }
+  } PGW_EDITABLE_STROKES_END
+  BLI_ghash_free(hue_table, NULL, NULL);
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -807,6 +872,7 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_trim", RU, poll_stroke_edit, exec_trim},
     {"GPENCIL_OT_stroke_cutter", RU, poll_gpd, exec_cutter},
     {"GPENCIL_OT_select", RU, poll_gpd, exec_select_pick},
+    {"GPENCIL_OT_select_vertex_color", RU, poll_gpd, exec_select_vertex_color},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

@@ -15,6 +15,7 @@
 #include "project_grease_modifier_stack.h"
 #include "project_grease_shader_fx.h"
 #include "project_grease_wm.h"
+#include "project_grease_blender_fill.h"
 #include "BKE_gpencil_legacy.h"
 #include "DNA_material_types.h"
 
@@ -190,6 +191,22 @@ int main()
     CHECK(miny > 1.0f && maxy < 13.0f && maxy - miny > 7.0f); /* (y - 6) / 2 */
     b.set_fill_screen_map(1.0f, 0.0f, 0.0f);
     CHECK(b.delete_stroke(b.stroke_count() - 1));
+
+    /* the prescaled mask path (the phone downsamples the readback before it becomes floats) gives
+     * the same outline as resampling in the backend */
+    {
+      b.set_fill_factor(1.0f);
+      CHECK(b.fill_at_screen(rgba, W, H, 20, 20, 1, 0, {0, 2.0f}));
+      const bGPDstroke *a1 = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.last);
+      const int n1 = a1->totpoints; const float x1 = a1->points[0].x, y1 = a1->points[0].y;
+      CHECK(b.delete_stroke(b.stroke_count() - 1));
+      static float scaled[128 * 128 * 4]; /* render size: MIN_WINDOW_SIZE 128 */
+      pg_fill_resample_mask(rgba, W, H, scaled, 128, 128);
+      CHECK(b.fill_at_screen(scaled, W, H, 20, 20, 1, 0, {0, 2.0f}, 128, 128));
+      const bGPDstroke *a2 = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.last);
+      CHECK(a2->totpoints == n1 && a2->points[0].x == x1 && a2->points[0].y == y1);
+      CHECK(b.delete_stroke(b.stroke_count() - 1));
+    }
 
     /* a turned view: the mask is drawn turned, the outline is turned back (90 deg about the centre) */
     std::memset(rgba, 0, sizeof(rgba));

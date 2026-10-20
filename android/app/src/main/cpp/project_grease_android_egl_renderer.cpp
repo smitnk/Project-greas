@@ -667,17 +667,37 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
     return JNI_FALSE;
   }
 
-  std::vector<float> rgba(pixels.size());
-  for (size_t i = 0; i < pixels.size(); ++i) {
-    rgba[i] = static_cast<float>(pixels[i]) / 255.0f;
+  // Down to the fill image size on the bytes: each cell keeps its block's most opaque pixel (only
+  // alpha decides the boundary), as pg_fill_resample_mask does on floats. Converting the whole
+  // screen to floats first (50 MB at 1220x2590) made every fill tap take most of a second.
+  const int mw = project_grease_gp_fill_render_size(renderer->gp_handle, width);
+  const int mh = project_grease_gp_fill_render_size(renderer->gp_handle, height);
+  std::vector<float> rgba(static_cast<size_t>(mw) * static_cast<size_t>(mh) * 4u, 0.0f);
+  for (int y = 0; y < mh; ++y) {
+    const int y0 = static_cast<int>(static_cast<long long>(y) * height / mh);
+    const int y1 = std::max(y0 + 1, static_cast<int>(static_cast<long long>(y + 1) * height / mh));
+    for (int x = 0; x < mw; ++x) {
+      const int x0 = static_cast<int>(static_cast<long long>(x) * width / mw);
+      const int x1 = std::max(x0 + 1, static_cast<int>(static_cast<long long>(x + 1) * width / mw));
+      const GLubyte *best = &pixels[(static_cast<size_t>(y0) * width + x0) * 4];
+      for (int sy = y0; sy < y1 && sy < height; ++sy)
+        for (int sx = x0; sx < x1 && sx < width; ++sx) {
+          const GLubyte *p = &pixels[(static_cast<size_t>(sy) * width + sx) * 4];
+          if (p[3] > best[3]) best = p;
+        }
+      float *d = &rgba[(static_cast<size_t>(y) * mw + x) * 4];
+      for (int c = 0; c < 4; ++c) d[c] = static_cast<float>(best[c]) / 255.0f;
+    }
   }
 
   float map_scale = 1.0f, map_ox = 0.0f, map_oy = 0.0f, map_rot = 0.0f;
   project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy, &map_rot);
   project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy, map_rot);
-  const bool filled = project_grease_gp_fill_at_screen(
+  const bool filled = project_grease_gp_fill_at_mask(
       renderer->gp_handle,
       rgba.data(),
+      mw,
+      mh,
       width,
       height,
       seed_x,

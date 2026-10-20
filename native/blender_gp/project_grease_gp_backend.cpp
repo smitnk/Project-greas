@@ -4926,6 +4926,7 @@ void Backend::set_fill_factor(float factor)
 {
   impl_->fill_factor = pg_fill_factor_clamp(factor);
 }
+float Backend::fill_factor() const { return impl_->fill_factor; }
 
 bool Backend::fill_at_screen(const float* rgba,
                              int width,
@@ -4934,7 +4935,9 @@ bool Backend::fill_at_screen(const float* rgba,
                              int seed_y,
                              int fill_leak,
                              int dilate_pixels,
-                             const StrokeStyle& style)
+                             const StrokeStyle& style,
+                             int mask_width,
+                             int mask_height)
 {
   if (!impl_->frame || !impl_->frame_created || !rgba ||
       width < 3 || height < 3 ||
@@ -4948,15 +4951,19 @@ bool Backend::fill_at_screen(const float* rgba,
   // renders at view size, so the mask is resampled on the CPU to that size
   // (project_grease_blender_fill.c documents the adaptation).
   const float factor = impl_->fill_factor;
-  const int sx = pg_fill_render_size(width, factor);
-  const int sy = pg_fill_render_size(height, factor);
+  const bool prescaled = mask_width > 0 && mask_height > 0;
+  const int sx = prescaled ? mask_width : pg_fill_render_size(width, factor);
+  const int sy = prescaled ? mask_height : pg_fill_render_size(height, factor);
   // Blender's fill operator works on a stroke-only render mask (red = boundary, lower-left
   // origin). The resample keeps each cell's most opaque pixel, so thresholding after it equals
   // thresholding before: only the (smaller) fill-size image is copied and normalized, not the
   // whole screen (the full-screen copy + pass made each fill tap take about a second).
   legacy_gp_fill::Image image(sx, sy);
   float *mask = image.rgba().data();
-  if (sx != width || sy != height) {
+  if (prescaled) {
+    std::copy(rgba, rgba + static_cast<size_t>(sx) * static_cast<size_t>(sy) * 4u, mask);
+  }
+  else if (sx != width || sy != height) {
     pg_fill_resample_mask(rgba, width, height, mask, sx, sy);
   }
   else {

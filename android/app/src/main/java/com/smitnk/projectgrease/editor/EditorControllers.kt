@@ -2688,6 +2688,8 @@ class EditorController {
         return finished
     }
     fun copySelection():Boolean = runOperator("GPENCIL_OT_copy")
+    /** GPENCIL_OT_select_vertex_color: also select points whose vertex colour hue matches a selected point's. */
+    fun selectSameVertexColor(threshold:Int = 0) = runOperator("GPENCIL_OT_select_vertex_color", threshold.toFloat(), activeSelectMode.toFloat())
     /** Blender's material slot operators (gpencil_data.c) on the active material. */
     fun hideActiveMaterial(others:Boolean=false) = runOperator("GPENCIL_OT_material_hide", if (others) 1f else 0f)
     fun revealMaterials() = runOperator("GPENCIL_OT_material_reveal")

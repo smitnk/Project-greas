@@ -295,6 +295,7 @@ class Backend {
   void set_fill_screen_map(float scale, float origin_x, float origin_y, float rotation = 0.0f);
   // Brush fill_factor (Precision, clamped to [0.05, 8]): fill image resolution and default leak.
   void set_fill_factor(float factor);
+  float fill_factor() const;
   bool fill_at_screen(const float* rgba,
                       int width,
                       int height,
@@ -302,7 +303,12 @@ class Backend {
                       int seed_y,
                       int fill_leak,
                       int dilate_pixels,
-                      const StrokeStyle& style);
+                      const StrokeStyle& style,
+                      int mask_width = 0,
+                      int mask_height = 0);
+  // mask_width / mask_height > 0: rgba is already the fill-size image (mask_width x mask_height,
+  // each cell the most opaque pixel of its block of the width x height view), as
+  // pg_fill_resample_mask makes it; seed and outline stay in view pixels.
 
   // Blender 3.6.23 Legacy GP paint-stage settings used when committing the
   // real tGPspoint buffer into bGPDstroke data. The processing below calls

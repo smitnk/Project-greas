@@ -24,6 +24,8 @@ concurrency:
 jobs:
   android-shell:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # publishes the APK to the public "Latest build" release
     steps:
       - name: Checkout Project Grease
         uses: actions/checkout@v4
@@ -381,6 +383,23 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      # Anyone can download the newest build from the repository's Releases ("Latest build").
+      - name: Publish APK to the Latest build release
+        if: github.ref == 'refs/heads/feature/l8-implementation'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp android/app/build/outputs/apk/debug/app-debug.apk ProjectGrease.apk
+          notes="Newest Project Grease build (debug APK) from ${GITHUB_SHA::7}, built $(date -u +%Y-%m-%d). Download ProjectGrease.apk and open it on an Android phone (allow installs from this source)."
+          if gh release view latest-build >/dev/null 2>&1; then
+            gh release upload latest-build ProjectGrease.apk --clobber
+            gh release edit latest-build --notes "$notes" --target "$GITHUB_SHA"
+          else
+            gh release create latest-build ProjectGrease.apk --title "Project Grease - Latest build" --notes "$notes" --prerelease --target "$GITHUB_SHA"
+          fi
 
 
       # Device-style tests: the instrumented tests of each reported bug (colour isolation, picked

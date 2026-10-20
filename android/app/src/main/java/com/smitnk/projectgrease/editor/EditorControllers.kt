@@ -1406,6 +1406,24 @@ class EditorController {
      * moves its temporary stroke into the frame. Uses the GP handle, not the
      * EGL renderer handle.
      */
+    /** GPENCIL_OT_primitive_* (confirm): the stroke generated from the control points natively. */
+    private fun commitPrimitive(type:Int, anchors:List<Pair<Float,Float>>, edges:Int):Boolean {
+        if (anchors.size < 2) return false
+        val idname = when (type) {
+            ProjectGreasePrimitive.LINE -> "GPENCIL_OT_primitive_line"
+            ProjectGreasePrimitive.POLYLINE -> "GPENCIL_OT_primitive_polyline"
+            ProjectGreasePrimitive.BOX -> "GPENCIL_OT_primitive_box"
+            ProjectGreasePrimitive.CIRCLE -> "GPENCIL_OT_primitive_circle"
+            else -> "GPENCIL_OT_primitive_curve"
+        }
+        val props = FloatArray(4 + anchors.size * 2)
+        props[0] = type.toFloat(); props[1] = edges.toFloat()
+        props[2] = materials.activeMaterial.toFloat(); props[3] = materials.thickness
+        anchors.forEachIndexed { i, p -> props[4 + i * 2] = p.first; props[5 + i * 2] = p.second }
+        val ok = runOperator(idname, *props)
+        if (ok) { selection.selectStroke(native.strokeCount() - 1); animation.refreshFromNative() }
+        return ok
+    }
     private fun commitPrimitivePoints(xy:FloatArray, cyclic:Boolean):Boolean {
         if (native.handle == 0L || xy.size < 4) return false
         val created = GPNative.nativeCreatePolyline(
@@ -1424,8 +1442,7 @@ class EditorController {
         polyline.reset()
         polylineAwaitingPress = false
         showPrimitivePreview(null)
-        val points = blenderPrimitivePoints(ProjectGreasePrimitive.POLYLINE, vertices)
-        val ok = points != null && commitPrimitivePoints(points, false)
+        val ok = commitPrimitive(ProjectGreasePrimitive.POLYLINE, vertices, 0)
         if (!ok) render()
         return ok
     }
@@ -3273,10 +3290,10 @@ class EditorController {
     fun confirmShape():Boolean {
         if (!shapeEdit.isActive) return false
         val type = shapeEdit.effectiveType()
-        val points = blenderPrimitivePointsEdges(type, shapeEdit.anchors(), shapeEdit.edges)
+        val anchors = shapeEdit.anchors(); val edges = shapeEdit.edges
         shapeEdit.reset(); showPrimitivePreview(null); onOverlayChanged?.invoke()
-        val ok = points != null && commitPrimitivePoints(points, ProjectGreasePrimitive.isCyclic(type))
-        com.smitnk.projectgrease.CrashLog.event("SHAPE confirm type $type -> ${points?.size ?: 0} points, ok=$ok")
+        val ok = commitPrimitive(type, anchors, edges)
+        com.smitnk.projectgrease.CrashLog.event("SHAPE confirm type $type, ${anchors.size} control points -> ok=$ok")
         if (!ok) render()
         return ok
     }

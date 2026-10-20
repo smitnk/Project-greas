@@ -518,6 +518,23 @@ int main()
     CHECK(BLI_listbase_count(&static_cast<bGPDlayer *>(C.gpd->layers.first)->frames) == 5);
   }
 
+  /* batch 16: primitives (confirm step) */
+  {
+    CHECK(b.reset_document());
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    float box[8] = {0 /* PG_PRIMITIVE_BOX */, 0, 0, 4, 10, 10, 50, 40};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_primitive_box", box, 8, nullptr) == PG_OPERATOR_FINISHED);
+    const bGPDstroke *g = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.last);
+    CHECK(g && (g->flag & GP_STROKE_CYCLIC) && (g->flag & GP_STROKE_SELECT) && g->totpoints >= 4 && g->thickness == 4);
+    float line[8] = {1 /* LINE */, 0, 0, 3, 0, 0, 100, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_primitive_line", line, 8, nullptr) == PG_OPERATOR_FINISHED);
+    g = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.last);
+    CHECK(g && !(g->flag & GP_STROKE_CYCLIC) && g->points[0].x == 0.0f && g->points[g->totpoints - 1].x == 100.0f);
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_primitive_line", box, 8, nullptr) == PG_OPERATOR_CANCELLED); /* wrong type */
+    float one[6] = {1, 0, 0, 3, 5, 5};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_primitive_line", one, 6, nullptr) == PG_OPERATOR_CANCELLED); /* one point */
+  }
+
   /* batch 11: click select, subdivide, cutter */
   {
     CHECK(b.reset_document());

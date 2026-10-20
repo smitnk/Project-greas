@@ -24,6 +24,7 @@
 #include "project_grease_blender_edit10.h"
 #include "BLI_math.h"
 #include "BLI_ghash.h"
+#include "project_grease_blender_primitive.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_scene_types.h"
 #include <stdlib.h>
@@ -876,6 +877,63 @@ static int exec_layer_mask_move(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- primitives (gpencil_primitive.c) -------------------------------------------------- */
+/* GPENCIL_OT_primitive_line / polyline / box / circle / curve, their confirm step: the stroke is
+ * generated from the control points (gpencil_primitive_update_strokes: line, box, circle, arc,
+ * bezier with `edges` subdivisions), added to the active layer's frame at cfra
+ * (BKE_gpencil_layer_frame_get ADD_NEW), closed for box / circle, and left selected alone.
+ * Props: type (PG_PRIMITIVE_*; arc and curve share primitive_curve), edges, material slot
+ * (0-based), thickness, then the control points x y.
+ * shortcut: brush material / thickness come as props (Blender reads the active brush); pressure and
+ * strength are 1 as the primitive's default curve gives them. */
+static int primitive_exec(PGOpContext *C, const float *p, int n, int t0, int t1)
+{
+  const int type = prop_i(p, n, 0, t0);
+  if (type != t0 && type != t1) return PG_OPERATOR_CANCELLED;
+  int edges = prop_i(p, n, 1, 0);
+  if (edges < 1) edges = project_grease_blender_primitive_default_edges(type);
+  const int mat = prop_i(p, n, 2, 0);
+  const float thickness = prop_f(p, n, 3, 10.0f);
+  const int anchors = (n - 4) / 2;
+  bGPDlayer *gpl = BKE_gpencil_layer_active_get(C->gpd);
+  if (anchors < 2 || edges < 1 || mat < 0 || thickness <= 0.0f || gpl == NULL || !BKE_gpencil_layer_is_editable(gpl))
+    return PG_OPERATOR_CANCELLED;
+  const int count = project_grease_blender_primitive_point_count(type, anchors, edges);
+  if (count < 2) return PG_OPERATOR_CANCELLED;
+  float *xy = MEM_mallocN(sizeof(float[2]) * (size_t)count, __func__);
+  if (project_grease_blender_primitive_generate(type, p + 4, anchors, edges, 0, xy, count) != count) {
+    MEM_freeN(xy);
+    return PG_OPERATOR_CANCELLED;
+  }
+  bGPDframe *gpf = BKE_gpencil_layer_frame_get(gpl, C->cfra, GP_GETFRAME_ADD_NEW);
+  if (gpf == NULL) {
+    MEM_freeN(xy);
+    return PG_OPERATOR_CANCELLED;
+  }
+  gpl->actframe = gpf;
+  pg_gp_select_all(C->gpd, 3 /* deselect */, NULL);
+  const short th = (short)fminf(fmaxf(thickness, 1.0f), 32767.0f);
+  bGPDstroke *gps = BKE_gpencil_stroke_add(gpf, mat, count, th, false);
+  for (int i = 0; i < count; i++) {
+    bGPDspoint *pt = &gps->points[i];
+    pt->x = xy[i * 2]; pt->y = xy[i * 2 + 1]; pt->z = 0.0f;
+    pt->pressure = 1.0f; pt->strength = 1.0f;
+    pt->flag |= GP_SPOINT_SELECT;
+  }
+  MEM_freeN(xy);
+  if (project_grease_blender_primitive_is_cyclic(type)) gps->flag |= GP_STROKE_CYCLIC;
+  gps->flag |= GP_STROKE_SELECT;
+  BKE_gpencil_stroke_select_index_set(C->gpd, gps);
+  BKE_gpencil_stroke_geometry_update(C->gpd, gps);
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+static int exec_prim_line(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_LINE, PG_PRIMITIVE_LINE); }
+static int exec_prim_polyline(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_POLYLINE, PG_PRIMITIVE_POLYLINE); }
+static int exec_prim_box(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_BOX, PG_PRIMITIVE_BOX); }
+static int exec_prim_circle(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_CIRCLE, PG_PRIMITIVE_CIRCLE); }
+static int exec_prim_curve(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_CURVE, PG_PRIMITIVE_ARC); }
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -926,6 +984,11 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_layer_mask_add", RU, poll_active_layer, exec_layer_mask_add},
     {"GPENCIL_OT_layer_mask_remove", RU, poll_active_layer, exec_layer_mask_remove},
     {"GPENCIL_OT_layer_mask_move", RU, poll_active_layer, exec_layer_mask_move},
+    {"GPENCIL_OT_primitive_line", RU, poll_active_layer, exec_prim_line},
+    {"GPENCIL_OT_primitive_polyline", RU, poll_active_layer, exec_prim_polyline},
+    {"GPENCIL_OT_primitive_box", RU, poll_active_layer, exec_prim_box},
+    {"GPENCIL_OT_primitive_circle", RU, poll_active_layer, exec_prim_circle},
+    {"GPENCIL_OT_primitive_curve", RU, poll_active_layer, exec_prim_curve},
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

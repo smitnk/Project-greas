@@ -1177,6 +1177,31 @@ int project_grease_gp_fill_at_mask(ProjectGreaseGPHandle *handle, const float *r
                                         {material_index, thickness}, mask_w, mask_h) ? 1 : 0;
 }
 
+struct PGFillJob {
+  std::vector<project_grease::gp::StrokePoint> points;
+};
+PGFillJob *project_grease_gp_fill_outline(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w, int mask_h,
+                                          int width, int height, int seed_x, int seed_y, int fill_leak,
+                                          int dilate_pixels)
+{
+  if (!handle) return nullptr;
+  auto *job = new PGFillJob();
+  if (!handle->backend.fill_outline(rgba, width, height, seed_x, seed_y, fill_leak, dilate_pixels, mask_w, mask_h,
+                                    job->points)) {
+    delete job;
+    return nullptr;
+  }
+  return job;
+}
+int project_grease_gp_fill_commit(ProjectGreaseGPHandle *handle, PGFillJob *job, int material_index, float thickness)
+{
+  if (!job) return 0;
+  const bool ok = ensure_operator(handle) && handle->backend.fill_commit(job->points, {material_index, thickness});
+  delete job;
+  return ok ? 1 : 0;
+}
+void project_grease_gp_fill_job_free(PGFillJob *job) { delete job; }
+
 int project_grease_gp_fill_render_size(const ProjectGreaseGPHandle *handle, int view_size)
 {
   return handle ? pg_fill_render_size(view_size, handle->backend.fill_factor()) : view_size;

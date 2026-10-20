@@ -51,6 +51,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Toggle caps", "Round or flat stroke ends") { controller.toggleSelectionCaps() },
                 Op("Set start point", "The selected point becomes the start of the closed stroke") { controller.setSelectionStartPoint() },
                 Op("Join", "Connect the selected strokes into one") { controller.joinSelection() },
+                Op("Join and copy", "A new stroke joining the selected ones; the originals stay") { controller.joinCopySelection() },
                 Op("Split", "Cut the selected points out as their own stroke") { controller.splitSelection() },
                 Op("Extrude ends", "Add a point at the selected end, ready to drag") { controller.extrudeSelection() },
                 Op("Outline", "Turn the stroke into the closed outline of its thick shape") { controller.outlineSelection() },

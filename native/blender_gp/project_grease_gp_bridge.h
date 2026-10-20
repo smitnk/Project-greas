@@ -197,6 +197,16 @@ int project_grease_gp_fill_at_screen(ProjectGreaseGPHandle *handle,
 int project_grease_gp_fill_at_mask(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w, int mask_h,
                                    int width, int height, int seed_x, int seed_y, int fill_leak,
                                    int dilate_pixels, int material_index, float thickness);
+/* Fill in two steps for a background thread: the outline from a fill-size mask (no document
+ * change; returns an opaque job, NULL when there is no closed area) and its commit as a stroke on the
+ * document thread. project_grease_gp_fill_job_free releases a job that is not committed. */
+struct PGFillJob;
+struct PGFillJob *project_grease_gp_fill_outline(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w,
+                                                 int mask_h, int width, int height, int seed_x, int seed_y,
+                                                 int fill_leak, int dilate_pixels);
+int project_grease_gp_fill_commit(ProjectGreaseGPHandle *handle, struct PGFillJob *job, int material_index,
+                                  float thickness);
+void project_grease_gp_fill_job_free(struct PGFillJob *job);
 /* Fill image size for a view dimension at the current fill factor. */
 int project_grease_gp_fill_render_size(const ProjectGreaseGPHandle *handle, int view_size);
 /* Save/load state (stroke style, layer state, palette); structs live in project_grease_document_state.h. */

@@ -94,11 +94,6 @@ static int exec_dissolve(PGOpContext *C, const float *props, int n)
   return FINISHED_IF(pg_gp_dissolve(C->gpd, NULL, type));
 }
 /* GPENCIL_OT_stroke_join: props type (JOIN 0; JOINCOPY 1 is not ported), leave_gaps */
-static int exec_join(PGOpContext *C, const float *props, int n)
-{
-  if (prop_i(props, n, 0, 0) != 0) return PG_OPERATOR_CANCELLED; /* shortcut: JOINCOPY not ported; port it when the UI offers it */
-  return FINISHED_IF(pg_gp_join(C->gpd, NULL, prop_i(props, n, 1, 0)));
-}
 /* GPENCIL_OT_move_to_layer: prop layer (target index) */
 static int exec_move_to_layer(PGOpContext *C, const float *props, int n)
 {
@@ -359,7 +354,6 @@ static const PGOperatorType pg_operators[] = {
     {"GPENCIL_OT_delete", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_delete},
     {"GPENCIL_OT_duplicate", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_duplicate},
     {"GPENCIL_OT_dissolve", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_dissolve},
-    {"GPENCIL_OT_stroke_join", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_join},
     {"GPENCIL_OT_move_to_layer", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_move_to_layer},
     {"GPENCIL_OT_select_all", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_select, exec_select_all},
     {"GPENCIL_OT_stroke_arrange", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_stroke_edit, exec_arrange},

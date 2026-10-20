@@ -2044,15 +2044,38 @@ class EditorController {
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
         GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, (fillPrecision / uiScale.coerceAtLeast(1f)).coerceAtLeast(0.05f), fillCollide) // Blender resolution at UI scale 1: the precision is per UI pixel
         // the new slot (if one was made) is part of this fill's undo step
+        if (fillRunning) return false // one fill at a time; taps while it runs are dropped
+        // Blender's fill boundary search runs on a worker: only the mask capture (GL) and the stroke
+        // commit hold the screen, so a tap no longer freezes it for half a second.
         val t0 = System.nanoTime()
-        val ok = GPNative.nativeFillAtEglRenderer(rendererHandle, x.toInt(), y.toInt(), slot, materials.thickness)
-        noteIfSlow("fill ok=$ok", t0, t0)
-        com.smitnk.projectgrease.CrashLog.event("FILL at %.0f,%.0f slot $slot -> ok=$ok in ${(System.nanoTime() - t0) / 1_000_000} ms".format(x, y))
-        lastFillEndMs = android.os.SystemClock.uptimeMillis()
-        if (!ok) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
-        if (ok) { history.markEdit(); document.markDirty() }
-        return ok
+        val handle = rendererHandle
+        if (!GPNative.nativeFillCaptureEglRenderer(handle, x.toInt(), y.toInt())) {
+            com.smitnk.projectgrease.CrashLog.event("FILL at %.0f,%.0f: capture failed".format(x, y))
+            return false
+        }
+        val captureMs = (System.nanoTime() - t0) / 1_000_000
+        fillRunning = true
+        val thickness = materials.thickness
+        fillWorker.execute {
+            val t1 = System.nanoTime()
+            val found = GPNative.nativeFillComputeEglRenderer(handle)
+            val computeMs = (System.nanoTime() - t1) / 1_000_000
+            mainHandler.post {
+                fillRunning = false
+                val ok = found && handle == rendererHandle && GPNative.nativeFillCommitEglRenderer(handle, slot, thickness)
+                noteIfSlow("fill ok=$ok", t0, t0)
+                com.smitnk.projectgrease.CrashLog.event("FILL at %.0f,%.0f slot $slot -> ok=$ok in ${(System.nanoTime() - t0) / 1_000_000} ms (capture $captureMs ms, outline $computeMs ms in the background)".format(x, y))
+                lastFillEndMs = android.os.SystemClock.uptimeMillis()
+                if (!ok) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
+                if (ok) { history.markEdit(); document.markDirty() }
+                render()
+            }
+        }
+        return true
     }
+    private var fillRunning = false
+    private val fillWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     fun applySelectedModifier(name:String,factor:Float=0.5f,iterations:Int=2):Boolean {
         val index=selection.selectedStroke
@@ -2853,6 +2876,8 @@ class EditorController {
         render(); onOverlayChanged?.invoke()
     }
     fun joinSelection(leaveGaps:Boolean=false) = runOperator("GPENCIL_OT_stroke_join", 0f, if (leaveGaps) 1f else 0f)
+    /** GPENCIL_OT_stroke_join (Join and Copy): the joined stroke is new; the originals stay. */
+    fun joinCopySelection(leaveGaps:Boolean=false) = runOperator("GPENCIL_OT_stroke_join", 1f, if (leaveGaps) 1f else 0f)
     // ---- Vertex Paint mode: one undo step per drag (dabs do not snapshot history) ----
     var vertexPaintBrush = ProjectGreaseSelect.VPAINT_DRAW
         private set

@@ -13,6 +13,8 @@
 #include <chrono>
 #include <cstdint>
 #include <vector>
+#include <mutex>
+#include <memory>
 
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_bridge.h"
@@ -50,6 +52,13 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" int project_grease_android_present_pending_stroke(
     const project_grease::gp::StrokePoint *points, int count, float thickness);
 
+// Fill, step 1 (GL thread): the stroke mask rendered and read back, downsampled to the fill size.
+struct FillCapture {
+  std::vector<float> rgba;
+  int mw = 0, mh = 0, width = 0, height = 0, seed_x = 0, seed_y = 0;
+};
+struct PGFillJob;
+
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
   EGLContext context = EGL_NO_CONTEXT;
@@ -70,6 +79,8 @@ struct Renderer {
   int fill_dilate = 1;
   int fill_draw_mode = 0;
   float fill_extend = 0.0f; // brush fill_extend_fac
+  std::unique_ptr<FillCapture> fill_capture; // background fill: captured mask
+  struct PGFillJob *fill_job = nullptr;             // background fill: computed outline
 
 };
 
@@ -623,48 +634,35 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearPreviewStrokeEglR
 }
 
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
-    JNIEnv *,
-    jobject,
-    jlong handle,
-    jint seed_x,
-    jint seed_y,
-    jint material_index,
-    jfloat thickness)
+// Fill, step 1 (GL thread): the stroke mask rendered and read back, downsampled to the fill size.
+static bool fill_capture(Renderer *renderer, int seed_x, int seed_y, FillCapture &out)
 {
-  Renderer *renderer = from_handle(handle);
   if (!renderer || !renderer->gp_connected ||
       renderer->display == EGL_NO_DISPLAY ||
       renderer->surface == EGL_NO_SURFACE ||
       renderer->context == EGL_NO_CONTEXT) {
-    return JNI_FALSE;
+    return false;
   }
-
-  if (eglMakeCurrent(renderer->display,
-                     renderer->surface,
-                     renderer->surface,
-                     renderer->context) != EGL_TRUE) {
-    return JNI_FALSE;
+  if (eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    return false;
   }
-
   project_grease_android_present_set_fill_draw_mode(renderer->fill_draw_mode);
   project_grease_android_present_set_fill_extend(renderer->fill_extend);
   project_grease_android_present_set_fill_collide(renderer->fill_collide);
   project_grease_gp_set_fill_factor(renderer->gp_handle, renderer->fill_factor);
   if (!project_grease_gp_render_fill_mask(renderer->gp_handle)) {
-    return JNI_FALSE;
+    return false;
   }
 
   const int width = renderer->width;
   const int height = renderer->height;
-  if (width < 3 || height < 3) return JNI_FALSE;
+  if (width < 3 || height < 3) return false;
 
   std::vector<GLubyte> pixels(
       static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
   glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
   if (glGetError() != GL_NO_ERROR) {
-    return JNI_FALSE;
+    return false;
   }
 
   // Down to the fill image size on the bytes: each cell keeps its block's most opaque pixel (only
@@ -693,22 +691,76 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
   float map_scale = 1.0f, map_ox = 0.0f, map_oy = 0.0f, map_rot = 0.0f;
   project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy, &map_rot);
   project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy, map_rot);
-  const bool filled = project_grease_gp_fill_at_mask(
-      renderer->gp_handle,
-      rgba.data(),
-      mw,
-      mh,
-      width,
-      height,
-      seed_x,
-      seed_y,
-      renderer->fill_leak,
-      renderer->fill_dilate,
-      material_index,
-      thickness) != 0;
+  out.rgba = std::move(rgba);
+  out.mw = mw; out.mh = mh; out.width = width; out.height = height; out.seed_x = seed_x; out.seed_y = seed_y;
+  project_grease_gp_render_external_context(renderer->gp_handle);
+  return true;
+}
 
-  const bool restored = project_grease_gp_render_external_context(renderer->gp_handle) != 0;
-  return (filled && restored) ? JNI_TRUE : JNI_FALSE;
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint seed_x, jint seed_y, jint material_index, jfloat thickness)
+{
+  Renderer *renderer = from_handle(handle);
+  FillCapture cap;
+  if (!fill_capture(renderer, seed_x, seed_y, cap)) return JNI_FALSE;
+  PGFillJob *job = project_grease_gp_fill_outline(renderer->gp_handle, cap.rgba.data(), cap.mw, cap.mh, cap.width,
+                                                  cap.height, cap.seed_x, cap.seed_y, renderer->fill_leak,
+                                                  renderer->fill_dilate);
+  return project_grease_gp_fill_commit(renderer->gp_handle, job, material_index, thickness) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Fill in the background (the tap no longer blocks the screen):
+ * nativeFillCapture (GL thread) -> nativeFillCompute (any thread; the document must not change
+ * meanwhile) -> nativeFillCommit (GL thread). A capture replaces a pending one. */
+static std::mutex g_fill_mutex;
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillCaptureEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint seed_x, jint seed_y)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  auto cap = std::make_unique<FillCapture>();
+  if (!fill_capture(renderer, seed_x, seed_y, *cap)) return JNI_FALSE;
+  std::lock_guard<std::mutex> lock(g_fill_mutex);
+  project_grease_gp_fill_job_free(renderer->fill_job);
+  renderer->fill_job = nullptr;
+  renderer->fill_capture = std::move(cap);
+  return JNI_TRUE;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillComputeEglRenderer(JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  std::unique_ptr<FillCapture> cap;
+  int leak = 0, dilate = 0;
+  {
+    std::lock_guard<std::mutex> lock(g_fill_mutex);
+    cap = std::move(renderer->fill_capture);
+    leak = renderer->fill_leak; dilate = renderer->fill_dilate;
+  }
+  if (!cap) return JNI_FALSE;
+  PGFillJob *job = project_grease_gp_fill_outline(renderer->gp_handle, cap->rgba.data(), cap->mw, cap->mh, cap->width,
+                                                  cap->height, cap->seed_x, cap->seed_y, leak, dilate);
+  std::lock_guard<std::mutex> lock(g_fill_mutex);
+  project_grease_gp_fill_job_free(renderer->fill_job);
+  renderer->fill_job = job;
+  return job ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillCommitEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint material_index, jfloat thickness)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer || !renderer->gp_connected) return JNI_FALSE;
+  PGFillJob *job;
+  {
+    std::lock_guard<std::mutex> lock(g_fill_mutex);
+    job = renderer->fill_job;
+    renderer->fill_job = nullptr;
+  }
+  return project_grease_gp_fill_commit(renderer->gp_handle, job, material_index, thickness) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

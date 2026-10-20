@@ -87,6 +87,17 @@ static bool gpencil_check_collision(bGPDstroke *gps,
     }
     /* get stroke 2d version */
     float(*points2d)[2] = BLI_ghash_lookup(all_2d, gps_iter);
+    /* Project Grease: the stroke's 2D bounds (stored after its points) reject strokes the segment
+     * cannot touch, the same result as testing every segment. With ~1000 points and a long lasso
+     * the cutter tested every segment of every stroke for each point inside the lasso: seconds. */
+    {
+      const float *bmin = points2d[gps_iter->totpoints], *bmax = points2d[gps_iter->totpoints + 1];
+      if (max_ff(p2d_a1[0], p2d_a2[0]) < bmin[0] || min_ff(p2d_a1[0], p2d_a2[0]) > bmax[0] ||
+          max_ff(p2d_a1[1], p2d_a2[1]) < bmin[1] || min_ff(p2d_a1[1], p2d_a2[1]) > bmax[1])
+      {
+        continue;
+      }
+    }
 
     for (int i2 = 0; i2 < gps_iter->totpoints - 1; i2++) {
       float p2d_b1[2], p2d_b2[2];
@@ -312,7 +323,8 @@ int ED_gpencil_select_stroke_segment(bGPdata *gpd,
 
   for (int s = 0; s < totstrokes; s++) {
     bGPDstroke *gps_iter = gps_array[s];
-    float(*points2d_iter)[2] = MEM_mallocN(sizeof(*points2d_iter) * gps_iter->totpoints, __func__);
+    /* + 2: the 2D bounds after the points (see gpencil_check_collision) */
+    float(*points2d_iter)[2] = MEM_mallocN(sizeof(*points2d_iter) * (gps_iter->totpoints + 2), __func__);
 
     /* the extremes of the stroke are scaled to improve collision detection
      * for near lines */
@@ -323,6 +335,10 @@ int ED_gpencil_select_stroke_segment(bGPdata *gpd,
                                    points2d_iter,
                                    scale,
                                    &direction);
+    INIT_MINMAX2(points2d_iter[gps_iter->totpoints], points2d_iter[gps_iter->totpoints + 1]);
+    for (int k = 0; k < gps_iter->totpoints; k++) {
+      minmax_v2v2_v2(points2d_iter[gps_iter->totpoints], points2d_iter[gps_iter->totpoints + 1], points2d_iter[k]);
+    }
     BLI_ghash_insert(all_2d, gps_iter, points2d_iter);
   }
 

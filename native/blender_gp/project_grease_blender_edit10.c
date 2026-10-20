@@ -133,6 +133,11 @@ int pg_gp_cutter(bGPdata *gpd, const int (*mcoords)[2], int mcoords_len, int fla
       }
       int tot_inside = 0;
       const int oldtot = gps->totpoints;
+      /* Project Grease: once the segment search found no crossing on this stroke it finds none from
+       * any other point of it (it walks the whole stroke both ways) and only leaves that point
+       * selected, so the rest are selected directly with the same result; repeating the search for
+       * every point inside a long lasso froze the app for seconds on ~1000-point drawings. */
+      bool no_crossing = false;
       for (int i = 0; i < gps->totpoints; i++) {
         pt = &gps->points[i];
         if ((pt->flag & GP_SPOINT_SELECT) || (pt->flag & GP_SPOINT_TAG)) {
@@ -140,6 +145,11 @@ int pg_gp_cutter(bGPdata *gpd, const int (*mcoords)[2], int mcoords_len, int fla
         }
         const bool is_inside = BLI_lasso_is_point_inside(
             mcoords, (unsigned int)mcoords_len, (int)lroundf(pt->x), (int)lroundf(pt->y), INT_MAX);
+        if (is_inside && no_crossing) {
+          tot_inside++;
+          pt->flag |= GP_SPOINT_SELECT; /* what the search leaves when it finds no crossing */
+          continue;
+        }
         if (is_inside) {
           tot_inside++;
           changed = true;
@@ -148,7 +158,9 @@ int pg_gp_cutter(bGPdata *gpd, const int (*mcoords)[2], int mcoords_len, int fla
           BKE_gpencil_stroke_select_index_set(gpd, gps);
           float r_hita[3], r_hitb[3];
           if (gps->totpoints > 1) {
-            ED_gpencil_select_stroke_segment(gpd, gpl, gps, pt, true, true, scale, r_hita, r_hitb);
+            if (ED_gpencil_select_stroke_segment(gpd, gpl, gps, pt, true, true, scale, r_hita, r_hitb) == 0) {
+              no_crossing = true;
+            }
           }
           /* avoid infinite loops */
           if (gps->totpoints > oldtot) {

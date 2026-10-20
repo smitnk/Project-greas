@@ -3,6 +3,7 @@
  * __ANDROID__ against the real pinned Blender legacy GP code; the GPU/draw layer is stubbed because
  * nothing here renders). See tools/run_native_modifier_stack_tests.sh. */
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -516,6 +517,50 @@ int main()
     add_line(b, 10.0f, 100.0f);
     CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_interpolate_sequence", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
     CHECK(BLI_listbase_count(&static_cast<bGPDlayer *>(C.gpd->layers.first)->frames) == 5);
+  }
+
+  /* Reported freeze: the cutter on a drawing of ~1000 points with a long lasso took seconds. */
+  {
+    CHECK(b.reset_document());
+    bGPDframe *f = b.active_layer_data()->actframe;
+    for (int s = 0; s < 10; s++) {
+      bGPDstroke *g = BKE_gpencil_stroke_add(f, 0, 100, 4, false);
+      for (int i = 0; i < 100; i++) {
+        g->points[i].x = 5.0f * i;
+        g->points[i].y = 40.0f * s + 10.0f * std::sin(0.3f * i);
+        g->points[i].pressure = g->points[i].strength = 1.0f;
+      }
+    }
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    std::vector<float> path(1 + 600 * 2, 0.0f);
+    for (int i = 0; i < 600; i++) {
+      const float a = 6.2831853f * i / 600.0f;
+      path[1 + i * 2] = 250.0f + 240.0f * std::cos(a);
+      path[2 + i * 2] = 200.0f + 180.0f * std::sin(a);
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_cutter", path.data(), (int)path.size(), nullptr) == PG_OPERATOR_FINISHED);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    printf("cutter on 1000 points, 600-point lasso: %.1f ms\n", ms);
+    CHECK(ms < 60.0); /* ~4 ms on the host after the fix, ~300 before */
+  }
+
+  /* stroke join (both types) */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    add_line(b, 100.0f, 0.0f);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    LISTBASE_FOREACH (bGPDstroke *, g, &b.active_layer_data()->actframe->strokes) g->flag |= GP_STROKE_SELECT;
+    float copy[2] = {1, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_join", copy, 2, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(b.stroke_count() == 3); /* the originals stay */
+    const bGPDstroke *j = static_cast<const bGPDstroke *>(b.active_layer_data()->actframe->strokes.first);
+    CHECK(j->totpoints == 10);
+    LISTBASE_FOREACH (bGPDstroke *, g, &b.active_layer_data()->actframe->strokes) g->flag |= GP_STROKE_SELECT;
+    float join[2] = {0, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_join", join, 2, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(b.stroke_count() == 1);
   }
 
   /* batch 16: primitives (confirm step) */

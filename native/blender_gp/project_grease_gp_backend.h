@@ -306,6 +306,12 @@ class Backend {
                       const StrokeStyle& style,
                       int mask_width = 0,
                       int mask_height = 0);
+  // The two halves of fill_at_screen: the outline (pure computation on the mask, safe on a worker
+  // thread while the document is not edited) and the stroke made from it (document thread).
+  bool fill_outline(const float* rgba, int width, int height, int seed_x, int seed_y, int fill_leak,
+                    int dilate_pixels, int mask_width, int mask_height,
+                    std::vector<StrokePoint>& points) const;
+  bool fill_commit(const std::vector<StrokePoint>& points, const StrokeStyle& style);
   // mask_width / mask_height > 0: rgba is already the fill-size image (mask_width x mask_height,
   // each cell the most opaque pixel of its block of the width x height view), as
   // pg_fill_resample_mask makes it; seed and outline stay in view pixels.

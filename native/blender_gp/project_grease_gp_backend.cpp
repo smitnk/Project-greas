@@ -4928,16 +4928,16 @@ void Backend::set_fill_factor(float factor)
 }
 float Backend::fill_factor() const { return impl_->fill_factor; }
 
-bool Backend::fill_at_screen(const float* rgba,
-                             int width,
-                             int height,
-                             int seed_x,
-                             int seed_y,
-                             int fill_leak,
-                             int dilate_pixels,
-                             const StrokeStyle& style,
-                             int mask_width,
-                             int mask_height)
+bool Backend::fill_outline(const float* rgba,
+                           int width,
+                           int height,
+                           int seed_x,
+                           int seed_y,
+                           int fill_leak,
+                           int dilate_pixels,
+                           int mask_width,
+                           int mask_height,
+                           std::vector<StrokePoint>& points) const
 {
   if (!impl_->frame || !impl_->frame_created || !rgba ||
       width < 3 || height < 3 ||
@@ -4996,7 +4996,7 @@ bool Backend::fill_at_screen(const float* rgba,
   const float map_scale = impl_->fill_map_scale > 1e-6f ? impl_->fill_map_scale : 1.0f;
   const float kx = static_cast<float>(width) / static_cast<float>(sx);
   const float ky = static_cast<float>(height) / static_cast<float>(sy);
-  std::vector<StrokePoint> points;
+  points.clear();
   points.reserve(static_cast<size_t>(total));
   // the mask was drawn turned by the view rotation about the view centre: turn the outline back
   const float rc = std::cos(impl_->fill_map_rotation), rs = std::sin(impl_->fill_map_rotation);
@@ -5014,7 +5014,15 @@ bool Backend::fill_at_screen(const float* rgba,
                       0.0f});
   }
   std::free(xy);
+  return true;
+}
 
+bool Backend::fill_commit(const std::vector<StrokePoint>& points, const StrokeStyle& style)
+{
+  if (!impl_->frame || !impl_->frame_created) {
+    impl_->last_error = "frame is not created";
+    return false;
+  }
   if (!create_polyline(points.data(),
                        static_cast<int>(points.size()),
                        style,
@@ -5036,6 +5044,23 @@ bool Backend::fill_at_screen(const float* rgba,
 
   impl_->last_error.clear();
   return true;
+}
+
+bool Backend::fill_at_screen(const float* rgba,
+                             int width,
+                             int height,
+                             int seed_x,
+                             int seed_y,
+                             int fill_leak,
+                             int dilate_pixels,
+                             const StrokeStyle& style,
+                             int mask_width,
+                             int mask_height)
+{
+  std::vector<StrokePoint> points;
+  return fill_outline(rgba, width, height, seed_x, seed_y, fill_leak, dilate_pixels, mask_width, mask_height,
+                      points) &&
+         fill_commit(points, style);
 }
 
 const char *Backend::last_error() const { return impl_->last_error.c_str(); }

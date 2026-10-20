@@ -3,6 +3,7 @@
  * 3.6.23) on the operator layer (project_grease_wm.h). Stroke bodies are the ported functions
  * the app already used; material bodies follow gpencil_data.c with bGPdata::mat[] for the
  * object's slots and PGOpContext::actcol for ob->actcol. */
+#include <float.h>
 #include <math.h>
 #include <string.h>
 
@@ -934,6 +935,122 @@ static int exec_prim_box(PGOpContext *C, const float *p, int n) { return primiti
 static int exec_prim_circle(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_CIRCLE, PG_PRIMITIVE_CIRCLE); }
 static int exec_prim_curve(PGOpContext *C, const float *p, int n) { return primitive_exec(C, p, n, PG_PRIMITIVE_CURVE, PG_PRIMITIVE_ARC); }
 
+/* ---- GPENCIL_OT_stroke_join (gpencil_edit.c, both types) --------------------------------- */
+/* BEGIN VERBATIM gpencil_edit.c: tJoinStrokes / gpencil_get_nearest_stroke_index */
+typedef struct tJoinStrokes {
+  bGPDframe *gpf;
+  bGPDstroke *gps;
+  bool used;
+} tJoinStrokes;
+
+static int gpencil_get_nearest_stroke_index(tJoinStrokes *strokes_list,
+                                            const bGPDstroke *gps,
+                                            const int totstrokes)
+{
+  int index = -1;
+  float min_dist = FLT_MAX;
+  float dist, start_a[3], end_a[3], start_b[3], end_b[3];
+
+  bGPDspoint *pt = &gps->points[0];
+  copy_v3_v3(start_a, &pt->x);
+
+  pt = &gps->points[gps->totpoints - 1];
+  copy_v3_v3(end_a, &pt->x);
+
+  for (int i = 0; i < totstrokes; i++) {
+    tJoinStrokes *elem = &strokes_list[i];
+    if (elem->used) {
+      continue;
+    }
+    pt = &elem->gps->points[0];
+    copy_v3_v3(start_b, &pt->x);
+
+    pt = &elem->gps->points[elem->gps->totpoints - 1];
+    copy_v3_v3(end_b, &pt->x);
+
+    dist = len_squared_v3v3(start_a, start_b);
+    if (dist < min_dist) {
+      min_dist = dist;
+      index = i;
+    }
+    dist = len_squared_v3v3(start_a, end_b);
+    if (dist < min_dist) {
+      min_dist = dist;
+      index = i;
+    }
+    dist = len_squared_v3v3(end_a, start_b);
+    if (dist < min_dist) {
+      min_dist = dist;
+      index = i;
+    }
+    dist = len_squared_v3v3(end_a, end_b);
+    if (dist < min_dist) {
+      min_dist = dist;
+      index = i;
+    }
+  }
+
+  return index;
+}
+/* END VERBATIM */
+
+/* gpencil_stroke_join_exec(): type JOIN 0 / JOINCOPY 1, leave_gaps (false). The selected strokes of
+ * the active frames (up to 128) are chained nearest-end first into a new stroke placed before the
+ * first one; JOIN deletes the originals, JOINCOPY keeps them. */
+static int exec_stroke_join(PGOpContext *C, const float *p, int n)
+{
+  const int max_join_strokes = 128;
+  const int type = prop_i(p, n, 0, 0);
+  const bool leave_gaps = prop_i(p, n, 1, 0) != 0;
+  bGPDlayer *activegpl = BKE_gpencil_layer_active_get(C->gpd);
+  if (type != 0 && type != 1) return PG_OPERATOR_CANCELLED;
+  if (activegpl == NULL || (activegpl->flag & GP_LAYER_LOCKED)) return PG_OPERATOR_CANCELLED;
+  int tot_strokes = 0;
+  tJoinStrokes *strokes_list = MEM_malloc_arrayN(max_join_strokes, sizeof(tJoinStrokes), __func__);
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
+    bGPDframe *gpf = gpl->actframe;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+      if (!(gps->flag & GP_STROKE_SELECT) || gps->totpoints < 1) continue;
+      const MaterialGPencilStyle *st = slot_style(C->gpd, gps->mat_nr + 1);
+      if (st && ((st->flag & GP_MATERIAL_HIDE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+        continue;
+      strokes_list[tot_strokes].gpf = gpf;
+      strokes_list[tot_strokes].gps = gps;
+      strokes_list[tot_strokes].used = false;
+      if (++tot_strokes == max_join_strokes) break; /* "Too many strokes selected, only joined first %d strokes" */
+    }
+    if (tot_strokes == max_join_strokes) break;
+  }
+  if (tot_strokes < 2) {
+    MEM_SAFE_FREE(strokes_list);
+    return PG_OPERATOR_CANCELLED;
+  }
+  tJoinStrokes *elem = &strokes_list[0];
+  elem->used = true;
+  bGPDstroke *gps_new = BKE_gpencil_stroke_duplicate(elem->gps, true, true);
+  gps_new->flag &= ~GP_STROKE_CYCLIC;
+  BLI_insertlinkbefore(&elem->gpf->strokes, elem->gps, gps_new);
+  while (true) {
+    const int i = gpencil_get_nearest_stroke_index(strokes_list, gps_new, tot_strokes);
+    if (i < 0) break;
+    elem = &strokes_list[i];
+    BKE_gpencil_stroke_join(gps_new, elem->gps, leave_gaps, true, false, true);
+    elem->used = true;
+  }
+  BKE_gpencil_stroke_geometry_update(C->gpd, gps_new);
+  if (type == 0) {
+    for (int i = 0; i < tot_strokes; i++) {
+      elem = &strokes_list[i];
+      BLI_remlink(&elem->gpf->strokes, elem->gps);
+      BKE_gpencil_free_stroke(elem->gps);
+    }
+  }
+  MEM_SAFE_FREE(strokes_list);
+  BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -984,6 +1101,7 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_layer_mask_add", RU, poll_active_layer, exec_layer_mask_add},
     {"GPENCIL_OT_layer_mask_remove", RU, poll_active_layer, exec_layer_mask_remove},
     {"GPENCIL_OT_layer_mask_move", RU, poll_active_layer, exec_layer_mask_move},
+    {"GPENCIL_OT_stroke_join", RU, poll_active_layer, exec_stroke_join},
     {"GPENCIL_OT_primitive_line", RU, poll_active_layer, exec_prim_line},
     {"GPENCIL_OT_primitive_polyline", RU, poll_active_layer, exec_prim_polyline},
     {"GPENCIL_OT_primitive_box", RU, poll_active_layer, exec_prim_box},

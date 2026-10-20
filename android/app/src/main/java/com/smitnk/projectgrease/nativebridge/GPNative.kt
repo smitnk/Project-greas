@@ -29,6 +29,10 @@ object GPNative {
     external fun nativeEndStrokeEglRenderer(handle: Long): Boolean
     external fun nativeCancelStrokeEglRenderer(handle: Long): Boolean
     external fun nativeFillAtEglRenderer(handle: Long, seedX: Int, seedY: Int, materialIndex: Int, thickness: Float): Boolean
+    /** Background fill: capture (GL thread) -> compute (worker) -> commit (GL thread). */
+    external fun nativeFillCaptureEglRenderer(handle: Long, seedX: Int, seedY: Int): Boolean
+    external fun nativeFillComputeEglRenderer(handle: Long): Boolean
+    external fun nativeFillCommitEglRenderer(handle: Long, materialIndex: Int, thickness: Float): Boolean
     external fun nativeSetPreviewStrokeEglRenderer(handle: Long, points: FloatArray, thickness: Float): Boolean
     external fun nativeClearPreviewStrokeEglRenderer(handle: Long): Boolean
     external fun nativeSetStrokeColorEglRenderer(handle: Long, r: Float, g: Float, b: Float, a: Float): Boolean

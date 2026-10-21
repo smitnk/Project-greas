@@ -136,7 +136,11 @@ enum { /* BUILD (MOD_gpencil_legacy_build.c): mode 0 sequential / 1 concurrent, 
   PG_P_BUILD_COUNT = 13 };
 enum { /* TIME (MOD_gpencil_legacy_time.c): the layer shows frame pg_time_offset_frame() */
   PG_P_TIME_MODE = 0, PG_P_TIME_OFFSET = 1, PG_P_TIME_SCALE = 2, PG_P_TIME_USE_RANGE = 3,
-  PG_P_TIME_SFRA = 4, PG_P_TIME_EFRA = 5, PG_P_TIME_LOOP = 6, PG_P_TIME_COUNT = 7 };
+  PG_P_TIME_SFRA = 4, PG_P_TIME_EFRA = 5, PG_P_TIME_LOOP = 6,
+  /* Chain mode (GP_TIME_MODE_CHAIN 4): segments_len (1..PG_TIME_MAX_SEGMENTS), then per segment
+   * seg_start, seg_end, seg_mode (GP_TIME_SEG_MODE_*), seg_repeat */
+  PG_P_TIME_SEGMENTS = 7, PG_P_TIME_SEG = 8, PG_P_TIME_COUNT = 24 };
+#define PG_TIME_MAX_SEGMENTS 4
 enum { /* ENVELOPE (MOD_gpencil_legacy_envelope.c): mode 0 deform / 1 segments / 2 fills */
   PG_P_ENVELOPE_MODE = 0, PG_P_ENVELOPE_SPREAD = 1, PG_P_ENVELOPE_SKIP = 2,
   PG_P_ENVELOPE_THICKNESS = 3, PG_P_ENVELOPE_STRENGTH = 4, PG_P_ENVELOPE_MAT = 5,
@@ -147,7 +151,11 @@ enum { /* WEIGHT_ANGLE (MOD_gpencil_legacy_weight_angle.c): target group, refere
 enum { /* DASH (MOD_gpencil_legacy_dash.c, one DashGpencilModifierSegment: dash / gap points, radius,
         * opacity, material (-1 same), cyclic; dash_offset) */
   PG_P_DASH_DASH = 0, PG_P_DASH_GAP = 1, PG_P_DASH_OFFSET = 2, PG_P_DASH_RADIUS = 3, PG_P_DASH_OPACITY = 4,
-  PG_P_DASH_MAT = 5, PG_P_DASH_CYCLIC = 6, PG_P_DASH_COUNT = 7 };
+  PG_P_DASH_MAT = 5, PG_P_DASH_CYCLIC = 6,
+  /* segments_len (1..PG_DASH_MAX_SEGMENTS); segments 2.. at PG_P_DASH_SEG2, 6 floats each:
+   * dash, gap, radius, opacity, mat_nr, cyclic (the first segment is the fields above) */
+  PG_P_DASH_SEGMENTS = 7, PG_P_DASH_SEG2 = 8, PG_P_DASH_COUNT = 26 };
+#define PG_DASH_MAX_SEGMENTS 4
 enum { /* OUTLINE (thickness px, cap segments) */
   PG_P_OUTLINE_THICKNESS = 0, PG_P_OUTLINE_SUBDIV = 1, PG_P_OUTLINE_COUNT = 2 };
 enum { /* MIRROR (MOD_gpencil_legacy_mirror.c: axes; the canvas pivot is the mirror object, (0,0) none) */
@@ -196,6 +204,9 @@ typedef struct PGModContext {
 /* Scene fps for the stack (Build's drawing speed); set when the project fps changes. */
 void pg_mod_set_scene_fps(int fps);
 extern int pg_mod_scene_fps;
+/* Scene frame range (scene->r.sfra / efra): Time Offset without a custom range uses it. */
+void pg_mod_set_scene_range(int sfra, int efra);
+extern int pg_mod_scene_sfra, pg_mod_scene_efra;
 
 /* Type information */
 int pg_mod_valid_type(int type);

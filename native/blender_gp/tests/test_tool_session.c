@@ -160,6 +160,32 @@ static void test_thickness_strength_formulas(PGToolSession *ts)
   free_doc(&d);
 }
 
+/* Multiframe sculpt with the frame falloff curve (CURVE_PRESET_GAUSS): the active frame gets the
+ * full effect, selected frames further away less (BKE_gpencil_multiframe_falloff_calc). */
+static void test_multiframe_falloff(PGToolSession *ts)
+{
+  for (int use = 0; use < 2; use++) {
+    Doc d = doc();
+    bGPDframe *frames[3] = {d.gpf, BKE_gpencil_frame_addnew(d.gpl, 3), BKE_gpencil_frame_addnew(d.gpl, 5)};
+    bGPDstroke *s[3];
+    for (int k = 0; k < 3; k++) {
+      d.gpf = frames[k];
+      frames[k]->flag |= GP_FRAME_SELECT;
+      s[k] = stroke(&d, 5, 0, 100, 10, 0);
+    }
+    d.gpl->actframe = frames[0];
+    d.gpd->flag |= GP_DATA_STROKE_SCULPTMODE | GP_DATA_STROKE_MULTIEDIT;
+    const float xy[1][2] = {{20, 100}};
+    brush(GPSCULPT_TOOL_THICKNESS, 50, 1.0f);
+    params[PG_TOOL_P_FRAME_FALLOFF] = (float)use;
+    gesture(ts, d.gpd, PG_TOOL_SCULPT, params, xy, 1);
+    const float g0 = s[0]->points[2].pressure - 1.0f, g1 = s[1]->points[2].pressure - 1.0f, g2 = s[2]->points[2].pressure - 1.0f;
+    if (use) CHECK(g0 > g1 && g1 > g2 && g2 > 0.0f && g2 < 0.1f * g0, "falloff: %g %g %g", g0, g1, g2);
+    else CHECK(g0 > 0.0f && fabsf(g0 - g1) < 1e-6f && fabsf(g0 - g2) < 1e-6f, "no falloff: %g %g %g", g0, g1, g2);
+    free_doc(&d);
+  }
+}
+
 static void test_grab(PGToolSession *ts)
 {
   /* Grab starts on point 0 (radius 25), drags right by 30 over the rest of the stroke: only the
@@ -587,6 +613,7 @@ int main(void)
   test_smooth(ts);
   test_brush_follows_finger(ts);
   test_thickness_strength_formulas(ts);
+  test_multiframe_falloff(ts);
   test_grab(ts);
   test_other_sculpt(ts);
   test_clone(ts);

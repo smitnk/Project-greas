@@ -40,6 +40,8 @@
 /* Scene frames per second for the modifiers that need it (Build's drawing speed). */
 int pg_mod_scene_fps = 24;
 void pg_mod_set_scene_fps(int fps) { pg_mod_scene_fps = fps > 0 && fps <= 1000 ? fps : 24; }
+int pg_mod_scene_sfra = 1, pg_mod_scene_efra = 250;
+void pg_mod_set_scene_range(int sfra, int efra) { pg_mod_scene_sfra = sfra; pg_mod_scene_efra = efra; }
 
 /* ---------------------------------------------------------------------------------------- */
 /* Type information                                                                          */

@@ -802,20 +802,28 @@ int pg_mod_gen_run(const PGModContext *ctx, const PGModEntry *e)
       break;
     }
     case PG_MOD_DASH: {
-      DashGpencilModifierSegment seg;
-      memset(&seg, 0, sizeof(seg));
-      seg.dash = (int)p[PG_P_DASH_DASH];
-      seg.gap = (int)p[PG_P_DASH_GAP];
-      seg.radius = p[PG_P_DASH_RADIUS];
-      seg.opacity = p[PG_P_DASH_OPACITY];
-      seg.mat_nr = (int)p[PG_P_DASH_MAT];
-      seg.flag = p[PG_P_DASH_CYCLIC] != 0.0f ? GP_DASH_USE_CYCLIC : 0;
+      DashGpencilModifierSegment segs[PG_DASH_MAX_SEGMENTS];
+      memset(segs, 0, sizeof(segs));
       DashGpencilModifierData dmd;
       memset(&dmd, 0, sizeof(dmd));
+      int nseg = (int)p[PG_P_DASH_SEGMENTS];
+      if (nseg < 1) nseg = 1;
+      if (nseg > PG_DASH_MAX_SEGMENTS) nseg = PG_DASH_MAX_SEGMENTS;
+      for (int i = 0; i < nseg; i++) {
+        /* segment 1 is the original fields; 2.. at PG_P_DASH_SEG2 in the same order */
+        const float *q = i == 0 ? NULL : p + PG_P_DASH_SEG2 + 6 * (i - 1);
+        DashGpencilModifierSegment *seg = &segs[i];
+        seg->dash = (int)(q ? q[0] : p[PG_P_DASH_DASH]);
+        seg->gap = (int)(q ? q[1] : p[PG_P_DASH_GAP]);
+        seg->radius = q ? q[2] : p[PG_P_DASH_RADIUS];
+        seg->opacity = q ? q[3] : p[PG_P_DASH_OPACITY];
+        seg->mat_nr = (int)(q ? q[4] : p[PG_P_DASH_MAT]);
+        seg->flag = (q ? q[5] : p[PG_P_DASH_CYCLIC]) != 0.0f ? GP_DASH_USE_CYCLIC : 0;
+        seg->dmd = &dmd;
+      }
       dmd.dash_offset = (int)p[PG_P_DASH_OFFSET];
-      dmd.segments = &seg;
-      dmd.segments_len = 1;
-      seg.dmd = &dmd;
+      dmd.segments = segs;
+      dmd.segments_len = nseg;
       apply_dash_for_frame(&ob, &layer, &view, ctx->gpf, &dmd);
       break;
     }

@@ -194,6 +194,7 @@ object GPNative {
     external fun nativeAutokeyHeld(handle: Long, cfra: Int): Int
     /** Scene fps for the modifier stack (Build's drawing speed). */
     external fun nativeSetSceneFps(fps: Int)
+    external fun nativeSetSceneRange(sfra: Int, efra: Int)
     external fun nativeCurveEditSet(handle: Long, on: Boolean): Boolean
     external fun nativeCurveEditOn(handle: Long): Boolean
     external fun nativeCurvePoints(handle: Long): FloatArray?

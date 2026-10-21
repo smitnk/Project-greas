@@ -48,6 +48,7 @@ enum {
   PG_TOOL_P_ACTIVE_MATERIAL, /* 0-based active material slot (Active Material auto-masking) */
   PG_TOOL_P_UI_SCALE,        /* screen density (Blender UI pixels -> device pixels), 1 = desktop */
   PG_TOOL_P_AFFECT,          /* sculpt: GP_SCULPT_FLAGMODE_APPLY_* bits (0 = the preset's: position) */
+  PG_TOOL_P_FRAME_FALLOFF,   /* sculpt: GP_SCULPT_SETT_FLAG_FRAME_FALLOFF (multiframe falloff curve) */
   PG_TOOL_P_COUNT
 };
 

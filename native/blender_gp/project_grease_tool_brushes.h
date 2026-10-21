@@ -33,6 +33,7 @@ typedef struct PGToolBrushParams {
   int active_material;/* 0-based */
   float ui_scale;     /* screen density; vertex paint influence uses the size in UI pixels */
   int affect;         /* sculpt: GP_SCULPT_FLAGMODE_APPLY_* (0 = the preset's) */
+  int frame_falloff;  /* sculpt: GP_SCULPT_SETT_FLAG_FRAME_FALLOFF, multiframe only */
 } PGToolBrushParams;
 
 typedef struct PGSculptSession PGSculptSession;

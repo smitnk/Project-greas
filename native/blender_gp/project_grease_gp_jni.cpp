@@ -1057,6 +1057,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetSceneFps(JNIEnv *, 
   pg_mod_set_scene_fps(fps);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetSceneRange(JNIEnv *, jobject, jint sfra, jint efra)
+{
+  pg_mod_set_scene_range(sfra, efra);
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAutokeyHeld(JNIEnv *, jobject, jlong handle, jint cfra)
 {

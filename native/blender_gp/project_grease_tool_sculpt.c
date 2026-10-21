@@ -34,6 +34,7 @@
 #include "DNA_screen_types.h"
 #include "DNA_view3d_types.h"
 
+#include "BKE_colortools.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
 
@@ -42,6 +43,8 @@
 #include "project_grease_tool_view.h"
 
 /* Operator context (gpencil_sculpt_paint.c tGP_BrushEditData, members used by the ports). */
+static CurveMapping *pgt_frame_falloff_curve(void);
+
 typedef struct tGP_BrushEditData {
   Scene *scene;
   Object *object;
@@ -54,6 +57,7 @@ typedef struct tGP_BrushEditData {
   bool is_transformed;
   bool first;
   bool is_multiframe;
+  bool use_multiframe_falloff;
   float mval[2], mval_prev[2];
   float pressure, pressure_prev;
   float dvec[3];
@@ -1314,12 +1318,34 @@ static bool pgt_sculpt_apply_standard(tGP_BrushEditData *gso)
       continue;
     }
     if (gso->is_multiframe) {
+      /* BEGIN VERBATIM gpencil_sculpt_paint.c gpencil_sculpt_brush_apply_standard() (ts->gp_sculpt.cur_falloff:
+       * pgt_frame_falloff_curve()) */
+      /* init multiframe falloff options */
+      int f_init = 0;
+      int f_end = 0;
+
+      if (gso->use_multiframe_falloff) {
+        BKE_gpencil_frame_range_selected(gpl, &f_init, &f_end);
+      }
+
       LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+        /* Always do active frame; Otherwise, only include selected frames */
         if ((gpf == gpl->actframe) || (gpf->flag & GP_FRAME_SELECT)) {
-          gso->mf_falloff = 1.0f; /* no multiframe falloff curve */
+          /* compute multiframe falloff factor */
+          if (gso->use_multiframe_falloff) {
+            /* Falloff depends on distance to active frame
+             * (relative to the overall frame range). */
+            gso->mf_falloff = BKE_gpencil_multiframe_falloff_calc(
+                gpf, gpl->actframe->framenum, f_init, f_end, pgt_frame_falloff_curve());
+          }
+          else {
+            /* No falloff */
+            gso->mf_falloff = 1.0f;
+          }
           changed |= pgt_sculpt_do_frame(gso, gpl, gpf);
         }
       }
+      /* END VERBATIM */
     }
     else {
       gso->mf_falloff = 1.0f;
@@ -1352,6 +1378,19 @@ static void pgt_sculpt_preset(Brush *brush, int tool)
   brush->gpencil_settings->sculpt_mode_flag = GP_SCULPT_FLAGMODE_APPLY_POSITION;
   brush->curve_preset = BRUSH_CURVE_SMOOTH;
   brush->alpha = 1.0f;
+}
+
+/* ts->gp_sculpt.cur_falloff as scene.cc makes it: a 0..1 curve reset to CURVE_PRESET_GAUSS. */
+static CurveMapping *pgt_frame_falloff_curve(void)
+{
+  static CurveMapping *cur_falloff = NULL;
+  if (cur_falloff == NULL) {
+    cur_falloff = BKE_curvemapping_add(1, 0.0f, 0.0f, 1.0f, 1.0f);
+    BKE_curvemapping_init(cur_falloff);
+    BKE_curvemap_reset(cur_falloff->cm, &cur_falloff->clipr, CURVE_PRESET_GAUSS, CURVEMAP_SLOPE_POSITIVE);
+    BKE_curvemapping_init(cur_falloff);
+  }
+  return cur_falloff;
 }
 
 PGSculptSession *pg_sculpt_session_begin(bGPdata *gpd, const PGToolBrushParams *params)
@@ -1399,6 +1438,7 @@ PGSculptSession *pg_sculpt_session_begin(bGPdata *gpd, const PGToolBrushParams *
   gso->first = true;
   gso->mval_prev[0] = -1.0f;
   gso->is_multiframe = GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+  gso->use_multiframe_falloff = params->frame_falloff != 0;
   gso->is_transformed = false;
   gso->mf_falloff = 1.0f;
   gso->stroke_customdata = BLI_ghash_ptr_new("GP Sculpt Brush - Stroke-Specific Data");

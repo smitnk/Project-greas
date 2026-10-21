@@ -158,7 +158,10 @@ object ProjectDocumentCodec {
 
     /** Writes the whole document. Moves the native layer/frame selection; the caller restores it. */
     fun encode(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0,
-               timeline: TimelineState = TimelineState()): String {
+               timeline: TimelineState = TimelineState()): String = encodeTree(native, width, height, fps, frame, frameEnd, timeline).toString()
+
+    fun encodeTree(native: DocumentNative, width: Int, height: Int, fps: Int, frame: Int, frameEnd: Int = 0,
+               timeline: TimelineState = TimelineState()): JSONObject {
         val root = JSONObject()
         root.put("version", VERSION)
         root.put("width", width)
@@ -224,7 +227,7 @@ object ProjectDocumentCodec {
             layers.put(layerJson)
         }
         root.put("layers", layers)
-        return root.toString()
+        return root
     }
 
     fun parse(raw: String): ParsedDocument? {

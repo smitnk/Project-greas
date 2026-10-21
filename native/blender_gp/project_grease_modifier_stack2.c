@@ -65,6 +65,10 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_TIME_SFRA] = 1.0f;
       p[PG_P_TIME_EFRA] = 250.0f;
       p[PG_P_TIME_LOOP] = 1.0f;
+      p[PG_P_TIME_SEGMENTS] = 1.0f; /* segments_len 1 */
+      for (int i = 0; i < PG_TIME_MAX_SEGMENTS; i++) { /* TimeGpencilModifierSegment: 1..2 normal x1 */
+        p[PG_P_TIME_SEG + 4 * i] = 1.0f; p[PG_P_TIME_SEG + 4 * i + 1] = 2.0f; p[PG_P_TIME_SEG + 4 * i + 3] = 1.0f;
+      }
       break;
     case PG_MOD_ENVELOPE: /* spread 10, mode segments, mat_nr -1, thickness 1, strength 1, skip 0 */
       p[PG_P_ENVELOPE_MODE] = GP_ENVELOPE_SEGMENTS;
@@ -81,6 +85,11 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_DASH_RADIUS] = 1.0f;
       p[PG_P_DASH_OPACITY] = 1.0f;
       p[PG_P_DASH_MAT] = -1.0f;
+      p[PG_P_DASH_SEGMENTS] = 1.0f;
+      for (int i = 0; i < PG_DASH_MAX_SEGMENTS - 1; i++) { /* the DashGpencilModifierSegment defaults */
+        float *q = p + PG_P_DASH_SEG2 + 6 * i;
+        q[0] = 2.0f; q[1] = 1.0f; q[2] = 1.0f; q[3] = 1.0f; q[4] = -1.0f;
+      }
       break;
     case PG_MOD_OUTLINE: /* thickness 1, subdiv 3 */
       p[PG_P_OUTLINE_THICKNESS] = 1.0f;
@@ -126,6 +135,14 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
     case PG_MOD_TIME:
       p[PG_P_TIME_USE_RANGE] = m2_flag(p[PG_P_TIME_USE_RANGE]);
       p[PG_P_TIME_LOOP] = m2_flag(p[PG_P_TIME_LOOP]);
+      p[PG_P_TIME_MODE] = m2_int(p[PG_P_TIME_MODE], 0, 4);
+      p[PG_P_TIME_SEGMENTS] = m2_int(p[PG_P_TIME_SEGMENTS] < 1 ? 1 : p[PG_P_TIME_SEGMENTS], 1, PG_TIME_MAX_SEGMENTS);
+      for (int i = 0; i < PG_TIME_MAX_SEGMENTS; i++) {
+        float *q = p + PG_P_TIME_SEG + 4 * i;
+        q[2] = m2_int(q[2], 0, 2);
+        if (q[3] < 1) q[3] = 1; /* stacks saved before segments: repeat 0 -> 1 */
+        if (q[0] == 0 && q[1] == 0) { q[0] = 1; q[1] = 2; }
+      }
       break;
     case PG_MOD_ENVELOPE:
       break;
@@ -136,6 +153,12 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       break;
     case PG_MOD_DASH:
       p[PG_P_DASH_CYCLIC] = m2_flag(p[PG_P_DASH_CYCLIC]);
+      p[PG_P_DASH_SEGMENTS] = m2_int(p[PG_P_DASH_SEGMENTS] < 1 ? 1 : p[PG_P_DASH_SEGMENTS], 1, PG_DASH_MAX_SEGMENTS);
+      for (int i = 0; i < PG_DASH_MAX_SEGMENTS - 1; i++) {
+        float *q = p + PG_P_DASH_SEG2 + 6 * i;
+        if (q[0] < 1) { q[0] = 2; q[1] = 1; q[2] = 1; q[3] = 1; q[4] = -1; } /* older stacks: zeros */
+        q[5] = m2_flag(q[5]);
+      }
       break;
     case PG_MOD_OUTLINE:
       p[PG_P_OUTLINE_THICKNESS] = m2_int(p[PG_P_OUTLINE_THICKNESS], 1, 1000);
@@ -261,9 +284,7 @@ int pg_mod_time_frame(const PGModEntry *entries, int count, int cfra)
     const PGModEntry *e = &entries[i];
     if (!e->enabled || e->type != PG_MOD_TIME) continue;
     const float *p = e->params;
-    f = pg_time_offset_frame((int)p[PG_P_TIME_MODE], f, (int)p[PG_P_TIME_OFFSET], p[PG_P_TIME_SCALE],
-                             p[PG_P_TIME_USE_RANGE] != 0.0f, (int)p[PG_P_TIME_SFRA], (int)p[PG_P_TIME_EFRA],
-                             p[PG_P_TIME_LOOP] != 0.0f);
+    f = pg_time_remap(p, pg_mod_scene_sfra, pg_mod_scene_efra, f);
   }
   return f;
 }

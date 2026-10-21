@@ -47,7 +47,9 @@ object ToolSession {
     const val P_UI_SCALE = 15
     /** sculpt Affect: GP_SCULPT_FLAGMODE_APPLY_* (1 position, 2 strength, 4 thickness, 8 UV); 0 = preset */
     const val P_AFFECT = 16
-    const val P_COUNT = 17
+    /** sculpt multiframe: GP_SCULPT_SETT_FLAG_FRAME_FALLOFF (Gaussian falloff away from the active frame) */
+    const val P_FRAME_FALLOFF = 17
+    const val P_COUNT = 18
     const val AFFECT_POSITION = 1
     const val AFFECT_STRENGTH = 2
     const val AFFECT_THICKNESS = 4
@@ -112,9 +114,9 @@ object ToolSession {
         brush: Int, radius: Float, strength: Float, pxPerUnit: Float, invert: Boolean = false,
         r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0,
         automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0, uiScale: Float = 1f,
-        affect: Int = 0
+        affect: Int = 0, frameFalloff: Boolean = false
     ): FloatArray = FloatArray(P_COUNT).also {
-        it[P_AFFECT] = affect.toFloat()
+        it[P_AFFECT] = affect.toFloat(); it[P_FRAME_FALLOFF] = if (frameFalloff) 1f else 0f
         it[P_AUTOMASK] = automask.toFloat(); it[P_SELECT_MASK] = selectMask.toFloat()
         it[P_CURVE_PRESET] = curvePreset.toFloat(); it[P_ACTIVE_MATERIAL] = activeMaterial.toFloat()
         it[P_BRUSH] = brush.toFloat(); it[P_RADIUS] = radius; it[P_STRENGTH] = strength

@@ -233,6 +233,10 @@ fun SculptOptions(controller: EditorController, redraw: () -> Unit) {
             Text("Invert sculpt brush (thinner, weaker, twist back)", Modifier.weight(1f))
             Switch(controller.sculpt.invert, { controller.sculpt.setInvert(it); tick++; redraw() })
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Multiframe falloff (selected frames far from this one change less)", Modifier.weight(1f))
+            Switch(controller.sculpt.frameFalloff, { controller.sculpt.frameFalloff = it; tick++; redraw() }, Modifier.testTag("sculptFrameFalloff"))
+        }
         SculptMaskingSection(controller, redraw)
     }
 }

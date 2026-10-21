@@ -165,6 +165,12 @@ int main(void)
   cmp("Time.frame_start", p[PG_P_TIME_SFRA], tm->sfra);
   cmp("Time.frame_end", p[PG_P_TIME_EFRA], tm->efra);
   cmp("Time.use_keep_loop", p[PG_P_TIME_LOOP], FLAG(tm->flag, GP_TIME_KEEP_LOOP));
+  cmp("Time.segments_len", p[PG_P_TIME_SEGMENTS], tm->segments_len);
+  const TimeGpencilModifierSegment *ts = DNA_struct_default_get(TimeGpencilModifierSegment);
+  cmp("TimeSegment.seg_start", p[PG_P_TIME_SEG + 0], ts->seg_start);
+  cmp("TimeSegment.seg_end", p[PG_P_TIME_SEG + 1], ts->seg_end);
+  cmp("TimeSegment.seg_mode", p[PG_P_TIME_SEG + 2], ts->seg_mode);
+  cmp("TimeSegment.seg_repeat", p[PG_P_TIME_SEG + 3], ts->seg_repeat);
 
   const EnvelopeGpencilModifierData *en = DNA_struct_default_get(EnvelopeGpencilModifierData);
   mod(PG_MOD_ENVELOPE, p);
@@ -193,6 +199,9 @@ int main(void)
   cmp("DashSegment.opacity", p[PG_P_DASH_OPACITY], ds->opacity);
   cmp("DashSegment.mat_nr", p[PG_P_DASH_MAT], ds->mat_nr);
   cmp("DashSegment.use_cyclic", p[PG_P_DASH_CYCLIC], FLAG(ds->flag, GP_DASH_USE_CYCLIC));
+  cmp("Dash.segments_len", p[PG_P_DASH_SEGMENTS], dd->segments_len);
+  cmp("DashSegment[2].dash", p[PG_P_DASH_SEG2 + 0], ds->dash);
+  cmp("DashSegment[2].mat_nr", p[PG_P_DASH_SEG2 + 4], ds->mat_nr);
   skip("Dash multiple segments", "PG has one segment");
 
   const OutlineGpencilModifierData *ou = DNA_struct_default_get(OutlineGpencilModifierData);

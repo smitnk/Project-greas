@@ -658,6 +658,8 @@ class SculptController {
     fun select(value: SculptBrush) { brush = value }
 
     fun setInvert(value: Boolean) { invert = value }
+    /** Multiframe falloff (Blender's Use Falloff): selected frames far from the current one change less. */
+    var frameFalloff = false
     /** The brush's Affect toggles (sculpt_mode_flag): Position, Strength, Thickness, UV (Blender's
      *  presets: position only). 0 means the preset's. */
     var affect = ToolSession.AFFECT_POSITION
@@ -872,6 +874,7 @@ class EditorController {
     fun selectTool(tool:GreaseTool):Boolean {
         com.smitnk.projectgrease.CrashLog.event("TOOL $tool (was ${tools.activeTool}, mode $mode)")
         if (tool != GreaseTool.LASSO) photoLasso = null // a waiting photo loop goes with the lasso
+        if (bezierEditing) endBezierEdit() // the curve overlay would otherwise keep eating touches
         // Leaving the polyline tool confirms the polyline, like Blender's confirm keys.
         if (tool != tools.activeTool && polyline.isActive) finishPolyline()
         // Likewise for the curve once its handles are shown; a curve still being dragged is dropped.
@@ -920,7 +923,7 @@ class EditorController {
                 ToolSession.sculptTool(sculpt.brush), minOf(sculptBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f),
                 sculptBrush.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
                 selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial,
-                affect = sculpt.affect)
+                affect = sculpt.affect, frameFalloff = sculpt.frameFalloff)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
                 ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), minOf(vertexBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
@@ -1268,6 +1271,8 @@ class EditorController {
         if (native.selectedPointCount() <= 0) { onMessage?.invoke("Curve edit: draw something on this frame first"); return false }
         val ok = runOperator("GPENCIL_OT_stroke_enter_editcurve_mode", bezierThreshold) // a stroke_ operator: auto-keys
         bezierEditing = ok && GPNative.nativeCurveEditOn(native.handle)
+        // Start with no curve point selected: the lasso selection carried over made a drag move the whole stroke.
+        if (bezierEditing) GPNative.nativeCurveSelect(native.handle, -1, 0, 0, 0, false)
         onUiChanged?.invoke(); return bezierEditing
     }
     fun endBezierEdit() {
@@ -1287,6 +1292,7 @@ class EditorController {
             }
             i += 13
         }
+        com.smitnk.projectgrease.CrashLog.event("CURVE pick at ${x.toInt()},${y.toInt()} r ${radius.toInt()}: ${p.size / 13} points -> ${if (best < 0) "none" else "point ${p[best + 2].toInt()} part $part"}")
         if (best < 0) { if (!extend) GPNative.nativeCurveSelect(native.handle, -1, 0, 0, 0, false); render(); return false }
         GPNative.nativeCurveSelect(native.handle, p[best].toInt(), p[best + 1].toInt(), p[best + 2].toInt(), part, extend)
         render(); return true
@@ -1303,9 +1309,14 @@ class EditorController {
     }
     fun bezierDrag(dx:Float, dy:Float):Boolean = native.handle != 0L && GPNative.nativeCurveTranslate(native.handle, dx, dy) > 0
     fun bezierDragBegin() { history.beginBatch() }
-    fun bezierDragEnd() { history.markEdit(); history.endBatch(); document.markDirty(); render() }
+    fun bezierDragEnd() { com.smitnk.projectgrease.CrashLog.event("CURVE drag end"); history.markEdit(); history.endBatch(); document.markDirty(); render() }
     /** GPENCIL_OT_stroke_editcurve_set_handle_type: 0 Free, 1 Automatic, 2 Vector, 3 Aligned. */
-    fun setBezierHandleType(type:Int) = runOperator("GPENCIL_OT_stroke_editcurve_set_handle_type", type.toFloat())
+    fun setBezierHandleType(type:Int):Boolean {
+        val p = bezierPoints(); var any = false; var i = 0
+        while (i + 12 < p.size) { if (p[i + 9].toInt() != 0) { any = true; break }; i += 13 }
+        if (!any) { onMessage?.invoke("Tap a curve point first, then pick its handle type"); return false }
+        return runOperator("GPENCIL_OT_stroke_editcurve_set_handle_type", type.toFloat())
+    }
 
     /** End of a transform-box drag: one undo step. */
     fun endReferenceTransform() { rotoscopeChanged(imageChanged = false); history.markEdit() }
@@ -1987,7 +1998,8 @@ class EditorController {
     fun outlineSelection(thickness:Int = 2) = runOperator("GPENCIL_OT_stroke_outline", thickness.toFloat(), 8f)
 
     // ---- Project settings (ProjectSettings.java), saved in the project file under "settings" ----
-    var projectSettings = ProjectSettings(); private set
+    var projectSettings = ProjectSettings()
+        private set(v) { field = v; runCatching { GPNative.nativeSetSceneRange(v.frameStart, v.frameEnd) } } // Time Offset's scene range
     /** Applies validated settings: canvas size, fps and the timeline end; null or an error message. */
     fun applyProjectSettings(settings:ProjectSettings):String? {
         settings.validate()?.let { return it }
@@ -2087,8 +2099,18 @@ class EditorController {
         val keys = native.frameNumbers().sorted().toIntArray()
         val plan = FrameSequenceExport.plan(keys, s.frameStart.coerceAtLeast(1), s.frameEnd.coerceAtLeast(s.frameStart.coerceAtLeast(1)), document.projectName.ifBlank { "frame" }.replace(Regex("[^A-Za-z0-9_-]"), "_"), "png")
         val original = animation.currentFrame
-        var ok = true
         GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
+        return withoutOnion { renderPlan(plan, original, transparent, sink) }
+    }
+    /** Onion skin is a viewport overlay (Blender never renders it): off while exporting, then restored. */
+    private fun <T> withoutOnion(block: () -> T): T {
+        if (!onion.enabled) return block()
+        native.setOnionSkin(false, onion.beforeFrames, onion.afterFrames, onion.opacity)
+        try { return block() } finally { native.setOnionSkin(true, onion.beforeFrames, onion.afterFrames, onion.opacity) }
+    }
+    private fun renderPlan(plan: List<FrameSequenceExport.Item>, original: Int, transparent: Boolean, sink:(FrameSequenceExport.Item, IntArray) -> Unit): Boolean {
+        val s = projectSettings
+        var ok = true
         val step = s.frameStep.coerceIn(1, 100)
         var held: IntArray? = null
         for ((index, item) in plan.withIndex()) {
@@ -2153,13 +2175,16 @@ class EditorController {
         return pages
     }
 
-    fun saveDocumentJson():String? {
+    fun saveDocumentJson():String? = saveDocumentTree()?.toString()
+
+    /** The document as a JSON tree; turning it into text is slow for big projects, so autosave does that off the UI thread. */
+    fun saveDocumentTree():org.json.JSONObject? {
         if (native.handle == 0L) return null
         // Restore the layer edits go to (the native active layer), not a possibly stale index.
         val originalLayer = native.activeLayer().takeIf { it >= 0 } ?: selectedLayer
         selectedLayer = originalLayer
         val originalFrame = animation.currentFrame
-        val json = ProjectDocumentCodec.encode(
+        val obj = ProjectDocumentCodec.encodeTree(
             NativeDocumentAdapter(native),
             document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd,
             animation.timeline
@@ -2170,16 +2195,15 @@ class EditorController {
         }
         render()
         // Project settings, material textures and annotations have their own keys (older files have none).
-        return runCatching {
-            val obj = org.json.JSONObject(json)
+        runCatching {
             obj.put("settings", org.json.JSONObject(projectSettings.toJson()))
             if (materialTextures.isNotEmpty()) obj.put("textures", texturesJson())
             references.firstOrNull { !it.isEmpty }?.let { obj.put("rotoscope", it.toJson()) } // older readers
             references.filter { !it.isEmpty }.takeIf { it.isNotEmpty() }?.let { l -> obj.put("references", org.json.JSONArray(l.map { it.toJson() })) }
             if (audioStrips.isNotEmpty()) obj.put("audio", AudioStrip.listToJson(audioStrips))
             AnnotationData.toJson(annotationDump(), annotationStyle())?.let { obj.put("annotations", it) }
-            obj.toString()
-        }.getOrDefault(json)
+        }
+        return obj
     }
 
     fun loadDocumentJson(raw:String):Boolean {
@@ -2501,7 +2525,7 @@ class EditorController {
         val s = projectSettings
         if (rendererHandle == 0L) return null
         GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
-        return renderCanvasPixels(transparent || s.transparentBackground)
+        return withoutOnion { renderCanvasPixels(transparent || s.transparentBackground) }
     }
 
     fun setMaterialFillEnabled(enabled:Boolean):Boolean {
@@ -3073,6 +3097,14 @@ class EditorController {
         return finished
     }
     fun copySelection():Boolean = runOperator("GPENCIL_OT_copy")
+    /** Toolbar Copy: the selection, or the whole frame when nothing is selected (selection left as it was). */
+    fun quickCopy():Boolean {
+        if (native.selectedPointCount() > 0) return copySelection()
+        selectAll()
+        val ok = native.selectedPointCount() > 0 && copySelection()
+        deselectAll(); render()
+        return ok
+    }
     /** GPENCIL_OT_select_vertex_color: also select points whose vertex colour hue matches a selected point's. */
     fun selectSameVertexColor(threshold:Int = 0) = runOperator("GPENCIL_OT_select_vertex_color", threshold.toFloat(), activeSelectMode.toFloat())
     /** Blender's material slot operators (gpencil_data.c) on the active material. */

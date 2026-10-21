@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include <math.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include "DNA_gpencil_legacy_types.h"
 #include "project_grease_blender_mod2.h"
@@ -27,20 +28,180 @@ int pg_build_visible(const int *totpoints, int n, int mode, int transition, floa
   return total;
 }
 
-static int pmod(int a, int m) { int r = a % m; return r < 0 ? r + m : r; }
+#include "project_grease_modifier_stack.h"
 
-int pg_time_offset_frame(int mode, int cfra, int offset, float scale, int use_range, int sfra, int efra, int loop)
+int pg_time_remap(const float *p, int scene_sfra, int scene_efra, int cfra)
 {
-  if (mode == 2) return offset; /* fixed */
-  int f = (int)lroundf((float)cfra * scale) + offset;
-  if (!use_range || efra < sfra) return f;
-  const int len = efra - sfra + 1;
-  switch (mode) {
-    case 0: return loop ? sfra + pmod(f - sfra, len) : (f < sfra ? sfra : (f > efra ? efra : f));
-    case 1: { int k = loop ? pmod(f - sfra, len) : (f - sfra < 0 ? 0 : (f - sfra >= len ? len - 1 : f - sfra)); return efra - k; }
-    case 3: { if (len == 1) return sfra; int p = 2 * len - 2, k = pmod(f - sfra, p); return sfra + (k < len ? k : p - k); }
-    default: return f;
+  /* the TimeGpencilModifierData fields from the parameters (layer filters: the stack's influence block) */
+  const bool custom = p[PG_P_TIME_USE_RANGE] != 0.0f;
+  const int mode = (int)p[PG_P_TIME_MODE];
+  const int keep_loop = p[PG_P_TIME_LOOP] != 0.0f;
+  const float frame_scale = p[PG_P_TIME_SCALE];
+  int segments_len = (int)p[PG_P_TIME_SEGMENTS];
+  if (segments_len < 1) segments_len = 1;
+  if (segments_len > PG_TIME_MAX_SEGMENTS) segments_len = PG_TIME_MAX_SEGMENTS;
+  struct { int seg_start, seg_end, seg_mode, seg_repeat; } segments[PG_TIME_MAX_SEGMENTS];
+  for (int i = 0; i < segments_len; i++) {
+    const float *q = p + PG_P_TIME_SEG + 4 * i;
+    segments[i].seg_start = (int)q[0]; segments[i].seg_end = (int)q[1];
+    segments[i].seg_mode = (int)q[2]; segments[i].seg_repeat = (int)q[3] < 1 ? 1 : (int)q[3];
   }
+
+  /* BEGIN VERBATIM source/blender/gpencil_modifiers_legacy/intern/MOD_gpencil_legacy_time.c remapTime()
+   * (mmd->X -> the locals above; layer name / pass filters are the stack's filter block) */
+  int sfra = custom ? (int)p[PG_P_TIME_SFRA] : scene_sfra;
+  int efra = custom ? (int)p[PG_P_TIME_EFRA] : scene_efra;
+  int offset = (int)p[PG_P_TIME_OFFSET];
+  int nfra = 0;
+
+  if (sfra < 0) sfra = 0;
+  if (efra < 0) efra = 0;
+
+  if (offset < 0) {
+    offset = abs(efra - sfra + offset + 1);
+  }
+  /* Avoid inverse ranges. */
+  if (efra < sfra) {
+    return cfra;
+  }
+
+  /* apply frame scale */
+  cfra *= frame_scale;
+  if (cfra < 1) cfra = 1;
+
+  /* if fix mode, return predefined frame number */
+  if (mode == 2 /* GP_TIME_MODE_FIX */) {
+    return offset;
+  }
+
+  if (mode == 0 /* GP_TIME_MODE_NORMAL */) {
+    if (!keep_loop) {
+      nfra = cfra + sfra + offset - 1 < efra ? cfra + sfra + offset - 1 : efra;
+    }
+    else {
+      nfra = (offset + cfra - 1) % (efra - sfra + 1) + sfra;
+    }
+  }
+  if (mode == 1 /* GP_TIME_MODE_REVERSE */) {
+    if (!keep_loop) {
+      nfra = efra - cfra - offset > sfra ? efra - cfra - offset + 1 : sfra;
+    }
+    else {
+      nfra = (efra + 1 - (cfra + offset - 1) % (efra - sfra + 1)) - 1;
+    }
+  }
+
+  if (mode == 3 /* GP_TIME_MODE_PINGPONG */) {
+    if (efra == sfra) return sfra; /* Blender divides by zero here */
+    if (!keep_loop) {
+      if (((int)(cfra + offset - 1) / (efra - sfra)) % (2)) {
+        nfra = efra - (cfra + offset - 1) % (efra - sfra);
+      }
+      else {
+        nfra = sfra + (cfra + offset - 1) % (efra - sfra);
+      }
+      if (cfra > (efra - sfra) * 2) {
+        nfra = sfra + offset;
+      }
+    }
+    else {
+
+      if (((int)(cfra + offset - 1) / (efra - sfra)) % (2)) {
+        nfra = efra - (cfra + offset - 1) % (efra - sfra);
+      }
+      else {
+        nfra = sfra + (cfra + offset - 1) % (efra - sfra);
+      }
+    }
+  }
+
+  if (mode == 4 /* GP_TIME_MODE_CHAIN */) {
+    int sequence_length = 0;
+    int frame_key = 0;
+    int *segment_arr;
+    int start, end;
+    if (segments_len > 0) {
+      for (int i = 0; i < segments_len; i++) {
+        start = segments[i].seg_start;
+        end = segments[i].seg_end;
+        if (segments[i].seg_end < segments[i].seg_start) {
+          start = segments[i].seg_end;
+          end = segments[i].seg_start;
+        }
+
+        if (segments[i].seg_mode == 2 /* GP_TIME_SEG_MODE_PINGPONG */) {
+          sequence_length += ((end - start) * segments[i].seg_repeat) * 2 + 1;
+        }
+        else {
+          sequence_length += ((end - start + 1) * segments[i].seg_repeat);
+        }
+      }
+      segment_arr = calloc((size_t)(sequence_length + 1), sizeof(int));
+      if (segment_arr == NULL) return cfra;
+
+      for (int i = 0; i < segments_len; i++) {
+
+        if (segments[i].seg_end < segments[i].seg_start) {
+          start = segments[i].seg_end;
+          end = segments[i].seg_start;
+        }
+        else {
+          start = segments[i].seg_start;
+          end = segments[i].seg_end;
+        }
+        for (int a = 0; a < segments[i].seg_repeat; a++) {
+          switch (segments[i].seg_mode) {
+            case 0: /* GP_TIME_SEG_MODE_NORMAL */
+              for (int b = 0; b < end - start + 1; b++) {
+                segment_arr[frame_key] = start + b;
+                frame_key++;
+              }
+              break;
+            case 1: /* GP_TIME_SEG_MODE_REVERSE */
+              for (int b = 0; b < end - start + 1; b++) {
+                segment_arr[frame_key] = end - b;
+                frame_key++;
+              }
+              break;
+            case 2: /* GP_TIME_SEG_MODE_PINGPONG */
+              for (int b = 0; b < end - start; b++) {
+                segment_arr[frame_key] = start + b;
+                frame_key++;
+              }
+              for (int b = 0; b < end - start; b++) {
+                segment_arr[frame_key] = end - b;
+                frame_key++;
+                if (a == segments[i].seg_repeat - 1 && b == end - start - 1) {
+                  segment_arr[frame_key] = start;
+                  frame_key++;
+                }
+              }
+              break;
+          }
+        }
+      }
+
+      /* a one-frame ping-pong segment counts a frame it never writes: Blender reads garbage there */
+      if (frame_key == 0) { free(segment_arr); return cfra; }
+      for (int k = frame_key; k < sequence_length; k++) segment_arr[k] = segment_arr[frame_key - 1];
+      if (!keep_loop) {
+        if ((cfra + offset - 1) < sequence_length) {
+          nfra = segment_arr[(cfra - 1 + offset)];
+        }
+        else {
+          nfra = segment_arr[frame_key - 1];
+        }
+      }
+      else {
+        nfra = segment_arr[(cfra - 1 + offset) % sequence_length];
+      }
+
+      free(segment_arr);
+    }
+  }
+
+  return nfra;
+  /* END VERBATIM */
 }
 
 int pg_envelope_segments(int totpoints, int cyclic, int spread, int skip, int *pairs, int max_pairs)

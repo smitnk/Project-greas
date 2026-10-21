@@ -182,6 +182,7 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
   bp.active_material = (int)param(p, n, PG_TOOL_P_ACTIVE_MATERIAL, 0);
   bp.ui_scale = param(p, n, PG_TOOL_P_UI_SCALE, 1);
   bp.affect = (int)param(p, n, PG_TOOL_P_AFFECT, 0);
+  bp.frame_falloff = param(p, n, PG_TOOL_P_FRAME_FALLOFF, 0) != 0.0f;
   switch (tool) {
     case PG_TOOL_SCULPT:
       s->sculpt = pg_sculpt_session_begin(gpd, &bp);

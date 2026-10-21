@@ -499,7 +499,13 @@ static void test_batch21()
     PGModEntry env = entry(PG_MOD_ENVELOPE); env.params[PG_P_ENVELOPE_SPREAD] = 2;
     CHECK(eval(d, &env, 1, 1).size() > 2);
     PGModEntry dash = entry(PG_MOD_DASH);
-    CHECK(eval(d, &dash, 1, 1).size() > 2);
+    const size_t one_seg = eval(d, &dash, 1, 1).size();
+    CHECK(one_seg > 2);
+    dash.params[PG_P_DASH_SEGMENTS] = 2; /* + a 1-point dash / 4-point gap segment: fewer dashes */
+    dash.params[PG_P_DASH_SEG2 + 0] = 1; dash.params[PG_P_DASH_SEG2 + 1] = 4;
+    pg_mod_sanitize(PG_MOD_DASH, dash.params);
+    const size_t two_seg = eval(d, &dash, 1, 1).size();
+    CHECK(two_seg > 2 && two_seg < one_seg);
     PGModEntry out = entry(PG_MOD_OUTLINE);
     auto o = eval(d, &out, 1, 1);
     CHECK(o.size() == 2 && o[0].size() > 9);

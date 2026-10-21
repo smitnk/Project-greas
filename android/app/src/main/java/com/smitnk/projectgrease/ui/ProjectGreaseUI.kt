@@ -122,8 +122,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var state by remember{mutableStateOf(GreaseUiState())}
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
-    fun saveCurrentProject() {
-        controller.saveDocumentJson()?.let { projectStore.saveDocument(controller.document.projectName, it) }
+    fun saveCurrentProject(tree: org.json.JSONObject? = controller.saveDocumentTree(), write: Boolean = true) {
+        if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString()) }
         projectStore.upsert(ProjectRecord(
             controller.document.projectName,
             controller.document.canvasWidth,
@@ -139,7 +139,11 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         if (screen == Screen.EDITOR) {
             while (true) {
                 kotlinx.coroutines.delay(5000L)
-                saveCurrentProject()
+                // Build the tree here (native reads); text + file write on IO so the UI never stalls.
+                val tree = controller.saveDocumentTree() ?: continue
+                val projectName = controller.document.projectName
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString()) }
+                saveCurrentProject(tree, write = false)
             }
         }
     }
@@ -1259,7 +1263,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 TextButton(onClick={expanded=emptySet();changed(controller.removeModifier(index))}){Text("Remove")}
             }
             if(open)ModifierInfluenceSection(controller,index,modifier,::changed)
-            if(open)com.smitnk.projectgrease.editor.ModifierSpecs.specs(modifier.type).forEach{spec->
+            if(open)com.smitnk.projectgrease.editor.ModifierSpecs.specs(modifier.type).filter{com.smitnk.projectgrease.editor.ModifierSpecs.shown(modifier.type,modifier.params,it)}.forEach{spec->
                 val value=modifier.params.getOrElse(spec.index){0f}
                 when(spec.kind){
                     com.smitnk.projectgrease.editor.ParamKind.BOOL->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
@@ -1545,6 +1549,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 ToolbarButton(Icons.Default.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
+                // quick Copy / Paste: the selection, or the whole frame when nothing is selected
+                IconButton(onClick={val ok=controller.quickCopy();com.smitnk.projectgrease.CrashLog.event("QUICK COPY -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy on this frame")},Modifier.testTag("quickCopy")){Icon(Icons.Default.ContentCopy,"Copy")}
+                IconButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("QUICK PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame}" else "Nothing to paste (copy first)");redraw()},Modifier.testTag("quickPaste")){Icon(Icons.Default.ContentPaste,"Paste")}
                 ToolbarButton(Icons.Default.Tune,"Options",popup==StudioPopup.OPTIONS){popup=if(popup==StudioPopup.OPTIONS)StudioPopup.NONE else StudioPopup.OPTIONS}
             }
         }

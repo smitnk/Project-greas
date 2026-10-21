@@ -12,9 +12,9 @@ struct bGPDstroke;
 int pg_build_visible(const int *totpoints, int nstrokes, int mode, int transition, float cfra,
                      float start_frame, float length, int *r_visible);
 
-/* Time Offset (MOD_gpencil_legacy_time.c): mode 0 normal, 1 reverse, 2 fixed, 3 ping-pong.
- * Custom range [sfra, efra] with loop. */
-int pg_time_offset_frame(int mode, int cfra, int offset, float scale, int use_range, int sfra, int efra, int loop);
+/* Time Offset: remapTime() of MOD_gpencil_legacy_time.c. p = the modifier's PG_P_TIME_* params
+ * (segments for Chain mode included); scene_sfra/efra = the scene range used without a custom one. */
+int pg_time_remap(const float *p, int scene_sfra, int scene_efra, int cfra);
 
 /* Envelope, segments mode (MOD_gpencil_legacy_envelope.c): number of segment strokes
  * point i -> i+spread (skip = points skipped between segments). Fills pairs[2*k] (indices). */

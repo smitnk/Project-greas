@@ -101,10 +101,10 @@ object ModifierSpecs {
     /** The type's own parameters: PG_P_*_COUNT in project_grease_modifier_stack.h. */
     fun ownParamCount(type: Int) = when (type) {
         ModifierType.BUILD -> 13
-        ModifierType.TIME -> 7
+        ModifierType.TIME -> 24
         ModifierType.ENVELOPE -> 6
         ModifierType.WEIGHT_ANGLE -> 5
-        ModifierType.DASH -> 7
+        ModifierType.DASH -> 26
         ModifierType.OUTLINE -> 2
         ModifierType.MIRROR -> 4
         ModifierType.ARRAY -> 15
@@ -190,10 +190,13 @@ object ModifierSpecs {
             f(11, "Speed factor", 0.001f, 100f), f(12, "Max gap between strokes (s)", 0f, 100f)
         )
         ModifierType.TIME -> listOf(
-            e(0, "Mode", "Normal", "Reverse", "Fixed frame", "Ping pong"), n(1, "Frame offset", -250f, 250f),
+            e(0, "Mode", "Normal", "Reverse", "Fixed frame", "Ping pong", "Chain"), n(1, "Frame offset", -250f, 250f),
             f(2, "Frame scale", 0.1f, 10f), b(3, "Custom range"), n(4, "Start frame", 0f, 1000f),
-            n(5, "End frame", 0f, 1000f), b(6, "Loop")
-        )
+            n(5, "End frame", 0f, 1000f), b(6, "Loop"),
+            n(7, "Chain segments", 1f, 4f)
+        ) + (0 until 4).flatMap { k -> val o = 8 + 4 * k; val l = "Segment ${k + 1}"
+            listOf(n(o, "$l start", 0f, 1000f), n(o + 1, "$l end", 0f, 1000f),
+                e(o + 2, "$l mode", "Normal", "Reverse", "Ping pong"), n(o + 3, "$l repeat", 1f, 50f)) }
         ModifierType.ENVELOPE -> listOf(
             e(0, "Mode", "Deform", "Segments", "Fills"), n(1, "Spread", 1f, 100f), n(2, "Skip", 0f, 20f),
             f(3, "Thickness", 0f, 10f), f(4, "Strength", 0f, 1f), n(5, "Material (-1 same)", -1f, 64f)
@@ -203,9 +206,12 @@ object ModifierSpecs {
             f(2, "Minimum weight", 0f, 1f), b(3, "Invert output"), b(4, "Multiply weights")
         )
         ModifierType.DASH -> listOf(
-            n(0, "Dash", 1f, 50f), n(1, "Gap", 0f, 50f), n(2, "Offset", -50f, 50f), f(3, "Radius", 0f, 1f),
-            f(4, "Opacity", 0f, 1f), n(5, "Material (-1 same)", -1f, 64f), b(6, "Cyclic")
-        )
+            n(2, "Offset", -50f, 50f), n(7, "Segments", 1f, 4f),
+            n(0, "Segment 1 dash", 1f, 50f), n(1, "Segment 1 gap", 0f, 50f), f(3, "Segment 1 radius", 0f, 1f),
+            f(4, "Segment 1 opacity", 0f, 1f), n(5, "Segment 1 material (-1 same)", -1f, 64f), b(6, "Segment 1 cyclic")
+        ) + (0 until 3).flatMap { k -> val o = 8 + 6 * k; val l = "Segment ${k + 2}"
+            listOf(n(o, "$l dash", 1f, 50f), n(o + 1, "$l gap", 0f, 50f), f(o + 2, "$l radius", 0f, 1f),
+                f(o + 3, "$l opacity", 0f, 1f), n(o + 4, "$l material (-1 same)", -1f, 64f), b(o + 5, "$l cyclic")) }
         ModifierType.OUTLINE -> listOf(n(0, "Thickness", 1f, 100f), n(1, "Cap segments", 1f, 32f))
         ModifierType.MIRROR -> listOf(b(0, "Axis X"), b(1, "Axis Y"), f(2, "Pivot X", -4000f, 4000f), f(3, "Pivot Y", -4000f, 4000f))
         ModifierType.ARRAY -> listOf(
@@ -221,6 +227,16 @@ object ModifierSpecs {
             f(4, "Fade center", 0f, 1f), f(5, "Fade thickness", 0f, 1f), f(6, "Fade opacity", 0f, 1f)
         )
         else -> emptyList()
+    }
+
+    /** Whether a parameter applies now: Chain segments only in Chain mode, segment fields up to the segment count. */
+    fun shown(type: Int, p: FloatArray, spec: ParamSpec): Boolean {
+        fun v(i: Int) = p.getOrElse(i) { 0f }.toInt()
+        return when (type) {
+            ModifierType.TIME -> spec.index < 7 || (v(0) == 4 && (spec.index == 7 || (spec.index - 8) / 4 < v(7).coerceAtLeast(1)))
+            ModifierType.DASH -> spec.index < 8 || (spec.index - 8) / 6 < v(7).coerceAtLeast(1) - 1
+            else -> true
+        }
     }
 
     /** Influence filters every entry has (Blender's Influence panel): +1 encoded, 0 = off. */

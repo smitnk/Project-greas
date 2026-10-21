@@ -755,7 +755,8 @@ class EditorController {
             restoreTextures(it[0]); (it[1] as? TimelineState)?.let(animation::restoreTimeline)
             (it[2] as? String)?.let(::restoreReferencesJson)
             (it[3] as? String)?.let { a -> val list = AudioStrip.listFromJson(runCatching { org.json.JSONArray(a) }.getOrNull())
-                if (AudioStrip.listToJson(audioStrips).toString() != a) { audioStrips.clear(); audioStrips.addAll(list) } }
+                if (AudioStrip.listToJson(audioStrips).toString() != a) { audioStrips.clear(); audioStrips.addAll(list)
+                    audioPlayback?.sync(audioStrips, animation.playing, animation.currentFrame, animation.fps) } }
         } }
     }
     val animation=AnimationController(native) { render() }
@@ -1127,6 +1128,14 @@ class EditorController {
         val right = a.split(animation.currentFrame, animation.fps) ?: run { onMessage?.invoke("Move the playhead inside the clip to split it"); return false }
         audioStrips.add(audioStrips.indexOf(a) + 1, right); audioChanged(record = true); return true
     }
+    /** Cuts the clip's start (or end) at the playhead, dropping that side (Blender: split + delete). */
+    fun trimAudioToPlayhead(a:AudioStrip, start:Boolean):Boolean {
+        val f = animation.currentFrame
+        if (f <= a.start || f > a.endFrame(animation.fps)) { onMessage?.invoke("Move the playhead inside the clip first"); return false }
+        val right = a.split(f, animation.fps) ?: return false
+        if (start) { a.start = right.start; a.trimStartMs = right.trimStartMs; a.trimEndMs = right.trimEndMs }
+        audioChanged(record = true); return true
+    }
     /** Blender's strip duplicate: the copy goes right after the clip, on a free track. */
     fun duplicateAudio(a:AudioStrip):AudioStrip? {
         if (audioStrips.size >= 16) { onMessage?.invoke("Up to 16 audio clips"); return null }
@@ -1137,7 +1146,8 @@ class EditorController {
     /** After a change to a strip; [record] = one undo step (at the end of a drag, not during it). */
     fun audioChanged(record:Boolean = false) {
         document.markDirty(); if (record) history.markEdit()
-        if (animation.playing) audioPlayback?.sync(audioStrips, true, animation.currentFrame, animation.fps)
+        // always: a paused sync also stops and releases the players of deleted clips (they kept sounding)
+        audioPlayback?.sync(audioStrips, animation.playing, animation.currentFrame, animation.fps)
         onUiChanged?.invoke()
     }
 
@@ -1284,8 +1294,8 @@ class EditorController {
     }
     // ---- curve edit mode (Blender's Edit-mode "Curve Editing": strokes edited as bezier curves) ----
     var bezierEditing by androidx.compose.runtime.mutableStateOf(false); private set
-    /** Curve fit tolerance in canvas units (gpd->curve_edit_threshold: 0.1 BU = 10 units here). */
-    var bezierThreshold = 10f
+    /** Blender's curve_edit_threshold (GP_DEFAULT_CURVE_ERROR 0.1): relative to the stroke size, not pixels (10 made every stroke 2 points). */
+    var bezierThreshold = 0.1f
     /** GPENCIL_OT_stroke_enter_editcurve_mode on the selected strokes. */
     fun beginBezierEdit():Boolean {
         if (native.handle == 0L) return false
@@ -2259,6 +2269,7 @@ class EditorController {
         loadTexturesJson(rawJson?.optJSONArray("textures"))
         references.clear(); activeReference = 0; rotoscopeShown.clear(); rotoscopeFailed.clear()
         audioStrips.clear(); audioStrips.addAll(AudioStrip.listFromJson(rawJson?.optJSONArray("audio")))
+        audioPlayback?.sync(audioStrips, false, animation.currentFrame, animation.fps) // the old project's sounds stop
         lockedAudioTracks.clear(); rawJson?.optJSONArray("audioLocked")?.let { a -> for (i in 0 until a.length()) lockedAudioTracks.add(a.optInt(i)) }
         val refs = rawJson?.optJSONArray("references")
         if (refs != null) for (i in 0 until refs.length()) references.add(Rotoscope().also { it.fromJson(refs.optJSONObject(i)) })
@@ -2951,6 +2962,8 @@ class EditorController {
     fun interpolateSequence(frame:Int = animation.currentFrame):Int = animation.interpolateSequence(frame).also { frameEdit(it > 0) }
 
     fun selectFrame(frame:Int):Boolean {
+        // the warp holds the points of this frame: keep it before leaving (another frame's strokes would be bent)
+        if (warpActive) endWarp(true)
         val ok = animation.ensureFrame(frame)
         if (ok) render()
         return ok
@@ -3114,6 +3127,8 @@ class EditorController {
     }
     fun runOperator(idname:String, vararg props:Float):Boolean {
         if (native.handle == 0L) return false
+        // operators can rebuild strokes under the warp's point pointers (Copy / Paste were used mid-warp): finish it first
+        if (warpActive) endWarp(true)
         if (editsInPlace.any { idname.startsWith(it) }) autokeyHeld()
         val r = GPNative.nativeOperatorCall(native.handle, idname, animation.currentFrame, materials.activeMaterial + 1, props)
         val finished = (r and 0xff) and 4 != 0
@@ -3516,6 +3531,7 @@ class EditorController {
         if (first != null && first >= 0) selection.note(first) else selection.clear()
     }
     fun undo():Boolean {
+        if (warpActive) { endWarp(false); return true } // undo during a warp cancels it
         val ok = history.undo()
         if (ok) {
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
@@ -3528,6 +3544,7 @@ class EditorController {
         return ok
     }
     fun redo():Boolean {
+        if (warpActive) endWarp(true)
         val ok = history.redo()
         if (ok) {
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)

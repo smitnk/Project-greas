@@ -59,7 +59,7 @@ object FxSpecs {
         FxType.GLOW -> 15
         FxType.PIXEL -> 3
         FxType.RIM -> 12
-        FxType.SHADOW -> 17
+        FxType.SHADOW -> 19
         FxType.SWIRL -> 4
         FxType.WAVE -> 4
         else -> 0
@@ -126,7 +126,8 @@ object FxSpecs {
             f(11, "Scale X", 0.01f, 5f), f(12, "Scale Y", 0.01f, 5f),
             n(14, "Blur X", 0f, 300f), n(15, "Blur Y", 0f, 300f), n(16, "Samples", 0f, 32f),
             b(6, "Wave"), f(7, "Amplitude", -200f, 200f), f(8, "Period", 0f, 300f),
-            f(9, "Phase", -PI * 2, PI * 2, DEG), e(10, "Orientation", "Horizontal", "Vertical")
+            f(9, "Phase", -PI * 2, PI * 2, DEG), e(10, "Orientation", "Horizontal", "Vertical"),
+            f(17, "Pivot X (from centre)", -1f, 1f), f(18, "Pivot Y (from centre)", -1f, 1f)
         )
         FxType.SWIRL -> listOf(
             f(0, "Center X", 0f, 1f), f(1, "Center Y", 0f, 1f), n(2, "Radius", 0f, 2000f),

@@ -221,12 +221,14 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
                 // the waveform: the kept part bright, the rest pale; drag a handle to trim, tap to set the preview point
                 Canvas(Modifier.fillMaxWidth().weight(1f).padding(vertical = 24.dp).testTag("audioTrim").pointerInput(durationMs) {
                     var which = 0
+                    val inset = 36.dp.toPx() // the handles stay fully on screen at the very start / end
+                    val w = size.width - 2 * inset
                     detectDragGestures(onDragStart = { o ->
-                        val xa = a.toFloat() / durationMs * size.width; val xb = b.toFloat() / durationMs * size.width
+                        val xa = inset + a.toFloat() / durationMs * w; val xb = inset + b.toFloat() / durationMs * w
                         which = if (kotlin.math.abs(o.x - xa) < kotlin.math.abs(o.x - xb)) 1 else 2
                     }) { change, _ ->
                         change.consume()
-                        val ms = (change.position.x / size.width * durationMs).toLong().coerceIn(0L, durationMs)
+                        val ms = ((change.position.x - inset) / w * durationMs).toLong().coerceIn(0L, durationMs)
                         val minLen = 1000L / fps
                         if (which == 1) a = ms.coerceAtMost(b - minLen) else b = ms.coerceAtLeast(a + minLen)
                         pos = if (which == 1) a else b
@@ -234,10 +236,11 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
                 }) {
                     val p = peaks ?: FloatArray(0)
                     val mid = size.height / 2
-                    val xa = a.toFloat() / durationMs * size.width; val xb = b.toFloat() / durationMs * size.width
-                    var x = 0f
-                    while (x < size.width && p.isNotEmpty()) {
-                        val v = p[((x / size.width) * p.size).toInt().coerceIn(0, p.size - 1)]
+                    val inset = 36.dp.toPx(); val w = size.width - 2 * inset
+                    val xa = inset + a.toFloat() / durationMs * w; val xb = inset + b.toFloat() / durationMs * w
+                    var x = inset
+                    while (x < inset + w && p.isNotEmpty()) {
+                        val v = p[(((x - inset) / w) * p.size).toInt().coerceIn(0, p.size - 1)]
                         val h = (size.height * 0.45f * v).coerceAtLeast(1f)
                         drawLine(if (x in xa..xb) pink else pink.copy(alpha = 0.3f), Offset(x, mid - h), Offset(x, mid + h), 2f)
                         x += 3f
@@ -246,9 +249,13 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
                         drawRoundRect(pink, Offset(hx - 12f, mid - 40f), Size(24f, 80f), CornerRadius(8f, 8f))
                         drawLine(Color.White, Offset(hx, mid - 16f), Offset(hx, mid + 16f), 2f)
                     }
-                    val xp = pos.toFloat() / durationMs * size.width
+                    val xp = inset + pos.toFloat() / durationMs * w
                     drawLine(pink, Offset(xp, 0f), Offset(xp, size.height), 2f)
                 }
+                // the same trim as a slider, for exact values
+                RangeSlider(a.toFloat()..b.toFloat(), { v -> if (v.endInclusive - v.start >= 1000f / fps) { if (v.start.toLong() != a) pos = v.start.toLong() else pos = v.endInclusive.toLong(); a = v.start.toLong(); b = v.endInclusive.toLong() } },
+                    valueRange = 0f..durationMs.toFloat(), modifier = Modifier.padding(horizontal = 16.dp).testTag("audioTrimSlider"),
+                    colors = SliderDefaults.colors(thumbColor = pink, activeTrackColor = pink))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(clock(a), fontSize = 11.sp, color = pink)
                     Spacer(Modifier.weight(1f))

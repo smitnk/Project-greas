@@ -63,7 +63,10 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
     var volumeOpen by remember { mutableStateOf(false) }
     val shown = remember { MutableTransitionState(false) }.apply { targetState = true }
     val density = LocalDensity.current
-    val frameW = with(density) { 18.dp.toPx() }
+    // zoom: pixels per frame (FlipaClip-like default shows several seconds)
+    var zoom by remember { mutableFloatStateOf(0.4f) }
+    val frameW = with(density) { 18.dp.toPx() } * zoom
+    val leftPx = with(density) { 40.dp.toPx() } // the lanes start right of the track buttons
     val trackH = with(density) { 58.dp.toPx() }
     val rulerH = with(density) { 26.dp.toPx() }
     val handleW = with(density) { 14.dp.toPx() }
@@ -107,28 +110,30 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                     IconButton(onClick = { anim.togglePlayback(); redraw() }) { Icon(if (anim.playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play") }
                     IconButton(onClick = { controller.selectFrame(maxOf(anim.sceneEnd, 1)); redraw() }) { Icon(Icons.Default.SkipNext, "End") }
                     Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { zoom = (zoom / 1.5f).coerceAtLeast(0.05f) }) { Icon(Icons.Default.ZoomOut, "Zoom out") }
+                    IconButton(onClick = { zoom = (zoom * 1.5f).coerceAtMost(3f) }) { Icon(Icons.Default.ZoomIn, "Zoom in") }
                     IconButton(onClick = { m.importAudio() }, Modifier.testTag("audioAdd")) { Icon(Icons.Default.Add, "Add audio", tint = Pink) }
                 }
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     @Suppress("UNUSED_VARIABLE") val t = tick
                     val cur = anim.currentFrame
-                    Canvas(Modifier.fillMaxSize().testTag("audioTracks").pointerInput(fps) {
+                    Canvas(Modifier.fillMaxSize().testTag("audioTracks").pointerInput(fps, frameW) {
                         awaitEachGesture {
                             val down = awaitFirstDown()
                             val p0 = down.position
-                            fun frameAt(x: Float) = ((x + scrollPx) / frameW).toInt() + 1
+                            fun frameAt(x: Float) = ((x - leftPx + scrollPx) / frameW).toInt() + 1
                             fun trackAt(y: Float) = ((y - rulerH) / trackH).toInt().coerceIn(0, AudioStrip.MAX_TRACKS - 1)
                             val onRuler = p0.y < rulerH
                             val hit = if (onRuler) null else controller.audioStrips.lastOrNull { a ->
-                                val x0 = (a.start - 1) * frameW - scrollPx; val x1 = x0 + a.frames(fps) * frameW
+                                val x0 = leftPx + (a.start - 1) * frameW - scrollPx; val x1 = x0 + a.frames(fps) * frameW
                                 a.track == trackAt(p0.y) && p0.x >= x0 - handleW && p0.x <= x1 + handleW
                             }
                             // what the drag does: 0 scroll, 1 move, 2 left trim, 3 right trim, 4 scrub
                             val mode = when {
                                 onRuler -> 4
                                 hit == null -> 0
-                                hit === selected && p0.x < (hit.start - 1) * frameW - scrollPx + handleW -> 2
-                                hit === selected && p0.x > (hit.start - 1 + hit.frames(fps)) * frameW - scrollPx - handleW -> 3
+                                hit === selected && p0.x < leftPx + (hit.start - 1) * frameW - scrollPx + handleW -> 2
+                                hit === selected && p0.x > leftPx + (hit.start - 1 + hit.frames(fps)) * frameW - scrollPx - handleW -> 3
                                 else -> 1
                             }
                             if (mode == 4) { controller.selectFrame(frameAt(p0.x).coerceAtLeast(1)); redraw() }
@@ -148,39 +153,41 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                                 val msPerFrame = 1000L / fps
                                 when (mode) {
                                     0 -> { scrollPx = (scrollPx - d.x).coerceAtLeast(0f) }
-                                    4 -> { controller.selectFrame(frameAt(c.position.x).coerceAtLeast(1)); redraw() }
+                                    4 -> { controller.selectFrame(frameAt(c.position.x).coerceAtLeast(1)) }
                                     1 -> if (!controller.audioTrackLocked(startTrack)) {
                                         hit!!.start = (startFrame + df).coerceAtLeast(1)
                                         val tr = (startTrack + (dy / trackH).let { kotlin.math.round(it).toInt() }).coerceIn(0, AudioStrip.MAX_TRACKS - 1)
                                         if (!controller.audioTrackLocked(tr)) hit.track = tr
-                                        controller.audioChanged()
                                     }
                                     2 -> if (!controller.audioTrackLocked(startTrack)) { // left handle: the clip's start and the file offset move together
                                         val newTrim = (startTrimMs + df * msPerFrame).coerceIn(0L, startEndMs - msPerFrame)
                                         val realDf = ((newTrim - startTrimMs) / msPerFrame).toInt()
-                                        if (startFrame + realDf >= 1) { hit!!.trimStartMs = newTrim; hit.trimEndMs = startEndMs; hit.start = startFrame + realDf; controller.audioChanged() }
+                                        if (startFrame + realDf >= 1) { hit!!.trimStartMs = newTrim; hit.trimEndMs = startEndMs; hit.start = startFrame + realDf }
                                     }
                                     3 -> if (!controller.audioTrackLocked(startTrack)) {
                                         val max = if (hit!!.durationMs > 0) hit.durationMs else Long.MAX_VALUE
-                                        hit.trimEndMs = (startEndMs + df * msPerFrame).coerceIn(startTrimMs + msPerFrame, max); controller.audioChanged()
+                                        hit.trimEndMs = (startEndMs + df * msPerFrame).coerceIn(startTrimMs + msPerFrame, max)
                                     }
                                 }
                                 tick++
                             }
                             if (!moved && mode != 4) { selected = hit; volumeOpen = false }
                             if (moved && mode in 1..3) controller.audioChanged(record = true)
+                            if (mode == 4) redraw()
+                            if (hit != null) com.smitnk.projectgrease.CrashLog.event("AUDIO ${listOf("scroll", "move", "trim start", "trim end", "scrub")[mode]} ${hit.name}: frames ${hit.start}-${hit.endFrame(fps)} track ${hit.track + 1}${if (moved) "" else " (tap)"}")
                             tick++
                         }
                     }) {
                         @Suppress("UNUSED_VARIABLE") val t2 = tick
-                        val last = (size.width + scrollPx) / frameW + 1
+                        val last = (size.width - leftPx + scrollPx) / frameW + 1
                         // ruler: a tick per frame, a label every fps frames (seconds)
                         drawRect(Color(0x11000000), Offset.Zero, Size(size.width, rulerH))
                         var f = (scrollPx / frameW).toInt() + 1
                         while (f <= last) {
-                            val x = (f - 1) * frameW - scrollPx
-                            val sec = (f - 1) % fps == 0
-                            drawLine(Color.Gray, Offset(x, rulerH - if (sec) 12f else 5f), Offset(x, rulerH), 1f)
+                            val x = leftPx + (f - 1) * frameW - scrollPx
+                            val step = if (frameW * fps < 60f) fps * 5 else fps // labels at least ~60 px apart
+                            val sec = (f - 1) % step == 0
+                            if (sec || frameW > 4f) drawLine(Color.Gray, Offset(x, rulerH - if (sec) 12f else 5f), Offset(x, rulerH), 1f)
                             if (sec) drawText(measurer, clock((f - 1).toLong() * 1000L / fps).dropLast(4), Offset(x + 3f, 2f), TextStyle(fontSize = 9.sp, color = Color.Gray))
                             f++
                         }
@@ -192,7 +199,7 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                         }
                         // clips
                         for (a in controller.audioStrips) {
-                            val x0 = (a.start - 1) * frameW - scrollPx; val w = a.frames(fps) * frameW
+                            val x0 = leftPx + (a.start - 1) * frameW - scrollPx; val w = a.frames(fps) * frameW
                             if (x0 > size.width || x0 + w < 0) continue
                             val y = rulerH + a.track * trackH + 6f; val h = trackH - 12f
                             val isSel = a === selected
@@ -225,7 +232,7 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                             }
                         }
                         // playhead
-                        val px = (cur - 1) * frameW - scrollPx
+                        val px = leftPx + (cur - 1) * frameW - scrollPx
                         drawLine(Pink, Offset(px, 0f), Offset(px, size.height), 2.5f)
                         drawCircle(Pink, 6f, Offset(px, rulerH - 4f))
                     }
@@ -258,6 +265,8 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                                 IconButton(onClick = { volumeOpen = !volumeOpen }, Modifier.testTag("audioVolume")) { Icon(Icons.Default.Edit, "Volume") }
                                 IconButton(onClick = { sel?.let { controller.removeAudio(it) }; selected = null; tick++; redraw() }, Modifier.testTag("audioDelete")) { Icon(Icons.Default.Delete, "Delete") }
                                 IconButton(onClick = { sel?.let { controller.splitAudio(it) }; tick++ }, Modifier.testTag("audioSplit")) { Icon(Icons.Default.ContentCut, "Split at the playhead") }
+                                IconButton(onClick = { sel?.let { controller.trimAudioToPlayhead(it, true) }; tick++ }, Modifier.testTag("audioTrimStart")) { Icon(Icons.Default.FirstPage, "Trim the start to the playhead") }
+                                IconButton(onClick = { sel?.let { controller.trimAudioToPlayhead(it, false) }; tick++ }, Modifier.testTag("audioTrimEnd")) { Icon(Icons.Default.LastPage, "Trim the end to the playhead") }
                             }
                         }
                     }

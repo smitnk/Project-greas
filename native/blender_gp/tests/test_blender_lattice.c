@@ -41,6 +41,18 @@ int main(void)
   CHECK(NEAR(c[2], 210) && NEAR(c[3], 305));
   CHECK(NEAR(c[4], 100) && NEAR(c[5], 200));
   /* bad input */
+  { /* 3 x 3 mesh as the app builds it (u fastest, rows from the box's min y): the centre dot moved by
+     * (0, 50) moves a point at the centre by 50 and leaves the corners where they are */
+    const float bb[4] = {100, 200, 300, 400};
+    float g[18];
+    for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++) { g[2 * (j * 3 + i)] = 100 + 100 * i; g[2 * (j * 3 + i) + 1] = 200 + 100 * j; }
+    g[2 * 4 + 1] += 50;
+    float m[6] = {200, 300, 100, 200, 250, 300};
+    CHECK(pg_lattice_deform_points(m, 3, bb, 3, 3, g, KEY_LINEAR));
+    CHECK(NEAR(m[0], 200) && NEAR(m[1], 350));
+    CHECK(NEAR(m[2], 100) && NEAR(m[3], 200));
+    CHECK(NEAR(m[4], 250) && NEAR(m[5], 325));
+  }
   CHECK(!pg_lattice_deform_points(c, 1, b, 1, 2, ctrl, KEY_LINEAR));
   CHECK(!pg_lattice_deform_points(c, 1, b, 2, 2, ctrl, 99));
   printf(failures ? "%d FAILURES\n" : "lattice tests passed\n", failures);

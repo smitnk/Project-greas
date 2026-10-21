@@ -1127,7 +1127,7 @@ static void build_engine_fx(const bGPdata*gpd,EngineFx&out){
         case PG_FX_SHADOW:{auto*f=static_cast<ShadowShaderFxData*>(alloc(sizeof(ShadowShaderFxData)));
           f->offset[0]=int(p[PG_FXP_SHADOW_OFFSET_X]*U);f->offset[1]=int(p[PG_FXP_SHADOW_OFFSET_Y]*U);
           for(int c=0;c<3;c++)f->shadow_rgba[c]=lin(p[PG_FXP_SHADOW_COLOR+c]);f->shadow_rgba[3]=p[PG_FXP_SHADOW_COLOR+3];
-          f->flag=FX_SHADOW_USE_OBJECT|(p[PG_FXP_SHADOW_USE_WAVE]!=0.0f?FX_SHADOW_USE_WAVE:0);f->object=pivot(0.5f,0.5f); /* pivot: the canvas centre */
+          f->flag=FX_SHADOW_USE_OBJECT|(p[PG_FXP_SHADOW_USE_WAVE]!=0.0f?FX_SHADOW_USE_WAVE:0);f->object=pivot(0.5f+p[PG_FXP_SHADOW_PIVOT_X],0.5f+p[PG_FXP_SHADOW_PIVOT_Y]); /* pivot: the canvas centre + offset */
           f->amplitude=p[PG_FXP_SHADOW_AMPLITUDE]*U;f->period=p[PG_FXP_SHADOW_PERIOD]*U;f->phase=p[PG_FXP_SHADOW_PHASE];
           f->orientation=int(p[PG_FXP_SHADOW_ORIENTATION]);f->scale[0]=p[PG_FXP_SHADOW_SCALE_X];f->scale[1]=p[PG_FXP_SHADOW_SCALE_Y];
           f->rotation=p[PG_FXP_SHADOW_ROTATION];f->blur[0]=int(p[PG_FXP_SHADOW_BLUR_X]*U);f->blur[1]=int(p[PG_FXP_SHADOW_BLUR_Y]*U);f->samples=int(p[PG_FXP_SHADOW_SAMPLES]);fx=&f->shaderfx;break;}

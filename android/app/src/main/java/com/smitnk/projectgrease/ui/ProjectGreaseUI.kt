@@ -425,7 +425,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.MENU->StudioMenu(controller,{sheet=it},{persistProject();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();sheet=Sheet.NONE},onSettings,{sheet=Sheet.NONE})
         Sheet.DRAW_SETTINGS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Properties(controller,::redraw)}
         Sheet.EFFECTS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){LayerEffectsSection(controller,::redraw)}}
-        Sheet.TIMELINE->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Timeline(controller,::redraw,{fpsDialog=true})}
+        Sheet.TIMELINE->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Timeline(controller,::redraw,{fpsDialog=true},{sheet=Sheet.AUDIO})}
         Sheet.NONE->Unit
     }
 }
@@ -755,7 +755,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 
 @OptIn(ExperimentalLayoutApi::class)
 @NonSkippableComposable
-@Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit){
+@Composable private fun Timeline(controller:EditorController,redraw:()->Unit,onFps:()->Unit,onAudio:()->Unit){
     var markersOpen by remember{mutableStateOf(false)}
     var previewOpen by remember{mutableStateOf(false)}
     Surface(tonalElevation=4.dp){
@@ -771,6 +771,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd,
                     Modifier.align(Alignment.CenterVertically).padding(horizontal=4.dp))
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
+                // the audio timeline, next to the frame rate
+                IconButton(onClick=onAudio,Modifier.testTag("timelineAudio")){Icon(Icons.Default.MusicNote,"Audio")}
                 TextButton(
                     enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
                     onClick={if(controller.interpolateFrameAt(controller.animation.currentFrame)){redraw()}}
@@ -1547,7 +1549,6 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     .border(2.dp,MaterialTheme.colorScheme.outline,CircleShape)
                     .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
                 ToolbarButton(Icons.Default.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
-                ToolbarButton(Icons.Default.MusicNote,"Audio",false){onSheet(Sheet.AUDIO)}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
                 // quick Copy / Paste: the selection, or the whole frame when nothing is selected

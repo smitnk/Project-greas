@@ -74,7 +74,10 @@ enum { /* orientation: 0 horizontal, 1 vertical; the shadow pivot is the canvas 
   PG_FXP_SHADOW_USE_WAVE = 6, PG_FXP_SHADOW_AMPLITUDE = 7, PG_FXP_SHADOW_PERIOD = 8,
   PG_FXP_SHADOW_PHASE = 9, PG_FXP_SHADOW_ORIENTATION = 10, PG_FXP_SHADOW_SCALE_X = 11,
   PG_FXP_SHADOW_SCALE_Y = 12, PG_FXP_SHADOW_ROTATION = 13, PG_FXP_SHADOW_BLUR_X = 14,
-  PG_FXP_SHADOW_BLUR_Y = 15, PG_FXP_SHADOW_SAMPLES = 16, PG_FXP_SHADOW_COUNT = 17 };
+  PG_FXP_SHADOW_BLUR_Y = 15, PG_FXP_SHADOW_SAMPLES = 16,
+  /* ADAPTED pivot object (FX_SHADOW_USE_OBJECT): rotation / scale centre as an offset from the canvas
+   * centre in canvas fractions (0, 0 = the centre, so effects saved without it keep the old pivot) */
+  PG_FXP_SHADOW_PIVOT_X = 17, PG_FXP_SHADOW_PIVOT_Y = 18, PG_FXP_SHADOW_COUNT = 19 };
 enum { /* center is a fraction of the canvas (Blender takes the center from another object) */
   PG_FXP_SWIRL_CENTER_X = 0, PG_FXP_SWIRL_CENTER_Y = 1, PG_FXP_SWIRL_RADIUS = 2,
   PG_FXP_SWIRL_ANGLE = 3, PG_FXP_SWIRL_COUNT = 4 };

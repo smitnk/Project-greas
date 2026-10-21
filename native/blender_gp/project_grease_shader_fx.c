@@ -218,6 +218,8 @@ void pg_fx_sanitize(int type, float p[PG_FX_MAX_PARAMS])
       p[PG_FXP_SHADOW_BLUR_X] = pgf_int(p[PG_FXP_SHADOW_BLUR_X], 0.0f, big);
       p[PG_FXP_SHADOW_BLUR_Y] = pgf_int(p[PG_FXP_SHADOW_BLUR_Y], 0.0f, big);
       p[PG_FXP_SHADOW_SAMPLES] = pgf_int(p[PG_FXP_SHADOW_SAMPLES], 0.0f, 32.0f);
+      p[PG_FXP_SHADOW_PIVOT_X] = pgf_clamp(p[PG_FXP_SHADOW_PIVOT_X], -2.0f, 2.0f);
+      p[PG_FXP_SHADOW_PIVOT_Y] = pgf_clamp(p[PG_FXP_SHADOW_PIVOT_Y], -2.0f, 2.0f);
       break;
     case PG_FX_SWIRL:
       p[PG_FXP_SWIRL_CENTER_X] = pgf_clamp(p[PG_FXP_SWIRL_CENTER_X], -1.0f, 2.0f);
@@ -490,7 +492,9 @@ static int build_shadow(const float *p, const FxCtx *c, PGFxPass *out)
   const int samples = (int)p[PG_FXP_SHADOW_SAMPLES];
   const float ratio = c->vp_size_inv[1] / c->vp_size_inv[0];
 
-  copy_v2_v2(rot_center, c->center); /* ADAPTED: canvas center (Blender: object origin or pivot object) */
+  /* ADAPTED: canvas center + the pivot offset (Blender: object origin or pivot object), uv with y up */
+  rot_center[0] = (c->view->origin_x + (0.5f + p[PG_FXP_SHADOW_PIVOT_X]) * (float)c->view->canvas_w * c->view->scale) * c->vp_size_inv[0];
+  rot_center[1] = 1.0f - (c->view->origin_y + (0.5f + p[PG_FXP_SHADOW_PIVOT_Y]) * (float)c->view->canvas_h * c->view->scale) * c->vp_size_inv[1];
 
   /* Modify by the canvas scale. */
   mul_v2_fl(offset, c->distance_factor);

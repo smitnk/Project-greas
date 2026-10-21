@@ -685,6 +685,27 @@ int main()
     CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_image_to_grease_pencil", bad, 6, nullptr) == PG_OPERATOR_CANCELLED);
   }
 
+  /* curve edit on a drawn S stroke with the app's threshold (10 px): the stroke keeps its shape */
+  {
+    CHECK(b.reset_document());
+    bGPDframe *f = b.active_layer_data()->actframe;
+    bGPDstroke *g = BKE_gpencil_stroke_add(f, 0, 120, 4, false);
+    for (int i = 0; i < 120; i++) {
+      const float t = i / 119.0f;
+      g->points[i].x = 100.0f + 500.0f * t; g->points[i].y = 300.0f + 120.0f * std::sin(t * 6.2831853f);
+      g->points[i].pressure = g->points[i].strength = 1.0f; g->points[i].flag |= GP_SPOINT_SELECT;
+    }
+    g->flag |= GP_STROKE_SELECT;
+    BKE_gpencil_stroke_geometry_update(b.document_data(), g);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    float thr = 0.1f; /* the app's (Blender's default) */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_enter_editcurve_mode", &thr, 1, nullptr) == PG_OPERATOR_FINISHED);
+    float dev = 0;
+    for (int i = 0; i < g->totpoints; i++) dev = std::max(dev, std::fabs(g->points[i].y - 300.0f));
+    CHECK(g->editcurve && g->editcurve->tot_curve_points >= 3);
+    CHECK(dev > 90.0f); /* still an S, not a straight line */
+    pg_curve_edit_set(C.gpd, false);
+  }
   /* curve edit mode: an arc becomes a bezier, a point drags the stroke, handle types, off again */
   {
     CHECK(b.reset_document());

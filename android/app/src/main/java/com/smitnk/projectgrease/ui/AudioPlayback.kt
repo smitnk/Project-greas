@@ -27,7 +27,8 @@ class AudioPlayback(private val context: Context) {
     fun sync(strips: List<AudioStrip>, playing: Boolean, frame: Int, fps: Int) {
         handler.removeCallbacksAndMessages(null)
         // strips removed since: release their players
-        players.keys.filter { it !in strips }.forEach { players.remove(it)?.release() }
+        players.keys.filter { s -> strips.none { it === s } }.forEach { runCatching { players.remove(it)?.apply { stop(); release() } } }
+        com.smitnk.projectgrease.CrashLog.event("AUDIO sync playing=$playing frame $frame: ${strips.size} clips, ${players.size} players")
         for (s in strips) {
             val p = players[s]
             if (p != null && runCatching { p.isPlaying }.getOrDefault(false)) runCatching { p.pause() }

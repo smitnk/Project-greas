@@ -138,6 +138,18 @@ int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int 
 /* Last palette from GPENCIL_OT_extract_palette_vertex / material_to_vertex_color: count, and up to
  * capacity 0xRRGGBB colours in out. */
 int project_grease_gp_last_palette(int *out, int capacity);
+/* Curve edit mode (pg_curve_*): on / off, curve points (13 floats each; returns the count), a click
+ * on a point (part 0 handle 1, 1 point, 2 handle 2; layer -1 deselects), moving the selection. */
+int project_grease_gp_curve_edit_set(ProjectGreaseGPHandle *handle, int on);
+int project_grease_gp_curve_edit_on(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_curve_points(const ProjectGreaseGPHandle *handle, float *out, int capacity);
+int project_grease_gp_curve_select(ProjectGreaseGPHandle *handle, int layer, int stroke, int point, int part, int extend);
+int project_grease_gp_curve_translate(ProjectGreaseGPHandle *handle, float dx, float dy);
+/* The fill tool's help lines on the current frame (pg_fill_help_lines): writes segments (5 floats)
+ * then circles (4 floats) into out; returns the segment count, *r_circles the circle count. */
+int project_grease_gp_fill_help_lines(ProjectGreaseGPHandle *handle, float extend_fac, int extend_mode, int collide,
+                                      int layer_mode, float px_per_unit, float canvas_w, float canvas_h,
+                                      float *out_seg, int max_seg, float *out_circ, int max_circ, int *r_circles);
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);
 int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive);
 /* Blender operator by idname (project_grease_wm.h): returns the WM status (FINISHED 4 /

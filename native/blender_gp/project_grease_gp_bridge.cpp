@@ -498,6 +498,41 @@ int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int 
   return pg_wm_modal_erase(&C, phase, changed != 0);
 }
 
+int project_grease_gp_fill_help_lines(ProjectGreaseGPHandle *handle, float extend_fac, int extend_mode, int collide,
+                                      int layer_mode, float px_per_unit, float canvas_w, float canvas_h,
+                                      float *out_seg, int max_seg, float *out_circ, int max_circ, int *r_circles)
+{
+  if (r_circles) *r_circles = 0;
+  if (!ensure_ready(handle)) return 0;
+  return pg_fill_help_lines(handle->backend.document_data(), handle->backend.current_frame_number(), extend_fac,
+                            extend_mode, collide, layer_mode, px_per_unit, 0.0f, 0.0f, 0.5f * canvas_w,
+                            0.5f * canvas_h, out_seg, max_seg, out_circ, max_circ, r_circles);
+}
+
+int project_grease_gp_curve_edit_set(ProjectGreaseGPHandle *handle, int on)
+{
+  return ensure_operator(handle) && pg_curve_edit_set && pg_curve_edit_set(handle->backend.document_data(), on != 0) ? 1 : 0;
+}
+int project_grease_gp_curve_edit_on(const ProjectGreaseGPHandle *handle)
+{
+  if (!handle) return 0;
+  const bGPdata *gpd = const_cast<ProjectGreaseGPHandle *>(handle)->backend.document_data();
+  return gpd && GPENCIL_CURVE_EDIT_SESSIONS_ON(gpd) ? 1 : 0;
+}
+int project_grease_gp_curve_points(const ProjectGreaseGPHandle *handle, float *out, int capacity)
+{
+  if (!handle || !pg_curve_points) return 0;
+  return pg_curve_points(const_cast<ProjectGreaseGPHandle *>(handle)->backend.document_data(), out, capacity);
+}
+int project_grease_gp_curve_select(ProjectGreaseGPHandle *handle, int layer, int stroke, int point, int part, int extend)
+{
+  return ensure_operator(handle) && pg_curve_select && pg_curve_select(handle->backend.document_data(), layer, stroke, point, part, extend != 0) ? 1 : 0;
+}
+int project_grease_gp_curve_translate(ProjectGreaseGPHandle *handle, float dx, float dy)
+{
+  return ensure_operator(handle) && pg_curve_translate ? pg_curve_translate(handle->backend.document_data(), dx, dy) : 0;
+}
+
 int project_grease_gp_last_palette(int *out, int capacity)
 {
   const unsigned int *cols = nullptr;

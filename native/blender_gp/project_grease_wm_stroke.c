@@ -13,6 +13,9 @@
 #include "BKE_gpencil_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_deform.h"
+#include "BKE_curve.h"
+#include "BKE_gpencil_curve_legacy.h"
+#include "DNA_curve_types.h"
 #include "DNA_object_types.h"
 #include "DNA_curve_types.h"
 #include "MEM_guardedalloc.h"
@@ -2009,6 +2012,222 @@ static int exec_snap_to_cursor(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* ---- curve edit mode (gpencil_edit_curve.c, rna_GPencil_curve_edit_mode_toggle) ------------------ */
+/* The app has no object modes: curve editing also sets the edit-mode flag, which
+ * GPENCIL_CURVE_EDIT_SESSIONS_ON needs, and clears it again when it ends. */
+static bool pgw_curve_set_editmode = false;
+
+/* GPENCIL_OT_stroke_enter_editcurve_mode: error_threshold (0.1 BU; canvas units here) */
+static int exec_enter_editcurve(PGOpContext *C, const float *p, int n)
+{
+  bGPdata *gpd = C->gpd;
+  const float error_threshold = prop_f(p, n, 0, 0.1f);
+  if (!(error_threshold >= FLT_MIN) || error_threshold > 100.0f) return PG_OPERATOR_CANCELLED;
+  gpd->curve_edit_threshold = error_threshold;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+      if (gpf == gpl->actframe) {
+        LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+          /* only allow selected and non-converted strokes to be transformed */
+          if ((gps->flag & GP_STROKE_SELECT && gps->editcurve == NULL) ||
+              (gps->editcurve != NULL && gps->editcurve->flag & GP_CURVE_NEEDS_STROKE_UPDATE))
+          {
+            BKE_gpencil_stroke_editcurve_update(gpd, gpl, gps);
+            /* Update the selection from the stroke to the curve. */
+            BKE_gpencil_editcurve_stroke_sync_selection(gpd, gps, gps->editcurve);
+            gps->flag |= GP_STROKE_NEEDS_CURVE_UPDATE;
+            BKE_gpencil_stroke_geometry_update(gpd, gps);
+          }
+        }
+      }
+    }
+  }
+  if (!(gpd->flag & GP_DATA_STROKE_EDITMODE)) { gpd->flag |= GP_DATA_STROKE_EDITMODE; pgw_curve_set_editmode = true; }
+  gpd->flag |= GP_DATA_CURVE_EDIT_MODE;
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_stroke_editcurve_set_handle_type: type HD_FREE 0 / HD_AUTO 1 / HD_VECT 2 / HD_ALIGN 3 */
+static bool poll_curve_edit(const PGOpContext *C)
+{
+  return C->gpd != NULL && GPENCIL_CURVE_EDIT_SESSIONS_ON(C->gpd) && BKE_gpencil_layer_active_get(C->gpd) != NULL;
+}
+static int exec_set_handle_type(PGOpContext *C, const float *p, int n)
+{
+  const int handle_type = prop_i(p, n, 0, HD_AUTO);
+  if (!ELEM(handle_type, HD_FREE, HD_AUTO, HD_VECT, HD_ALIGN)) return PG_OPERATOR_CANCELLED;
+  bGPdata *gpd = C->gpd;
+  /* GP_EDITABLE_CURVES_BEGIN: editable layers, the active frame, strokes with an editcurve */
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
+      bGPDcurve *gpc = gps->editcurve;
+      if (gpc == NULL) continue;
+      for (int i = 0; i < gpc->tot_curve_points; i++) {
+        bGPDcurve_point *gpc_pt = &gpc->curve_points[i];
+
+        if (gpc_pt->flag & GP_CURVE_POINT_SELECT) {
+          BezTriple *bezt = &gpc_pt->bezt;
+
+          if (bezt->f2 & SELECT) {
+            bezt->h1 = handle_type;
+            bezt->h2 = handle_type;
+          }
+          else {
+            if (bezt->f1 & SELECT) {
+              bezt->h1 = handle_type;
+            }
+            if (bezt->f3 & SELECT) {
+              bezt->h2 = handle_type;
+            }
+          }
+        }
+      }
+
+      BKE_gpencil_editcurve_recalculate_handles(gps);
+      gps->flag |= GP_STROKE_NEEDS_CURVE_UPDATE;
+      BKE_gpencil_stroke_geometry_update(gpd, gps);
+    }
+  }
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
+/* use_curve_edit on / off (rna_GPencil_curve_edit_mode_toggle): on makes the selected strokes'
+ * edit curves, off copies the curve selection back to the stroke points. */
+int pg_curve_edit_set(bGPdata *gpd, bool on)
+{
+  if (gpd == NULL) return 0;
+  if (on) {
+    if (!(gpd->flag & GP_DATA_STROKE_EDITMODE)) { gpd->flag |= GP_DATA_STROKE_EDITMODE; pgw_curve_set_editmode = true; }
+    gpd->flag |= GP_DATA_CURVE_EDIT_MODE;
+    BKE_gpencil_strokes_selected_update_editcurve(gpd);
+  }
+  else {
+    gpd->flag &= ~GP_DATA_CURVE_EDIT_MODE;
+    BKE_gpencil_strokes_selected_sync_selection_editcurve(gpd);
+    if (pgw_curve_set_editmode) { gpd->flag &= ~GP_DATA_STROKE_EDITMODE; pgw_curve_set_editmode = false; }
+  }
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return 1;
+}
+
+/* The edit curves of the editable layers' current frames: 13 floats per curve point (layer,
+ * stroke, point, handle1 x / y, point x / y, handle2 x / y, selection f1 | f2 << 1 | f3 << 2, h1, h2,
+ * resolution samples of the curve are the stroke itself). Returns the count. */
+int pg_curve_points(const bGPdata *gpd, float *out, int capacity)
+{
+  if (gpd == NULL || !GPENCIL_CURVE_EDIT_SESSIONS_ON(gpd)) return 0;
+  int n = 0, li = 0;
+  LISTBASE_FOREACH_INDEX (bGPDlayer *, gpl, &gpd->layers, li) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
+    int si = 0;
+    LISTBASE_FOREACH_INDEX (bGPDstroke *, gps, &gpl->actframe->strokes, si) {
+      const bGPDcurve *gpc = gps->editcurve;
+      if (gpc == NULL) continue;
+      for (int i = 0; i < gpc->tot_curve_points; i++, n++) {
+        if (n >= capacity || out == NULL) continue;
+        const BezTriple *b = &gpc->curve_points[i].bezt;
+        float *o = out + n * 13;
+        o[0] = li; o[1] = si; o[2] = i;
+        o[3] = b->vec[0][0]; o[4] = b->vec[0][1]; o[5] = b->vec[1][0]; o[6] = b->vec[1][1]; o[7] = b->vec[2][0]; o[8] = b->vec[2][1];
+        o[9] = ((b->f1 & SELECT) ? 1 : 0) | ((b->f2 & SELECT) ? 2 : 0) | ((b->f3 & SELECT) ? 4 : 0);
+        o[10] = b->h1; o[11] = b->h2; o[12] = 0;
+      }
+    }
+  }
+  return n;
+}
+
+static bGPDstroke *pgw_curve_stroke(bGPdata *gpd, int layer, int stroke)
+{
+  bGPDlayer *gpl = BLI_findlink(&gpd->layers, layer);
+  if (gpl == NULL || gpl->actframe == NULL) return NULL;
+  bGPDstroke *gps = BLI_findlink(&gpl->actframe->strokes, stroke);
+  return (gps && gps->editcurve) ? gps : NULL;
+}
+
+/* Clicking a curve point (part 0 handle 1, 1 the point, 2 handle 2) as Blender's select operator
+ * does in curve edit mode: without extend the rest is deselected; layer -1 deselects all. */
+int pg_curve_select(bGPdata *gpd, int layer, int stroke, int point, int part, bool extend)
+{
+  if (gpd == NULL || !GPENCIL_CURVE_EDIT_SESSIONS_ON(gpd)) return 0;
+  if (!extend || layer < 0) {
+    LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+      if (gpl->actframe == NULL) continue;
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
+        bGPDcurve *gpc = gps->editcurve;
+        if (gpc == NULL) continue;
+        for (int i = 0; i < gpc->tot_curve_points; i++) {
+          gpc->curve_points[i].flag &= ~GP_CURVE_POINT_SELECT;
+          BEZT_DESEL_ALL(&gpc->curve_points[i].bezt);
+        }
+        gpc->flag &= ~GP_CURVE_SELECT;
+        BKE_gpencil_stroke_editcurve_sync_selection(gpd, gps, gpc);
+      }
+    }
+  }
+  if (layer < 0) return 1;
+  bGPDstroke *gps = pgw_curve_stroke(gpd, layer, stroke);
+  if (gps == NULL || point < 0 || point >= gps->editcurve->tot_curve_points || part < 0 || part > 2) return 0;
+  bGPDcurve_point *cp = &gps->editcurve->curve_points[point];
+  BezTriple *bezt = &cp->bezt;
+  if (part == 1) {
+    BEZT_SEL_ALL(bezt);
+  }
+  else if (part == 0) {
+    bezt->f1 |= SELECT;
+  }
+  else {
+    bezt->f3 |= SELECT;
+  }
+  cp->flag |= GP_CURVE_POINT_SELECT;
+  gps->editcurve->flag |= GP_CURVE_SELECT;
+  BKE_gpencil_stroke_editcurve_sync_selection(gpd, gps, gps->editcurve);
+  return 1;
+}
+
+/* Moving the selection in curve edit mode (createTransGPencil_curves with handles visible): a
+ * selected point moves with its handles, a lone handle by itself; AUTO / ALIGN points move whole;
+ * the handle types are tested (BKE_nurb_bezt_handle_test) and recalculated, and the stroke is
+ * rebuilt from its curve. */
+int pg_curve_translate(bGPdata *gpd, float dx, float dy)
+{
+  if (gpd == NULL || !GPENCIL_CURVE_EDIT_SESSIONS_ON(gpd) || !isfinite(dx) || !isfinite(dy)) return 0;
+  int moved = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
+      bGPDcurve *gpc = gps->editcurve;
+      if (gpc == NULL) continue;
+      bool need_handle_recalc = false;
+      for (int i = 0; i < gpc->tot_curve_points; i++) {
+        BezTriple *bezt = &gpc->curve_points[i].bezt;
+        if (bezt->hide) continue;
+        /* get_bezt_sel_triple_flag() with handles visible */
+        short flag = ((bezt->f1 & SELECT) ? 1 : 0) | ((bezt->f2 & SELECT) ? 2 : 0) | ((bezt->f3 & SELECT) ? 4 : 0);
+        if ((flag != 7) && (flag & 2) && ELEM(bezt->h1, HD_AUTO, HD_ALIGN) && ELEM(bezt->h2, HD_AUTO, HD_ALIGN)) flag = 7;
+        if (flag == 0) continue;
+        for (int j = 0; j < 3; j++) {
+          if (flag & (1 << j)) { bezt->vec[j][0] += dx; bezt->vec[j][1] += dy; }
+        }
+        BKE_nurb_bezt_handle_test(bezt, SELECT, true, false);
+        need_handle_recalc = true;
+      }
+      if (need_handle_recalc) {
+        BKE_gpencil_editcurve_recalculate_handles(gps);
+        /* recalcData_gpencil_strokes */
+        gps->flag |= GP_STROKE_NEEDS_CURVE_UPDATE;
+        BKE_gpencil_stroke_geometry_update(gpd, gps);
+        moved++;
+      }
+    }
+  }
+  if (moved) BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return moved;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -2077,6 +2296,8 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_vertex_group_normalize_all", RU, poll_gpd, exec_vg_normalize_all},
     {"GPENCIL_OT_interpolate_reverse", RU, poll_gpd, exec_interpolate_reverse},
     {"GPENCIL_OT_snap_to_cursor", RU, poll_gpd, exec_snap_to_cursor},
+    {"GPENCIL_OT_stroke_enter_editcurve_mode", RU, poll_active_layer, exec_enter_editcurve},
+    {"GPENCIL_OT_stroke_editcurve_set_handle_type", RU, poll_curve_edit, exec_set_handle_type},
     {"GPENCIL_OT_weight_sample", PG_OPTYPE_REGISTER, poll_gpd, exec_weight_sample}, /* brush setting: no undo */
 };
 

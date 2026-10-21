@@ -685,6 +685,40 @@ int main()
     CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_image_to_grease_pencil", bad, 6, nullptr) == PG_OPERATOR_CANCELLED);
   }
 
+  /* curve edit mode: an arc becomes a bezier, a point drags the stroke, handle types, off again */
+  {
+    CHECK(b.reset_document());
+    bGPDframe *f = b.active_layer_data()->actframe;
+    bGPDstroke *g = BKE_gpencil_stroke_add(f, 0, 40, 4, false);
+    for (int i = 0; i < 40; i++) {
+      const float a = 3.1415927f * i / 39.0f;
+      g->points[i].x = 300.0f + 200.0f * std::cos(a); g->points[i].y = 300.0f - 200.0f * std::sin(a);
+      g->points[i].pressure = g->points[i].strength = 1.0f; g->points[i].flag |= GP_SPOINT_SELECT;
+    }
+    g->flag |= GP_STROKE_SELECT;
+    BKE_gpencil_stroke_geometry_update(b.document_data(), g);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    float thr = 2.0f;
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_enter_editcurve_mode", &thr, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(g->editcurve != nullptr && g->editcurve->tot_curve_points >= 2);
+    CHECK(GPENCIL_CURVE_EDIT_SESSIONS_ON(C.gpd));
+    std::vector<float> cps(13 * 64);
+    const int ncp = pg_curve_points(C.gpd, cps.data(), 64);
+    CHECK(ncp == g->editcurve->tot_curve_points);
+    CHECK(std::fabs(cps[5] - 500.0f) < 1.0f && std::fabs(cps[6] - 300.0f) < 1.0f); /* the first point */
+    CHECK(pg_curve_select(C.gpd, 0, 0, 0, 1, false));
+    CHECK(pg_curve_translate(C.gpd, 0.0f, 50.0f) == 1);
+    CHECK(std::fabs(g->points[0].y - 350.0f) < 1.0f); /* the stroke follows its curve */
+    const int last = g->totpoints - 1;
+    CHECK(std::fabs(g->points[last].y - 300.0f) < 1.0f); /* the other end stays */
+    float vect = 2; /* HD_VECT */
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_editcurve_set_handle_type", &vect, 1, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(g->editcurve->curve_points[0].bezt.h1 == HD_VECT && g->editcurve->curve_points[0].bezt.h2 == HD_VECT);
+    CHECK(pg_curve_edit_set(C.gpd, false) && !GPENCIL_CURVE_EDIT_SESSIONS_ON(C.gpd));
+    CHECK(!(C.gpd->flag & GP_DATA_STROKE_EDITMODE));
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_stroke_editcurve_set_handle_type", &vect, 1, nullptr) == PG_OPERATOR_CANCELLED);
+  }
+
   /* batch 16: primitives (confirm step) */
   {
     CHECK(b.reset_document());

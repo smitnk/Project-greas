@@ -43,6 +43,12 @@ int pg_wm_modal_erase(PGOpContext *C, int phase, bool changed) __attribute__((we
 /* Colours (sRGB 0xRRGGBB, hue sorted) of the palette made by the last extract_palette_vertex or
  * material_to_vertex_color call. */
 int pg_wm_last_palette(const unsigned int **r_colors) __attribute__((weak));
+/* Curve edit mode (project_grease_wm_stroke.c): on / off, the curve points (13 floats each), a
+ * click on a point / handle, and moving the selected ones. */
+int pg_curve_edit_set(struct bGPdata *gpd, bool on) __attribute__((weak));
+int pg_curve_points(const struct bGPdata *gpd, float *out, int capacity) __attribute__((weak));
+int pg_curve_select(struct bGPdata *gpd, int layer, int stroke, int point, int part, bool extend) __attribute__((weak));
+int pg_curve_translate(struct bGPdata *gpd, float dx, float dy) __attribute__((weak));
 /* Brush weight found by the last GPENCIL_OT_weight_sample. */
 float pg_wm_last_weight_sample(void) __attribute__((weak));
 /* idname of the running modal operator, NULL when none. */

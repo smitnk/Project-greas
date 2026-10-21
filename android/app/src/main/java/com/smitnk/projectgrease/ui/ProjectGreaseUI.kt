@@ -552,6 +552,18 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Slider(controller.fillExtend,{controller.setFillExtend(it);redraw()},valueRange=0f..10f,modifier=Modifier.width(120.dp))
         FilterChip(selected=controller.fillCollide,onClick={controller.setFillPrecision(collide=!controller.fillCollide);redraw()},
             label={Text("Collide",fontSize=10.sp)},modifier=Modifier.padding(start=3.dp))
+        // gap closing: extend the line ends, or join ends that are within the radius
+        listOf(0 to "Lines",1 to "Radius").forEach{(m,l)->
+            FilterChip(selected=controller.fillExtendMode==m,onClick={controller.setFillModes(extendMode=m);redraw()},
+                label={Text(l,fontSize=10.sp)},modifier=Modifier.padding(start=3.dp).testTag("fillExtendMode_$m"))
+        }
+        FilterChip(selected=controller.fillShowLines,onClick={controller.fillShowLines=!controller.fillShowLines;redraw()},
+            label={Text("Show lines",fontSize=10.sp)},modifier=Modifier.padding(start=3.dp).testTag("fillShowLines"))
+        Text("Layers",fontSize=10.sp,modifier=Modifier.padding(start=6.dp,end=3.dp))
+        listOf(0 to "Visible",1 to "Active",4 to "Above",5 to "Below",2 to "All above",3 to "All below").forEach{(m,l)->
+            FilterChip(selected=controller.fillLayerMode==m,onClick={controller.setFillModes(layerMode=m);redraw()},
+                label={Text(l,fontSize=10.sp)},modifier=Modifier.padding(end=3.dp).testTag("fillLayers_$m"))
+        }
     }
 }
 
@@ -1490,6 +1502,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         // canvas overlays turn with the two-finger view rotation (about the viewport centre)
         Box(Modifier.fillMaxSize().graphicsLayer{rotationZ=Math.toDegrees(controller.view.rotation.toDouble()).toFloat()}){
             DrawingGuidesOverlay(controller)
+            if(controller.tools.activeTool==GreaseTool.FILL) FillHelpOverlay(controller,overlayTick+refresh)
             LassoPathOverlay(controller)
             ReferenceOverlay(controller,refresh)
             CurveHandlesOverlay(controller,overlayTick,redraw)
@@ -1497,6 +1510,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             ModifierHandlesOverlay(controller,overlayTick,redraw)
             BoxSelectOverlay(controller,overlayTick)
             WarpOverlay(controller,overlayTick,redraw)
+            BezierEditOverlay(controller,overlayTick+refresh,redraw)
             ReferenceAdjustOverlay(controller,redraw)
         }
 
@@ -1538,7 +1552,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         // Quick Favorites (Blender's Q menu): the pinned tools, top right under the bar
         QuickFavoritesBar(controller,Modifier.align(Alignment.TopEnd).padding(top=56.dp,end=8.dp),redraw)
         // Lasso Cut (Blender's Cutter tool): the lasso cuts away the line parts inside it
-        if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&controller.mode==GreaseMode.DRAW){
+        if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&!controller.bezierEditing&&controller.mode==GreaseMode.DRAW){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
@@ -1560,7 +1574,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
-        if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
+        if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&!controller.bezierEditing&&controller.photoLasso==null&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){Text("Warp",maxLines=1)}
                 OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){Text("Warp mesh",maxLines=1)}

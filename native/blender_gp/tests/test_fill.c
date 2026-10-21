@@ -164,6 +164,26 @@ static void test_extend_lines(void)
   CHECK(n == 2);
   for (int i = 0; i < n; i++) CHECK(fabsf(seg[i * 4 + 3] - (OY + 120.0f)) < 1e-2f);
   CHECK(BLI_listbase_count(&gpf->strokes) == strokes_before);
+  /* Radius mode: endpoints closer than 30 units are joined (the two corners of the U are the same
+   * point twice: 0,0 and 100,0 joined to themselves -> 2 joins), every endpoint gets a help circle. */
+  float seg5[16 * 5], circ[32 * 4];
+  int nc = 0;
+  n = pg_fill_help_lines(gpd, 1, 3.0f, GP_FILL_EMODE_RADIUS, 0, GP_FILL_GPLMODE_VISIBLE, 1.0f, 0, 0, 640, 360,
+                         seg5, 16, circ, 32, &nc);
+  CHECK(n >= 2);
+  CHECK(nc == 8);
+  CHECK(fabsf(circ[2] - 30.0f) < 1e-3f);
+  /* a corner endpoint is in contact (joined), the far ends of the top stroke are not */
+  int contact = 0;
+  for (int i = 0; i < nc; i++) contact += circ[i * 4 + 3] != 0.0f;
+  CHECK(contact >= 4 && contact < 8);
+  /* Active layer mode on another layer: no strokes, no lines */
+  bGPDlayer *other = BKE_gpencil_layer_addnew(gpd, "Other", true, false);
+  (void)other;
+  n = pg_fill_help_lines(gpd, 1, 3.0f, GP_FILL_EMODE_EXTEND, 0, GP_FILL_GPLMODE_ACTIVE, 1.0f, 0, 0, 640, 360,
+                         seg5, 16, circ, 32, &nc);
+  CHECK(n == 0);
+  CHECK(BLI_listbase_count(&gpf->strokes) == strokes_before);
   BKE_gpencil_free_layers(&gpd->layers);
   gpd->mat = NULL;
   MEM_freeN(gpd);

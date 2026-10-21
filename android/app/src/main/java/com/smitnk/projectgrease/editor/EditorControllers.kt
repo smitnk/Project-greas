@@ -1009,6 +1009,7 @@ class EditorController {
             GreaseMode.WEIGHT_PAINT -> FeatureRegistry.capability(FeatureId.WEIGHT_PAINT).state != FeatureState.NOT_IMPLEMENTED
         }
         if (!supported) return false
+        if (value != GreaseMode.EDIT && bezierEditing) endBezierEdit()
         mode = value
         // The mode chip and the sculpt tool are the same switch (the chip alone used to leave Draw active).
         if (value == GreaseMode.SCULPT) tools.select(GreaseTool.SCULPT)
@@ -1227,6 +1228,56 @@ class EditorController {
         com.smitnk.projectgrease.CrashLog.event("OP $idname")
         return setMode(if (mode == target && target != GreaseMode.DRAW) GreaseMode.DRAW else target)
     }
+    // ---- curve edit mode (Blender's Edit-mode "Curve Editing": strokes edited as bezier curves) ----
+    var bezierEditing by androidx.compose.runtime.mutableStateOf(false); private set
+    /** Curve fit tolerance in canvas units (gpd->curve_edit_threshold: 0.1 BU = 10 units here). */
+    var bezierThreshold = 10f
+    /** GPENCIL_OT_stroke_enter_editcurve_mode on the selected strokes. */
+    fun beginBezierEdit():Boolean {
+        if (native.handle == 0L) return false
+        if (native.selectedPointCount() <= 0) { onMessage?.invoke("Curve edit: select strokes first (Lasso or tap them)"); return false }
+        if (mode != GreaseMode.EDIT) setMode(GreaseMode.EDIT)
+        val ok = runOperator("GPENCIL_OT_stroke_enter_editcurve_mode", bezierThreshold)
+        bezierEditing = ok && GPNative.nativeCurveEditOn(native.handle)
+        onUiChanged?.invoke(); return bezierEditing
+    }
+    fun endBezierEdit() {
+        if (native.handle != 0L) GPNative.nativeCurveEditSet(native.handle, false)
+        bezierEditing = false; render(); onUiChanged?.invoke()
+    }
+    fun bezierPoints():FloatArray = if (bezierEditing && native.handle != 0L) GPNative.nativeCurvePoints(native.handle) ?: FloatArray(0) else FloatArray(0)
+    /** The point or handle near canvas (x, y): selects it (others off unless extend); false when none. */
+    fun bezierPick(x:Float, y:Float, radius:Float, extend:Boolean = false):Boolean {
+        val p = bezierPoints(); var best = -1; var part = -1; var bd = radius * radius
+        var i = 0
+        while (i + 12 < p.size) {
+            for (k in 0 until 3) {
+                val dx = p[i + 3 + k * 2] - x; val dy = p[i + 4 + k * 2] - y; val d = dx * dx + dy * dy
+                // the point wins over its handles when they overlap
+                if (d < bd || (d <= bd && k == 1)) { bd = d; best = i; part = k }
+            }
+            i += 13
+        }
+        if (best < 0) { if (!extend) GPNative.nativeCurveSelect(native.handle, -1, 0, 0, 0, false); render(); return false }
+        GPNative.nativeCurveSelect(native.handle, p[best].toInt(), p[best + 1].toInt(), p[best + 2].toInt(), part, extend)
+        render(); return true
+    }
+    /** Whether the part at (x, y) is selected already (a drag then moves the whole selection). */
+    fun bezierSelectedAt(x:Float, y:Float, radius:Float):Boolean {
+        val p = bezierPoints(); var i = 0
+        while (i + 12 < p.size) {
+            val bits = p[i + 9].toInt()
+            for (k in 0 until 3) if (bits and (1 shl k) != 0 && kotlin.math.hypot(p[i + 3 + k * 2] - x, p[i + 4 + k * 2] - y) <= radius) return true
+            i += 13
+        }
+        return false
+    }
+    fun bezierDrag(dx:Float, dy:Float):Boolean = native.handle != 0L && GPNative.nativeCurveTranslate(native.handle, dx, dy) > 0
+    fun bezierDragBegin() { history.beginBatch() }
+    fun bezierDragEnd() { history.markEdit(); history.endBatch(); document.markDirty(); render() }
+    /** GPENCIL_OT_stroke_editcurve_set_handle_type: 0 Free, 1 Automatic, 2 Vector, 3 Aligned. */
+    fun setBezierHandleType(type:Int) = runOperator("GPENCIL_OT_stroke_editcurve_set_handle_type", type.toFloat())
+
     /** End of a transform-box drag: one undo step. */
     fun endReferenceTransform() { rotoscopeChanged(imageChanged = false); history.markEdit() }
 
@@ -2211,6 +2262,21 @@ class EditorController {
     var fillPrecision = 1f; private set
     /** Extend Lines "Collide" (GP_BRUSH_FILL_STROKE_COLLIDE): only extensions that hit a stroke close gaps. */
     var fillCollide = false; private set
+    /** Blender's fill brush: Extend Lines (0) or Radius (1) gap closing, which layers bound the
+     *  fill (GP_FILL_GPLMODE_*: 0 visible, 1 active, 2 all above, 3 all below, 4 above, 5 below) and
+     *  whether the help lines show while the Fill tool is on (Show Lines). */
+    var fillExtendMode = 0; private set
+    var fillLayerMode = 0; private set
+    var fillShowLines by androidx.compose.runtime.mutableStateOf(true)
+    fun setFillModes(extendMode:Int = fillExtendMode, layerMode:Int = fillLayerMode) {
+        fillExtendMode = if (extendMode == 1) 1 else 0; fillLayerMode = layerMode.coerceIn(0, 5); render()
+    }
+    /** The help lines shown with the Fill tool: [segments, circles, ...] (see GPNative.nativeFillHelpLines). */
+    fun fillHelpLines():FloatArray? {
+        if (native.handle == 0L || !fillShowLines || fillExtend <= 0f || tools.activeTool != GreaseTool.FILL) return null
+        return GPNative.nativeFillHelpLines(native.handle, fillExtend, fillExtendMode, fillCollide, fillLayerMode,
+            screenPxPerUnit.coerceAtLeast(1e-3f), document.canvasWidth.toFloat(), document.canvasHeight.toFloat())
+    }
     fun setFillPrecision(value:Float = fillPrecision, collide:Boolean = fillCollide) {
         fillPrecision = if (value.isFinite()) value.coerceIn(0.05f, 8f) else 1f
         fillCollide = collide
@@ -2249,6 +2315,7 @@ class EditorController {
         val slot = fillMaterialSlot() ?: return false
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
         GPNative.nativeSetFillExtendEglRenderer(rendererHandle, fillExtend)
+        GPNative.nativeSetFillModesEglRenderer(rendererHandle, fillExtendMode, fillLayerMode)
         GPNative.nativeSetFillPrecisionEglRenderer(rendererHandle, (fillPrecision / uiScale.coerceAtLeast(1f)).coerceAtLeast(0.05f), fillCollide) // Blender resolution at UI scale 1: the precision is per UI pixel
         // the new slot (if one was made) is part of this fill's undo step
         if (fillRunning) return false // one fill at a time; taps while it runs are dropped
@@ -3340,6 +3407,7 @@ class EditorController {
     fun undo():Boolean {
         val ok = history.undo()
         if (ok) {
+            if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
             reapplyOnion()
             restoreSelectedStroke()
             animation.initialize()
@@ -3351,6 +3419,7 @@ class EditorController {
     fun redo():Boolean {
         val ok = history.redo()
         if (ok) {
+            if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
             reapplyOnion()
             restoreSelectedStroke()
             animation.initialize()

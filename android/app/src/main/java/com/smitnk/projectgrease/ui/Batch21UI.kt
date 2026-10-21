@@ -214,6 +214,90 @@ fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
     }
 }
 
+/** Curve edit mode: each curve point with its two handles. Tap a point or handle to select it,
+ *  drag it to move it (the stroke follows its curve), drag elsewhere to pan; handle types below. */
+@Composable
+fun BezierEditOverlay(controller: EditorController, tick: Int, redraw: () -> Unit) {
+    if (!controller.bezierEditing) return
+    var local by remember { mutableIntStateOf(0) }
+    val pts = remember(tick, local) { controller.bezierPoints() }
+    Box(Modifier.fillMaxSize().testTag("bezierOverlay")) {
+        Canvas(Modifier.fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { o ->
+                    val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                    val c = m.canvas(o)
+                    controller.bezierPick(c.first, c.second, 28f / m.scale()); local++; redraw()
+                })
+            }
+            .pointerInput(Unit) {
+                var moving = false
+                detectDragGestures(
+                    onDragStart = { o ->
+                        val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                        val c = m.canvas(o); val r = 28f / m.scale()
+                        moving = controller.bezierSelectedAt(c.first, c.second, r) || controller.bezierPick(c.first, c.second, r)
+                        if (moving) controller.bezierDragBegin()
+                        local++
+                    },
+                    onDragEnd = { if (moving) controller.bezierDragEnd(); moving = false; local++; redraw() },
+                    onDragCancel = { if (moving) controller.bezierDragEnd(); moving = false }
+                ) { change, d ->
+                    change.consume()
+                    val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                    if (moving) { val dm = m.delta(d.x, d.y); controller.bezierDrag(dm.first, dm.second); controller.render() }
+                    else { controller.view.panBy(d.x, d.y); controller.render() }
+                    local++
+                }
+            }) {
+            val m = OverlayMap(size.width, size.height, controller)
+            var i = 0
+            while (i + 12 < pts.size) {
+                val h1 = m.screen(pts[i + 3] to pts[i + 4]); val p = m.screen(pts[i + 5] to pts[i + 6]); val h2 = m.screen(pts[i + 7] to pts[i + 8])
+                val bits = pts[i + 9].toInt()
+                drawLine(Color.Black, h1, h2, 3f); drawLine(Color(0xFFFFB74D), h1, p, 1.5f); drawLine(Color(0xFFFFB74D), p, h2, 1.5f)
+                fun dot(o: Offset, sel: Boolean, r: Float) { drawCircle(Color.Black, r + 3f, o); drawCircle(if (sel) Color(0xFFFF9800) else Color.White, r, o) }
+                dot(h1, bits and 1 != 0, 7f); dot(h2, bits and 4 != 0, 7f)
+                drawRect(Color.Black, Offset(p.x - 11f, p.y - 11f), androidx.compose.ui.geometry.Size(22f, 22f))
+                drawRect(if (bits and 2 != 0) Color(0xFFFF9800) else Color.White, Offset(p.x - 8f, p.y - 8f), androidx.compose.ui.geometry.Size(16f, 16f))
+                i += 13
+            }
+        }
+        Surface(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, shadowElevation = 4.dp) {
+            FlowRow(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = { controller.endBezierEdit(); redraw() }, Modifier.testTag("bezierDone")) { Text("Done") }
+                listOf(0 to "Free", 1 to "Auto", 2 to "Vector", 3 to "Aligned").forEach { (t, l) ->
+                    OutlinedButton(onClick = { controller.setBezierHandleType(t); local++; redraw() }, Modifier.testTag("bezierHandle_$t")) { Text(l) }
+                }
+            }
+        }
+    }
+}
+
+/** Fill tool help lines (Blender's Show Lines): the extensions that close gaps in cyan, the ones
+ *  that touch nothing yet (Collide) in magenta, and Radius mode's circles around open ends. */
+@Composable
+fun FillHelpOverlay(controller: EditorController, tick: Int) {
+    val data = remember(tick, controller.fillExtend, controller.fillExtendMode, controller.fillLayerMode, controller.fillCollide,
+        controller.fillShowLines, controller.tools.activeTool, controller.animation.currentFrame) { controller.fillHelpLines() } ?: return
+    if (data.size < 2) return
+    val ns = data[0].toInt(); val nc = data[1].toInt()
+    Canvas(Modifier.fillMaxSize()) {
+        val m = OverlayMap(size.width, size.height, controller)
+        for (i in 0 until ns) {
+            val o = 2 + i * 5
+            val a = m.screen(data[o] to data[o + 1]); val b = m.screen(data[o + 2] to data[o + 3])
+            drawLine(if (data[o + 4] == 0f) Color(0xFF00FFFF) else Color(0xFFFF0080), a, b, 2f)
+        }
+        for (i in 0 until nc) {
+            val o = 2 + ns * 5 + i * 4
+            if (data[o + 3] != 0f) continue // in contact: hidden, as Blender keeps the focus on open gaps
+            val c = m.screen(data[o] to data[o + 1])
+            drawCircle(Color(0x80FF0080), data[o + 2] * m.scale(), c, style = Stroke(width = 1.5f))
+        }
+    }
+}
+
 /** The loop drawn over a photo, until Cut out / Copy out / Erase. */
 @Composable
 fun PhotoLassoOverlay(controller: EditorController) {
@@ -299,7 +383,8 @@ fun SelectOperatorsBar(controller: EditorController, redraw: () -> Unit) {
             "More" to { controller.selectMore() }, "Less" to { controller.selectLess() },
             "First" to { controller.selectFirstPoints() }, "Last" to { controller.selectLastPoints() },
             "Same layer" to { controller.selectGroupedByLayer() }, "Same material" to { controller.selectGroupedByMaterial() },
-            "Delete points" to { controller.deleteSelectedPoints() }, "Join" to { controller.joinSelection() }
+            "Delete points" to { controller.deleteSelectedPoints() }, "Join" to { controller.joinSelection() },
+            "Curve edit" to { controller.beginBezierEdit() }
         ).forEach { (label, action) ->
             TextButton(onClick = { if (action()) redraw() }, modifier = Modifier.testTag("select_$label")) { Text(label, fontSize = 11.sp) }
         }

@@ -6,6 +6,7 @@
  * GP_fill ImBuf. Extend Lines (GP_FILL_EMODE_EXTEND with the stroke collision check) runs Blender's
  * own extension code on the document's strokes in the 2D canvas plane. */
 #pragma once
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -48,6 +49,20 @@ int pg_fill_raster(float *rgba, int w, int h, int seed_x, int seed_y, float poin
 int pg_fill_extend_lines(struct bGPdata *gpd, int cfra, float extend_fac, int use_stroke_collide,
                          float px_scale, float px_ox, float px_oy, float canvas_cx, float canvas_cy,
                          float *out, int max_segments);
+
+/* skip_layer_check() of gpencil_fill.c: whether fill_layer_mode leaves layer gpl_index out. */
+bool skip_layer_check(short fill_layer_mode, int gpl_active_index, int gpl_index);
+/* pg_fill_extend_lines with Blender's extend mode (GP_FILL_EMODE_EXTEND 0 / RADIUS 1) and layer
+ * mode (GP_FILL_GPLMODE_*): the extension segments the fill mask draws. */
+int pg_fill_extend_lines_ex(struct bGPdata *gpd, int cfra, float extend_fac, int extend_mode, int use_stroke_collide,
+                            int layer_mode, float px_scale, float px_ox, float px_oy,
+                            float canvas_cx, float canvas_cy, float *out, int max_segments);
+/* The fill tool's help lines for display: segments x0,y0,x1,y1,kind (0 used by the fill, 1 not
+ * connected while Collide is on) and Radius-mode circles cx,cy,r,contact. Returns the segment count. */
+int pg_fill_help_lines(struct bGPdata *gpd, int cfra, float extend_fac, int extend_mode, int use_stroke_collide,
+                       int layer_mode, float px_scale, float px_ox, float px_oy,
+                       float canvas_cx, float canvas_cy, float *out_seg, int max_seg,
+                       float *out_circ, int max_circ, int *r_circles);
 
 #ifdef __cplusplus
 }

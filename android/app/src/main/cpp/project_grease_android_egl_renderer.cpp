@@ -42,6 +42,7 @@ extern "C" void project_grease_android_present_set_guide(int type, float cx, flo
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
 extern "C" void project_grease_android_present_set_fill_extend(float factor);
 extern "C" void project_grease_android_present_set_fill_collide(int collide);
+extern "C" void project_grease_android_present_set_fill_modes(int extend_mode, int layer_mode);
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
 extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy, float *rotation);
@@ -78,6 +79,8 @@ struct Renderer {
   int fill_dilate = 1;
   int fill_draw_mode = 0;
   float fill_extend = 0.0f; // brush fill_extend_fac
+  int fill_extend_mode = 0;  // GP_FILL_EMODE_EXTEND / RADIUS
+  int fill_layer_mode = 0;   // GP_FILL_GPLMODE_*
   std::unique_ptr<FillCapture> fill_capture; // background fill: captured mask
   PGFillJob *fill_job = nullptr;                    // background fill: computed outline
 
@@ -677,6 +680,7 @@ static bool fill_capture(Renderer *renderer, int seed_x, int seed_y, FillCapture
   project_grease_android_present_set_fill_draw_mode(renderer->fill_draw_mode);
   project_grease_android_present_set_fill_extend(renderer->fill_extend);
   project_grease_android_present_set_fill_collide(renderer->fill_collide);
+  project_grease_android_present_set_fill_modes(renderer->fill_extend_mode, renderer->fill_layer_mode);
   project_grease_gp_set_fill_factor(renderer->gp_handle, renderer->fill_factor);
   if (!project_grease_gp_render_fill_mask(renderer->gp_handle)) {
     return false;
@@ -928,6 +932,18 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillExtendEglRender
   Renderer *renderer = from_handle(handle);
   if (!renderer) return JNI_FALSE;
   renderer->fill_extend = std::isfinite(factor) ? std::max(0.0f, std::min(10.0f, static_cast<float>(factor))) : 0.0f;
+  return JNI_TRUE;
+}
+
+/* Fill brush fill_extend_mode (0 Lines, 1 Radius) and fill_layer_mode (GP_FILL_GPLMODE_*). */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetFillModesEglRenderer(
+    JNIEnv *, jobject, jlong handle, jint extend_mode, jint layer_mode)
+{
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return JNI_FALSE;
+  renderer->fill_extend_mode = extend_mode == 1 ? 1 : 0;
+  renderer->fill_layer_mode = std::max(0, std::min(5, static_cast<int>(layer_mode)));
   return JNI_TRUE;
 }
 

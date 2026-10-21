@@ -1049,6 +1049,58 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseModal(JNIEnv *, j
   return project_grease_gp_erase_modal(from_handle(handle), phase, changed ? 1 : 0);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCurveEditSet(JNIEnv *, jobject, jlong handle, jboolean on)
+{
+  return project_grease_gp_curve_edit_set(from_handle(handle), on ? 1 : 0) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCurveEditOn(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_curve_edit_on(from_handle(handle)) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCurvePoints(JNIEnv *env, jobject, jlong handle)
+{
+  const int n = project_grease_gp_curve_points(from_handle(handle), nullptr, 0);
+  std::vector<float> v(static_cast<size_t>(n) * 13);
+  if (n > 0) project_grease_gp_curve_points(from_handle(handle), v.data(), n);
+  jfloatArray a = env->NewFloatArray(static_cast<jsize>(v.size()));
+  if (a && !v.empty()) env->SetFloatArrayRegion(a, 0, static_cast<jsize>(v.size()), v.data());
+  return a;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCurveSelect(JNIEnv *, jobject, jlong handle, jint layer, jint stroke,
+                                                                      jint point, jint part, jboolean extend)
+{
+  return project_grease_gp_curve_select(from_handle(handle), layer, stroke, point, part, extend ? 1 : 0) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCurveTranslate(JNIEnv *, jobject, jlong handle, jfloat dx, jfloat dy)
+{
+  return project_grease_gp_curve_translate(from_handle(handle), dx, dy);
+}
+
+/* Fill help lines: [segments, circles, 5 floats per segment..., 4 per circle...]. */
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillHelpLines(JNIEnv *env, jobject, jlong handle, jfloat extend,
+    jint extend_mode, jboolean collide, jint layer_mode, jfloat px_per_unit, jfloat canvas_w, jfloat canvas_h)
+{
+  const int max_seg = 4096, max_circ = 4096;
+  std::vector<float> seg(max_seg * 5), circ(max_circ * 4);
+  int nc = 0;
+  const int ns = project_grease_gp_fill_help_lines(from_handle(handle), extend, extend_mode, collide ? 1 : 0, layer_mode,
+                                                   px_per_unit, canvas_w, canvas_h, seg.data(), max_seg, circ.data(), max_circ, &nc);
+  std::vector<float> out;
+  out.reserve(2 + ns * 5 + nc * 4);
+  out.push_back(float(ns)); out.push_back(float(nc));
+  out.insert(out.end(), seg.begin(), seg.begin() + ns * 5);
+  out.insert(out.end(), circ.begin(), circ.begin() + nc * 4);
+  jfloatArray a = env->NewFloatArray(static_cast<jsize>(out.size()));
+  if (a) env->SetFloatArrayRegion(a, 0, static_cast<jsize>(out.size()), out.data());
+  return a;
+}
+
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLastWeightSample(JNIEnv *, jobject)
 {

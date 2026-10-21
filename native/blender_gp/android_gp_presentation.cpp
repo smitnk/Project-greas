@@ -86,6 +86,8 @@ int g_fill_draw_mode=0;
 // Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): Blender's line extensions
 // (pg_fill_extend_lines: fill_extend_fac * 0.1 BU, cut where they meet) are drawn in the mask.
 float g_fill_extend=0.0f;
+// brush fill_extend_mode (GP_FILL_EMODE_EXTEND 0 / RADIUS 1) and fill_layer_mode (GP_FILL_GPLMODE_*)
+int g_fill_extend_mode=0,g_fill_layer_mode=0;
 // GP_BRUSH_FILL_STROKE_COLLIDE: only extensions that hit something are drawn.
 int g_fill_collide=0;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
@@ -1479,11 +1481,17 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
   glClear(GL_COLOR_BUFFER_BIT);
 
   const float mask_color[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+  const bGPDlayer* active_layer = BKE_gpencil_layer_active_get(const_cast<bGPdata*>(gpd));
+  const int active_index = BLI_findindex(&gpd->layers, active_layer);
+  int layer_index = -1;
   for (const bGPDlayer* layer =
            static_cast<const bGPDlayer*>(gpd->layers.first);
        layer;
        layer = layer->next) {
+    layer_index++;
     if (layer->flag & GP_LAYER_HIDE) continue;
+    // fill_layer_mode: the strokes of a skipped layer stay out, its boundary strokes stay in
+    const bool skip = skip_layer_check(short(g_fill_layer_mode), active_index, layer_index);
 
     bGPDframe* current = BKE_gpencil_layer_frame_get(
         const_cast<bGPDlayer*>(layer), frame_number, GP_GETFRAME_USE_PREV);
@@ -1502,14 +1510,17 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
               : nullptr;
       const MaterialGPencilStyle* style = ma ? ma->gp_style : nullptr;
       if (style && (style->flag & GP_MATERIAL_HIDE)) continue;
+      if (stroke->totpoints < 2) continue;
+      if (skip && !(stroke->flag & GP_STROKE_NOFILL)) continue;
 
-      // gpencil_fill.c gpencil_draw_datablock(): STROKE / BOTH draw the strokes as they look,
-      // CONTROL ("Edit Lines") only the thin basic lines (gpencil_draw_basic_stroke, 1 px).
-      if (g_fill_draw_mode == 2) {
-        append_stroke_outline(strokes, stroke, 1.0f / std::max(g_map_scale, 1e-6f), w, h);
-      }
-      else {
+      // gpencil_fill.c gpencil_draw_datablock(): STROKE / BOTH draw the strokes as they look
+      // (not the help strokes), CONTROL / BOTH the thin basic lines (gpencil_draw_basic_stroke,
+      // 1 px) of every stroke; the app's modes: 0 All (BOTH), 1 Strokes (STROKE), 2 Edit Lines (CONTROL).
+      if (g_fill_draw_mode != 2 && !(stroke->flag & GP_STROKE_HELP)) {
         append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
+      }
+      if (g_fill_draw_mode != 1) {
+        append_stroke_outline(strokes, stroke, 1.0f / std::max(g_map_scale, 1e-6f), w, h);
       }
     }
     draw_vertices(strokes, mask_color, false);
@@ -1520,10 +1531,11 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
   if (g_fill_extend > 0.0f) {
     update_canvas_map(w, h);
     std::vector<float> ext(4096 * 4);
-    const int n = pg_fill_extend_lines(const_cast<bGPdata*>(gpd), frame_number, g_fill_extend,
-                                       g_fill_collide, g_map_scale, g_map_origin_x, g_map_origin_y,
-                                       0.5f * float(g_canvas_width), 0.5f * float(g_canvas_height),
-                                       ext.data(), 4096);
+    const int n = pg_fill_extend_lines_ex(const_cast<bGPdata*>(gpd), frame_number, g_fill_extend,
+                                          g_fill_extend_mode, g_fill_collide, g_fill_layer_mode,
+                                          g_map_scale, g_map_origin_x, g_map_origin_y,
+                                          0.5f * float(g_canvas_width), 0.5f * float(g_canvas_height),
+                                          ext.data(), 4096);
     const float r = 1.0f / std::max(g_map_scale, 1e-6f);
     std::vector<Vertex> lines;
     for (int e = 0; e < n; e++) {
@@ -1658,6 +1670,7 @@ extern "C" void project_grease_android_present_set_reference_transform(float dx,
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
   RefSlot&r=g_refs[g_ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
+extern "C" void project_grease_android_present_set_fill_modes(int extend_mode,int layer_mode){g_fill_extend_mode=extend_mode==1?1:0;g_fill_layer_mode=std::clamp(layer_mode,0,5);}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
 extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
 extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy,float*rotation){

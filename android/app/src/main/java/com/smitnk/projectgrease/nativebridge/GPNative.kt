@@ -187,6 +187,19 @@ object GPNative {
     external fun nativeLastPalette(): IntArray
     /** Brush weight found by the last GPENCIL_OT_weight_sample. */
     external fun nativeLastWeightSample(): Float
+    /** Curve edit mode (Blender's use_curve_edit): on / off, the curve points (13 floats each: layer,
+     *  stroke, point, h1 x/y, x/y, h2 x/y, selection bits, h1 type, h2 type, 0), a click on part 0 / 1 / 2
+     *  of a point (layer -1 deselects), moving the selected parts. */
+    external fun nativeCurveEditSet(handle: Long, on: Boolean): Boolean
+    external fun nativeCurveEditOn(handle: Long): Boolean
+    external fun nativeCurvePoints(handle: Long): FloatArray?
+    external fun nativeCurveSelect(handle: Long, layer: Int, stroke: Int, point: Int, part: Int, extend: Boolean): Boolean
+    external fun nativeCurveTranslate(handle: Long, dx: Float, dy: Float): Int
+    /** Fill brush fill_extend_mode (0 Lines, 1 Radius) and fill_layer_mode (GP_FILL_GPLMODE_*). */
+    external fun nativeSetFillModesEglRenderer(handle: Long, extendMode: Int, layerMode: Int): Boolean
+    /** Fill help lines of the current frame: [segments, circles, (x0,y0,x1,y1,kind)..., (cx,cy,r,contact)...]. */
+    external fun nativeFillHelpLines(handle: Long, extend: Float, extendMode: Int, collide: Boolean, layerMode: Int,
+                                     pxPerUnit: Float, canvasW: Float, canvasH: Float): FloatArray?
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
     external fun nativeSetPoint(

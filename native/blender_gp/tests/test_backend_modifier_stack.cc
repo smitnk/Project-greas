@@ -664,6 +664,27 @@ int main()
     CHECK(g->points[0].x == 500.0f && g->points[0].y == 300.0f && std::fabs(g->points[1].x - 500.0f - dx) < 1e-3f);
   }
 
+  /* image to grease pencil: 2 x 2 image, one transparent pixel -> 2 rows, 3 points */
+  {
+    CHECK(b.reset_document());
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    const int layers = b.layer_count();
+    float img[6 + 16] = {2, 2, 10, 100, 50, 0,
+                         1, 0, 0, 1,  0, 1, 0, 1,
+                         0, 0, 1, 1,  0, 0, 0, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_image_to_grease_pencil", img, 22, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(b.layer_count() == layers + 1);
+    bGPDlayer *l = static_cast<bGPDlayer *>(C.gpd->layers.last);
+    int pts = 0;
+    LISTBASE_FOREACH (bGPDstroke *, s, &l->actframe->strokes) pts += s->totpoints;
+    CHECK(pts == 3);
+    bGPDstroke *s0 = static_cast<bGPDstroke *>(l->actframe->strokes.first);
+    CHECK(s0->points[1].x == 110.0f && s0->points[1].y == 50.0f && s0->points[1].vert_color[1] == 1.0f);
+    CHECK(C.gpd->mat[s0->mat_nr]->gp_style->mode == GP_MATERIAL_MODE_SQUARE);
+    float bad[6] = {2, 2, 10, 0, 0, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_image_to_grease_pencil", bad, 6, nullptr) == PG_OPERATOR_CANCELLED);
+  }
+
   /* batch 16: primitives (confirm step) */
   {
     CHECK(b.reset_document());

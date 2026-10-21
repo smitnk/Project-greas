@@ -12,6 +12,16 @@ class AudioStripTest {
         assertFalse(a.playsAt(12, 12)); assertTrue(a.playsAt(13, 12)); assertFalse(a.playsAt(37, 12))
         a.muted = true; assertFalse(a.playsAt(14, 12))
     }
+    @Test fun trimmedStrip() {
+        val a = AudioStrip("content://a", "a").apply { start = 1; durationMs = 10_000 }
+        a.trim(2_000, 4_000)
+        assertEquals(2_000L, a.lengthMs); assertEquals(24, a.frames(12)); assertEquals(24, a.endFrame(12))
+        assertEquals(2_000L, a.fileMs(1, 12)); assertEquals(3_000L, a.fileMs(13, 12))
+        assertTrue(a.playsAt(24, 12)); assertFalse(a.playsAt(25, 12))
+        val back = AudioStrip.listFromJson(AudioStrip.listToJson(listOf(a)))[0]
+        assertEquals(2_000L, back.trimStartMs); assertEquals(4_000L, back.trimEndMs)
+        a.trim(9_000, 50_000); assertEquals(10_000L, a.trimEndMs)
+    }
     @Test fun savedAndLoaded() {
         val a = AudioStrip("content://a", "song.mp3").apply { start = 5; volume = 0.5f }
         val back = AudioStrip.listFromJson(AudioStrip.listToJson(listOf(a)))

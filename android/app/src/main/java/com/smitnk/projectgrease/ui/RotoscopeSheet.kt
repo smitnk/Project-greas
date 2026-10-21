@@ -89,6 +89,12 @@ class RotoscopeLoader(private val context: Context) {
         return if (count != null && ms != null && ms > 0) (count * 1000 / ms).coerceIn(1, 240) else 24
     }
 
+    /** Frame rate of a movie (frames per second, 24 when unknown). */
+    fun movieFps(uri: Uri): Int = runCatching {
+        val mr = MediaMetadataRetriever()
+        try { mr.setDataSource(context, uri); movieFps(mr).toInt() } finally { mr.release() }
+    }.getOrDefault(24)
+
     /** Frame count of a movie (ImageUser frames). */
     fun movieFrames(uri: Uri): Int = runCatching {
         val mr = MediaMetadataRetriever()
@@ -100,12 +106,36 @@ class RotoscopeLoader(private val context: Context) {
     }.getOrDefault(0)
 
     fun clearCache() { synchronized(cache) { cache.clear() } }
+
+    // ---- photo edits (eraser, lasso cut): a private PNG copy of the photo, so the original stays ----
+    /** A copy of a photo's pixels to edit (photos only; videos are not edited). */
+    fun editablePixels(r: Rotoscope): Triple<IntArray, Int, Int>? =
+        if (r.kind != Rotoscope.Kind.IMAGE || r.isEmpty) null else frame(r, 1)?.let { Triple(it.first.copyOf(), it.second, it.third) }
+    /** Shows edited pixels at once and saves them as the photo's own PNG (written in the background). */
+    fun commitEdit(r: Rotoscope, px: IntArray, w: Int, h: Int) {
+        val dir = java.io.File(context.filesDir, "photo_edits").apply { mkdirs() }
+        val file = java.io.File(dir, java.util.UUID.randomUUID().toString() + ".png")
+        val uri = Uri.fromFile(file).toString()
+        val copy = Triple(px.copyOf(), w, h)
+        synchronized(cache) { cache[key(Rotoscope.Kind.IMAGE, listOf(uri), 1)] = copy }
+        r.replaceFile(uri); r.pixW = w; r.pixH = h
+        worker.execute {
+            runCatching {
+                val bmp = Bitmap.createBitmap(copy.first, w, h, Bitmap.Config.ARGB_8888)
+                file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bmp.recycle()
+            }.onFailure { com.smitnk.projectgrease.CrashLog.event("PHOTO edit not saved: ${it.message}") }
+        }
+    }
+    /** Shows edited pixels at once without saving (during an eraser drag). */
+    fun preview(r: Rotoscope, px: IntArray, w: Int, h: Int) {
+        synchronized(cache) { cache[key(r.kind, r.uris, 1)] = Triple(px, w, h) }
+    }
 }
 
 internal class RotoscopePickers(
     val media: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    val sequence: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    val audio: androidx.activity.result.ActivityResultLauncher<Array<String>>)
+    val sequence: androidx.activity.result.ActivityResultLauncher<Array<String>>)
 
 /** The photo / video pickers, registered on the editor screen (always composed). Registered inside
  *  the sheet, the picked file was lost whenever the sheet was gone or the app was restarted in the
@@ -130,31 +160,8 @@ internal fun rememberRotoscopePickers(controller: EditorController, context: Con
             controller.afterReattach { controller.rotoscope.set(Rotoscope.Kind.SEQUENCE, sorted, sorted.size); changed() }
         }
     }
-    // several audio files at once, each its own track starting on the current frame
-    val audio = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        com.smitnk.projectgrease.CrashLog.event("IMPORT audio picked ${uris.size} files")
-        if (uris.isNotEmpty()) {
-            uris.forEach(::keep)
-            controller.afterReattach {
-                var added = 0
-                for (u in uris) {
-                    val ms = controller.audioPlayback?.durationOf(u) ?: 0L
-                    if (ms <= 0L) { toast(context, "Couldn't read ${u.lastPathSegment ?: "this file"} as audio"); continue }
-                    if (controller.addAudio(u.toString(), displayName(context, u), ms) != null) added++
-                }
-                if (added > 0) toast(context, "Added $added audio track" + (if (added > 1) "s" else ""))
-                redraw()
-            }
-        }
-    }
-    return remember(media, sequence, audio) { RotoscopePickers(media, sequence, audio) }
+    return remember(media, sequence) { RotoscopePickers(media, sequence) }
 }
-
-private fun displayName(context: Context, uri: Uri): String = runCatching {
-    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-        if (c.moveToFirst()) c.getString(0) else null
-    }
-}.getOrNull() ?: uri.lastPathSegment ?: "Audio"
 
 private fun importMedia(controller: EditorController, context: Context, uri: Uri, changed: () -> Unit) {
         val r = controller.rotoscope
@@ -178,7 +185,7 @@ private fun importMedia(controller: EditorController, context: Context, uri: Uri
 /** Rotoscope reference: import, opacity, visibility and the timeline mapping (start, offset, cyclic). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun RotoscopeSheet(controller: EditorController, context: Context, onDismiss: () -> Unit, redraw: () -> Unit, pickers: RotoscopePickers) {
+internal fun RotoscopeSheet(controller: EditorController, context: Context, onDismiss: () -> Unit, redraw: () -> Unit, pickers: RotoscopePickers, mediaImport: MediaImport) {
     val r = controller.rotoscope
     var tick by remember { mutableIntStateOf(0) }
     @Suppress("UNUSED_VARIABLE") val observed = tick
@@ -189,7 +196,7 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
     val sequence = pickers.sequence
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("Photo, video & audio", style = MaterialTheme.typography.headlineSmall)
+            Text("Photos & videos", style = MaterialTheme.typography.headlineSmall)
             Text(if (r.isEmpty) "Pick a photo or video to draw over. It sits behind your drawing and is not exported."
                  else "${if (r.kind == Rotoscope.Kind.MOVIE) "Video" else if (r.kind == Rotoscope.Kind.SEQUENCE) "Image sequence" else "Photo"}" +
                       (if (r.kind == Rotoscope.Kind.IMAGE) "" else " · ${r.frames} frames, one per timeline frame"), Modifier.padding(vertical = 6.dp))
@@ -203,9 +210,9 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
                     }
                 }
             }
-            Button(onClick = { controller.addReference(layerNow); tick++; media.launch(arrayOf("image/*", "video/*")) },
-                Modifier.fillMaxWidth().testTag("rotoImage")) {
-                Text(if (controller.references.all { it.isEmpty }) "Import photo or video on $layerNow" else "Add photo or video on $layerNow")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = { mediaImport.importPhoto(); onDismiss() }, Modifier.weight(1f).testTag("rotoImage")) { Text("Import photo") }
+                Button(onClick = { mediaImport.importVideo(); onDismiss() }, Modifier.weight(1f).testTag("rotoVideo")) { Text("Import video") }
             }
             if (!r.isEmpty) OutlinedButton(onClick = { media.launch(arrayOf("image/*", "video/*")) }, Modifier.fillMaxWidth()) {
                 Text("Replace this one")
@@ -218,7 +225,7 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
                 Text("Opacity ${(r.opacity * 100).toInt()}%")
                 Slider(r.opacity, { r.setOpacity(it); placed() }, valueRange = 0f..1f, modifier = Modifier.testTag("rotoOpacity"))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = { controller.referenceAdjusting = true; onDismiss() }, Modifier.testTag("rotoAdjust")) { Text("Move / resize on canvas") }
+                    Button(onClick = { controller.referenceAdjusting = true; onDismiss() }, Modifier.testTag("rotoAdjust")) { Text("Transform box") }
                     OutlinedButton(onClick = { r.resetPlacement(); placed() }) { Text("Reset") }
                 }
                 // squash / stretch: width and height separately
@@ -264,39 +271,14 @@ internal fun RotoscopeSheet(controller: EditorController, context: Context, onDi
                     }
                     OutlinedButton(onClick = { sequence.launch(arrayOf("image/*")) }) { Text("Import an image sequence instead") }
                 }
+                if (r.kind == Rotoscope.Kind.IMAGE) OutlinedButton(onClick = { if (controller.photoToDrawing()) redraw() }, Modifier.fillMaxWidth()) {
+                    Text("Turn photo into drawing (dots, new layer)")
+                }
                 TextButton(onClick = { controller.removeReference(); tick++; redraw() }) { Text("Remove") }
             }
             if (r.isEmpty && controller.referenceClipboard != null) {
                 OutlinedButton(onClick = { controller.pasteReference(); tick++; redraw() }, Modifier.fillMaxWidth()) {
                     Text("Paste copied photo on frame ${controller.animation.currentFrame}")
-                }
-            }
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-            Text("Audio", style = MaterialTheme.typography.titleMedium)
-            Text("Plays with the animation and goes into the MP4 export.", style = MaterialTheme.typography.bodySmall)
-            Button(onClick = { pickers.audio.launch(arrayOf("audio/*")) }, Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("audioAdd")) {
-                Text("Add audio (one or more files) on frame ${controller.animation.currentFrame}")
-            }
-            val fps = controller.animation.fps.coerceAtLeast(1)
-            controller.audioStrips.toList().forEach { a ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Column(Modifier.padding(10.dp)) {
-                        val endFrame = a.start + ((a.durationMs * fps + 999) / 1000).toInt() - 1
-                        Text(a.name, style = MaterialTheme.typography.titleSmall)
-                        Text("Frames ${a.start}–$endFrame (%.1fs)".format(a.durationMs / 1000f), style = MaterialTheme.typography.bodySmall)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Starts at frame ${a.start}", Modifier.weight(1f))
-                            TextButton({ a.start--; controller.audioChanged(); tick++ }) { Text("−") }
-                            TextButton({ a.start++; controller.audioChanged(); tick++ }) { Text("+") }
-                            TextButton({ a.start = controller.animation.currentFrame; controller.audioChanged(); tick++ }) { Text("Here") }
-                        }
-                        Text("Volume ${(a.volume * 100).toInt()}%")
-                        Slider(a.volume, { a.volume = it; tick++ }, valueRange = 0f..2f, onValueChangeFinished = { controller.audioChanged() })
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Mute", Modifier.weight(1f)); Switch(a.muted, { a.muted = it; controller.audioChanged(); tick++ })
-                            TextButton({ controller.removeAudio(a); tick++ }) { Text("Remove") }
-                        }
-                    }
                 }
             }
         }

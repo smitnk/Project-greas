@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -155,25 +156,73 @@ fun ModifierHandlesOverlay(controller: EditorController, tick: Int, redraw: () -
     }
 }
 
-/** Reference placement on the canvas: one finger moves the image, two fingers resize and turn it. */
+/** Photo / video transform box: drag a corner to resize freely (squash and stretch both ways), an
+ *  edge middle to squash / stretch one way, the round handle above to rotate, inside to move. */
 @Composable
 fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
     if (!controller.referenceAdjusting) return
-    Box(Modifier.fillMaxSize().testTag("referenceAdjust").pointerInput(Unit) {
-        detectTransformGestures { _, pan, zoom, rotation ->
-            val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
-            val dm = m.delta(pan.x, pan.y)
-            controller.rotoscope.moveBy(dm.first, dm.second, zoom, Math.toRadians(rotation.toDouble()).toFloat())
-            controller.rotoscopeChanged(imageChanged = false)
+    var tick by remember { mutableIntStateOf(0) }
+    @Suppress("UNUSED_VARIABLE") val observed = tick
+    val r = controller.rotoscope
+    val cw = controller.document.canvasWidth; val ch = controller.document.canvasHeight
+    Box(Modifier.fillMaxSize().testTag("referenceAdjust")) {
+        Canvas(Modifier.fillMaxSize().pointerInput(controller.activeReference) {
+            var handle = -1
+            var gap = 40f
+            detectDragGestures(
+                onDragStart = { o ->
+                    val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                    gap = 36f / m.scale()
+                    val c = m.canvas(o)
+                    handle = controller.rotoscope.handleAt(c.first, c.second, 28f / m.scale(), cw, ch, gap)
+                },
+                onDragEnd = { if (handle >= 0) controller.endReferenceTransform(); handle = -1; redraw() },
+                onDragCancel = { handle = -1 }
+            ) { change, d ->
+                if (handle < 0) return@detectDragGestures
+                change.consume()
+                val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
+                val ref = controller.rotoscope
+                if (handle == 9) m.delta(d.x, d.y).let { ref.moveBy(it.first, it.second) }
+                else m.canvas(change.position).let { ref.dragHandle(handle, it.first, it.second, cw, ch) }
+                controller.rotoscopeChanged(imageChanged = false); tick++
+            }
+        }) {
+            @Suppress("UNUSED_VARIABLE") val t = tick
+            if (r.pixW <= 0) return@Canvas
+            val m = OverlayMap(size.width, size.height, controller)
+            val corners = r.corners(cw, ch).map { m.screen(it) }
+            for (i in 0 until 4) { drawLine(Color.Black, corners[i], corners[(i + 1) % 4], 4f); drawLine(Color(0xFFFF9800), corners[i], corners[(i + 1) % 4], 2f) }
+            val hs = r.handlePoints(cw, ch, 36f / m.scale()).map { m.screen(it) }
+            drawLine(Color(0xFFFF9800), hs[4], hs[8], 2f)
+            hs.forEachIndexed { i, p ->
+                if (i == 8) { drawCircle(Color.Black, 15f, p); drawCircle(Color(0xFF4FC3F7), 12f, p) }
+                else { drawRect(Color.Black, Offset(p.x - 13f, p.y - 13f), androidx.compose.ui.geometry.Size(26f, 26f)); drawRect(Color.White, Offset(p.x - 10f, p.y - 10f), androidx.compose.ui.geometry.Size(20f, 20f)) }
+            }
         }
-    }) {
-        Text("Drag to move the reference, pinch to resize and turn it", Modifier.align(Alignment.TopCenter).padding(top = 56.dp)
-            .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White)
+        Text("Corners: resize / squash / stretch · edges: one way · ● rotate · inside: move", Modifier.align(Alignment.TopCenter).padding(top = 56.dp, start = 12.dp, end = 12.dp)
+            .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White, fontSize = 12.sp)
         // at the top, under the hint: at the bottom the timeline bar covered Done and the editor stayed stuck here
-        Row(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { controller.referenceAdjusting = false; redraw() }, Modifier.testTag("referenceAdjustDone")) { Text("Done") }
-            OutlinedButton(onClick = { controller.rotoscope.resetPlacement(); controller.rotoscopeChanged(imageChanged = false) }) { Text("Reset") }
+            OutlinedButton(onClick = { r.stretchX = 1f; r.stretchY = 1f; controller.endReferenceTransform(); tick++ }) { Text("Keep proportions") }
+            OutlinedButton(onClick = { r.resetPlacement(); controller.endReferenceTransform(); tick++ }) { Text("Reset") }
         }
+    }
+}
+
+/** The loop drawn over a photo, until Cut out / Copy out / Erase. */
+@Composable
+fun PhotoLassoOverlay(controller: EditorController) {
+    val loop = controller.photoLasso ?: return
+    Canvas(Modifier.fillMaxSize().graphicsLayer { rotationZ = Math.toDegrees(controller.view.rotation.toDouble()).toFloat() }) {
+        val m = OverlayMap(size.width, size.height, controller)
+        val path = Path()
+        for (i in 0 until loop.size / 2) { val p = m.screen(loop[2 * i] to loop[2 * i + 1]); if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }
+        path.close()
+        drawPath(path, Color(0x334FC3F7))
+        drawPath(path, Color.Black, style = Stroke(width = 3f))
+        drawPath(path, Color(0xFF4FC3F7), style = Stroke(width = 1.5f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 8f))))
     }
 }
 

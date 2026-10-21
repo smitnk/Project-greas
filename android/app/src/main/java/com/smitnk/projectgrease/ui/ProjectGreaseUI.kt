@@ -47,7 +47,7 @@ import com.smitnk.projectgrease.editor.EraserMode
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS, AUDIO, IMPORT_PHOTO, IMPORT_VIDEO, IMPORT_AUDIO }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 
@@ -400,7 +400,14 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},viewport)
     if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
     val rotoscopePickers=rememberRotoscopePickers(controller,context,::redraw)
+    val mediaImport=rememberMediaImport(controller,context,::redraw)
+    MediaImportDialogs(mediaImport,controller,context,::redraw)
     when(sheet){
+        // the three imports open their file picker straight away
+        Sheet.IMPORT_PHOTO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importPhoto()}
+        Sheet.IMPORT_VIDEO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importVideo()}
+        Sheet.IMPORT_AUDIO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importAudio()}
+        Sheet.AUDIO->AudioSheet(controller,mediaImport,{sheet=Sheet.NONE},::redraw)
         Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject)
         Sheet.TOOLS->ToolsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.LAYERS->LayersSheet(controller,{sheet=Sheet.NONE},::redraw)
@@ -409,7 +416,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.ADVANCED->AdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MORE->MoreSheet(controller,{sheet=Sheet.NONE},onSettings,::redraw,{sheet=Sheet.REFERENCE})
         Sheet.REFERENCE->ReferenceSheet(controller,context,{sheet=Sheet.NONE},::redraw)
-        Sheet.ROTOSCOPE->RotoscopeSheet(controller,context,{sheet=Sheet.NONE},::redraw,rotoscopePickers)
+        Sheet.ROTOSCOPE->RotoscopeSheet(controller,context,{sheet=Sheet.NONE},::redraw,rotoscopePickers,mediaImport)
         Sheet.LAYER_ADVANCED->LayerAdvancedSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MENU->StudioMenu(controller,{sheet=it},{persistProject();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();sheet=Sheet.NONE},onSettings,{sheet=Sheet.NONE})
         Sheet.DRAW_SETTINGS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Properties(controller,::redraw)}
@@ -670,6 +677,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                             modifier=Modifier.padding(end=3.dp)
                         )
                     }
+                    // not in Blender (its eraser only erases strokes): also erase the photos under it
+                    FilterChip(selected=controller.eraseOnPhotos,onClick={controller.eraseOnPhotos=!controller.eraseOnPhotos;redraw()},
+                        label={Text("Erase photos too",fontSize=10.sp)},modifier=Modifier.padding(end=3.dp).testTag("eraseOnPhotos"))
                 }
             }
             Row(
@@ -1531,10 +1541,22 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&controller.mode==GreaseMode.DRAW){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
+                FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
                     Modifier.testTag("lassoCut"))
-                FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
+                FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;controller.lassoPhotos=false;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
                     Modifier.testTag("lassoCutInside"))
+                FilterChip(controller.lassoPhotos,{controller.lassoPhotos=!controller.lassoPhotos;controller.lassoCut=false;controller.lassoCutInside=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoPhotos)"Photo: on" else "Photo")},
+                    Modifier.testTag("lassoPhotos"))
+            }
+        }
+        // a loop drawn over a photo: what to do with that part of the picture
+        if(controller.photoLasso!=null){
+            PhotoLassoOverlay(controller)
+            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("photoLassoBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                Button(onClick={controller.applyPhotoLasso(0);redraw()},Modifier.testTag("photoCut")){Text("Cut out",maxLines=1)}
+                OutlinedButton(onClick={controller.applyPhotoLasso(1);redraw()}){Text("Copy out",maxLines=1)}
+                OutlinedButton(onClick={controller.applyPhotoLasso(2);redraw()}){Text("Erase",maxLines=1)}
+                OutlinedButton(onClick={controller.photoLasso=null;controller.render();redraw()}){Text("Cancel",maxLines=1)}
             }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
@@ -1582,7 +1604,10 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 GreaseMode.entries.forEach{m->
                     ListItem(headlineContent={Text(m.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()})},
                         leadingContent={RadioButton(selected=controller.mode==m,onClick=null)},
-                        modifier=Modifier.clickable{if(controller.setMode(m))redraw();popup=StudioPopup.NONE}.testTag("studioMode_"+m.name))
+                        modifier=Modifier.clickable{
+                            // Blender's mode operators (GPENCIL_OT_*mode_toggle)
+                            val op=when(m){GreaseMode.DRAW->"GPENCIL_OT_paintmode_toggle";GreaseMode.EDIT->"GPENCIL_OT_editmode_toggle";GreaseMode.SCULPT->"GPENCIL_OT_sculptmode_toggle";GreaseMode.VERTEX_PAINT->"GPENCIL_OT_vertexmode_toggle";GreaseMode.WEIGHT_PAINT->"GPENCIL_OT_weightmode_toggle"}
+                            if(controller.mode!=m&&controller.modeToggle(op))redraw();popup=StudioPopup.NONE}.testTag("studioMode_"+m.name))
                 }
             }
             StudioPopup.NONE->Unit
@@ -1712,6 +1737,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                         Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
                             Text(frame.toString(),fontSize=12.sp)
                             Box(Modifier.size(8.dp).background(if(frame in keys)keyTypeColor(anim.keyTypes[frame]?:0) else Color.Transparent,CircleShape))
+                            // the audio tracks sounding on this frame (Audio tracks to move them)
+                            val sounds=controller.audioStrips.count{it.playsAt(frame,anim.fps)}
+                            if(sounds>0) Box(Modifier.padding(top=2.dp).fillMaxWidth(if(sounds>1)0.9f else 0.7f).height(4.dp).background(Color(0xFF26A69A),RoundedCornerShape(2.dp)))
                         }
                     }
                 }
@@ -1778,6 +1806,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
     ModalBottomSheet(onDismissRequest=onDismiss,modifier=Modifier.testTag("studioMenu")){
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){
             Text(controller.document.projectName,Modifier.padding(horizontal=20.dp,vertical=8.dp),style=MaterialTheme.typography.titleLarge)
+            val ctxVersion=LocalContext.current
+            val version=remember{runCatching{ctxVersion.packageManager.getPackageInfo(ctxVersion.packageName,0).versionName}.getOrNull()?:"?"}
+            Text("Project Grease version $version",Modifier.padding(horizontal=20.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             @Composable fun item(icon:ImageVector,label:String,detail:String,tag:String,action:()->Unit)=
                 ListItem(headlineContent={Text(label)},supportingContent={Text(detail)},leadingContent={Icon(icon,null)},
                     modifier=Modifier.clickable(onClick=action).testTag("menu_$tag"))
@@ -1792,7 +1823,11 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
             item(Icons.Default.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
             item(Icons.Default.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
-            item(Icons.Default.Image,"Import photo / video","A photo, image sequence or video to draw over (rotoscope): move, resize, fade","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
+            item(Icons.Default.Image,"Import photo","A picture to draw over: then resize, squash, rotate it with the box","importPhoto"){onSheet(Sheet.IMPORT_PHOTO)}
+            item(Icons.Default.Movie,"Import video","Pick a video, trim it, place it on the timeline","importVideo"){onSheet(Sheet.IMPORT_VIDEO)}
+            item(Icons.Default.MusicNote,"Import audio","Pick audio files, trim them, place them on the timeline","importAudio"){onSheet(Sheet.IMPORT_AUDIO)}
+            item(Icons.Default.PhotoLibrary,"Photos & videos","The imported photos and videos: box, frames, opacity, copy / paste","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
+            item(Icons.Default.GraphicEq,"Audio tracks","Move each sound to any frame, re-trim, volume, mute","audio"){onSheet(Sheet.AUDIO)}
             item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
             val context=LocalContext.current

@@ -726,8 +726,14 @@ class EditorController {
     val document=DocumentController()
     val history=HistoryController(native).also { h ->
         // Kotlin-side state of an undo step: material textures plus the timeline (markers, preview range).
-        h.captureExtras = { Pair(captureTextures(), animation.timeline) }
-        h.restoreExtras = { e -> (e as? Pair<*, *>)?.let { restoreTextures(it.first); (it.second as? TimelineState)?.let(animation::restoreTimeline) } }
+        // photos / videos and audio tracks are Kotlin-side document state: undo covers them too
+        h.captureExtras = { listOf(captureTextures(), animation.timeline, referencesJson(), AudioStrip.listToJson(audioStrips).toString()) }
+        h.restoreExtras = { e -> (e as? List<*>)?.let {
+            restoreTextures(it[0]); (it[1] as? TimelineState)?.let(animation::restoreTimeline)
+            (it[2] as? String)?.let(::restoreReferencesJson)
+            (it[3] as? String)?.let { a -> val list = AudioStrip.listFromJson(runCatching { org.json.JSONArray(a) }.getOrNull())
+                if (AudioStrip.listToJson(audioStrips).toString() != a) { audioStrips.clear(); audioStrips.addAll(list) } }
+        } }
     }
     val animation=AnimationController(native) { render() }
     val materials=MaterialController()
@@ -1063,19 +1069,22 @@ class EditorController {
     var audioPlayback: com.smitnk.projectgrease.ui.AudioPlayback? = null
         set(v) { field = v; animation.onPlayback = { playing, frame -> v?.sync(audioStrips, playing, frame, animation.fps) } }
     /** Adds an audio file starting on the current frame. */
-    fun addAudio(uri:String, name:String, durationMs:Long):AudioStrip? {
+    fun addAudio(uri:String, name:String, durationMs:Long, trimStartMs:Long = 0, trimEndMs:Long = 0, start:Int = animation.currentFrame):AudioStrip? {
         if (audioStrips.size >= 16) { onMessage?.invoke("Up to 16 audio tracks"); return null }
-        val a = AudioStrip(uri, name).also { it.start = animation.currentFrame; it.durationMs = durationMs }
-        audioStrips.add(a); document.markDirty()
+        val a = AudioStrip(uri, name).also { it.start = start.coerceAtLeast(1); it.durationMs = durationMs; if (trimEndMs > 0) it.trim(trimStartMs, trimEndMs) }
+        audioStrips.add(a)
         // the animation grows to hold the sound
-        if (durationMs > 0) {
-            val end = a.start + ((durationMs * animation.fps + 999) / 1000).toInt() - 1
-            if (animation.sceneEnd < end) animation.setSceneEnd(end)
-        }
+        if (durationMs > 0 && animation.sceneEnd < a.endFrame(animation.fps)) animation.setSceneEnd(a.endFrame(animation.fps))
+        audioChanged(record = true)
         return a
     }
-    fun removeAudio(a:AudioStrip) { audioStrips.remove(a); audioChanged() }
-    fun audioChanged() { document.markDirty(); if (animation.playing) audioPlayback?.sync(audioStrips, true, animation.currentFrame, animation.fps) }
+    fun removeAudio(a:AudioStrip) { audioStrips.remove(a); audioChanged(record = true) }
+    /** After a change to a strip; [record] = one undo step (at the end of a drag, not during it). */
+    fun audioChanged(record:Boolean = false) {
+        document.markDirty(); if (record) history.markEdit()
+        if (animation.playing) audioPlayback?.sync(audioStrips, true, animation.currentFrame, animation.fps)
+        onUiChanged?.invoke()
+    }
 
     /** The copied photo / video (Copy in Photo / video), pasted onto other frames. */
     var referenceClipboard: Rotoscope? = null
@@ -1090,6 +1099,130 @@ class EditorController {
         activeReference = references.indexOf(r)
         rotoscopeChanged(); return true
     }
+    /** References as saved (for undo snapshots). */
+    private fun referencesJson():String = org.json.JSONArray(references.map { it.toJson() }).toString()
+    private fun restoreReferencesJson(json:String) {
+        if (json == referencesJson()) return
+        val a = runCatching { org.json.JSONArray(json) }.getOrNull() ?: return
+        val active = activeReference
+        references.clear()
+        for (i in 0 until a.length()) references.add(Rotoscope().also { it.fromJson(a.optJSONObject(i)) })
+        if (references.isEmpty()) references.add(Rotoscope())
+        activeReference = active
+        rotoscopeShown.clear(); rotoscopeFailed.clear()
+    }
+
+    // ---- editing photos: the transform box, the eraser and the lasso on the picture itself ----
+    /** Photos shown on this frame, top first (the eraser and the lasso work on the top one under the finger). */
+    private fun photosHere():List<Rotoscope> = references.filter {
+        it.kind == Rotoscope.Kind.IMAGE && it.visible && !it.isEmpty && it.imageFrame(animation.currentFrame) != 0 && it.pixW > 0
+    }.reversed()
+    /** The eraser also erases photos (Eraser options). */
+    var eraseOnPhotos by androidx.compose.runtime.mutableStateOf(false)
+    private val photoEditBuffers = HashMap<Rotoscope, Triple<IntArray, Int, Int>>()
+    /** Clears a circle of [radius] (canvas units) at (x, y) from every photo shown here. */
+    fun erasePhotosAt(x:Float, y:Float, radius:Float):Boolean {
+        val loader = rotoscopeLoader ?: return false
+        val cw = document.canvasWidth; val ch = document.canvasHeight
+        var changed = false
+        for (r in photosHere()) {
+            val buf = photoEditBuffers[r] ?: (loader.editablePixels(r) ?: continue).also { photoEditBuffers[r] = it }
+            val (px, py) = r.canvasToPixel(x, y, cw, ch)
+            val (kx, ky) = r.pixelScale(cw, ch)
+            if (kx <= 0f || ky <= 0f) continue
+            if (PhotoPixels.eraseEllipse(buf.first, buf.second, buf.third, px, py, radius / kx, radius / ky)) {
+                loader.preview(r, buf.first, buf.second, buf.third); rotoscopeShown.remove(r); changed = true
+            }
+        }
+        return changed
+    }
+    /** Ends a photo eraser drag: the edited photos are saved, as one undo step. */
+    fun endPhotoErase():Boolean { if (!commitPhotoEdits()) return false; history.markEdit(); return true }
+    private fun commitPhotoEdits():Boolean {
+        if (photoEditBuffers.isEmpty()) return false
+        val loader = rotoscopeLoader
+        for ((r, b) in photoEditBuffers) loader?.commitEdit(r, b.first, b.second, b.third)
+        photoEditBuffers.clear()
+        rotoscopeChanged(); return true
+    }
+    /** Lasso on photos (lasso option): the loop cuts / copies / erases part of the top photo under it. */
+    var lassoPhotos by androidx.compose.runtime.mutableStateOf(false)
+    /** The last lasso loop over a photo (canvas x, y pairs), waiting for Cut / Copy / Erase. */
+    var photoLasso by androidx.compose.runtime.mutableStateOf<FloatArray?>(null)
+    /** The photo the loop was drawn over. */
+    private fun photoUnder(loop:FloatArray):Rotoscope? {
+        val cw = document.canvasWidth; val ch = document.canvasHeight
+        var sx = 0f; var sy = 0f; val n = loop.size / 2
+        for (i in 0 until n) { sx += loop[2 * i]; sy += loop[2 * i + 1] }
+        val cx = sx / n; val cy = sy / n
+        return photosHere().firstOrNull { r -> val (u, v) = r.canvasToLocal(cx, cy, cw, ch); val (hw, hh) = r.halfSize(cw, ch); kotlin.math.abs(u) <= hw && kotlin.math.abs(v) <= hh }
+            ?: photosHere().firstOrNull()
+    }
+    /** mode: 0 cut out as its own piece, 1 copy as a new piece, 2 erase. The new piece gets the transform box. */
+    fun applyPhotoLasso(mode:Int):Boolean {
+        val loop = photoLasso ?: return false
+        photoLasso = null
+        val loader = rotoscopeLoader ?: return false
+        val r = photoUnder(loop) ?: run { onMessage?.invoke("Draw the loop over a photo"); return false }
+        val cw = document.canvasWidth; val ch = document.canvasHeight
+        val src = loader.editablePixels(r) ?: return false
+        val poly = FloatArray(loop.size)
+        for (i in 0 until loop.size / 2) { val (px, py) = r.canvasToPixel(loop[2 * i], loop[2 * i + 1], cw, ch); poly[2 * i] = px; poly[2 * i + 1] = py }
+        val piece = PhotoPixels.cut(src.first, src.second, src.third, poly, clear = mode != 1)
+            ?: run { onMessage?.invoke("The loop has no photo pixels inside"); return false }
+        if (mode != 1) loader.commitEdit(r, src.first, src.second, src.third)
+        if (mode != 2) {
+            if (references.size >= 16) { onMessage?.invoke("Up to 16 photos / videos"); rotoscopeChanged(); history.markEdit(); return true }
+            val p = r.pieceAt(piece.x, piece.y, piece.w, piece.h, cw, ch)
+            loader.commitEdit(p, piece.px, piece.w, piece.h) // its own PNG
+            references.add(references.indexOf(r) + 1, p); activeReference = references.indexOf(p)
+            referenceAdjusting = true
+        }
+        rotoscopeChanged(); history.markEdit()
+        return true
+    }
+    /** GPENCIL_OT_image_to_grease_pencil on the edited photo: its pixels become square dots on a new
+     *  "Image Layer", placed where the photo is. shortcut: the photo is shrunk to [maxSide] pixels
+     *  (a dot per pixel) and its rotation ignored; Blender converts every pixel. */
+    fun photoToDrawing(maxSide:Int = 120, mask:Boolean = false):Boolean {
+        val r = rotoscope
+        val img = rotoscopeLoader?.editablePixels(r) ?: run { onMessage?.invoke("Pick a photo first"); return false }
+        val (px, w, h) = img
+        val k = minOf(1f, maxSide.toFloat() / maxOf(w, h))
+        val sw = maxOf(1, (w * k).toInt()); val sh = maxOf(1, (h * k).toInt())
+        val cw = document.canvasWidth; val ch = document.canvasHeight
+        val (hw, hh) = r.halfSize(cw, ch)
+        if (hw <= 0f) return false
+        val size = 2 * hw / sw
+        val (cx, cy) = r.center(cw, ch)
+        val props = FloatArray(6 + sw * sh * 4)
+        props[0] = sw.toFloat(); props[1] = sh.toFloat(); props[2] = size
+        props[3] = cx - hw + size / 2; props[4] = cy - hh + (2 * hh / sh) / 2; props[5] = if (mask) 1f else 0f
+        for (y in 0 until sh) for (x in 0 until sw) {
+            val c = px[(y * h / sh) * w + (x * w / sw)]
+            val o = 6 + (y * sw + x) * 4
+            props[o] = ((c shr 16) and 0xFF) / 255f; props[o + 1] = ((c shr 8) and 0xFF) / 255f
+            props[o + 2] = (c and 0xFF) / 255f; props[o + 3] = ((c ushr 24) and 0xFF) / 255f
+        }
+        return layerOperator("GPENCIL_OT_image_to_grease_pencil", *props)
+    }
+    /** GPENCIL_OT_editmode_toggle / paintmode_toggle / sculptmode_toggle / vertexmode_toggle /
+     *  weightmode_toggle: the mode switch (back to Draw when that mode is on already). */
+    fun modeToggle(idname:String):Boolean {
+        val target = when (idname) {
+            "GPENCIL_OT_editmode_toggle" -> GreaseMode.EDIT
+            "GPENCIL_OT_paintmode_toggle" -> GreaseMode.DRAW
+            "GPENCIL_OT_sculptmode_toggle" -> GreaseMode.SCULPT
+            "GPENCIL_OT_vertexmode_toggle" -> GreaseMode.VERTEX_PAINT
+            "GPENCIL_OT_weightmode_toggle" -> GreaseMode.WEIGHT_PAINT
+            else -> return false
+        }
+        com.smitnk.projectgrease.CrashLog.event("OP $idname")
+        return setMode(if (mode == target && target != GreaseMode.DRAW) GreaseMode.DRAW else target)
+    }
+    /** End of a transform-box drag: one undo step. */
+    fun endReferenceTransform() { rotoscopeChanged(imageChanged = false); history.markEdit() }
+
     /** Shows the edited photo only on the current frame (on = true), or on every frame. */
     fun showReferenceOnlyHere(on:Boolean) {
         rotoscope.onFrames.clear(); if (on) rotoscope.onFrames.add(animation.currentFrame); rotoscopeChanged()
@@ -1131,7 +1264,7 @@ class EditorController {
                 GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
                 val um = (System.nanoTime() - tu) / 1_000_000
                 if (um >= 20) com.smitnk.projectgrease.CrashLog.event("REF upload frame $n ${img?.second}x${img?.third} slot $slot: $um ms")
-                if (img == null) rotoscopeShown.remove(rotoscope) else rotoscopeShown[rotoscope] = slotKey
+                if (img == null) rotoscopeShown.remove(rotoscope) else { rotoscopeShown[rotoscope] = slotKey; rotoscope.pixW = img.second; rotoscope.pixH = img.third }
             } else if (rotoscope.kind == Rotoscope.Kind.IMAGE) {
                 // a photo that does not decode is tried once, not on every frame
                 rotoscopeFailed[rotoscope] = key
@@ -1511,6 +1644,12 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
+            if (lassoPhotos) {
+                // the loop is over a photo: it waits for Cut out / Copy out / Erase
+                photoLasso = if (noose.size >= 3) FloatArray(noose.size * 2) { i -> if (i % 2 == 0) noose[i / 2].first else noose[i / 2].second } else null
+                com.smitnk.projectgrease.CrashLog.event("PHOTO LASSO ${noose.size} points")
+                onUiChanged?.invoke(); render(); return
+            }
             if (lassoCutInside && mode == GreaseMode.DRAW) {
                 // Project Grease's own mode (not Blender's): lasso-select the points inside, then
                 // GPENCIL_OT_delete (points), one undo step; the rest of each stroke stays
@@ -2729,6 +2868,9 @@ class EditorController {
         val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode,
             eraserDrawStrength, press, eraStrength, eraThickness)
         android.util.Log.d("PGErase", "erase x=$x y=$y r=${radius * press} mode=$mode -> $ok")
+        val photo = eraseOnPhotos && erasePhotosAt(x, y, radius * press)
+        if (photo && recordHistory) commitPhotoEdits() // a single tap: saved with this undo step
+        if (photo && !ok) { if (recordHistory) history.markEdit(); render(); return true }
         if (ok) {
             selection.clear()
             eraseGestureChanged = true
@@ -2745,6 +2887,7 @@ class EditorController {
     fun beginErase() { if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 0, false) }
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
+        if (endPhotoErase()) { eraseGestureChanged = false; if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, true); return true }
         val changed = eraseGestureChanged
         if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, changed)
         if (changed) history.markEdit()

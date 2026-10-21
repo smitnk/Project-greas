@@ -35,9 +35,12 @@ class AudioPlayback(private val context: Context) {
             val mp = player(s) ?: continue
             runCatching { mp.setVolume(s.volume.coerceAtMost(1f), s.volume.coerceAtMost(1f)) }
             val ms = s.offsetMs(frame, fps)
-            if (s.durationMs > 0 && ms >= s.durationMs) continue
-            if (ms >= 0) runCatching { mp.seekTo(ms.toInt()); mp.start() }
-            else handler.postDelayed({ runCatching { mp.seekTo(0); mp.start() } }, -ms)
+            val len = s.lengthMs
+            if (len <= 0 || ms >= len) continue
+            if (ms >= 0) runCatching { mp.seekTo(s.fileMs(frame, fps).toInt()); mp.start() }
+            else handler.postDelayed({ runCatching { mp.seekTo(s.trimStartMs.toInt()); mp.start() } }, -ms)
+            // the trim's end: stop there
+            handler.postDelayed({ runCatching { if (mp.isPlaying) mp.pause() } }, len - ms)
         }
     }
 

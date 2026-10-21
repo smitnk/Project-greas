@@ -39,9 +39,11 @@ object AudioMix {
             if (s.muted || s.volume <= 0f) continue
             // sample of the mix where the strip starts (negative: it started before the export range)
             val at = ((s.start - frameStart).toLong() * RATE / f).toInt()
-            val skipSec = if (at < 0) -at.toDouble() / RATE else 0.0
-            val needSec = (total - at.coerceAtLeast(0)).toDouble() / RATE
+            val into = if (at < 0) -at.toDouble() / RATE else 0.0 // seconds of the strip before the export starts
+            val lenSec = s.lengthMs / 1000.0
+            val needSec = minOf((total - at.coerceAtLeast(0)).toDouble() / RATE, lenSec - into)
             if (needSec <= 0) continue
+            val skipSec = s.trimStartMs / 1000.0 + into
             val src = decode(context, Uri.parse(s.uri), skipSec, needSec) ?: continue
             val out = resampleStereo(src.first, src.second, src.third)
             val base = at.coerceAtLeast(0)

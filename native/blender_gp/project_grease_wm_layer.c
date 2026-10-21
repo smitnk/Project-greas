@@ -6,11 +6,14 @@
 #include <string.h>
 
 #include "BLI_listbase.h"
+#include "BLI_math.h"
 #include "BLI_string.h"
 #include "BLI_string_utils.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "BKE_gpencil_legacy.h"
 
+#include "BKE_gpencil_geom_legacy.h"
+#include "DNA_material_types.h"
 #include "project_grease_blender_edit7.h"
 #include "project_grease_wm.h"
 
@@ -140,7 +143,71 @@ static int exec_layer_change(PGOpContext *C, const float *props, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* The backend's material slot maker (project_grease_gp_backend.cpp); weak for the host tests. */
+bool pg_gp_material_ensure_slot(bGPdata *gpd, int index) __attribute__((weak));
+
+/* GPENCIL_OT_image_to_grease_pencil: width, height, size (canvas units per pixel), x, y (top-left
+ * on the canvas), mask, then the pixels as r, g, b, a (0..1, top row first). Blender's
+ * image_to_gpencil_exec / BKE_gpencil_from_image into an "Image Layer" of this drawing (Blender makes
+ * a new object): a Square-dots material, one stroke per pixel row with the pixel colours, and the
+ * near-transparent points deleted. */
+static int exec_image_to_gp(PGOpContext *C, const float *props, int n)
+{
+  const int img_x = prop_i(props, n, 0, 0), img_y = prop_i(props, n, 1, 0);
+  const float size = n > 2 ? props[2] : 0.0f;
+  const float ox = n > 3 ? props[3] : 0.0f, oy = n > 4 ? props[4] : 0.0f;
+  const bool mask = prop_i(props, n, 5, 0) != 0;
+  if (img_x < 1 || img_y < 1 || !(size > 0.0f) || n < 6 + img_x * img_y * 4 || pg_gp_material_ensure_slot == NULL)
+    return PG_OPERATOR_CANCELLED;
+  const float *px = props + 6;
+  bGPdata *gpd = C->gpd;
+  /* BKE_gpencil_object_material_new(..., "Image Material"): a Square material */
+  const int slot = gpd->totcol;
+  if (!pg_gp_material_ensure_slot(gpd, slot)) return PG_OPERATOR_CANCELLED;
+  Material *ma = gpd->mat[slot];
+  BLI_strncpy(ma->id.name + 2, "Image Material", sizeof(ma->id.name) - 2);
+  ma->id.name[0] = 'M'; ma->id.name[1] = 'A';
+  ma->gp_style->mode = GP_MATERIAL_MODE_SQUARE;
+  ma->gp_style->stroke_rgba[0] = ma->gp_style->stroke_rgba[1] = ma->gp_style->stroke_rgba[2] = 1.0f;
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "Image Layer", true, false);
+  bGPDframe *gpf = BKE_gpencil_frame_addnew(gpl, C->cfra);
+  if (gpl == NULL || gpf == NULL) return PG_OPERATOR_CANCELLED;
+  gpl->actframe = gpf;
+  for (int row = 0; row < img_y; row++) {
+    /* Blender's size * 1000 is its pixel factor; the app's thickness is canvas units: one pixel wide */
+    bGPDstroke *gps = BKE_gpencil_stroke_add(gpf, slot, img_x, (short)fminf(fmaxf(1.0f, size), 32000.0f), false);
+    for (int col = 0; col < img_x; col++) {
+      const float *color = px + (row * img_x + col) * 4;
+      bGPDspoint *pt = &gps->points[col];
+      pt->pressure = 1.0f;
+      pt->x = ox + col * size;
+      pt->y = oy + row * size; /* Blender puts rows on z (front view); the canvas is x / y */
+      if (!mask) {
+        copy_v3_v3(pt->vert_color, color);
+        pt->vert_color[3] = 1.0f;
+        pt->strength = color[3];
+      }
+      else {
+        zero_v3(pt->vert_color);
+        pt->vert_color[3] = 1.0f;
+        pt->strength = 1.0f - color[3];
+      }
+      if (pt->strength < 0.03f) {
+        gps->flag |= GP_STROKE_SELECT;
+        pt->flag |= GP_SPOINT_SELECT;
+      }
+    }
+    BKE_gpencil_stroke_geometry_update(gpd, gps);
+  }
+  LISTBASE_FOREACH_MUTABLE (bGPDstroke *, gps, &gpf->strokes) {
+    BKE_gpencil_stroke_delete_tagged_points(gpd, gpf, gps, gps->next, GP_SPOINT_SELECT, false, false, 0);
+  }
+  BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
 static const PGOperatorType pg_layer_operators[] = {
+    {"GPENCIL_OT_image_to_grease_pencil", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_image_to_gp},
     {"GPENCIL_OT_layer_change", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_layer_change},
     {"GPENCIL_OT_layer_add", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_gpd, exec_layer_add},
     {"GPENCIL_OT_layer_remove", PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO, poll_active_layer, exec_layer_remove},

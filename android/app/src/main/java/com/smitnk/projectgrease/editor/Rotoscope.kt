@@ -39,6 +39,88 @@ class Rotoscope {
     }
     val isEmpty get() = uris.isEmpty() || frames <= 0
 
+    // ---- placement geometry (what the presenter draws: aspect fit in the canvas, then size,
+    //      squash / stretch and rotation about the centre). Image pixel (0,0) is the top-left corner. ----
+    /** Pixel size of the shown image (set when it is decoded; 0 = not known yet). */
+    var pixW = 0; var pixH = 0
+    private fun fit(cw: Int, ch: Int) = minOf(cw.toFloat() / pixW, ch.toFloat() / pixH)
+    /** Half width / height on the canvas. */
+    fun halfSize(cw: Int, ch: Int): Pair<Float, Float> {
+        if (pixW <= 0 || pixH <= 0) return 0f to 0f
+        val k = fit(cw, ch)
+        return pixW * k * scale * stretchX * 0.5f to pixH * k * scale * stretchY * 0.5f
+    }
+    fun center(cw: Int, ch: Int) = cw * 0.5f + dx to ch * 0.5f + dy
+    /** Canvas point of the local offset (u, v) from the centre (before rotation). */
+    fun localToCanvas(u: Float, v: Float, cw: Int, ch: Int): Pair<Float, Float> {
+        val (mx, my) = center(cw, ch); val c = kotlin.math.cos(rotation); val s = kotlin.math.sin(rotation)
+        return mx + c * u - s * v to my + s * u + c * v
+    }
+    fun canvasToLocal(x: Float, y: Float, cw: Int, ch: Int): Pair<Float, Float> {
+        val (mx, my) = center(cw, ch); val c = kotlin.math.cos(rotation); val s = kotlin.math.sin(rotation)
+        val px = x - mx; val py = y - my
+        return c * px + s * py to -s * px + c * py
+    }
+    /** Image pixel (fractional) under canvas point (x, y). */
+    fun canvasToPixel(x: Float, y: Float, cw: Int, ch: Int): Pair<Float, Float> {
+        val (hw, hh) = halfSize(cw, ch)
+        if (hw <= 0f || hh <= 0f) return Float.NaN to Float.NaN
+        val (u, v) = canvasToLocal(x, y, cw, ch)
+        return (u + hw) / (2 * hw) * pixW to (v + hh) / (2 * hh) * pixH
+    }
+    /** Canvas pixels per image pixel along x and y. */
+    fun pixelScale(cw: Int, ch: Int): Pair<Float, Float> {
+        val (hw, hh) = halfSize(cw, ch); return if (pixW > 0) 2 * hw / pixW to 2 * hh / pixH else 0f to 0f
+    }
+    /** Corners (top-left, top-right, bottom-right, bottom-left) on the canvas. */
+    fun corners(cw: Int, ch: Int): List<Pair<Float, Float>> {
+        val (hw, hh) = halfSize(cw, ch)
+        return listOf(-hw to -hh, hw to -hh, hw to hh, -hw to hh).map { localToCanvas(it.first, it.second, cw, ch) }
+    }
+    /** Transform box handles: 0-3 corners (TL, TR, BR, BL: free resize, squash / stretch), 4-7 edge
+     *  middles (T, R, B, L: one direction), 8 rotation (above the top edge), 9 inside (move). */
+    fun handlePoints(cw: Int, ch: Int, rotateGap: Float): List<Pair<Float, Float>> {
+        val (hw, hh) = halfSize(cw, ch)
+        val local = listOf(-hw to -hh, hw to -hh, hw to hh, -hw to hh, 0f to -hh, hw to 0f, 0f to hh, -hw to 0f, 0f to -hh - rotateGap)
+        return local.map { localToCanvas(it.first, it.second, cw, ch) }
+    }
+    /** Drags handle [h] to canvas point (x, y), resizing about the centre (Blender's median pivot). */
+    fun dragHandle(h: Int, x: Float, y: Float, cw: Int, ch: Int) {
+        if (pixW <= 0 || pixH <= 0 || !x.isFinite() || !y.isFinite()) return
+        val k = fit(cw, ch)
+        val (u, v) = canvasToLocal(x, y, cw, ch)
+        val baseW = pixW * k * scale * 0.5f; val baseH = pixH * k * scale * 0.5f
+        fun sx(hw: Float) { stretchX = (kotlin.math.abs(hw) / baseW).coerceIn(0.02f, 50f) }
+        fun sy(hh: Float) { stretchY = (kotlin.math.abs(hh) / baseH).coerceIn(0.02f, 50f) }
+        when (h) {
+            0, 1, 2, 3 -> { sx(u); sy(v) }
+            4, 6 -> sy(v)
+            5, 7 -> sx(u)
+            8 -> { val (mx, my) = center(cw, ch); rotation = kotlin.math.atan2(y - my, x - mx) + (Math.PI / 2).toFloat() }
+        }
+    }
+    /** The handle near canvas point (x, y) within [radius], 9 inside the box, -1 none. */
+    fun handleAt(x: Float, y: Float, radius: Float, cw: Int, ch: Int, rotateGap: Float): Int {
+        val pts = handlePoints(cw, ch, rotateGap)
+        val best = pts.indices.minByOrNull { (pts[it].first - x).let { d -> d * d } + (pts[it].second - y).let { d -> d * d } } ?: return -1
+        val d = kotlin.math.hypot(pts[best].first - x, pts[best].second - y)
+        if (d <= radius) return best
+        val (u, v) = canvasToLocal(x, y, cw, ch); val (hw, hh) = halfSize(cw, ch)
+        return if (kotlin.math.abs(u) <= hw && kotlin.math.abs(v) <= hh) 9 else -1
+    }
+    /** A copy placed over the image pixels [x0, y0, w, h] of this one, at the same spot and size on
+     *  the canvas (for a cut-out piece of [pw] x [ph] pixels). */
+    fun pieceAt(x0: Int, y0: Int, w: Int, h: Int, cw: Int, ch: Int): Rotoscope {
+        val r = copy(); r.pixW = w; r.pixH = h
+        val k = fit(cw, ch); val k2 = minOf(cw.toFloat() / w, ch.toFloat() / h)
+        r.stretchX = stretchX * k / k2; r.stretchY = stretchY * k / k2
+        val (hw, hh) = halfSize(cw, ch)
+        val u = (x0 + w / 2f) / pixW * 2 * hw - hw; val v = (y0 + h / 2f) / pixH * 2 * hh - hh
+        val (cx, cy) = localToCanvas(u, v, cw, ch)
+        r.dx = cx - cw * 0.5f; r.dy = cy - ch * 0.5f
+        return r
+    }
+
     fun set(kind: Kind, uris: List<String>, frames: Int) {
         this.kind = kind; this.uris = uris; this.frames = frames.coerceAtLeast(if (uris.isEmpty()) 0 else 1)
         start = 1; offset = 0; duration = 0; onFrames.clear(); resetPlacement()
@@ -54,6 +136,8 @@ class Rotoscope {
     /** A copy (same file, placement and timing), for pasting on other frames. */
     fun copy(): Rotoscope = Rotoscope().also { it.fromJson(toJson()) }
     fun clear() { uris = emptyList(); frames = 0 }
+    /** The photo's file after an edit (placement and timing kept). */
+    fun replaceFile(uri: String) { if (kind == Kind.IMAGE) uris = listOf(uri) }
     fun setOpacity(v: Float) { if (v.isFinite()) opacity = v.coerceIn(0f, 1f) }
 
     /** 1-based image / movie frame shown at scene frame [cfra], or 0 for none. A still image shows always. */

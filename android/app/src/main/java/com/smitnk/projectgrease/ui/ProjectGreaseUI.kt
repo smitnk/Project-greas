@@ -1538,7 +1538,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         // Quick Favorites (Blender's Q menu): the pinned tools, top right under the bar
         QuickFavoritesBar(controller,Modifier.align(Alignment.TopEnd).padding(top=56.dp,end=8.dp),redraw)
         // Lasso Cut (Blender's Cutter tool): the lasso cuts away the line parts inside it
-        if(tool==GreaseTool.LASSO&&!controller.warpActive&&controller.mode==GreaseMode.DRAW){
+        if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&controller.mode==GreaseMode.DRAW){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
@@ -1560,7 +1560,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
-        if(tool==GreaseTool.LASSO&&!controller.warpActive&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
+        if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){Text("Warp",maxLines=1)}
                 OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){Text("Warp mesh",maxLines=1)}

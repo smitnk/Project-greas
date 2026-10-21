@@ -91,7 +91,11 @@ fun rememberMediaImport(controller: EditorController, context: Context, redraw: 
 private fun addPhoto(controller: EditorController, context: Context, uri: Uri) {
     val r = controller.addReference(controller.layerName(controller.selectedLayer))
     r.set(Rotoscope.Kind.IMAGE, listOf(uri.toString()), 1)
-    if (controller.rotoscopeLoader?.frame(r, 1) == null) { controller.removeReference(); toast(context, "Couldn't open this photo (format not supported)"); return }
+    val img = controller.rotoscopeLoader?.frame(r, 1)
+    if (img == null) { controller.removeReference(); toast(context, "Couldn't open this photo (format not supported)"); return }
+    r.pixW = img.second; r.pixH = img.third
+    // a photo belongs to the frame it was imported on (Copy / Paste puts it on others; "every frame" in Photos & videos)
+    r.onFrames.add(controller.animation.currentFrame)
     controller.rotoscopeChanged(); controller.history.markEdit()
     controller.referenceAdjusting = true
 }

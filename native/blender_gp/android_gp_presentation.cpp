@@ -1036,7 +1036,9 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
 /* Several references (one per layer, like other drawing apps): slot i is drawn in slot order, all
  * under the strokes. shortcut: references cannot sit between stroke layers yet; that needs the
  * engine to draw each layer in its own pass. */
-struct RefSlot{GLuint tex=0;int w=0,h=0,visible=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
+// spare: the other texture of a ping-pong pair, so a new video frame never goes into the texture
+// the GPU is still drawing (Mali waited 40-150 ms for it on every frame step)
+struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
 constexpr int kRefSlots=16;
 RefSlot g_refs[kRefSlots];
 int g_ref_cur=0,g_ref_count=1;
@@ -1629,10 +1631,13 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
 }
 extern "C" int project_grease_android_present_set_reference(const unsigned char*rgba,int w,int h){
   RefSlot&r=g_refs[g_ref_cur];
-  if(!rgba||w<=0||h<=0){if(r.tex)glDeleteTextures(1,&r.tex);r.tex=0;r.w=r.h=0;return 1;}
+  if(!rgba||w<=0||h<=0){if(r.tex)glDeleteTextures(1,&r.tex);if(r.spare)glDeleteTextures(1,&r.spare);r.tex=r.spare=0;r.w=r.h=r.sw=r.sh=0;return 1;}
+  std::swap(r.tex,r.spare);std::swap(r.w,r.sw);std::swap(r.h,r.sh);
+  const bool same=r.tex&&r.w==w&&r.h==h;
   if(!r.tex)glGenTextures(1,&r.tex);
   glBindTexture(GL_TEXTURE_2D,r.tex);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
+  if(same)glTexSubImage2D(GL_TEXTURE_2D,0,0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
+  else glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
   glBindTexture(GL_TEXTURE_2D,0);
@@ -1643,7 +1648,7 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char*
  * are freed). */
 extern "C" void project_grease_android_present_select_reference(int slot,int count){
   g_ref_count=std::clamp(count,0,kRefSlots);
-  for(int i=g_ref_count;i<kRefSlots;i++)if(g_refs[i].tex){glDeleteTextures(1,&g_refs[i].tex);g_refs[i]=RefSlot{};}
+  for(int i=g_ref_count;i<kRefSlots;i++)if(g_refs[i].tex||g_refs[i].spare){if(g_refs[i].tex)glDeleteTextures(1,&g_refs[i].tex);if(g_refs[i].spare)glDeleteTextures(1,&g_refs[i].spare);g_refs[i]=RefSlot{};}
   g_ref_cur=std::clamp(slot,0,kRefSlots-1);
 }
 extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot,float sx,float sy){

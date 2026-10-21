@@ -203,10 +203,13 @@ fun ReferenceAdjustOverlay(controller: EditorController, redraw: () -> Unit) {
         Text("Corners: resize / squash / stretch · edges: one way · ● rotate · inside: move", Modifier.align(Alignment.TopCenter).padding(top = 56.dp, start = 12.dp, end = 12.dp)
             .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White, fontSize = 12.sp)
         // at the top, under the hint: at the bottom the timeline bar covered Done and the editor stayed stuck here
-        FlowRow(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // on its own backing, over anything else at the top (the lasso chips hide while the box is up)
+        Surface(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, shadowElevation = 4.dp) {
+        FlowRow(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { controller.referenceAdjusting = false; redraw() }, Modifier.testTag("referenceAdjustDone")) { Text("Done") }
             OutlinedButton(onClick = { r.stretchX = 1f; r.stretchY = 1f; controller.endReferenceTransform(); tick++ }) { Text("Keep proportions") }
             OutlinedButton(onClick = { r.resetPlacement(); controller.endReferenceTransform(); tick++ }) { Text("Reset") }
+        }
         }
     }
 }

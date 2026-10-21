@@ -1115,8 +1115,11 @@ class EditorController {
     // ---- editing photos: the transform box, the eraser and the lasso on the picture itself ----
     /** Photos shown on this frame, top first (the eraser and the lasso work on the top one under the finger). */
     private fun photosHere():List<Rotoscope> = references.filter {
-        it.kind == Rotoscope.Kind.IMAGE && it.visible && !it.isEmpty && it.imageFrame(animation.currentFrame) != 0 && it.pixW > 0
-    }.reversed()
+        it.kind == Rotoscope.Kind.IMAGE && it.visible && !it.isEmpty && it.imageFrame(animation.currentFrame) != 0
+    }.onEach { r ->
+        // the pixel size comes with the upload; read it from the decoded photo when it is not known yet
+        if (r.pixW <= 0) rotoscopeLoader?.frame(r, 1)?.let { r.pixW = it.second; r.pixH = it.third }
+    }.filter { it.pixW > 0 }.reversed()
     /** The eraser also erases photos (Eraser options). */
     var eraseOnPhotos by androidx.compose.runtime.mutableStateOf(false)
     private val photoEditBuffers = HashMap<Rotoscope, Triple<IntArray, Int, Int>>()
@@ -1169,7 +1172,11 @@ class EditorController {
         val poly = FloatArray(loop.size)
         for (i in 0 until loop.size / 2) { val (px, py) = r.canvasToPixel(loop[2 * i], loop[2 * i + 1], cw, ch); poly[2 * i] = px; poly[2 * i + 1] = py }
         val piece = PhotoPixels.cut(src.first, src.second, src.third, poly, clear = mode != 1)
-            ?: run { onMessage?.invoke("The loop has no photo pixels inside"); return false }
+        com.smitnk.projectgrease.CrashLog.event("PHOTO LASSO mode $mode on ${r.pixW}x${r.pixH} (decoded ${src.second}x${src.third}) canvas ${cw}x$ch, loop in pixels x %.0f..%.0f y %.0f..%.0f -> %s".format(
+            (0 until poly.size / 2).minOfOrNull { poly[2 * it] } ?: 0f, (0 until poly.size / 2).maxOfOrNull { poly[2 * it] } ?: 0f,
+            (0 until poly.size / 2).minOfOrNull { poly[2 * it + 1] } ?: 0f, (0 until poly.size / 2).maxOfOrNull { poly[2 * it + 1] } ?: 0f,
+            piece?.let { "piece ${it.w}x${it.h} at ${it.x},${it.y}" } ?: "nothing inside"))
+        if (piece == null) { onMessage?.invoke("The loop has no photo pixels inside"); return false }
         if (mode != 1) loader.commitEdit(r, src.first, src.second, src.third)
         if (mode != 2) {
             if (references.size >= 16) { onMessage?.invoke("Up to 16 photos / videos"); rotoscopeChanged(); history.markEdit(); return true }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -201,7 +203,7 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = done) { Icon(androidx.compose.material.icons.Icons.Default.Close, "Cancel") }
+                    IconButton(onClick = done) { Icon(Icons.Default.Close, "Cancel") }
                     Text(name, maxLines = 1, style = MaterialTheme.typography.titleSmall)
                 }
                 if (durationMs < 0 || (durationMs > 0 && peaks == null)) {
@@ -250,15 +252,15 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(clock(a), fontSize = 11.sp, color = pink)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { pos = a }) { Icon(androidx.compose.material.icons.Icons.Default.SkipPrevious, "To the start") }
+                    IconButton(onClick = { pos = a }) { Icon(Icons.Default.SkipPrevious, "To the start") }
                     IconButton(onClick = {
                         val p = player.value ?: runCatching { MediaPlayer().apply { setDataSource(context, uri); prepare() } }.getOrNull()?.also { player.value = it }
                         if (p != null) {
                             if (playing) { p.pause(); playing = false }
                             else { p.seekTo((if (pos in a until b) pos else a).toInt()); p.start(); playing = true }
                         }
-                    }, Modifier.testTag("audioPreview")) { Icon(if (playing) androidx.compose.material.icons.Icons.Default.Pause else androidx.compose.material.icons.Icons.Default.PlayArrow, "Play") }
-                    IconButton(onClick = { pos = b }) { Icon(androidx.compose.material.icons.Icons.Default.SkipNext, "To the end") }
+                    }, Modifier.testTag("audioPreview")) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play") }
+                    IconButton(onClick = { pos = b }) { Icon(Icons.Default.SkipNext, "To the end") }
                     Spacer(Modifier.weight(1f))
                     Text(clock(b), fontSize = 11.sp, color = pink)
                 }

@@ -5,8 +5,6 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
@@ -25,6 +23,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
@@ -250,8 +249,10 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                     }
                     // the selected clip's toolbar pops in above the tracks
                     val sel = selected?.takeIf { it in controller.audioStrips }
-                    AnimatedVisibility(sel != null, Modifier.align(Alignment.TopCenter), enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
-                        Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 6.dp, shadowElevation = 6.dp) {
+                    // (a scoped AnimatedVisibility is ambiguous inside the Column: animate scale / alpha directly)
+                    val pop by animateFloatAsState(if (sel != null) 1f else 0f, label = "toolbar")
+                    if (sel != null) {
+                        Surface(Modifier.align(Alignment.TopCenter).graphicsLayer { scaleX = pop; scaleY = pop; alpha = pop }, shape = RoundedCornerShape(20.dp), tonalElevation = 6.dp, shadowElevation = 6.dp) {
                             Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = { sel?.let { controller.duplicateAudio(it) }?.let { selected = it }; tick++ }, Modifier.testTag("audioDuplicate")) { Icon(Icons.Default.ContentCopy, "Duplicate") }
                                 IconButton(onClick = { volumeOpen = !volumeOpen }, Modifier.testTag("audioVolume")) { Icon(Icons.Default.Edit, "Volume") }

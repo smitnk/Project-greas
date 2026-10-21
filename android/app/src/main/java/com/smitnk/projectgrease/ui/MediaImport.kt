@@ -188,123 +188,99 @@ private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Con
 @Composable
 private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Context, done: () -> Unit) {
     var durationMs by remember(uri) { mutableLongStateOf(-1L) }
-    LaunchedEffect(uri) { durationMs = withContext(Dispatchers.IO) { controller.audioPlayback?.durationOf(uri) ?: 0L } }
+    var peaks by remember(uri) { mutableStateOf<FloatArray?>(null) }
+    LaunchedEffect(uri) {
+        durationMs = withContext(Dispatchers.IO) { controller.audioPlayback?.durationOf(uri) ?: 0L }
+        peaks = withContext(Dispatchers.IO) { AudioWaveform.peaks(context, uri.toString()) }
+    }
     val player = remember(uri) { mutableStateOf<MediaPlayer?>(null) }
     DisposableEffect(uri) { onDispose { player.value?.release(); player.value = null } }
     val name = remember(uri) { displayName(context, uri) }
+    val pink = Color(0xFFF2416B)
     Dialog(onDismissRequest = done, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth().padding(12.dp), shape = MaterialTheme.shapes.large) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-                Text("Trim audio", style = MaterialTheme.typography.headlineSmall)
-                Text(name, fontSize = 12.sp)
-                when {
-                    durationMs < 0 -> { CircularProgressIndicator(Modifier.padding(24.dp)); return@Column }
-                    durationMs == 0L -> { Text("Couldn't read this file as audio."); TextButton(onClick = done) { Text("Skip") }; return@Column }
-                }
-                var range by remember(uri) { mutableStateOf(0f..durationMs.toFloat()) }
-                var startAt by remember(uri) { mutableIntStateOf(controller.animation.currentFrame) }
-                var playing by remember(uri) { mutableStateOf(false) }
-                val fps = controller.animation.fps.coerceAtLeast(1)
-                val a = range.start.toLong(); val b = range.endInclusive.toLong()
-                Text("Keep ${fmt(a)} to ${fmt(b)} (${fmt(b - a)}) · ${((b - a) * fps + 999) / 1000} frames at $fps fps", Modifier.padding(top = 8.dp))
-                RangeSlider(range, { range = it }, valueRange = 0f..durationMs.toFloat(), modifier = Modifier.testTag("audioTrim"))
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = {
+                    IconButton(onClick = done) { Icon(androidx.compose.material.icons.Icons.Default.Close, "Cancel") }
+                    Text(name, maxLines = 1, style = MaterialTheme.typography.titleSmall)
+                }
+                if (durationMs < 0 || (durationMs > 0 && peaks == null)) {
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = pink); Text("Importing audio file", Modifier.padding(top = 12.dp), fontSize = 12.sp)
+                    }
+                    return@Column
+                }
+                if (durationMs == 0L) { Text("Couldn't read this file as audio.", Modifier.padding(16.dp)); TextButton(onClick = done) { Text("Skip") }; return@Column }
+                var a by remember(uri) { mutableLongStateOf(0L) }
+                var b by remember(uri) { mutableLongStateOf(durationMs) }
+                var playing by remember(uri) { mutableStateOf(false) }
+                var pos by remember(uri) { mutableLongStateOf(0L) }
+                val fps = controller.animation.fps.coerceAtLeast(1)
+                // the waveform: the kept part bright, the rest pale; drag a handle to trim, tap to set the preview point
+                Canvas(Modifier.fillMaxWidth().weight(1f).padding(vertical = 24.dp).testTag("audioTrim").pointerInput(durationMs) {
+                    var which = 0
+                    detectDragGestures(onDragStart = { o ->
+                        val xa = a.toFloat() / durationMs * size.width; val xb = b.toFloat() / durationMs * size.width
+                        which = if (kotlin.math.abs(o.x - xa) < kotlin.math.abs(o.x - xb)) 1 else 2
+                    }) { change, _ ->
+                        change.consume()
+                        val ms = (change.position.x / size.width * durationMs).toLong().coerceIn(0L, durationMs)
+                        val minLen = 1000L / fps
+                        if (which == 1) a = ms.coerceAtMost(b - minLen) else b = ms.coerceAtLeast(a + minLen)
+                        pos = if (which == 1) a else b
+                    }
+                }) {
+                    val p = peaks ?: FloatArray(0)
+                    val mid = size.height / 2
+                    val xa = a.toFloat() / durationMs * size.width; val xb = b.toFloat() / durationMs * size.width
+                    var x = 0f
+                    while (x < size.width && p.isNotEmpty()) {
+                        val v = p[((x / size.width) * p.size).toInt().coerceIn(0, p.size - 1)]
+                        val h = (size.height * 0.45f * v).coerceAtLeast(1f)
+                        drawLine(if (x in xa..xb) pink else pink.copy(alpha = 0.3f), Offset(x, mid - h), Offset(x, mid + h), 2f)
+                        x += 3f
+                    }
+                    for (hx in listOf(xa, xb)) {
+                        drawRoundRect(pink, Offset(hx - 12f, mid - 40f), Size(24f, 80f), CornerRadius(8f, 8f))
+                        drawLine(Color.White, Offset(hx, mid - 16f), Offset(hx, mid + 16f), 2f)
+                    }
+                    val xp = pos.toFloat() / durationMs * size.width
+                    drawLine(pink, Offset(xp, 0f), Offset(xp, size.height), 2f)
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(clock(a), fontSize = 11.sp, color = pink)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { pos = a }) { Icon(androidx.compose.material.icons.Icons.Default.SkipPrevious, "To the start") }
+                    IconButton(onClick = {
                         val p = player.value ?: runCatching { MediaPlayer().apply { setDataSource(context, uri); prepare() } }.getOrNull()?.also { player.value = it }
                         if (p != null) {
                             if (playing) { p.pause(); playing = false }
-                            else { p.seekTo(a.toInt()); p.start(); playing = true }
+                            else { p.seekTo((if (pos in a until b) pos else a).toInt()); p.start(); playing = true }
                         }
-                    }) { Text(if (playing) "Stop" else "Play the kept part") }
+                    }, Modifier.testTag("audioPreview")) { Icon(if (playing) androidx.compose.material.icons.Icons.Default.Pause else androidx.compose.material.icons.Icons.Default.PlayArrow, "Play") }
+                    IconButton(onClick = { pos = b }) { Icon(androidx.compose.material.icons.Icons.Default.SkipNext, "To the end") }
+                    Spacer(Modifier.weight(1f))
+                    Text(clock(b), fontSize = 11.sp, color = pink)
                 }
-                // stops at the trim's end while previewing
+                // preview: the playhead follows, stopping at the trim's end
                 LaunchedEffect(playing, a, b) {
                     while (playing) {
                         val p = player.value ?: break
-                        if (!p.isPlaying || p.currentPosition >= b) { runCatching { p.pause() }; playing = false }
-                        kotlinx.coroutines.delay(50)
+                        pos = p.currentPosition.toLong()
+                        if (!p.isPlaying || pos >= b) { runCatching { p.pause() }; playing = false }
+                        kotlinx.coroutines.delay(33)
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Starts at timeline frame $startAt", Modifier.weight(1f))
-                    TextButton({ startAt = (startAt - 1).coerceAtLeast(1) }) { Text("−") }
-                    TextButton({ startAt++ }) { Text("+") }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = done) { Text("Cancel") }
-                    Button(onClick = {
-                        val s = controller.addAudio(uri.toString(), name, durationMs, a, b, startAt)
-                        if (s != null) toast(context, "Audio added: frames ${s.start}–${s.endFrame(fps)}")
-                        done()
-                    }, Modifier.testTag("audioAdd")) { Text("Add") }
+                Text("${clock(b - a)} · ${((b - a) * fps + 999) / 1000} frames from frame ${controller.animation.currentFrame}",
+                    Modifier.align(Alignment.CenterHorizontally).padding(4.dp), fontSize = 11.sp)
+                Button(onClick = {
+                    val s = controller.addAudio(uri.toString(), name, durationMs, a, b, controller.animation.currentFrame)
+                    if (s != null) toast(context, "Audio added: frames ${s.start}–${s.endFrame(fps)}")
+                    done()
+                }, Modifier.fillMaxWidth().padding(16.dp).height(52.dp).testTag("audioAddToTimeline"), colors = ButtonDefaults.buttonColors(containerColor = pink)) {
+                    Text("Add to timeline")
                 }
             }
-        }
-    }
-}
-
-/** The audio tracks: each a bar on a frame ruler; drag the bar to move it to any frame, re-trim,
- *  volume, mute, remove. Changes are one undo step each. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AudioSheet(controller: EditorController, m: MediaImport, onDismiss: () -> Unit, redraw: () -> Unit) {
-    var tick by remember { mutableIntStateOf(0) }
-    @Suppress("UNUSED_VARIABLE") val observed = tick
-    val fps = controller.animation.fps.coerceAtLeast(1)
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("Audio tracks", style = MaterialTheme.typography.headlineSmall)
-            Text("Drag a bar to move the sound to another frame. They play with the animation and go into the MP4 export.", fontSize = 12.sp)
-            Button(onClick = { m.importAudio() }, Modifier.fillMaxWidth().padding(vertical = 6.dp)) { Text("Import audio") }
-            val last = maxOf(controller.animation.timelineEnd, controller.audioStrips.maxOfOrNull { it.endFrame(fps) } ?: 1) + 24
-            val cell = 14.dp
-            val cellPx = with(LocalDensity.current) { cell.toPx() }
-            val scroll = rememberScrollState()
-            controller.audioStrips.toList().forEachIndexed { index, a ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text(a.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                        Text("Frames ${a.start}–${a.endFrame(fps)} · uses ${fmt(a.trimStartMs)}–${fmt(a.trimStartMs + a.lengthMs)} of ${fmt(a.durationMs)}", fontSize = 11.sp)
-                        // the lane: a frame ruler with the strip's bar, dragged sideways in whole frames
-                        Box(Modifier.fillMaxWidth().height(40.dp).horizontalScroll(scroll)) {
-                            var dragRest by remember { mutableFloatStateOf(0f) }
-                            Canvas(Modifier.width(cell * last).fillMaxHeight().testTag("audioLane_$index").pointerInput(a) {
-                                detectDragGestures(onDragEnd = { dragRest = 0f; controller.audioChanged(record = true); tick++ }) { change, d ->
-                                    change.consume()
-                                    dragRest += d.x
-                                    val steps = (dragRest / cellPx).toInt()
-                                    if (steps != 0) { a.start = (a.start + steps).coerceAtLeast(1); dragRest -= steps * cellPx; controller.audioChanged(); tick++ }
-                                }
-                            }) {
-                                @Suppress("UNUSED_VARIABLE") val t = tick
-                                for (f in 1..last) if (f % 12 == 1 || f == 1) drawLine(Color.Gray, Offset((f - 1) * cellPx, 0f), Offset((f - 1) * cellPx, 8f), 1f)
-                                val cur = controller.animation.currentFrame
-                                drawLine(Color(0xFFFF5252), Offset((cur - 0.5f) * cellPx, 0f), Offset((cur - 0.5f) * cellPx, size.height), 2f)
-                                val x0 = (a.start - 1) * cellPx; val w = a.frames(fps) * cellPx
-                                drawRoundRect(if (a.muted) Color(0xFF777777) else Color(0xFF26A69A), Offset(x0, 10f), Size(w, size.height - 14f), CornerRadius(8f, 8f))
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Start frame ${a.start}", Modifier.weight(1f), fontSize = 12.sp)
-                            TextButton({ a.start = (a.start - 1).coerceAtLeast(1); controller.audioChanged(record = true); tick++ }) { Text("−") }
-                            TextButton({ a.start++; controller.audioChanged(record = true); tick++ }) { Text("+") }
-                            TextButton({ a.start = controller.animation.currentFrame; controller.audioChanged(record = true); tick++ }) { Text("Here") }
-                        }
-                        if (a.durationMs > 0) {
-                            Text("Trim", fontSize = 12.sp)
-                            RangeSlider(a.trimStartMs.toFloat()..(a.trimStartMs + a.lengthMs).toFloat(), { v -> a.trim(v.start.toLong(), v.endInclusive.toLong()); tick++ },
-                                valueRange = 0f..a.durationMs.toFloat(), onValueChangeFinished = { controller.audioChanged(record = true) })
-                        }
-                        Text("Volume ${(a.volume * 100).toInt()}%", fontSize = 12.sp)
-                        Slider(a.volume, { a.volume = it; tick++ }, valueRange = 0f..2f, onValueChangeFinished = { controller.audioChanged(record = true) })
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Mute", Modifier.weight(1f)); Switch(a.muted, { a.muted = it; controller.audioChanged(record = true); tick++ })
-                            TextButton({ controller.removeAudio(a); tick++; redraw() }) { Text("Remove") }
-                        }
-                    }
-                }
-            }
-            if (controller.audioStrips.isEmpty()) Text("No audio yet.", Modifier.padding(vertical = 12.dp))
         }
     }
 }

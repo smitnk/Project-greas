@@ -411,7 +411,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.IMPORT_PHOTO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importPhoto()}
         Sheet.IMPORT_VIDEO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importVideo()}
         Sheet.IMPORT_AUDIO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importAudio()}
-        Sheet.AUDIO->AudioSheet(controller,mediaImport,{sheet=Sheet.NONE},::redraw)
+        Sheet.AUDIO->AudioEditor(controller,mediaImport,{sheet=Sheet.NONE},::redraw)
         Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject)
         Sheet.TOOLS->ToolsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.LAYERS->LayersSheet(controller,{sheet=Sheet.NONE},::redraw)
@@ -1547,6 +1547,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     .border(2.dp,MaterialTheme.colorScheme.outline,CircleShape)
                     .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
                 ToolbarButton(Icons.Default.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
+                ToolbarButton(Icons.Default.MusicNote,"Audio",false){onSheet(Sheet.AUDIO)}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
                 // quick Copy / Paste: the selection, or the whole frame when nothing is selected
@@ -1849,7 +1850,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.Movie,"Import video","Pick a video, trim it, place it on the timeline","importVideo"){onSheet(Sheet.IMPORT_VIDEO)}
             item(Icons.Default.MusicNote,"Import audio","Pick audio files, trim them, place them on the timeline","importAudio"){onSheet(Sheet.IMPORT_AUDIO)}
             item(Icons.Default.PhotoLibrary,"Photos & videos","The imported photos and videos: box, frames, opacity, copy / paste","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
-            item(Icons.Default.GraphicEq,"Audio tracks","Move each sound to any frame, re-trim, volume, mute","audio"){onSheet(Sheet.AUDIO)}
+            item(Icons.Default.GraphicEq,"Audio tracks","Tracks with waveforms: move, trim, split, duplicate, volume, mute, lock","audio"){onSheet(Sheet.AUDIO)}
             item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
             val context=LocalContext.current

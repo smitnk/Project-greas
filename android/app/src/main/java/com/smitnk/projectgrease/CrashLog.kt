@@ -31,6 +31,8 @@ object CrashLog {
 
     /** A freeze is not a crash: a watchdog thread writes where the main thread is stuck after 3 s. */
     private var watching = false
+    /** Long main-thread work that is expected (export): the watchdog doesn't call it a freeze. */
+    @Volatile var expectedBusy: String? = null
     fun watchFreezes(context: Context) {
         if (watching) return
         watching = true
@@ -44,6 +46,7 @@ object CrashLog {
                 main.post { seen.set(want) }
                 Thread.sleep(3000)
                 if (seen.get() >= want) continue
+                if (expectedBusy != null) { while (seen.get() < want) Thread.sleep(500); continue }
                 val t = android.os.Looper.getMainLooper().thread
                 event("FREEZE main thread stuck >3 s at ${t.stackTrace.take(4).joinToString(" < ")}")
                 runCatching {

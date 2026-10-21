@@ -29,4 +29,16 @@ class AudioStripTest {
         assertEquals("song.mp3", back[0].name)
         a.volume = Float.NaN; assertEquals(1f, a.volume, 0f)
     }
+    @Test fun softSplitAndCopy() {
+        val a = AudioStrip("content://a", "a").apply { start = 10; durationMs = 10_000; track = 2 }
+        a.trim(1_000, 3_000) // 2 s = 24 frames at 12 fps: frames 10..33
+        assertEquals(null, a.split(10, 12)); assertEquals(null, a.split(34, 12))
+        val r = a.split(16, 12)!!
+        assertEquals(10, a.start); assertEquals(1_000L, a.trimStartMs); assertEquals(1_500L, a.trimEndMs); assertEquals(15, a.endFrame(12))
+        assertEquals(16, r.start); assertEquals(1_500L, r.trimStartMs); assertEquals(3_000L, r.trimEndMs); assertEquals(33, r.endFrame(12))
+        assertEquals(2, r.track)
+        val back = AudioStrip.listFromJson(AudioStrip.listToJson(listOf(r)))[0]
+        assertEquals(2, back.track)
+        val c = r.copy(); c.start = 50; assertEquals(16, r.start)
+    }
 }

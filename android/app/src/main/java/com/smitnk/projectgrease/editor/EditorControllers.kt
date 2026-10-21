@@ -1103,6 +1103,7 @@ class EditorController {
     fun addAudio(uri:String, name:String, durationMs:Long, trimStartMs:Long = 0, trimEndMs:Long = 0, start:Int = animation.currentFrame):AudioStrip? {
         if (audioStrips.size >= 16) { onMessage?.invoke("Up to 16 audio tracks"); return null }
         val a = AudioStrip(uri, name).also { it.start = start.coerceAtLeast(1); it.durationMs = durationMs; if (trimEndMs > 0) it.trim(trimStartMs, trimEndMs) }
+        a.track = freeAudioTrack(a.start, a.endFrame(animation.fps))
         audioStrips.add(a)
         // the animation grows to hold the sound
         if (durationMs > 0 && animation.sceneEnd < a.endFrame(animation.fps)) animation.setSceneEnd(a.endFrame(animation.fps))
@@ -1110,6 +1111,29 @@ class EditorController {
         return a
     }
     fun removeAudio(a:AudioStrip) { audioStrips.remove(a); audioChanged(record = true) }
+    /** Locked audio tracks (Blender's channel lock): their clips don't move or trim. */
+    private val lockedAudioTracks = androidx.compose.runtime.mutableStateListOf<Int>()
+    fun audioTrackLocked(track:Int) = track in lockedAudioTracks
+    fun setAudioTrackLocked(track:Int, locked:Boolean) {
+        if (locked && track !in lockedAudioTracks) lockedAudioTracks.add(track) else if (!locked) lockedAudioTracks.remove(track)
+        document.markDirty()
+    }
+    /** The first track with nothing between frames [from]..[to] (the top one when all are busy). */
+    fun freeAudioTrack(from:Int, to:Int, except:AudioStrip? = null):Int =
+        (0 until AudioStrip.MAX_TRACKS).firstOrNull { t -> audioStrips.none { it !== except && it.track == t && it.start <= to && it.endFrame(animation.fps) >= from } } ?: 0
+    /** Blender's soft split of [a] at the current frame; false when the frame isn't inside it. */
+    fun splitAudio(a:AudioStrip):Boolean {
+        if (audioStrips.size >= 16) { onMessage?.invoke("Up to 16 audio clips"); return false }
+        val right = a.split(animation.currentFrame, animation.fps) ?: run { onMessage?.invoke("Move the playhead inside the clip to split it"); return false }
+        audioStrips.add(audioStrips.indexOf(a) + 1, right); audioChanged(record = true); return true
+    }
+    /** Blender's strip duplicate: the copy goes right after the clip, on a free track. */
+    fun duplicateAudio(a:AudioStrip):AudioStrip? {
+        if (audioStrips.size >= 16) { onMessage?.invoke("Up to 16 audio clips"); return null }
+        val c = a.copy(); c.start = a.endFrame(animation.fps) + 1
+        c.track = freeAudioTrack(c.start, c.endFrame(animation.fps))
+        audioStrips.add(c); audioChanged(record = true); return c
+    }
     /** After a change to a strip; [record] = one undo step (at the end of a drag, not during it). */
     fun audioChanged(record:Boolean = false) {
         document.markDirty(); if (record) history.markEdit()
@@ -2100,7 +2124,10 @@ class EditorController {
         val plan = FrameSequenceExport.plan(keys, s.frameStart.coerceAtLeast(1), s.frameEnd.coerceAtLeast(s.frameStart.coerceAtLeast(1)), document.projectName.ifBlank { "frame" }.replace(Regex("[^A-Za-z0-9_-]"), "_"), "png")
         val original = animation.currentFrame
         GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
-        return withoutOnion { renderPlan(plan, original, transparent, sink) }
+        // shortcut: export renders on the UI thread (GL context) and the screen waits; a progress view needs an async encoder
+        com.smitnk.projectgrease.CrashLog.expectedBusy = "export"
+        try { return withoutOnion { renderPlan(plan, original, transparent, sink) } }
+        finally { com.smitnk.projectgrease.CrashLog.expectedBusy = null }
     }
     /** Onion skin is a viewport overlay (Blender never renders it): off while exporting, then restored. */
     private fun <T> withoutOnion(block: () -> T): T {
@@ -2201,6 +2228,7 @@ class EditorController {
             references.firstOrNull { !it.isEmpty }?.let { obj.put("rotoscope", it.toJson()) } // older readers
             references.filter { !it.isEmpty }.takeIf { it.isNotEmpty() }?.let { l -> obj.put("references", org.json.JSONArray(l.map { it.toJson() })) }
             if (audioStrips.isNotEmpty()) obj.put("audio", AudioStrip.listToJson(audioStrips))
+            if (lockedAudioTracks.isNotEmpty()) obj.put("audioLocked", org.json.JSONArray(lockedAudioTracks.toList()))
             AnnotationData.toJson(annotationDump(), annotationStyle())?.let { obj.put("annotations", it) }
         }
         return obj
@@ -2231,6 +2259,7 @@ class EditorController {
         loadTexturesJson(rawJson?.optJSONArray("textures"))
         references.clear(); activeReference = 0; rotoscopeShown.clear(); rotoscopeFailed.clear()
         audioStrips.clear(); audioStrips.addAll(AudioStrip.listFromJson(rawJson?.optJSONArray("audio")))
+        lockedAudioTracks.clear(); rawJson?.optJSONArray("audioLocked")?.let { a -> for (i in 0 until a.length()) lockedAudioTracks.add(a.optInt(i)) }
         val refs = rawJson?.optJSONArray("references")
         if (refs != null) for (i in 0 until refs.length()) references.add(Rotoscope().also { it.fromJson(refs.optJSONObject(i)) })
         else references.add(Rotoscope().also { it.fromJson(rawJson?.optJSONObject("rotoscope")) })
@@ -3100,8 +3129,9 @@ class EditorController {
     /** Toolbar Copy: the selection, or the whole frame when nothing is selected (selection left as it was). */
     fun quickCopy():Boolean {
         if (native.selectedPointCount() > 0) return copySelection()
+        // the count is the active layer's: on an empty active layer it said "nothing" while other layers had strokes
         selectAll()
-        val ok = native.selectedPointCount() > 0 && copySelection()
+        val ok = copySelection()
         deselectAll(); render()
         return ok
     }

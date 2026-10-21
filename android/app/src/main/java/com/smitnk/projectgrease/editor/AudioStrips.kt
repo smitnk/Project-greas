@@ -10,6 +10,8 @@ import org.json.JSONObject
  */
 class AudioStrip(var uri: String, var name: String) {
     var start = 1
+    /** Row in the audio timeline (Blender's sequencer channel), 0 = top. */
+    var track = 0
     var volume = 1f
         set(v) { field = if (v.isFinite()) v.coerceIn(0f, 2f) else 1f }
     var muted = false
@@ -39,11 +41,32 @@ class AudioStrip(var uri: String, var name: String) {
         trimStartMs = fromMs.coerceIn(0, end - 1); trimEndMs = end
     }
 
+    /** A copy (Blender's strip duplicate). */
+    fun copy(): AudioStrip = AudioStrip(uri, name).also {
+        it.start = start; it.track = track; it.volume = volume; it.muted = muted
+        it.durationMs = durationMs; it.trimStartMs = trimStartMs; it.trimEndMs = trimEndMs
+    }
+
+    /**
+     * Blender's soft split (SEQ_edit_strip_split, SEQ_SPLIT_SOFT) at scene frame [frame]: this strip
+     * keeps start..frame-1 (its right handle moves to [frame]); the returned strip covers frame..end
+     * (its left handle at [frame]). Null when [frame] is not strictly inside the strip.
+     */
+    fun split(frame: Int, fps: Int): AudioStrip? {
+        if (frame <= start || frame > endFrame(fps)) return null
+        val endMs = trimStartMs + lengthMs
+        val cutMs = (trimStartMs + offsetMs(frame, fps)).coerceAtMost(endMs - 1)
+        val right = copy().also { it.start = frame; it.trimStartMs = cutMs; it.trimEndMs = endMs }
+        trimEndMs = cutMs
+        return right
+    }
+
     fun toJson(): JSONObject = JSONObject().put("uri", uri).put("name", name).put("start", start)
         .put("volume", volume.toDouble()).put("muted", muted).put("durationMs", durationMs)
-        .put("trimStartMs", trimStartMs).put("trimEndMs", trimEndMs)
+        .put("trimStartMs", trimStartMs).put("trimEndMs", trimEndMs).put("track", track)
 
     companion object {
+        const val MAX_TRACKS = 6
         fun fromJson(o: JSONObject?): AudioStrip? {
             val uri = o?.optString("uri").orEmpty()
             if (uri.isEmpty()) return null
@@ -51,6 +74,7 @@ class AudioStrip(var uri: String, var name: String) {
                 start = o.optInt("start", 1); volume = o.optDouble("volume", 1.0).toFloat()
                 muted = o.optBoolean("muted", false); durationMs = o.optLong("durationMs", 0L)
                 trimStartMs = o.optLong("trimStartMs", 0L); trimEndMs = o.optLong("trimEndMs", 0L)
+                track = o.optInt("track", 0).coerceIn(0, MAX_TRACKS - 1)
             }
         }
         fun listToJson(strips: List<AudioStrip>): JSONArray = JSONArray(strips.map { it.toJson() })

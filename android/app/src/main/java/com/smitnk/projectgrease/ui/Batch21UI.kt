@@ -123,7 +123,7 @@ fun ShapeEditOverlay(controller: EditorController, tick: Int, redraw: () -> Unit
             val m = OverlayMap(size.width, size.height, controller)
             handles.forEach { h -> drawCircle(Color.Black, 12f, m.screen(h)); drawCircle(Color.White, 9f, m.screen(h)) }
         }
-        FlowRow(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+        FlowRow(Modifier.align(Alignment.TopCenter).padding(top = 112.dp, start = 8.dp, end = 8.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp)).padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             // Confirm / Cancel first so they stay on screen on narrow devices.
             Button(onClick = { controller.confirmShape(); redraw() }, modifier = Modifier.testTag("shapeConfirm")) { Text("Confirm") }
             OutlinedButton(onClick = { controller.cancelShape(); redraw() }) { Text("Cancel") }
@@ -227,7 +227,7 @@ fun BezierEditOverlay(controller: EditorController, tick: Int, redraw: () -> Uni
                 detectTapGestures(onTap = { o ->
                     val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
                     val c = m.canvas(o)
-                    controller.bezierPick(c.first, c.second, 28f / m.scale()); local++; redraw()
+                    controller.bezierPick(c.first, c.second, 48f / m.scale()); local++; redraw()
                 })
             }
             .pointerInput(Unit) {
@@ -235,7 +235,7 @@ fun BezierEditOverlay(controller: EditorController, tick: Int, redraw: () -> Uni
                 detectDragGestures(
                     onDragStart = { o ->
                         val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
-                        val c = m.canvas(o); val r = 28f / m.scale()
+                        val c = m.canvas(o); val r = 48f / m.scale()
                         moving = controller.bezierSelectedAt(c.first, c.second, r) || controller.bezierPick(c.first, c.second, r)
                         if (moving) controller.bezierDragBegin()
                         local++
@@ -326,15 +326,25 @@ fun WarpOverlay(controller: EditorController, tick: Int, redraw: () -> Unit) {
     val nu = controller.warpNu; val nv = controller.warpNv
     Box(Modifier.fillMaxSize().testTag("warpOverlay")) {
         Canvas(Modifier.fillMaxSize().pointerInput(nu, nv) {
-            var index = -1
+            var index = -2 // -2 nothing, -1 the whole cage, else a lattice point
             detectDragGestures(
                 onDragStart = { o ->
                     val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
                     val c = m.canvas(o)
-                    index = controller.warpPointAt(c.first, c.second, 40f / m.scale())
+                    val p = controller.warpPoints ?: return@detectDragGestures
+                    index = controller.warpPointAt(c.first, c.second, 56f / m.scale())
+                    // inside the cage's bounds moves it all; outside does nothing (it used to drag the cage from anywhere)
+                    if (index < 0) {
+                        var x0 = Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+                        for (k in 0 until p.size / 2) { x0 = minOf(x0, p[2 * k]); x1 = maxOf(x1, p[2 * k]); y0 = minOf(y0, p[2 * k + 1]); y1 = maxOf(y1, p[2 * k + 1]) }
+                        index = if (c.first in x0..x1 && c.second in y0..y1) -1 else -2
+                    }
+                    com.smitnk.projectgrease.CrashLog.event("WARP drag ${if (index == -1) "cage" else if (index < -1) "outside" else "point $index"}")
                 },
-                onDragEnd = { redraw() }
+                onDragEnd = { index = -2; redraw() },
+                onDragCancel = { index = -2 }
             ) { change, d ->
+                if (index < -1) return@detectDragGestures
                 change.consume()
                 val m = OverlayMap(size.width.toFloat(), size.height.toFloat(), controller)
                 m.delta(d.x, d.y).let { controller.dragWarp(index, it.first, it.second) }
@@ -346,17 +356,23 @@ fun WarpOverlay(controller: EditorController, tick: Int, redraw: () -> Unit) {
                 if (i + 1 < nu) { drawLine(Color.Black, at(i, j), at(i + 1, j), 3f); drawLine(Color(0xFF4FC3F7), at(i, j), at(i + 1, j), 1.5f) }
                 if (j + 1 < nv) { drawLine(Color.Black, at(i, j), at(i, j + 1), 3f); drawLine(Color(0xFF4FC3F7), at(i, j), at(i, j + 1), 1.5f) }
             }
-            for (j in 0 until nv) for (i in 0 until nu) { drawCircle(Color.Black, 13f, at(i, j)); drawCircle(Color.White, 10f, at(i, j)) }
+            for (j in 0 until nv) for (i in 0 until nu) { drawCircle(Color.Black, 18f, at(i, j)); drawCircle(Color.White, 14f, at(i, j)) }
         }
-        FlowRow(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Button(onClick = { controller.endWarp(true); redraw() }, modifier = Modifier.testTag("warpApply")) { Text("Apply") }
-            OutlinedButton(onClick = { controller.endWarp(false); redraw() }, modifier = Modifier.testTag("warpCancel")) { Text("Cancel") }
-            listOf(2 to "Box", 3 to "Mesh 3×3", 4 to "Mesh 4×4").forEach { (n, l) ->
-                FilterChip(selected = nu == n, onClick = { controller.beginWarp(n, n); redraw() }, label = { Text(l) },
-                    modifier = Modifier.testTag("warpGrid_$n"))
-            }
-            listOf(0 to "Linear", 2 to "Smooth (B-spline)").forEach { (k, l) ->
-                FilterChip(selected = controller.warpInterp == k, onClick = { controller.setWarpInterp(k); redraw() }, label = { Text(l) })
+        Text("Drag a dot to bend · drag inside to move · Box / Mesh changes the grid (starts over)",
+            Modifier.align(Alignment.TopCenter).padding(top = 52.dp, start = 12.dp, end = 12.dp)
+                .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White, fontSize = 12.sp)
+        // at the top on its own backing: at the bottom the frame strip covered Apply / Cancel
+        Surface(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, shadowElevation = 4.dp) {
+            FlowRow(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = { controller.endWarp(true); redraw() }, modifier = Modifier.testTag("warpApply")) { Text("Apply") }
+                OutlinedButton(onClick = { controller.endWarp(false); redraw() }, modifier = Modifier.testTag("warpCancel")) { Text("Cancel") }
+                listOf(2 to "Box", 3 to "Mesh 3×3", 4 to "Mesh 4×4").forEach { (n, l) ->
+                    FilterChip(selected = nu == n, onClick = { if (nu != n) controller.beginWarp(n, n); redraw() }, label = { Text(l) },
+                        modifier = Modifier.testTag("warpGrid_$n"))
+                }
+                listOf(0 to "Linear", 2 to "Smooth").forEach { (k, l) ->
+                    FilterChip(selected = controller.warpInterp == k, onClick = { controller.setWarpInterp(k); redraw() }, label = { Text(l) })
+                }
             }
         }
     }

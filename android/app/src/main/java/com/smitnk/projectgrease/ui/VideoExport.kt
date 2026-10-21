@@ -35,6 +35,13 @@ object VideoExport {
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }
         val codec = runCatching { MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC) }.getOrNull() ?: run { muxer.release(); return 0 }
+        // the sound strips, mixed and encoded first: the muxer needs every track before it starts
+        val ctx = controller.audioPlayback?.appContext
+        val s = controller.projectSettings
+        val first = s.frameStart.coerceAtLeast(1)
+        val audio = if (ctx == null || controller.audioStrips.isEmpty()) null else
+            AudioMix.encodeForExport(ctx, controller.audioStrips.toList(), fps, first, s.frameEnd.coerceAtLeast(first) - first + 1)
+        var audioTrack = -1
         var frames = 0
         var track = -1
         var muxing = false
@@ -45,7 +52,10 @@ object VideoExport {
                 when {
                     index == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream) return
                     index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        track = muxer.addTrack(codec.outputFormat); muxer.start(); muxing = true
+                        track = muxer.addTrack(codec.outputFormat)
+                        if (audio != null) audioTrack = muxer.addTrack(audio.format)
+                        muxer.start(); muxing = true
+                        if (audioTrack >= 0) for ((bytes, ai) in audio!!.samples) muxer.writeSampleData(audioTrack, java.nio.ByteBuffer.wrap(bytes), ai)
                     }
                     index >= 0 -> {
                         val buf = codec.getOutputBuffer(index)

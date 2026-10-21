@@ -109,6 +109,9 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
             ),
             "Select" to listOf(
                 Op("Select random 50%", "Keep half of the selection, at random") { controller.selectRandom() },
+                Op("Snap to 2D cursor", "Move the selected strokes so they start on the 2D cursor") { controller.snapSelectionToCursor() },
+                Op("Snap points to 2D cursor", "Every selected point onto the 2D cursor") { controller.snapSelectionToCursor(keepShape = false) },
+                Op("2D cursor to selection", "Put the 2D cursor at the selection's centre") { controller.snapCursorToSelection() },
                 Op("Reset fill transform", "Fill texture offset, rotation and scale back to default") { controller.resetFillTransform() },
                 Op("Smooth group weights", "Blend the active vertex group's weights along the strokes") { controller.smoothGroupWeights() },
                 Op("Normalize all groups", "Each point's weights over every group sum to 1") { controller.normalizeAllGroups() },

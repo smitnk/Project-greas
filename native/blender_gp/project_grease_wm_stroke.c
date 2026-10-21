@@ -1915,6 +1915,100 @@ static int exec_interpolate_reverse(PGOpContext *C, const float *p, int n)
   return PG_OPERATOR_FINISHED;
 }
 
+/* GPENCIL_OT_weight_sample: x, y (canvas), radius (canvas units, the brush), group. The weight of
+ * the active group at the two nearest weighted points of the strokes under the brush, blended by
+ * distance as gpencil_weight_sample_invoke does; read with pg_wm_last_weight_sample. */
+static float pgw_sampled_weight = 0.0f;
+float pg_wm_last_weight_sample(void) { return pgw_sampled_weight; }
+static int exec_weight_sample(PGOpContext *C, const float *p, int n)
+{
+  if (n < 4) return PG_OPERATOR_CANCELLED;
+  const float mouse[2] = {p[0], p[1]};
+  const float radius = p[2];
+  const int vgroup = prop_i(p, n, 3, -1);
+  if (!(radius > 0.0f) || BLI_findlink(&C->gpd->vertex_group_names, vgroup) == NULL) return PG_OPERATOR_CANCELLED;
+  float closest_dist[2] = {FLT_MAX, FLT_MAX};
+  float closest_weight[2] = {0.0f, 0.0f};
+  int closest_count = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (gpl->actframe == NULL) continue;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
+      /* ED_gpencil_stroke_check_collision: the brush square against the stroke's bounds */
+      if (mouse[0] + radius < gps->boundbox_min[0] || mouse[0] - radius > gps->boundbox_max[0] ||
+          mouse[1] + radius < gps->boundbox_min[1] || mouse[1] - radius > gps->boundbox_max[1])
+        continue;
+      if (gps->dvert == NULL) continue;
+      for (int i = 0; i < gps->totpoints; i++) {
+        const float dist = len_v2v2(&gps->points[i].x, mouse);
+        if ((dist < closest_dist[0]) || (dist < closest_dist[1])) {
+          MDeformWeight *dw = BKE_defvert_find_index(&gps->dvert[i], vgroup);
+          if (dw == NULL) continue;
+          if (dist < closest_dist[0]) {
+            closest_dist[1] = closest_dist[0];
+            closest_weight[1] = closest_weight[0];
+            closest_dist[0] = dist;
+            closest_weight[0] = dw->weight;
+            closest_count++;
+          }
+          else if (dist < closest_dist[1]) {
+            closest_dist[1] = dist;
+            closest_weight[1] = dw->weight;
+            closest_count++;
+          }
+        }
+      }
+    }
+  }
+  if (closest_count == 0) return PG_OPERATOR_CANCELLED;
+  if (closest_count == 1) pgw_sampled_weight = closest_weight[0];
+  else {
+    CLAMP_MIN(closest_dist[1], 1e-6f);
+    const float dist_sum = closest_dist[0] + closest_dist[1];
+    pgw_sampled_weight = (1.0f - closest_dist[0] / dist_sum) * closest_weight[0] +
+                         (1.0f - closest_dist[1] / dist_sum) * closest_weight[1];
+  }
+  return PG_OPERATOR_FINISHED;
+}
+
+/* GPENCIL_OT_snap_to_cursor: cursor x, y (the app's 2D cursor), use_offset (true): selected strokes
+ * move so their first point lands on the cursor, else each selected point goes to it.
+ * shortcut: points are taken as canvas positions (no layer transform), as the app draws layers. */
+static int exec_snap_to_cursor(PGOpContext *C, const float *p, int n)
+{
+  if (n < 2) return PG_OPERATOR_CANCELLED;
+  const float cursor[3] = {p[0], p[1], 0.0f};
+  const bool use_offset = prop_i(p, n, 2, 1) != 0;
+  bool changed = false;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &C->gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
+    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
+      const MaterialGPencilStyle *st = slot_style(C->gpd, gps->mat_nr + 1);
+      if (st && ((st->flag & GP_MATERIAL_HIDE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+        continue;
+      if ((gps->flag & GP_STROKE_SELECT) == 0 || gps->totpoints == 0) continue;
+      if (use_offset) {
+        float offset[3];
+        sub_v3_v3v3(offset, cursor, &gps->points->x);
+        offset[2] = 0.0f;
+        for (int i = 0; i < gps->totpoints; i++) add_v3_v3(&gps->points[i].x, offset);
+        changed = true;
+      }
+      else {
+        for (int i = 0; i < gps->totpoints; i++) {
+          if (gps->points[i].flag & GP_SPOINT_SELECT) {
+            gps->points[i].x = cursor[0];
+            gps->points[i].y = cursor[1];
+            changed = true;
+          }
+        }
+      }
+      BKE_gpencil_stroke_geometry_update(C->gpd, gps);
+    }
+  }
+  if (changed) BKE_gpencil_batch_cache_dirty_tag(C->gpd);
+  return PG_OPERATOR_FINISHED;
+}
+
 #define RU (PG_OPTYPE_REGISTER | PG_OPTYPE_UNDO)
 static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_stroke_flip", RU, poll_stroke_edit, exec_flip},
@@ -1982,6 +2076,8 @@ static const PGOperatorType pg_stroke_operators[] = {
     {"GPENCIL_OT_vertex_group_smooth", RU, poll_gpd, exec_vg_smooth},
     {"GPENCIL_OT_vertex_group_normalize_all", RU, poll_gpd, exec_vg_normalize_all},
     {"GPENCIL_OT_interpolate_reverse", RU, poll_gpd, exec_interpolate_reverse},
+    {"GPENCIL_OT_snap_to_cursor", RU, poll_gpd, exec_snap_to_cursor},
+    {"GPENCIL_OT_weight_sample", PG_OPTYPE_REGISTER, poll_gpd, exec_weight_sample}, /* brush setting: no undo */
 };
 
 const PGOperatorType *pg_wm_stroke_operator_find(const char *idname)

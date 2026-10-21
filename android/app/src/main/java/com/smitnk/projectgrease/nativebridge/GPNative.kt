@@ -185,6 +185,8 @@ object GPNative {
     external fun nativeEraseModal(handle: Long, phase: Int, changed: Boolean): Int
     /** 0xRRGGBB colours of the palette made by the last extract_palette_vertex / material_to_vertex_color. */
     external fun nativeLastPalette(): IntArray
+    /** Brush weight found by the last GPENCIL_OT_weight_sample. */
+    external fun nativeLastWeightSample(): Float
     external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
     external fun nativeSetPoint(
@@ -224,7 +226,7 @@ object GPNative {
     external fun nativeInstallCrashHandler(path: String)
     external fun nativeSetEngine(handle: Long, enabled: Boolean)
     external fun nativeSetOverlayUnselected(handle: Long, show: Boolean)
-    external fun nativeSetReferenceTransform(handle: Long, dx: Float, dy: Float, scale: Float, rot: Float)
+    external fun nativeSetReferenceTransform(handle: Long, dx: Float, dy: Float, scale: Float, rot: Float, sx: Float, sy: Float)
     external fun nativeLatticeBegin(handle: Long): FloatArray?
     external fun nativeLatticeUpdate(handle: Long, nu: Int, nv: Int, ctrl: FloatArray, interp: Int): Boolean
     external fun nativeLatticeEnd(handle: Long, keep: Boolean)

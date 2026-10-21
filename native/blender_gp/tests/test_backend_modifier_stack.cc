@@ -1,3 +1,6 @@
+#include "BKE_deform.h"
+#include "BKE_gpencil_geom_legacy.h"
+#include "DNA_meshdata_types.h"
 #include "DNA_curve_types.h"
 /* Host test for the modifier-stack wiring in Backend: storage per layer index, layer operations,
  * undo/redo, Apply and the evaluated-frame cache (project_grease_gp_backend.cpp compiled with
@@ -636,6 +639,29 @@ int main()
     l0->actframe = b2;
     CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_interpolate_reverse", nullptr, 0, nullptr) == PG_OPERATOR_FINISHED);
     CHECK(BLI_listbase_count(&l0->frames) == 2 && l0->actframe == k1);
+  }
+
+  /* batch 20: weight sample (two nearest weighted points, blended by distance) */
+  {
+    CHECK(b.reset_document());
+    add_line(b, 0.0f, 0.0f);
+    CHECK(b.vertex_group_add("W") == 0);
+    PGOpContext C = {b.document_data(), b.active_layer_data(), 1, true, 1};
+    bGPDstroke *g = static_cast<bGPDstroke *>(b.active_layer_data()->actframe->strokes.first);
+    BKE_gpencil_dvert_ensure(g);
+    for (int i = 0; i < g->totpoints; i++) BKE_defvert_ensure_index(&g->dvert[i], 0)->weight = i == 0 ? 1.0f : 0.0f;
+    BKE_gpencil_stroke_geometry_update(C.gpd, g);
+    const float at[4] = {g->points[0].x, g->points[0].y, 50.0f, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_weight_sample", at, 4, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(pg_wm_last_weight_sample() > 0.99f);
+    const float far[4] = {g->points[0].x + 5000.0f, g->points[0].y, 5.0f, 0};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_weight_sample", far, 4, nullptr) == PG_OPERATOR_CANCELLED);
+    /* snap to cursor: the selected stroke's first point lands on the cursor, its shape kept */
+    g->flag |= GP_STROKE_SELECT;
+    const float dx = g->points[1].x - g->points[0].x;
+    const float cur[3] = {500.0f, 300.0f, 1};
+    CHECK(pg_wm_operator_call(&C, "GPENCIL_OT_snap_to_cursor", cur, 3, nullptr) == PG_OPERATOR_FINISHED);
+    CHECK(g->points[0].x == 500.0f && g->points[0].y == 300.0f && std::fabs(g->points[1].x - 500.0f - dx) < 1e-3f);
   }
 
   /* batch 16: primitives (confirm step) */

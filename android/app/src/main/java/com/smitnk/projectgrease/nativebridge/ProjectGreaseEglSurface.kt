@@ -219,6 +219,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     controller.placingCursor2D = false
                     return true
                 }
+                if (controller.weightSampleArmed) { controller.sampleWeightAt(start.first, start.second); return true }
                 activePointerId = event.getPointerId(0)
                 activeDownX = event.x; activeDownY = event.y
                 // Draw, Sculpt, Vertex Paint and Weight Paint run in the native tool session: one call

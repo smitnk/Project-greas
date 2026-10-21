@@ -1036,7 +1036,7 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
 /* Several references (one per layer, like other drawing apps): slot i is drawn in slot order, all
  * under the strokes. shortcut: references cannot sit between stroke layers yet; that needs the
  * engine to draw each layer in its own pass. */
-struct RefSlot{GLuint tex=0;int w=0,h=0,visible=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f;};
+struct RefSlot{GLuint tex=0;int w=0,h=0,visible=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
 constexpr int kRefSlots=16;
 RefSlot g_refs[kRefSlots];
 int g_ref_cur=0,g_ref_count=1;
@@ -1056,7 +1056,7 @@ void draw_reference_slot(const RefSlot&r,int w,int h){
   // aspect fit inside the canvas, centred
   const float cw=float(g_canvas_width),ch=float(g_canvas_height);
   const float k=std::min(cw/float(r.w),ch/float(r.h));
-  const float hw=float(r.w)*k*r.scale*0.5f,hh=float(r.h)*k*r.scale*0.5f;
+  const float hw=float(r.w)*k*r.scale*r.sx*0.5f,hh=float(r.h)*k*r.scale*r.sy*0.5f; // sx/sy: squash / stretch
   const float mx=cw*0.5f+r.dx,my=ch*0.5f+r.dy,cs=std::cos(r.rot),sn=std::sin(r.rot);
   auto corner=[&](float u,float v){return ndc(mx+cs*u-sn*v,my+sn*u+cs*v,w,h);};
   const Vertex a=corner(-hw,-hh),b=corner(hw,-hh),c=corner(hw,hh),d=corner(-hw,hh);
@@ -1646,9 +1646,10 @@ extern "C" void project_grease_android_present_select_reference(int slot,int cou
   for(int i=g_ref_count;i<kRefSlots;i++)if(g_refs[i].tex){glDeleteTextures(1,&g_refs[i].tex);g_refs[i]=RefSlot{};}
   g_ref_cur=std::clamp(slot,0,kRefSlots-1);
 }
-extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot){
-  if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(scale)||!std::isfinite(rot))return;
-  RefSlot&r=g_refs[g_ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;}
+extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot,float sx,float sy){
+  if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(scale)||!std::isfinite(rot)||!std::isfinite(sx)||!std::isfinite(sy))return;
+  RefSlot&r=g_refs[g_ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;
+  r.sx=std::clamp(sx,0.05f,20.0f);r.sy=std::clamp(sy,0.05f,20.0f);}
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
   RefSlot&r=g_refs[g_ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}

@@ -31,7 +31,7 @@ extern "C" void project_grease_android_present_set_view_rotation(float radians);
 extern "C" int project_grease_android_present_set_reference(const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 extern "C" void project_grease_android_present_select_reference(int slot, int count);
-extern "C" void project_grease_android_present_set_reference_transform(float dx, float dy, float scale, float rot);
+extern "C" void project_grease_android_present_set_reference_transform(float dx, float dy, float scale, float rot, float sx, float sy);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_overlay_unselected(int show);
 extern "C" const char *project_grease_android_present_renderer_info();
@@ -1106,9 +1106,9 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetVertexOpacity(
 /* Reference image placement (Image Empty offset / size / rotation), canvas px and radians. */
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceTransform(
-    JNIEnv *, jobject, jlong handle, jfloat dx, jfloat dy, jfloat scale, jfloat rot)
+    JNIEnv *, jobject, jlong handle, jfloat dx, jfloat dy, jfloat scale, jfloat rot, jfloat sx, jfloat sy)
 {
-  if (from_handle(handle)) project_grease_android_present_set_reference_transform(dx, dy, scale, rot);
+  if (from_handle(handle)) project_grease_android_present_set_reference_transform(dx, dy, scale, rot, sx, sy);
 }
 
 /* The selection overlay shows unselected points too (Edit mode) or only the selected ones. */

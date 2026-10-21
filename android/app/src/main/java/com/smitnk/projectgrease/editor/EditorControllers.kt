@@ -225,6 +225,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     private val fpsState = androidx.compose.runtime.mutableIntStateOf(12)
     val fps: Int get() = fpsState.intValue
     var playing by androidx.compose.runtime.mutableStateOf(false); private set
+    /** Play / pause / wrap: (playing, frame); the sound strips follow it. */
+    var onPlayback: ((Boolean, Int) -> Unit)? = null
     var loop by androidx.compose.runtime.mutableStateOf(true); private set
     var frameCount by androidx.compose.runtime.mutableIntStateOf(1); private set
     var timelineEnd by androidx.compose.runtime.mutableIntStateOf(1); private set
@@ -255,10 +257,13 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             val next = TimelineRules.nextPlaybackFrame(currentFrame, timeline.preview, end, loop)
             if (next == null) {
                 playing = false
+                onPlayback?.invoke(false, currentFrame)
                 return
             }
             if (native.selectFrameOrHold(next)) {
+                val wrapped = next < currentFrame
                 currentFrame = next
+                if (wrapped) onPlayback?.invoke(true, next)
                 frameCount = native.frameCount().coerceAtLeast(1)
                 renderFrame()
             }
@@ -390,6 +395,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         playing=!playing
         handler.removeCallbacks(tick)
         if(playing) handler.post(tick)
+        onPlayback?.invoke(playing, currentFrame)
     }
     fun toggleLoop(){loop=!loop}
 
@@ -409,7 +415,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         timeline = state
         return true
     }
-    fun stop(){playing=false;handler.removeCallbacks(tick)}
+    fun stop(){val was=playing;playing=false;handler.removeCallbacks(tick);if(was)onPlayback?.invoke(false,currentFrame)}
 }
 
 class MaterialController {
@@ -823,7 +829,7 @@ class EditorController {
         setupTrace("resetDocument ok=$ok")
         if(ok){
             clearTextures()
-            references.clear(); references.add(Rotoscope()); activeReference = 0; rotoscopeShown.clear()
+            references.clear(); references.add(Rotoscope()); activeReference = 0; rotoscopeShown.clear(); audioStrips.clear()
             projectSettings = ProjectSettings()
             reapplyOnion()
             selectedLayer=0
@@ -1050,7 +1056,44 @@ class EditorController {
     /** imageChanged = false for placement / opacity only: the uploaded image stays (re-uploading it
      *  took ~90 ms per frame while a reference was dragged). */
     fun rotoscopeChanged(imageChanged:Boolean = true) { if (imageChanged) { rotoscopeShown.clear(); rotoscopeFailed.clear() }; document.markDirty(); render() }
-    fun fitTimelineToRotoscope() { if (rotoscope.frames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.frames - 1) }
+    fun fitTimelineToRotoscope() { if (rotoscope.usedFrames > 0) animation.setSceneEnd(rotoscope.start + rotoscope.usedFrames - 1) }
+    // ---- Sound strips (sequencer sound strips): play with the animation, mixed into the MP4 ----
+    val audioStrips = androidx.compose.runtime.mutableStateListOf<AudioStrip>()
+    /** Plays them; set by the UI (needs a Context). */
+    var audioPlayback: com.smitnk.projectgrease.ui.AudioPlayback? = null
+        set(v) { field = v; animation.onPlayback = { playing, frame -> v?.sync(audioStrips, playing, frame, animation.fps) } }
+    /** Adds an audio file starting on the current frame. */
+    fun addAudio(uri:String, name:String, durationMs:Long):AudioStrip? {
+        if (audioStrips.size >= 16) { onMessage?.invoke("Up to 16 audio tracks"); return null }
+        val a = AudioStrip(uri, name).also { it.start = animation.currentFrame; it.durationMs = durationMs }
+        audioStrips.add(a); document.markDirty()
+        // the animation grows to hold the sound
+        if (durationMs > 0) {
+            val end = a.start + ((durationMs * animation.fps + 999) / 1000).toInt() - 1
+            if (animation.sceneEnd < end) animation.setSceneEnd(end)
+        }
+        return a
+    }
+    fun removeAudio(a:AudioStrip) { audioStrips.remove(a); audioChanged() }
+    fun audioChanged() { document.markDirty(); if (animation.playing) audioPlayback?.sync(audioStrips, true, animation.currentFrame, animation.fps) }
+
+    /** The copied photo / video (Copy in Photo / video), pasted onto other frames. */
+    var referenceClipboard: Rotoscope? = null
+        private set
+    fun copyReference():Boolean { if (rotoscope.isEmpty) return false; referenceClipboard = rotoscope.copy(); return true }
+    /** Pastes the copied photo / video as a new one shown only on the current frame (move / squash it there). */
+    fun pasteReference():Boolean {
+        val c = referenceClipboard ?: return false
+        if (references.size >= 16) { onMessage?.invoke("Up to 16 photos / videos"); return false }
+        val r = c.copy().also { it.onFrames.clear(); it.onFrames.add(animation.currentFrame) }
+        if (references.size == 1 && references[0].isEmpty) references[0] = r else references.add(r)
+        activeReference = references.indexOf(r)
+        rotoscopeChanged(); return true
+    }
+    /** Shows the edited photo only on the current frame (on = true), or on every frame. */
+    fun showReferenceOnlyHere(on:Boolean) {
+        rotoscope.onFrames.clear(); if (on) rotoscope.onFrames.add(animation.currentFrame); rotoscopeChanged()
+    }
     /** Uploads each reference image of the current frame when it changed, in layer order. */
     private fun syncRotoscope() {
         if (rendererHandle == 0L) return
@@ -1096,7 +1139,7 @@ class EditorController {
                 onMessage?.invoke("Couldn't open this photo: pick it again from Photo / video")
             }
         }
-        GPNative.nativeSetReferenceTransform(rendererHandle, rotoscope.dx, rotoscope.dy, rotoscope.scale, rotoscope.rotation)
+        GPNative.nativeSetReferenceTransform(rendererHandle, rotoscope.dx, rotoscope.dy, rotoscope.scale, rotoscope.rotation, rotoscope.stretchX, rotoscope.stretchY)
         GPNative.nativeSetReferenceStyleEglRenderer(rendererHandle, n != 0 && rotoscopeShown.containsKey(rotoscope), rotoscope.opacity)
     }
 
@@ -1905,6 +1948,7 @@ class EditorController {
             if (materialTextures.isNotEmpty()) obj.put("textures", texturesJson())
             references.firstOrNull { !it.isEmpty }?.let { obj.put("rotoscope", it.toJson()) } // older readers
             references.filter { !it.isEmpty }.takeIf { it.isNotEmpty() }?.let { l -> obj.put("references", org.json.JSONArray(l.map { it.toJson() })) }
+            if (audioStrips.isNotEmpty()) obj.put("audio", AudioStrip.listToJson(audioStrips))
             AnnotationData.toJson(annotationDump(), annotationStyle())?.let { obj.put("annotations", it) }
             obj.toString()
         }.getOrDefault(json)
@@ -1934,6 +1978,7 @@ class EditorController {
         }
         loadTexturesJson(rawJson?.optJSONArray("textures"))
         references.clear(); activeReference = 0; rotoscopeShown.clear(); rotoscopeFailed.clear()
+        audioStrips.clear(); audioStrips.addAll(AudioStrip.listFromJson(rawJson?.optJSONArray("audio")))
         val refs = rawJson?.optJSONArray("references")
         if (refs != null) for (i in 0 until refs.length()) references.add(Rotoscope().also { it.fromJson(refs.optJSONObject(i)) })
         else references.add(Rotoscope().also { it.fromJson(rawJson?.optJSONObject("rotoscope")) })
@@ -2808,6 +2853,37 @@ class EditorController {
         val pi = Math.PI.toFloat()
         view.setDrawingGuide(view.guideType, angle = a + kotlin.math.floor((pi - a) / (2f * pi) + 0.5f) * 2f * pi)
         render()
+    }
+    /** Next canvas tap samples the weight (GPENCIL_OT_weight_sample) instead of painting. */
+    var weightSampleArmed by androidx.compose.runtime.mutableStateOf(false)
+    /** GPENCIL_OT_weight_sample at canvas (x, y): the brush weight becomes the weight found there. */
+    fun sampleWeightAt(x:Float, y:Float):Boolean {
+        weightSampleArmed = false
+        val radius = minOf(weightBrush.size * uiScale, 500f) / screenPxPerUnit.coerceAtLeast(1e-3f)
+        if (native.handle == 0L) return false
+        val r = GPNative.nativeOperatorCall(native.handle, "GPENCIL_OT_weight_sample", animation.currentFrame, materials.activeMaterial + 1,
+            floatArrayOf(x, y, radius, weightPaintGroup.toFloat()))
+        val ok = (r and 0xff) == 4
+        if (ok) weightPaintValue = GPNative.nativeLastWeightSample().coerceIn(0f, 1f) else onMessage?.invoke("No weighted points under the brush")
+        onUiChanged?.invoke()
+        return ok
+    }
+    /** GPENCIL_OT_snap_to_cursor: selected strokes move onto the 2D cursor (offset = keep their shape). */
+    fun snapSelectionToCursor(keepShape:Boolean = true) =
+        runOperator("GPENCIL_OT_snap_to_cursor", transformSettings.cursorX, transformSettings.cursorY, if (keepShape) 1f else 0f)
+    /** GPENCIL_OT_snap_cursor_to_selected: the 2D cursor to the selection (bounds centre with the
+     *  Bounding Box pivot, else the median point). */
+    fun snapCursorToSelection():Boolean {
+        val p = if (transformSettings.pivot == ProjectGreaseSelect.PIVOT_BOUNDS) {
+            selectionBounds()?.takeIf { it.size >= 4 }?.let { b -> floatArrayOf((b[0] + b[2]) / 2f, (b[1] + b[3]) / 2f) }
+        } else selectionPivot()
+        if (p == null) return false
+        setCursor2D(p[0], p[1]); return true
+    }
+    /** GPENCIL_OT_brush_reset_all: every brush (draw, eraser, sculpt, weight, vertex) back to its preset. */
+    fun resetAllBrushes() {
+        selectBrush(brushes.preset); weightPaintValue = 1f; weightPaintSubtract = false
+        onUiChanged?.invoke()
     }
     /** GPENCIL_OT_weight_toggle_direction: Add / Subtract of the weight Draw brush. */
     fun toggleWeightDirection() { weightPaintSubtract = !weightPaintSubtract }

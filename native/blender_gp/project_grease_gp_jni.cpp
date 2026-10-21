@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "project_grease_gp_bridge.h"
+#include "project_grease_wm.h"
 static void pg_rgb_s2l(float *rgb);
 #include "project_grease_modifier_stack.h"
 #include "project_grease_shader_fx.h"
@@ -1046,6 +1047,12 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseModal(JNIEnv *, jobject, jlong handle, jint phase, jboolean changed)
 {
   return project_grease_gp_erase_modal(from_handle(handle), phase, changed ? 1 : 0);
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLastWeightSample(JNIEnv *, jobject)
+{
+  return pg_wm_last_weight_sample ? pg_wm_last_weight_sample() : 0.0f;
 }
 
 extern "C" JNIEXPORT jintArray JNICALL

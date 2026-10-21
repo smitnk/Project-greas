@@ -39,4 +39,21 @@ class RotoscopeTest {
         back.fromJson(org.json.JSONObject().put("uris", org.json.JSONArray(listOf("a"))))
         assertEquals("old files: centred, fitted", 1f, back.scale, 1e-4f)
     }
+    @Test fun trimShowsOnlyThePickedPart() {
+        val r = Rotoscope(); r.set(Rotoscope.Kind.MOVIE, listOf("content://v"), 100)
+        r.trim(31, 40); r.start = 5
+        assertEquals(10, r.usedFrames)
+        assertEquals(31, r.imageFrame(5)); assertEquals(40, r.imageFrame(14))
+        assertEquals("after the trim: none", 0, r.imageFrame(15)); assertEquals(0, r.imageFrame(4))
+        val back = Rotoscope(); back.fromJson(r.toJson())
+        assertEquals(35, back.imageFrame(9))
+    }
+    @Test fun photoOnParticularFramesAndSquash() {
+        val r = Rotoscope(); r.set(Rotoscope.Kind.IMAGE, listOf("content://x"), 1)
+        r.onFrames.add(3); r.stretchX = 0.5f
+        assertEquals(0, r.imageFrame(2)); assertEquals(1, r.imageFrame(3))
+        val c = r.copy(); c.onFrames.clear(); c.onFrames.add(7)
+        assertEquals(0, c.imageFrame(3)); assertEquals(1, c.imageFrame(7)); assertEquals(0.5f, c.stretchX, 1e-6f)
+        assertEquals("the original keeps its frame", 1, r.imageFrame(3))
+    }
 }

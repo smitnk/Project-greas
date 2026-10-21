@@ -392,7 +392,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         controller.onMessage={toast(context,it)}
         controller.useBlenderRenderer=context.getSharedPreferences("project_grease_settings",android.content.Context.MODE_PRIVATE).getBoolean("blender_renderer",true)
         controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
-        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null}
+        controller.audioPlayback=AudioPlayback(context.applicationContext)
+        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null;controller.audioPlayback?.release();controller.audioPlayback=null}
     }
     // One UI: the full-screen canvas with the floating toolbar, option popups, the layer panel with
     // each layer's Advanced panel, the frame strip, and one menu for everything else.
@@ -440,6 +441,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         }
         FilterChip(selected=controller.weightPaintSubtract,onClick={controller.toggleWeightDirection();redraw()},
             label={Text("Subtract",fontSize=10.sp)},modifier=Modifier.padding(end=6.dp))
+        FilterChip(selected=controller.weightSampleArmed,onClick={controller.weightSampleArmed=!controller.weightSampleArmed;redraw()},
+            label={Text("Sample (tap)",fontSize=10.sp)},modifier=Modifier.padding(end=6.dp).testTag("weightSample"))
         Text("Group",fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.padding(end=6.dp))
         groups.forEachIndexed{index,name->
             FilterChip(
@@ -584,6 +587,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     )
                 }
                 TextButton(onClick={controller.resetBrush();redraw()},modifier=Modifier.testTag("brushReset")){Text("Reset",fontSize=10.sp)}
+                TextButton(onClick={controller.resetAllBrushes();redraw()},modifier=Modifier.testTag("brushResetAll")){Text("Reset all",fontSize=10.sp)}
                 }
             }
             if (controller.mode == GreaseMode.SCULPT) SculptOptions(controller,redraw)

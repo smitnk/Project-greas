@@ -539,7 +539,7 @@ int project_grease_gp_autokey_held(ProjectGreaseGPHandle *handle, int cfra)
   bGPdata *gpd = handle->backend.document_data();
   if (!gpd) return 0;
   int added = 0;
-  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+  for (bGPDlayer *gpl = (bGPDlayer *)gpd->layers.first; gpl; gpl = gpl->next) {
     if (!BKE_gpencil_layer_is_editable(gpl)) continue;
     bGPDframe *held = BKE_gpencil_layer_frame_get(gpl, cfra, GP_GETFRAME_USE_PREV);
     if (held == nullptr || held->framenum == cfra || held->strokes.first == nullptr) continue;

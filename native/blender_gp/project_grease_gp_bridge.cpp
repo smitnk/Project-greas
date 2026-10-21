@@ -533,6 +533,23 @@ int project_grease_gp_curve_translate(ProjectGreaseGPHandle *handle, float dx, f
   return ensure_operator(handle) && pg_curve_translate ? pg_curve_translate(handle->backend.document_data(), dx, dy) : 0;
 }
 
+int project_grease_gp_autokey_held(ProjectGreaseGPHandle *handle, int cfra)
+{
+  if (!ensure_operator(handle)) return 0;
+  bGPdata *gpd = handle->backend.document_data();
+  if (!gpd) return 0;
+  int added = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    if (!BKE_gpencil_layer_is_editable(gpl)) continue;
+    bGPDframe *held = BKE_gpencil_layer_frame_get(gpl, cfra, GP_GETFRAME_USE_PREV);
+    if (held == nullptr || held->framenum == cfra || held->strokes.first == nullptr) continue;
+    gpl->actframe = held;
+    if (bGPDframe *copy = BKE_gpencil_frame_addcopy(gpl, cfra)) { gpl->actframe = copy; added++; }
+  }
+  if (added) BKE_gpencil_batch_cache_dirty_tag(gpd);
+  return added;
+}
+
 int project_grease_gp_last_palette(int *out, int capacity)
 {
   const unsigned int *cols = nullptr;
@@ -1285,10 +1302,20 @@ int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int sourc
 
 // ---- Native tool session --------------------------------------------------------------------
 // Draw sink: the backend's stroke buffer, as the former per-point JNI calls used it.
+// the brush's stroke settings for the next stroke (PGToolDrawSink.style, called before begin)
+static project_grease::gp::StrokeStyle g_tool_sink_style;
+static void tool_sink_style(void *, float hardness, int caps, float aspect_x, float aspect_y)
+{
+  g_tool_sink_style.hardness = hardness; g_tool_sink_style.caps = caps;
+  g_tool_sink_style.aspect_x = aspect_x; g_tool_sink_style.aspect_y = aspect_y;
+}
 static int tool_sink_begin(void *user, int material, float thickness)
 {
   auto *handle = static_cast<ProjectGreaseGPHandle *>(user);
-  return handle->backend.begin_stroke({material, thickness}) ? 1 : 0;
+  project_grease::gp::StrokeStyle style = g_tool_sink_style;
+  style.material_index = material; style.thickness = thickness;
+  g_tool_sink_style = project_grease::gp::StrokeStyle{};
+  return handle->backend.begin_stroke(style) ? 1 : 0;
 }
 static int tool_sink_add(void *user, float x, float y, float pressure, float strength, float time)
 {
@@ -1322,7 +1349,7 @@ int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle,
     if (!handle->tool_session) return 0;
   }
   bGPdata *gpd = handle->backend.document_data();
-  const PGToolDrawSink sink = {handle, tool_sink_begin, tool_sink_add, tool_sink_end, tool_sink_cancel};
+  const PGToolDrawSink sink = {handle, tool_sink_begin, tool_sink_add, tool_sink_end, tool_sink_cancel, tool_sink_style};
   // The paint tools run as Blender's modal operators (GPENCIL_OT_draw / sculpt_paint / ...).
   PGOpContext C = {gpd, handle->backend.active_layer_data(), 0, true, 0, handle->tool_session, &sink};
   int status = 0;

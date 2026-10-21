@@ -138,6 +138,11 @@ int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int 
 /* Last palette from GPENCIL_OT_extract_palette_vertex / material_to_vertex_color: count, and up to
  * capacity 0xRRGGBB colours in out. */
 int project_grease_gp_last_palette(int *out, int capacity);
+/* Blender's auto-keying before an edit on a held frame (the eraser and transform do it with
+ * BKE_gpencil_frame_addcopy): every editable layer whose drawing at cfra is held from an earlier
+ * key gets a copy of it as its own key at cfra, so the edit leaves the earlier frames alone.
+ * Returns how many keys were added. */
+int project_grease_gp_autokey_held(ProjectGreaseGPHandle *handle, int cfra);
 /* Curve edit mode (pg_curve_*): on / off, curve points (13 floats each; returns the count), a click
  * on a point (part 0 handle 1, 1 point, 2 handle 2; layer -1 deselects), moving the selection. */
 int project_grease_gp_curve_edit_set(ProjectGreaseGPHandle *handle, int on);

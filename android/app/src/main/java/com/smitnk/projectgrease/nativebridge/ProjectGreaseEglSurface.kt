@@ -264,7 +264,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.history.beginBatch()
+                        controller.autokeyHeld(); controller.history.beginBatch()
                         moveOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (moveOpen) {
                             lastMoveX = start.first
@@ -274,7 +274,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.history.beginBatch()
+                        controller.autokeyHeld(); controller.history.beginBatch()
                         rotateOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (rotateOpen) {
                             val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
@@ -293,7 +293,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.SCALE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.history.beginBatch()
+                        controller.autokeyHeld(); controller.history.beginBatch()
                         scaleOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (scaleOpen) {
                             val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
@@ -314,7 +314,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.history.beginBatch()
+                        controller.autokeyHeld(); controller.history.beginBatch()
                         mirrorOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
                         if (mirrorOpen) {
                             val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()

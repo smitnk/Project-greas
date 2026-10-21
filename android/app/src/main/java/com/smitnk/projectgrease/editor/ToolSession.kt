@@ -45,7 +45,13 @@ object ToolSession {
     const val P_CURVE_PRESET = 13
     const val P_ACTIVE_MATERIAL = 14
     const val P_UI_SCALE = 15
-    const val P_COUNT = 16
+    /** sculpt Affect: GP_SCULPT_FLAGMODE_APPLY_* (1 position, 2 strength, 4 thickness, 8 UV); 0 = preset */
+    const val P_AFFECT = 16
+    const val P_COUNT = 17
+    const val AFFECT_POSITION = 1
+    const val AFFECT_STRENGTH = 2
+    const val AFFECT_THICKNESS = 4
+    const val AFFECT_UV = 8
 
     // Blender tool enums (DNA_brush_enums.h)
     const val GPSCULPT_SMOOTH = 0
@@ -105,8 +111,10 @@ object ToolSession {
     fun brushParams(
         brush: Int, radius: Float, strength: Float, pxPerUnit: Float, invert: Boolean = false,
         r: Float = 0f, g: Float = 0f, b: Float = 0f, target: Int = 0, weight: Float = 1f, seed: Int = 0,
-        automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0, uiScale: Float = 1f
+        automask: Int = 0, selectMask: Int = 0, curvePreset: Int = 0, activeMaterial: Int = 0, uiScale: Float = 1f,
+        affect: Int = 0
     ): FloatArray = FloatArray(P_COUNT).also {
+        it[P_AFFECT] = affect.toFloat()
         it[P_AUTOMASK] = automask.toFloat(); it[P_SELECT_MASK] = selectMask.toFloat()
         it[P_CURVE_PRESET] = curvePreset.toFloat(); it[P_ACTIVE_MATERIAL] = activeMaterial.toFloat()
         it[P_BRUSH] = brush.toFloat(); it[P_RADIUS] = radius; it[P_STRENGTH] = strength
@@ -131,7 +139,11 @@ object ToolSession {
         /** region pixels per canvas unit: gpencil_paint.c filters / stabilizer compare pixels */
         val pxPerUnit: Float = 1f,
         /** jitter BLI_rng seed; null = seeded like gpencil_paint_initstroke() */
-        val seed: Long? = null
+        val seed: Long? = null,
+        /** Randomize: draw_random_press, draw_random_strength (0..1, per point) */
+        val randomPressure: Float = 0f, val randomStrength: Float = 0f,
+        /** stroke settings copied to the new stroke: hardeness, caps (0 round / 1 flat), aspect_ratio */
+        val hardness: Float = 1f, val caps: Int = 0, val aspectX: Float = 1f, val aspectY: Float = 1f
     ) {
         fun toParams(): FloatArray {
             val out = FloatArray(DRAW_P_COUNT)
@@ -150,6 +162,8 @@ object ToolSession {
             curve(DRAW_P_STRENGTH_CURVE_N, strengthCurvePoints)
             out[DRAW_P_PX_PER_UNIT] = pxPerUnit
             out[DRAW_P_SEED] = seed?.let { (it and 0xFFFFFFFFL).toFloat() + 1f } ?: 0f
+            out[DRAW_P_RANDOM_PRESS] = randomPressure; out[DRAW_P_RANDOM_STRENGTH] = randomStrength
+            out[DRAW_P_HARDNESS] = hardness; out[DRAW_P_CAPS] = caps.toFloat(); out[DRAW_P_ASPECT_X] = aspectX; out[DRAW_P_ASPECT_Y] = aspectY
             return out
         }
         private fun flag(v: Boolean) = if (v) 1f else 0f
@@ -159,7 +173,13 @@ object ToolSession {
     const val DRAW_P_STRENGTH_CURVE_N = 41
     const val DRAW_P_PX_PER_UNIT = 58
     const val DRAW_P_SEED = 59
-    const val DRAW_P_COUNT = 60
+    const val DRAW_P_RANDOM_PRESS = 60
+    const val DRAW_P_RANDOM_STRENGTH = 61
+    const val DRAW_P_HARDNESS = 62
+    const val DRAW_P_CAPS = 63
+    const val DRAW_P_ASPECT_X = 64
+    const val DRAW_P_ASPECT_Y = 65
+    const val DRAW_P_COUNT = 66
     const val CURVE_MAX_POINTS = 8
 
     /** samples (count * STRIDE floats) followed by the BEGIN parameters. */

@@ -54,8 +54,10 @@ static float m2_flag(float v) { return v != 0.0f ? 1.0f : 0.0f; }
 void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
 {
   switch (type) {
-    case PG_MOD_BUILD: /* mode sequential, grow, start_delay 0, length 100 */
+    case PG_MOD_BUILD: /* mode sequential, grow, start_delay 0, length 100, speed 1.2, gap 0.5 */
       p[PG_P_BUILD_LENGTH] = 100.0f;
+      p[PG_P_BUILD_SPEED_FAC] = 1.2f;
+      p[PG_P_BUILD_SPEED_MAXGAP] = 0.5f;
       break;
     case PG_MOD_TIME: /* normal, offset 1, frame_scale 1, sfra 1, efra 250, GP_TIME_KEEP_LOOP */
       p[PG_P_TIME_OFFSET] = 1.0f;
@@ -117,6 +119,9 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
   switch (type) {
     case PG_MOD_BUILD:
       p[PG_P_BUILD_USE_FADE] = m2_int(p[PG_P_BUILD_USE_FADE], 0, 1);
+      p[PG_P_BUILD_TIME_MODE] = m2_int(p[PG_P_BUILD_TIME_MODE], 0, 2);
+      if (!(p[PG_P_BUILD_SPEED_FAC] > 0.0f)) p[PG_P_BUILD_SPEED_FAC] = 1.2f;
+      if (!(p[PG_P_BUILD_SPEED_MAXGAP] >= 0.0f)) p[PG_P_BUILD_SPEED_MAXGAP] = 0.5f;
       break;
     case PG_MOD_TIME:
       p[PG_P_TIME_USE_RANGE] = m2_flag(p[PG_P_TIME_USE_RANGE]);
@@ -760,6 +765,12 @@ static int m2_build(const PGModContext *ctx, const PGModEntry *e)
   b.fade_fac = p[PG_P_BUILD_FADE_FAC];
   b.fade_thickness_strength = p[PG_P_BUILD_FADE_THICKNESS];
   b.fade_opacity_strength = p[PG_P_BUILD_FADE_OPACITY];
+  b.time_mode = (int)p[PG_P_BUILD_TIME_MODE];
+  b.percentage = b.time_mode == 1;
+  b.percentage_fac = p[PG_P_BUILD_PERCENTAGE];
+  b.speed_fac = p[PG_P_BUILD_SPEED_FAC];
+  b.speed_maxgap = p[PG_P_BUILD_SPEED_MAXGAP];
+  b.fps = ctx->fps > 0 ? ctx->fps : 24;
   const int prev = orig->prev ? BLI_listbase_count(&orig->prev->strokes) : -1;
   const int next = orig->next ? orig->next->framenum : -1;
   return pg_build_generate(ctx->gpd, ctx->gpf, orig->framenum, prev, next, (float)ctx->cfra, &b);

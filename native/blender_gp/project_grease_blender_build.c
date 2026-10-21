@@ -102,7 +102,12 @@ typedef struct tStrokeBuildDetails {
   int totpoints;
 } tStrokeBuildDetails;
 
-static void build_sequential(const PGBuildParams *mmd, bGPdata *gpd, bGPDframe *gpf, int prev_strokes, float fac)
+/* Two hard-coded values for GP_BUILD_MODE_ADDITIVE with GP_BUILD_TIMEMODE_DRAWSPEED. */
+#define GP_BUILD_CORRECTGAP 0.001
+#define GP_BUILD_TIME_GEOSTROKES 1.0
+
+static void build_sequential(const PGBuildParams *mmd, bGPdata *gpd, bGPDframe *gpf, int prev_strokes, float fac,
+                             int framenum, int next_framenum, float ctime)
 {
   size_t tot_strokes = BLI_listbase_count(&gpf->strokes);
   size_t start_stroke = 0;
@@ -124,6 +129,75 @@ static void build_sequential(const PGBuildParams *mmd, bGPdata *gpd, bGPDframe *
     cell->totpoints = gps->totpoints;
     sumpoints += cell->totpoints;
   }
+  /* 2.2) GP_BUILD_TIMEMODE_DRAWSPEED: point timestamps and stroke delays to idx_times (Blender's,
+   * with gpf->framenum / gpf->next->framenum as framenum / next_framenum). */
+  float *idx_times = NULL;
+  float sumtime = 0;
+  const float fps = (float)(mmd->fps > 0 ? mmd->fps : 24);
+  if (mmd->time_mode == 2) {
+    idx_times = MEM_callocN(sizeof(float) * MAX2(sumpoints, 1), __func__);
+    const float GP_BUILD_MAXGAP = mmd->speed_maxgap;
+    size_t curpoint = 0;
+    float last_pointtime = 0;
+    for (i = 0; i < tot_strokes; i++) {
+      tStrokeBuildDetails *cell = &table[i];
+      if (i != 0 && 0 < cell->gps->inittime && 0 < (cell - 1)->gps->inittime) {
+        float curgps_delay = fabs(cell->gps->inittime - (cell - 1)->gps->inittime) - last_pointtime;
+        if (0 < curgps_delay) {
+          sumtime += MIN2(curgps_delay, GP_BUILD_MAXGAP);
+        }
+      }
+      int zeropoints = 0;
+      for (int j = 0; j < cell->totpoints; j++) {
+        if (j == 0) {
+          idx_times[curpoint] = sumtime;
+          last_pointtime = cell->gps->points[0].time;
+        }
+        else {
+          if (cell->gps->points[j].time <= 0) {
+            idx_times[curpoint] = sumtime;
+            zeropoints++;
+          }
+          else {
+            float deltatime = fabs(cell->gps->points[j].time - last_pointtime);
+            if (0 < zeropoints) {
+              if (GP_BUILD_CORRECTGAP < deltatime) {
+                for (int k = 0; k < zeropoints; k++) {
+                  float linear_fill = pb_interpf(0, deltatime, ((float)k + 1) / (zeropoints + 1)); /* Factor = Proportion. */
+                  idx_times[curpoint - k - 1] = sumtime + linear_fill;
+                }
+              }
+              else {
+                zeropoints = 0;
+              }
+            }
+            idx_times[curpoint] = sumtime + deltatime;
+            sumtime = idx_times[curpoint];
+            last_pointtime = cell->gps->points[j].time;
+            zeropoints = 0;
+          }
+        }
+        curpoint += 1;
+      }
+      if (zeropoints + 1 == cell->totpoints) {
+        for (int j = 0; j < cell->totpoints; j++) {
+          idx_times[(int)curpoint - j - 1] = (float)(cell->totpoints - j) * GP_BUILD_TIME_GEOSTROKES /
+                                                 (float)cell->totpoints + sumtime;
+        }
+        last_pointtime = GP_BUILD_TIME_GEOSTROKES;
+        sumtime += GP_BUILD_TIME_GEOSTROKES;
+      }
+    }
+    float gp_build_speedfactor = mmd->speed_fac > 0.0f ? mmd->speed_fac : 1.2f;
+    if (next_framenum >= 0 && (framenum + sumtime * fps / gp_build_speedfactor) > next_framenum) {
+      gp_build_speedfactor = sumtime * fps / (next_framenum - framenum);
+    }
+    for (i = 0; i < sumpoints; i++) {
+      idx_times[i] /= gp_build_speedfactor;
+    }
+    sumtime /= gp_build_speedfactor;
+  }
+
   for (i = 0; i < tot_strokes; i++) {
     tStrokeBuildDetails *cell = &table[i];
     cell->start_idx = (i == 0) ? 0 : (cell - 1)->end_idx + 1;
@@ -133,6 +207,33 @@ static void build_sequential(const PGBuildParams *mmd, bGPdata *gpd, bGPDframe *
   size_t first_visible = 0, last_visible = 0;
   int fade_start = 0, fade_end = 0;
   const float set_fade_fac = mmd->use_fading ? mmd->fade_fac : 0.0f;
+  if (mmd->time_mode == 2) {
+    /* Recalculate equivalent of "fac" using timestamps. */
+    float targettime = (ctime - (float)framenum) / fps;
+    fac = 0;
+    if (0 < targettime && targettime < sumtime) {
+      if (mmd->transition != T_SHRINK) {
+        for (i = 0; i < sumpoints; i++) {
+          if (targettime < idx_times[i]) {
+            fac = (float)i / sumpoints;
+            break;
+          }
+        }
+      }
+      else {
+        for (i = 0; i < sumpoints; i++) {
+          if (targettime < sumtime - idx_times[sumpoints - i - 1]) {
+            fac = (float)i / sumpoints;
+            break;
+          }
+        }
+      }
+    }
+    else if (targettime >= sumtime) {
+      fac = 1;
+    }
+    MEM_freeN(idx_times);
+  }
   const float use_fac = pb_interpf(1 + set_fade_fac, 0, fac);
   float use_fade_fac = use_fac - set_fade_fac;
   CLAMP(use_fade_fac, 0.0f, 1.0f);
@@ -264,12 +365,19 @@ int pg_build_generate(bGPdata *gpd, bGPDframe *gpf, int framenum, int prev_strok
     mmd.transition = T_GROW;
     mmd.start_delay = 0;
   }
+  if (mmd.mode == MODE_CONCURRENT && mmd.time_mode == 2) mmd.time_mode = 0;
+  if (mmd.time_mode == 1) mmd.percentage = 1;
   const bool reverse = (mmd.transition != T_GROW);
   const bool is_percentage = mmd.percentage != 0;
   if (gpf->strokes.first == NULL) return 0;
   if (mmd.restrict_time && ((ctime < mmd.start_frame) || (ctime > mmd.end_frame))) return 0;
 
   const int before = BLI_listbase_count(&gpf->strokes);
+  if (mmd.time_mode == 2) {
+    /* GP_BUILD_TIMEMODE_DRAWSPEED: build_sequential() finds the factor from the timestamps */
+    build_sequential(&mmd, gpd, gpf, prev_strokes, 1.0f, framenum, next_framenum, ctime);
+    return 1;
+  }
   float start_frame = is_percentage ? framenum : framenum + mmd.start_delay;
   float end_frame = is_percentage ? start_frame + 9999 : start_frame + mmd.length;
   if (next_framenum >= 0) end_frame = MIN2(end_frame, (float)next_framenum);
@@ -285,7 +393,7 @@ int pg_build_generate(bGPdata *gpd, bGPDframe *gpf, int framenum, int prev_strok
   switch (mmd.mode) {
     case MODE_SEQUENTIAL:
     case MODE_ADDITIVE:
-      build_sequential(&mmd, gpd, gpf, prev_strokes, fac);
+      build_sequential(&mmd, gpd, gpf, prev_strokes, fac, framenum, next_framenum, ctime);
       break;
     case MODE_CONCURRENT:
       build_concurrent(&mmd, gpd, gpf, fac);

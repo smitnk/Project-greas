@@ -130,7 +130,10 @@ enum { /* BUILD (MOD_gpencil_legacy_build.c): mode 0 sequential / 1 concurrent, 
    * time alignment (concurrent), fade (GP_BUILD_USE_FADING) factor and strengths */
   PG_P_BUILD_TIME_ALIGN = 4, PG_P_BUILD_USE_FADE = 5, PG_P_BUILD_FADE_FAC = 6,
   PG_P_BUILD_FADE_THICKNESS = 7, PG_P_BUILD_FADE_OPACITY = 8,
-  PG_P_BUILD_COUNT = 9 };
+  /* time_mode GP_BUILD_TIMEMODE_FRAMES 0 / PERCENTAGE 1 / DRAWSPEED 2, percentage_fac,
+   * speed_fac and speed_maxgap (seconds) */
+  PG_P_BUILD_TIME_MODE = 9, PG_P_BUILD_PERCENTAGE = 10, PG_P_BUILD_SPEED_FAC = 11, PG_P_BUILD_SPEED_MAXGAP = 12,
+  PG_P_BUILD_COUNT = 13 };
 enum { /* TIME (MOD_gpencil_legacy_time.c): the layer shows frame pg_time_offset_frame() */
   PG_P_TIME_MODE = 0, PG_P_TIME_OFFSET = 1, PG_P_TIME_SCALE = 2, PG_P_TIME_USE_RANGE = 3,
   PG_P_TIME_SFRA = 4, PG_P_TIME_EFRA = 5, PG_P_TIME_LOOP = 6, PG_P_TIME_COUNT = 7 };
@@ -187,7 +190,12 @@ typedef struct PGModContext {
   struct bGPDframe *gpf; /* frame whose ->strokes contains the stroke being deformed */
   int cfra;              /* current frame number (Noise) */
   const struct bGPDframe *orig; /* the layer frame gpf was copied from (prev/next keys), or NULL */
+  int fps;               /* scene frames per second (Build's drawing speed); 0 = 24 */
 } PGModContext;
+
+/* Scene fps for the stack (Build's drawing speed); set when the project fps changes. */
+void pg_mod_set_scene_fps(int fps);
+extern int pg_mod_scene_fps;
 
 /* Type information */
 int pg_mod_valid_type(int type);

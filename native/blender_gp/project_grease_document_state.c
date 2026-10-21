@@ -28,6 +28,7 @@ int pg_doc_stroke_info_get(const bGPDstroke *gps, PGStrokeInfo *r_info)
   memcpy(r_info->fill_color, gps->vert_color_fill, sizeof(r_info->fill_color));
   r_info->caps[0] = gps->caps[0];
   r_info->caps[1] = gps->caps[1];
+  r_info->hardness = gps->hardeness;
   return 1;
 }
 
@@ -49,6 +50,7 @@ int pg_doc_stroke_info_apply(bGPDstroke *gps, const PGStrokeInfo *info)
   memcpy(gps->vert_color_fill, info->fill_color, sizeof(gps->vert_color_fill));
   gps->caps[0] = (short)(info->caps[0] == 1 ? 1 : 0);
   gps->caps[1] = (short)(info->caps[1] == 1 ? 1 : 0);
+  gps->hardeness = (info->hardness > 0.0f && info->hardness <= 1.0f) ? info->hardness : 1.0f;
   if (info->cyclic) {
     gps->flag |= GP_STROKE_CYCLIC;
   }

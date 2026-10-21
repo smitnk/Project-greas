@@ -62,6 +62,8 @@ typedef struct PGDrawSettings {
   float px_per_unit;          /* 1: region pixels per canvas unit */
   int use_seed;               /* 0: seed like gpencil_paint_initstroke() */
   unsigned int seed;
+  float random_press;         /* 0: draw_random_press */
+  float random_strength;      /* 0: draw_random_strength */
   /* Brush curve_sensitivity / curve_strength (BKE_curvemapping_evaluateF); unused while !built. */
   PGCurve pressure_map;
   PGCurve strength_map;

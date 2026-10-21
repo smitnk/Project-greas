@@ -613,10 +613,10 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetStrokeInfo(
       static_cast<jfloat>(info.material_index), info.thickness,
       info.cyclic ? 1.0f : 0.0f, info.fill_opacity_fac,
       info.fill_color[0], info.fill_color[1], info.fill_color[2], info.fill_color[3],
-      static_cast<jfloat>(info.caps[0]), static_cast<jfloat>(info.caps[1])};
-  jfloatArray result = env->NewFloatArray(10);
+      static_cast<jfloat>(info.caps[0]), static_cast<jfloat>(info.caps[1]), info.hardness};
+  jfloatArray result = env->NewFloatArray(11);
   if (!result) return nullptr;
-  env->SetFloatArrayRegion(result, 0, 10, values);
+  env->SetFloatArrayRegion(result, 0, 11, values);
   return result;
 }
 
@@ -634,8 +634,9 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(
   env->GetFloatArrayRegion(points, 0, count * 6, raw.data());
   std::vector<jfloat> colors(static_cast<size_t>(count) * 4u);
   env->GetFloatArrayRegion(point_colors, 0, count * 4, colors.data());
-  jfloat v[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-  env->GetFloatArrayRegion(info_values, 0, env->GetArrayLength(info_values) >= 10 ? 10 : 8, v);
+  jfloat v[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+  const jsize nv = env->GetArrayLength(info_values);
+  env->GetFloatArrayRegion(info_values, 0, nv >= 11 ? 11 : (nv >= 10 ? 10 : 8), v);
 
   std::vector<ProjectGreaseGPPoint> native_points(static_cast<size_t>(count));
   for (int i = 0; i < count; ++i) {
@@ -653,6 +654,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddStroke(
   info.fill_color[3] = v[7];
   info.caps[0] = static_cast<int>(v[8]);
   info.caps[1] = static_cast<int>(v[9]);
+  info.hardness = v[10];
   pg_rgb_s2l(info.fill_color);
   for (int i = 0; i < count; ++i) pg_rgb_s2l(&colors[static_cast<size_t>(i) * 4u]);
   return project_grease_gp_add_stroke(
@@ -1047,6 +1049,18 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEraseModal(JNIEnv *, jobject, jlong handle, jint phase, jboolean changed)
 {
   return project_grease_gp_erase_modal(from_handle(handle), phase, changed ? 1 : 0);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetSceneFps(JNIEnv *, jobject, jint fps)
+{
+  pg_mod_set_scene_fps(fps);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAutokeyHeld(JNIEnv *, jobject, jlong handle, jint cfra)
+{
+  return project_grease_gp_autokey_held(from_handle(handle), cfra);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

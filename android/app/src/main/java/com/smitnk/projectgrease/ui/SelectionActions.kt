@@ -52,6 +52,7 @@ fun SelectionActionsPanel(controller: EditorController, redraw: () -> Unit) {
                 Op("Set start point", "The selected point becomes the start of the closed stroke") { controller.setSelectionStartPoint() },
                 Op("Join", "Connect the selected strokes into one") { controller.joinSelection() },
                 Op("Join and copy", "A new stroke joining the selected ones; the originals stay") { controller.joinCopySelection() },
+                Op("Curve edit (Bézier)", "Edit the selected strokes as curves: drag points and handles") { controller.beginBezierEdit() },
                 Op("Merge", "Chain the selected points of open strokes into one new line (active material); the old strokes go") { controller.mergeSelectedStrokes() },
                 Op("Merge by points", "One new line through the selected points in angle order around their centre (for scattered points, not whole shapes)") { controller.mergeSelectedStrokes(byPoint = true) },
                 Op("Split", "Cut the selected points out as their own stroke") { controller.splitSelection() },
@@ -211,6 +212,19 @@ fun SculptOptions(controller: EditorController, redraw: () -> Unit) {
             SculptBrush.PINCH -> "Pulls points together (Invert: apart)"
             SculptBrush.CLONE -> "Pastes the copied strokes where you touch"
         }, fontSize = 11.sp)
+        if (controller.sculpt.brush == SculptBrush.SMOOTH || controller.sculpt.brush == SculptBrush.RANDOMIZE) {
+            // the brush's Affect toggles (sculpt_mode_flag)
+            FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
+                Text("Affect", fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(end = 6.dp))
+                listOf(com.smitnk.projectgrease.editor.ToolSession.AFFECT_POSITION to "Position",
+                    com.smitnk.projectgrease.editor.ToolSession.AFFECT_STRENGTH to "Strength",
+                    com.smitnk.projectgrease.editor.ToolSession.AFFECT_THICKNESS to "Thickness",
+                    com.smitnk.projectgrease.editor.ToolSession.AFFECT_UV to "UV").forEach { (bit, l) ->
+                    FilterChip(selected = controller.sculpt.affect and bit != 0, onClick = { controller.sculpt.toggleAffect(bit); tick++ },
+                        label = { Text(l, fontSize = 11.sp) }, modifier = Modifier.padding(end = 4.dp).testTag("sculptAffect_$bit"))
+                }
+            }
+        }
         Text("Size ${controller.sculptBrush.size.toInt()} px")
         Slider(controller.sculptBrush.size, { controller.sculptBrush.setSize(it); tick++ }, valueRange = 1f..500f, modifier = Modifier.testTag("sculptSize"))
         Text("Strength ${(controller.sculptBrush.strength * 100).toInt()}%")

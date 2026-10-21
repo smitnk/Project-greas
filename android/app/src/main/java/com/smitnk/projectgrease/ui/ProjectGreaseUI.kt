@@ -1555,9 +1555,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&!controller.bezierEditing&&controller.mode==GreaseMode.DRAW){
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
+                FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
                     Modifier.testTag("lassoCut"))
-                FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;controller.lassoPhotos=false;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
+                FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;controller.lassoPhotos=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
                     Modifier.testTag("lassoCutInside"))
                 FilterChip(controller.lassoPhotos,{controller.lassoPhotos=!controller.lassoPhotos;controller.lassoCut=false;controller.lassoCutInside=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoPhotos)"Photo: on" else "Photo")},
                     Modifier.testTag("lassoPhotos"))
@@ -1577,6 +1577,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&!controller.bezierEditing&&controller.photoLasso==null&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){Text("Warp",maxLines=1)}
+                OutlinedButton(onClick={controller.beginBezierEdit();redraw()},Modifier.testTag("lassoCurveEdit")){Text("Curve edit",maxLines=1)}
                 OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){Text("Warp mesh",maxLines=1)}
                 // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
                 OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){Text("Copy")}

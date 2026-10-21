@@ -32,6 +32,7 @@ typedef struct PGToolBrushParams {
   int curve_preset;   /* eBrushCurvePreset, 0 keeps the tool default */
   int active_material;/* 0-based */
   float ui_scale;     /* screen density; vertex paint influence uses the size in UI pixels */
+  int affect;         /* sculpt: GP_SCULPT_FLAGMODE_APPLY_* (0 = the preset's) */
 } PGToolBrushParams;
 
 typedef struct PGSculptSession PGSculptSession;

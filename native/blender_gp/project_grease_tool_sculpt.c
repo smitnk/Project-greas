@@ -1366,6 +1366,11 @@ PGSculptSession *pg_sculpt_session_begin(bGPdata *gpd, const PGToolBrushParams *
   tGP_BrushEditData *gso = &s->gso;
   s->brush.gpencil_settings = &s->settings;
   pgt_sculpt_preset(&s->brush, params->brush);
+  /* the brush's Affect toggles (Position / Strength / Thickness / UV) when the UI sets them */
+  if (params->affect != 0) {
+    s->settings.sculpt_mode_flag = (short)(params->affect & (GP_SCULPT_FLAGMODE_APPLY_POSITION | GP_SCULPT_FLAGMODE_APPLY_STRENGTH |
+                                                             GP_SCULPT_FLAGMODE_APPLY_THICKNESS | GP_SCULPT_FLAGMODE_APPLY_UV));
+  }
   pg_tool_view_init(&s->view, &gso->gsc, params->px_per_unit);
   /* The UI sets size (radius in pixels) and strength like the tool settings panel. */
   s->brush.size = max_ii(1, (int)lroundf(params->radius * s->view.px_per_unit));

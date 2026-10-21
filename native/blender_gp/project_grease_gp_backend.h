@@ -32,6 +32,10 @@ struct StrokePoint {
 struct StrokeStyle {
   int material_index = 0;
   float thickness = 1.0f;
+  /* brush settings gpencil_stroke_newfrombuffer() copies to the new stroke */
+  float hardness = 1.0f;
+  int caps = 0; /* GP_STROKE_CAP_ROUND / FLAT for both ends */
+  float aspect_x = 1.0f, aspect_y = 1.0f;
 };
 
 class Backend {

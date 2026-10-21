@@ -150,7 +150,11 @@ int main(void)
   cmp("Build.fade_factor", p[PG_P_BUILD_FADE_FAC], bu->fade_fac);
   cmp("Build.fade_thickness_strength", p[PG_P_BUILD_FADE_THICKNESS], bu->fade_thickness_strength);
   cmp("Build.fade_opacity_strength", p[PG_P_BUILD_FADE_OPACITY], bu->fade_opacity_strength);
-  skip("Build.start_frame/end_frame/speed_fac/speed_maxgap", "no PG parameter (PG has no frame-range or additive/speed build)");
+  cmp("Build.time_mode", p[PG_P_BUILD_TIME_MODE], bu->time_mode);
+  cmp("Build.percentage_factor", p[PG_P_BUILD_PERCENTAGE], bu->percentage_fac);
+  cmp("Build.speed_factor", p[PG_P_BUILD_SPEED_FAC], bu->speed_fac);
+  cmp("Build.speed_maxgap", p[PG_P_BUILD_SPEED_MAXGAP], bu->speed_maxgap);
+  skip("Build.start_frame/end_frame", "no PG parameter (PG has no frame-range build)");
 
   const TimeGpencilModifierData *tm = DNA_struct_default_get(TimeGpencilModifierData);
   mod(PG_MOD_TIME, p);

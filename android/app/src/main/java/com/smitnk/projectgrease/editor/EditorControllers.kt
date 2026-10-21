@@ -389,6 +389,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
 
     fun setFps(value:Int){
         fpsState.intValue=value.coerceIn(1,120)
+        runCatching { GPNative.nativeSetSceneFps(fpsState.intValue) }
         if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))}
     }
     fun togglePlayback(){
@@ -487,6 +488,18 @@ class BrushController(private val materials: MaterialController) {
     var angle = 0f; private set
     var angleFactor = 0f; private set
     var hardness = 1f; private set
+    /** Randomize panel (per point): draw_random_press, draw_random_strength. */
+    var randomPressure = 0f; private set
+    var randomStrength = 0f; private set
+    /** Stroke caps (caps_type: 0 round, 1 flat) and Aspect ratio x / y of new strokes (dots / boxes). */
+    var caps = 0; private set
+    var aspectX = 1f; private set
+    var aspectY = 1f; private set
+    fun setHardness(v: Float) { if (v.isFinite()) hardness = v.coerceIn(0.01f, 1f) }
+    fun setRandomPressure(v: Float) { if (v.isFinite()) randomPressure = v.coerceIn(0f, 1f) }
+    fun setRandomStrength(v: Float) { if (v.isFinite()) randomStrength = v.coerceIn(0f, 1f) }
+    fun setCaps(flat: Boolean) { caps = if (flat) 1 else 0 }
+    fun setAspect(x: Float, y: Float) { if (x.isFinite() && y.isFinite()) { aspectX = x.coerceIn(0.01f, 1f); aspectY = y.coerceIn(0.01f, 1f) } }
     /** curve_sensitivity and curve_strength (CurveMapping points, evaluated natively). */
     var pressureCurvePoints: List<Pair<Float, Float>> = BrushPreset.LINEAR_CURVE; private set
     var strengthCurvePoints: List<Pair<Float, Float>> = BrushPreset.LINEAR_CURVE; private set
@@ -501,6 +514,9 @@ class BrushController(private val materials: MaterialController) {
         angle = value.angle
         angleFactor = value.angleFactor
         hardness = value.hardness
+        randomPressure = value.randomPressure
+        randomStrength = 0f
+        caps = 0; aspectX = 1f; aspectY = 1f
         pressureCurvePoints = value.pressureCurve
         strengthCurvePoints = value.strengthCurve
         pressureCurve = 1f
@@ -642,6 +658,11 @@ class SculptController {
     fun select(value: SculptBrush) { brush = value }
 
     fun setInvert(value: Boolean) { invert = value }
+    /** The brush's Affect toggles (sculpt_mode_flag): Position, Strength, Thickness, UV (Blender's
+     *  presets: position only). 0 means the preset's. */
+    var affect = ToolSession.AFFECT_POSITION
+        private set
+    fun toggleAffect(bit: Int) { val v = affect xor bit; if (v != 0) affect = v }
     /** ToolSettings gp_sculpt.flag auto-masking bits, gpencil_selectmode_sculpt, brush curve preset. */
     var automask = 0
         private set
@@ -850,6 +871,7 @@ class EditorController {
     }
     fun selectTool(tool:GreaseTool):Boolean {
         com.smitnk.projectgrease.CrashLog.event("TOOL $tool (was ${tools.activeTool}, mode $mode)")
+        if (tool != GreaseTool.LASSO) photoLasso = null // a waiting photo loop goes with the lasso
         // Leaving the polyline tool confirms the polyline, like Blender's confirm keys.
         if (tool != tools.activeTool && polyline.isActive) finishPolyline()
         // Likewise for the curve once its handles are shown; a curve still being dragged is dropped.
@@ -897,7 +919,8 @@ class EditorController {
             ToolSession.TOOL_SCULPT -> ToolSession.brushParams(
                 ToolSession.sculptTool(sculpt.brush), minOf(sculptBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f),
                 sculptBrush.strength, pxPerUnit, sculpt.invert, seed = sessionSeed++, automask = sculpt.automask,
-                selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial)
+                selectMask = sculpt.selectMask, curvePreset = sculpt.curvePreset, activeMaterial = materials.activeMaterial,
+                affect = sculpt.affect)
             ToolSession.TOOL_VERTEX_PAINT -> ToolSession.brushParams(
                 ToolSession.vertexTool(if (mode == GreaseMode.DRAW) ProjectGreaseSelect.VPAINT_TINT else vertexPaintBrush), minOf(vertexBrush.size * uiScale, 500f) / pxPerUnit.coerceAtLeast(1e-3f), vertexBrush.strength,
                 pxPerUnit, r = r, g = g, b = b, target = vertexPaintTarget, selectMask = vertexSelectMask,
@@ -922,7 +945,9 @@ class EditorController {
                 guideType = view.guideType, guideX = view.guideCenterX, guideY = view.guideCenterY,
                 guideAngle = view.guideAngle, guideSpacing = view.guideSpacing,
                 pressureCurvePoints = brushes.pressureCurvePoints, strengthCurvePoints = brushes.strengthCurvePoints,
-                pxPerUnit = pxPerUnit
+                pxPerUnit = pxPerUnit,
+                randomPressure = brushes.randomPressure, randomStrength = brushes.randomStrength,
+                hardness = brushes.hardness, caps = brushes.caps, aspectX = brushes.aspectX, aspectY = brushes.aspectY
             ).toParams()
             else -> null
         }
@@ -953,6 +978,8 @@ class EditorController {
             return 0
         }
         if (phase == ToolSession.PHASE_BEGIN && tool == ToolSession.TOOL_DRAW) jitterStrokeColor()
+        // sculpt / vertex / weight paint on a held frame key it first (gpencil_sculpt_paint auto-keying)
+        if (phase == ToolSession.PHASE_BEGIN && tool != ToolSession.TOOL_DRAW) autokeyHeld()
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
         val t0 = System.nanoTime()
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
@@ -1235,9 +1262,11 @@ class EditorController {
     /** GPENCIL_OT_stroke_enter_editcurve_mode on the selected strokes. */
     fun beginBezierEdit():Boolean {
         if (native.handle == 0L) return false
-        if (native.selectedPointCount() <= 0) { onMessage?.invoke("Curve edit: select strokes first (Lasso or tap them)"); return false }
         if (mode != GreaseMode.EDIT) setMode(GreaseMode.EDIT)
-        val ok = runOperator("GPENCIL_OT_stroke_enter_editcurve_mode", bezierThreshold)
+        // nothing selected: every stroke of this frame becomes a curve
+        if (native.selectedPointCount() <= 0) selectAll()
+        if (native.selectedPointCount() <= 0) { onMessage?.invoke("Curve edit: draw something on this frame first"); return false }
+        val ok = runOperator("GPENCIL_OT_stroke_enter_editcurve_mode", bezierThreshold) // a stroke_ operator: auto-keys
         bezierEditing = ok && GPNative.nativeCurveEditOn(native.handle)
         onUiChanged?.invoke(); return bezierEditing
     }
@@ -1702,6 +1731,7 @@ class EditorController {
         if (tools.activeTool == GreaseTool.LASSO) {
             val noose = pendingLassoPoints.toList()
             pendingLassoPoints.clear()
+            if (!lassoPhotos) photoLasso = null // a stroke lasso drops a waiting photo loop
             if (lassoPhotos) {
                 // the loop is over a photo: it waits for Cut out / Copy out / Erase
                 photoLasso = if (noose.size >= 3) FloatArray(noose.size * 2) { i -> if (i % 2 == 0) noose[i / 2].first else noose[i / 2].second } else null
@@ -1711,6 +1741,7 @@ class EditorController {
             if (lassoCutInside && mode == GreaseMode.DRAW) {
                 // Project Grease's own mode (not Blender's): lasso-select the points inside, then
                 // GPENCIL_OT_delete (points), one undo step; the rest of each stroke stays
+                autokeyHeld()
                 val before = native.strokeCount(); val pointsBefore = native.pointCount()
                 history.beginBatch()
                 val pick = ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, noose)
@@ -2958,7 +2989,7 @@ class EditorController {
         return ok
     }
     /** Starts an erase drag: Blender's modal GPENCIL_OT_draw in eraser mode (cancels a running paint operator). */
-    fun beginErase() { if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 0, false) }
+    fun beginErase() { autokeyHeld(); if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 0, false) }
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
         if (endPhotoErase()) { eraseGestureChanged = false; if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, true); return true }
@@ -3012,8 +3043,25 @@ class EditorController {
     /** Copy does not change the document; call native directly so no undo step is recorded. */
     /** Runs a Blender operator by its idname through the native operator layer (poll, exec);
      *  a FINISHED operator flagged OPTYPE_UNDO becomes one undo step, as in Blender. */
+    /** Operators that change strokes in place: on a held frame they first get the frame's own key. */
+    private val editsInPlace = listOf("GPENCIL_OT_stroke_", "GPENCIL_OT_delete", "GPENCIL_OT_dissolve", "GPENCIL_OT_extrude",
+        "GPENCIL_OT_duplicate", "GPENCIL_OT_snap_to", "GPENCIL_OT_paste", "GPENCIL_OT_reset_transform_fill", "GPENCIL_OT_vertex_group_assign",
+        "GPENCIL_OT_vertex_group_remove_from", "GPENCIL_OT_vertex_group_smooth", "GPENCIL_OT_vertex_group_normalize", "GPENCIL_OT_vertex_group_invert")
+    /**
+     * Blender's auto-keying (always on here) for an edit on a frame that only shows an earlier key:
+     * the eraser, transform, sculpt and paste copy that key to the current frame first
+     * (BKE_gpencil_frame_addcopy), so the edit does not change every frame the key is held on.
+     * The app does it for its other in-place edits too (the cutter, delete, stroke operators).
+     */
+    fun autokeyHeld():Boolean {
+        if (native.handle == 0L) return false
+        val n = GPNative.nativeAutokeyHeld(native.handle, animation.currentFrame)
+        if (n > 0) { com.smitnk.projectgrease.CrashLog.event("AUTOKEY frame ${animation.currentFrame}: $n layer(s) keyed from the held drawing"); animation.refreshFromNative() }
+        return n > 0
+    }
     fun runOperator(idname:String, vararg props:Float):Boolean {
         if (native.handle == 0L) return false
+        if (editsInPlace.any { idname.startsWith(it) }) autokeyHeld()
         val r = GPNative.nativeOperatorCall(native.handle, idname, animation.currentFrame, materials.activeMaterial + 1, props)
         val finished = (r and 0xff) and 4 != 0
         // material operators change ob->actcol (material_set, set_active_material)
@@ -3178,6 +3226,7 @@ class EditorController {
     val warpActive get() = warpPoints != null
     /** Starts (or regrids) the warp; 2 x 2 is a free-distort box, more points a warp mesh. */
     fun beginWarp(nu:Int = warpNu, nv:Int = warpNv):Boolean {
+        if (!warpActive) autokeyHeld()
         if (native.handle == 0L) return false
         if (warpActive) GPNative.nativeLatticeEnd(native.handle, false)
         val b = GPNative.nativeLatticeBegin(native.handle) ?: run { warpPoints = null; com.smitnk.projectgrease.CrashLog.event("WARP begin -> false"); return false }

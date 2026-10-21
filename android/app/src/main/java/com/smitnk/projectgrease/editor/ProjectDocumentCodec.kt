@@ -20,7 +20,9 @@ class StrokeRecord(
     /** Vertex-group weights of the points, sparse: point index to [group, weight, group, weight, ...]. */
     val weights: Map<Int, FloatArray> = emptyMap(),
     /** bGPDstroke.caps (start, end): 0 round, 1 flat. */
-    val caps: IntArray = intArrayOf(0, 0)
+    val caps: IntArray = intArrayOf(0, 0),
+    /** bGPDstroke.hardeness (the brush hardness the stroke was drawn with). */
+    val hardness: Float = 1f
 ) {
     companion object {
         /** Floats per point: position/pressure/strength/time plus RGBA vertex color. */
@@ -354,7 +356,8 @@ object ProjectDocumentCodec {
             fillColor = floats(json.optJSONArray("fillColor"), 4),
             hasStyle = json.has("thickness"),
             weights = parseWeights(json.optJSONArray("weights"), points.size),
-            caps = json.optJSONArray("caps")?.let { c -> IntArray(2) { if (c.optInt(it, 0) == 1) 1 else 0 } } ?: intArrayOf(0, 0)
+            caps = json.optJSONArray("caps")?.let { c -> IntArray(2) { if (c.optInt(it, 0) == 1) 1 else 0 } } ?: intArrayOf(0, 0),
+            hardness = json.optDouble("hardness", 1.0).toFloat().let { if (it > 0f && it <= 1f) it else 1f }
         )
     }
 
@@ -405,6 +408,7 @@ object ProjectDocumentCodec {
             .put("fillOpacity", num(stroke.fillOpacity))
             .put("fillColor", floatsJson(stroke.fillColor))
         if (stroke.caps.any { it != 0 }) json.put("caps", JSONArray().apply { put(stroke.caps[0]); put(stroke.caps[1]) })
+        if (stroke.hardness < 1f) json.put("hardness", num(stroke.hardness))
         if (stroke.weights.isNotEmpty()) {
             json.put("weights", JSONArray().apply {
                 for ((point, values) in stroke.weights.toSortedMap()) {

@@ -290,6 +290,18 @@ static void append_point(PGDrawInput *d, float x, float y, float input_pressure,
       py = m_xy[1] / ppu;
     }
   }
+  /* gpencil_apply_randomness() (per point, no pen-pressure random curve): after the jitter, from the
+   * same random generator. */
+  if (s->random_press > 0.0f) {
+    const float rand = pg_draw_rng_get_float(&d->rng_x) * 2.0f - 1.0f;
+    const float value = 1.0f + rand * 2.0f * s->random_press;
+    pressure = fclamp(pressure * value, 0.1f, 1.0f);
+  }
+  if (s->random_strength > 0.0f) {
+    const float rand = pg_draw_rng_get_float(&d->rng_x) * 2.0f - 1.0f;
+    const float value = 1.0f + rand * s->random_strength;
+    strength = fclamp(strength * value, PG_DRAW_STRENGTH_MIN, 1.0f);
+  }
   /* gpencil_brush_angle(): uses the raw mouse position. */
   if (s->draw_angle_factor != 0.0f && used >= 1) {
     const float sen = s->draw_angle_factor;

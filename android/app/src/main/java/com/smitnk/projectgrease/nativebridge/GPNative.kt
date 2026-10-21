@@ -190,6 +190,10 @@ object GPNative {
     /** Curve edit mode (Blender's use_curve_edit): on / off, the curve points (13 floats each: layer,
      *  stroke, point, h1 x/y, x/y, h2 x/y, selection bits, h1 type, h2 type, 0), a click on part 0 / 1 / 2
      *  of a point (layer -1 deselects), moving the selected parts. */
+    /** Auto-keying before an edit on a held frame: the held drawing is copied to its own key at [cfra]. */
+    external fun nativeAutokeyHeld(handle: Long, cfra: Int): Int
+    /** Scene fps for the modifier stack (Build's drawing speed). */
+    external fun nativeSetSceneFps(fps: Int)
     external fun nativeCurveEditSet(handle: Long, on: Boolean): Boolean
     external fun nativeCurveEditOn(handle: Long): Boolean
     external fun nativeCurvePoints(handle: Long): FloatArray?

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Build modifier, ported from Blender 3.6.23 MOD_gpencil_legacy_build.c (generate_geometry,
  * build_sequential, build_concurrent, reduce_stroke_points, fade_stroke_points).
- * Frames and Percentage time modes; Draw Speed and the control object are not supported. */
+ * Frames, Percentage and Drawing Speed time modes; the control object is not supported. */
 #pragma once
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +20,9 @@ typedef struct PGBuildParams {
   float fade_fac, fade_thickness_strength, fade_opacity_strength;
   int restrict_time;  /* GP_BUILD_RESTRICT_TIME */
   float start_frame, end_frame;
+  int time_mode;      /* GP_BUILD_TIMEMODE_FRAMES 0 / PERCENTAGE 1 / DRAWSPEED 2 */
+  float speed_fac, speed_maxgap; /* DRAWSPEED */
+  int fps;            /* scene fps (DRAWSPEED) */
 } PGBuildParams;
 
 /* Runs the build on gpf (an evaluated copy of a layer frame).

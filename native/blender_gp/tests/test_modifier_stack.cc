@@ -523,6 +523,36 @@ static bGPDstroke *line_stroke(bGPDframe *f, int n)
   }
   return gps;
 }
+static void test_build_drawspeed()
+{
+  /* GP_BUILD_TIMEMODE_DRAWSPEED: two 4-point strokes drawn 0.1 s per point, 1 s apart (gap capped at
+   * speed_maxgap 0.5), speed 1, 20 fps: times 0 .1 .2 .3 | .8 .9 1.0 1.1 */
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *f = BKE_gpencil_frame_addnew(gpl, 31);
+  line_stroke(f, 4);
+  line_stroke(f, 4);
+  int k = 0;
+  LISTBASE_FOREACH (bGPDstroke *, g, &f->strokes) {
+    g->inittime = 10.0 + k++;
+    for (int i = 0; i < g->totpoints; i++) g->points[i].time = 0.1f * i;
+  }
+  pg_mod_set_scene_fps(20);
+  PGModEntry b = entry(PG_MOD_BUILD);
+  b.params[PG_P_BUILD_TIME_MODE] = 2;
+  b.params[PG_P_BUILD_SPEED_FAC] = 1.0f;
+  b.params[PG_P_BUILD_SPEED_MAXGAP] = 0.5f;
+  auto run = [&](int cfra) { bGPDframe ev; pg_mod_eval_frame(gpd, gpl, f, &b, 1, cfra, &ev); auto r = snapshot(&ev); pg_mod_eval_free(&ev); return r; };
+  auto early = run(34);  /* 0.15 s: the 3rd point (0.2 s) is next: 2 points */
+  CHECK(early.size() == 1 && early[0].size() == 2);
+  auto mid = run(50);    /* 0.95 s: the first stroke and 2 points of the second */
+  CHECK(mid.size() == 2 && mid[0].size() == 4 && mid[1].size() == 2);
+  auto done = run(60);  /* past 1.1 s: everything */
+  CHECK(done.size() == 2 && done[1].size() == 4);
+  pg_mod_set_scene_fps(24);
+  BKE_gpencil_free_layers(&gpd->layers);
+  MEM_freeN(gpd);
+}
 static void test_build_blender()
 {
   bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
@@ -664,6 +694,7 @@ int main()
   test_texture_modifier();
   test_interpolate_blender();
   test_build_blender();
+  test_build_drawspeed();
   test_type_info();
   test_batch21();
   test_originals_untouched_and_changed();

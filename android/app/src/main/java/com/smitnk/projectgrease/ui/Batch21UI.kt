@@ -263,7 +263,11 @@ fun BezierEditOverlay(controller: EditorController, tick: Int, redraw: () -> Uni
                 i += 13
             }
         }
-        Surface(Modifier.align(Alignment.TopCenter).padding(top = 112.dp), shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, shadowElevation = 4.dp) {
+        Text("Curve edit: tap a square (point) or a circle (handle) to select it, drag it to reshape the stroke. " +
+            "Free / Auto / Vector / Aligned set the selected handles' type. Drag empty space to pan. Done to finish.",
+            Modifier.align(Alignment.TopCenter).padding(top = 52.dp, start = 12.dp, end = 12.dp)
+                .background(Color(0xCC000000), RoundedCornerShape(8.dp)).padding(8.dp), color = Color.White, fontSize = 12.sp)
+        Surface(Modifier.align(Alignment.TopCenter).padding(top = 132.dp), shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, shadowElevation = 4.dp) {
             FlowRow(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(onClick = { controller.endBezierEdit(); redraw() }, Modifier.testTag("bezierDone")) { Text("Done") }
                 listOf(0 to "Free", 1 to "Auto", 2 to "Vector", 3 to "Aligned").forEach { (t, l) ->
@@ -654,6 +658,21 @@ fun BrushCurvesSection(controller: EditorController, redraw: () -> Unit) {
         Text("Use pressure for strength", Modifier.weight(1f)); Switch(b.useStrengthPressure, { b.setUseStrengthPressure(it); tick++; redraw() })
     }
     CurveEditor("Strength pressure curve", b.strengthCurvePoints, { b.setStrengthCurvePoints(it); tick++; redraw() }, "strengthCurve")
+    // the brush's stroke settings and its Randomize panel (BrushGpencilSettings)
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Text("Hardness ${(b.hardness * 100).toInt()}% (soft edges below 100)")
+        Slider(b.hardness, { b.setHardness(it); tick++ }, valueRange = 0.01f..1f, modifier = Modifier.testTag("brushHardness"))
+        Text("Random pressure ${(b.randomPressure * 100).toInt()}% (thickness varies along the line)")
+        Slider(b.randomPressure, { b.setRandomPressure(it); tick++ }, valueRange = 0f..1f, modifier = Modifier.testTag("brushRandomPress"))
+        Text("Random strength ${(b.randomStrength * 100).toInt()}% (opacity varies along the line)")
+        Slider(b.randomStrength, { b.setRandomStrength(it); tick++ }, valueRange = 0f..1f, modifier = Modifier.testTag("brushRandomStrength"))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Flat line ends (caps)", Modifier.weight(1f)); Switch(b.caps == 1, { b.setCaps(it); tick++ }, Modifier.testTag("brushCaps"))
+        }
+        Text("Dot / box aspect: width ${(b.aspectX * 100).toInt()}%, height ${(b.aspectY * 100).toInt()}%", fontSize = 12.sp)
+        Slider(b.aspectX, { b.setAspect(it, b.aspectY); tick++ }, valueRange = 0.01f..1f)
+        Slider(b.aspectY, { b.setAspect(b.aspectX, it); tick++ }, valueRange = 0.01f..1f)
+    }
 }
 
 /** Influence filters and custom curve of one modifier entry, and its canvas handles. */

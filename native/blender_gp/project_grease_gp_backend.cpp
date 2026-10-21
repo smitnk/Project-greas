@@ -1,3 +1,4 @@
+#include <chrono>
 #include "project_grease_gp_backend.h"
 #include "project_grease_blender_lattice.h"
 #if defined(__has_include)
@@ -3420,6 +3421,20 @@ bool Backend::end_stroke() {
     impl_->stroke_open = false;
     return false;
   }
+
+  // gps->inittime = p->inittime (PIL_check_seconds_timer at the stroke start): Build's drawing speed
+  // uses the gap between strokes
+  {
+    static const auto t0 = std::chrono::steady_clock::now();
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() + 1.0;
+    const float last = point_count > 0 ? static_cast<const tGPspoint *>(impl_->gpd->runtime.sbuffer)[point_count - 1].time : 0.0f;
+    impl_->stroke->inittime = now - (last > 0.0f ? last : 0.0f);
+  }
+  // gpencil_stroke_newfrombuffer(): hardeness, aspect_ratio and caps from the brush
+  impl_->stroke->hardeness = std::clamp(impl_->stroke_style.hardness, 0.0f, 1.0f);
+  impl_->stroke->aspect_ratio[0] = std::clamp(impl_->stroke_style.aspect_x, 0.01f, 1.0f);
+  impl_->stroke->aspect_ratio[1] = std::clamp(impl_->stroke_style.aspect_y, 0.01f, 1.0f);
+  impl_->stroke->caps[0] = impl_->stroke->caps[1] = static_cast<short>(impl_->stroke_style.caps == 1 ? GP_STROKE_CAP_FLAT : GP_STROKE_CAP_ROUND);
 
   const tGPspoint *buffer = static_cast<const tGPspoint *>(impl_->gpd->runtime.sbuffer);
   for (int i = 0; i < point_count; ++i) {

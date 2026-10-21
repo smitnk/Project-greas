@@ -47,6 +47,7 @@ enum {
   PG_TOOL_P_CURVE_PRESET,    /* brush falloff: eBrushCurvePreset (0 = keep the tool's default) */
   PG_TOOL_P_ACTIVE_MATERIAL, /* 0-based active material slot (Active Material auto-masking) */
   PG_TOOL_P_UI_SCALE,        /* screen density (Blender UI pixels -> device pixels), 1 = desktop */
+  PG_TOOL_P_AFFECT,          /* sculpt: GP_SCULPT_FLAGMODE_APPLY_* bits (0 = the preset's: position) */
   PG_TOOL_P_COUNT
 };
 
@@ -87,6 +88,15 @@ enum {
   PG_DRAW_P_PX_PER_UNIT = PG_DRAW_P_STRENGTH_CURVE_XY + 16,
   /* jitter BLI_rng seed + 1; 0 = seed like gpencil_paint_initstroke() (time ^ pointer) */
   PG_DRAW_P_SEED,
+  /* Brush Randomize (GP_BRUSH_GROUP_RANDOM, per point): draw_random_press, draw_random_strength */
+  PG_DRAW_P_RANDOM_PRESS,
+  PG_DRAW_P_RANDOM_STRENGTH,
+  /* Stroke settings gpencil_stroke_newfrombuffer() copies from the brush: hardeness (1),
+   * caps_type (GP_STROKE_CAP_ROUND 0 / FLAT 1), aspect_ratio x / y (1) */
+  PG_DRAW_P_HARDNESS,
+  PG_DRAW_P_CAPS,
+  PG_DRAW_P_ASPECT_X,
+  PG_DRAW_P_ASPECT_Y,
   PG_DRAW_P_COUNT
 };
 
@@ -97,6 +107,8 @@ typedef struct PGToolDrawSink {
   int (*add_point)(void *user, float x, float y, float pressure, float strength, float time);
   int (*end)(void *user);
   void (*cancel)(void *user);
+  /* optional: the stroke settings of the new stroke, before begin (hardness, caps, aspect x / y) */
+  void (*style)(void *user, float hardness, int caps, float aspect_x, float aspect_y);
 } PGToolDrawSink;
 
 typedef struct PGToolSession PGToolSession;

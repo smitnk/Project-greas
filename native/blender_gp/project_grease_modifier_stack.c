@@ -37,6 +37,10 @@
 #include "project_grease_modifier_stack.h"
 #include "rna/project_grease_rna.h"
 
+/* Scene frames per second for the modifiers that need it (Build's drawing speed). */
+int pg_mod_scene_fps = 24;
+void pg_mod_set_scene_fps(int fps) { pg_mod_scene_fps = fps > 0 && fps <= 1000 ? fps : 24; }
+
 /* ---------------------------------------------------------------------------------------- */
 /* Type information                                                                          */
 
@@ -916,7 +920,7 @@ int pg_mod_eval_frame(bGPdata *gpd, bGPDlayer *gpl, bGPDframe *gpf, const PGModE
   r_eval->runtime.gpf_orig = gpf;
   BKE_gpencil_frame_original_pointers_update(gpf, r_eval);
 
-  PGModContext ctx = {gpd, gpl, r_eval, cfra, gpf};
+  PGModContext ctx = {gpd, gpl, r_eval, cfra, gpf, pg_mod_scene_fps};
   for (int i = 0; i < count && entries != NULL; i++) {
     if (entries[i].enabled && pg_mod_valid_type(entries[i].type)) {
       pg_mod_run_on_frame(&ctx, &entries[i]);
@@ -965,7 +969,7 @@ int pg_mod_apply(bGPdata *gpd, bGPDlayer *gpl, const PGModEntry *entry, int cfra
   }
   int any = 0;
   for (bGPDframe *gpf = gpl->frames.first; gpf != NULL; gpf = gpf->next) {
-    PGModContext ctx = {gpd, gpl, gpf, cfra, gpf};
+    PGModContext ctx = {gpd, gpl, gpf, cfra, gpf, pg_mod_scene_fps};
     const int changed = pg_mod_run_on_frame(&ctx, entry);
     if (changed) {
       for (bGPDstroke *gps = gpf->strokes.first; gps != NULL; gps = gps->next) {

@@ -350,6 +350,8 @@ fun WarpOverlay(controller: EditorController, tick: Int, redraw: () -> Unit) {
                 m.delta(d.x, d.y).let { controller.dragWarp(index, it.first, it.second) }
             }
         }) {
+            // read here: the dots live in an array changed in place, so only the counter tells the canvas to redraw
+            @Suppress("UNUSED_VARIABLE") val redrawn = tick
             val m = OverlayMap(size.width, size.height, controller)
             fun at(i: Int, j: Int) = m.screen(pts[2 * (j * nu + i)] to pts[2 * (j * nu + i) + 1])
             for (j in 0 until nv) for (i in 0 until nu) {

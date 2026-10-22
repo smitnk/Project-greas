@@ -704,6 +704,14 @@ int main()
     for (int i = 0; i < g->totpoints; i++) dev = std::max(dev, std::fabs(g->points[i].y - 300.0f));
     CHECK(g->editcurve && g->editcurve->tot_curve_points >= 3);
     CHECK(dev > 90.0f); /* still an S, not a straight line */
+    /* drag the middle curve point a little: the stroke is rebuilt from the curve and stays curved */
+    const int mid = g->editcurve->tot_curve_points / 2;
+    CHECK(pg_curve_select(C.gpd, 0, 0, mid, 1, false));
+    CHECK(pg_curve_translate(C.gpd, 5.0f, 0.0f) == 1);
+    float dev2 = 0;
+    for (int i = 0; i < g->totpoints; i++) dev2 = std::max(dev2, std::fabs(g->points[i].y - 300.0f));
+    CHECK(g->totpoints > 2 * g->editcurve->tot_curve_points && g->totpoints < 1000);
+    CHECK(dev2 > 90.0f);
     pg_curve_edit_set(C.gpd, false);
   }
   /* curve edit mode: an arc becomes a bezier, a point drags the stroke, handle types, off again */

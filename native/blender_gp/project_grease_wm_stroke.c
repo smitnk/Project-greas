@@ -2024,6 +2024,13 @@ static int exec_enter_editcurve(PGOpContext *C, const float *p, int n)
   const float error_threshold = prop_f(p, n, 0, 0.1f);
   if (!(error_threshold >= FLT_MIN) || error_threshold > 100.0f) return PG_OPERATOR_CANCELLED;
   gpd->curve_edit_threshold = error_threshold;
+  /* documents made or loaded without BKE_gpencil_data_addnew's defaults have resolution 0: the stroke
+   * was rebuilt with one point per curve point (straight segments) */
+  if (gpd->curve_edit_resolution < 1) gpd->curve_edit_resolution = GP_DEFAULT_CURVE_RESOLUTION;
+  if (!(gpd->curve_edit_corner_angle > 0.0f)) gpd->curve_edit_corner_angle = GP_DEFAULT_CURVE_EDIT_CORNER_ANGLE;
+  /* ADAPTED: adaptive resolution samples arc length (Blender units) x resolution; canvas units are
+   * pixels (PG_MOD_PIXELS_PER_UNIT per unit), so it made ~1000x the points: fixed points per segment */
+  gpd->flag &= ~GP_DATA_CURVE_ADAPTIVE_RESOLUTION;
   LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
     LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
       if (gpf == gpl->actframe) {

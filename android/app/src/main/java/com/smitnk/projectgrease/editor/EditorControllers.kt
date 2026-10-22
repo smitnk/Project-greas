@@ -279,6 +279,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
         }
     }
+    /** Re-reads frames/keys after an edit but stays on the current frame (initialize() jumps to frame 1). */
+    fun refresh() { if (!setFrame(currentFrame)) initialize() }
     fun setFrame(value: Int): Boolean {
         val target = value.coerceAtLeast(1)
         if (native.handle == 0L) return false
@@ -2959,8 +2961,7 @@ class EditorController {
             if (GPNative.nativeCreatePolyline(native.handle, s.xy, s.xy.size / 2, s.material, s.thickness, s.cyclic)) created++
         }
         if (created > 0 || newLayer != null) {
-            animation.initialize()
-            animation.setFrame(animation.currentFrame)
+            animation.refresh()
             history.markEdit(); document.markDirty(); render()
         }
         return created
@@ -3026,8 +3027,7 @@ class EditorController {
             }
         } finally {
             reference.setCamera(saved, w, h)
-            animation.initialize()
-            animation.setFrame(animation.currentFrame)
+            animation.refresh()
             history.markEdit(); document.markDirty(); render()
         }
         return baked
@@ -3070,33 +3070,43 @@ class EditorController {
         val canvas = android.graphics.Canvas(bmp)
         val line = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND; color = android.graphics.Color.BLACK }
         val area = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL; color = android.graphics.Color.BLACK }
+        val clear = android.graphics.Paint().apply { isAntiAlias = false; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
         var colour = materials.colorArgb
-        for ((k, i) in sel.withIndex()) {
+        var first = true
+        // the selected strokes as they look, then every eraser / lasso-cut holdout above them cleared out
+        for (i in sel.first() until native.strokeCount()) {
             val info = native.strokeInfo(i) ?: continue
-            val m = native.materialInfo(info[0].toInt())
+            val mi = info[0].toInt()
+            val name = native.materialName(mi)
+            val holdout = name == HOLDOUT_MATERIAL || name == CUTTER_MATERIAL
+            if (!holdout && i !in sel) continue
+            val m = native.materialInfo(mi)
             val pts = ArrayList<FloatArray>()
             var j = 0
             while (j < 20000) { pts.add(native.getPoint(i, j) ?: break); j++ }
             if (pts.isEmpty()) continue
-            if (k == 0 && m != null) { // the shape keeps the first stroke's colour (its line, or its fill for a fill)
+            if (first && !holdout && m != null) { // the shape keeps the first stroke's colour (its line, or its fill for a fill)
+                first = false
                 val c = if (m[10] > 0.5f) 0 else 4
                 colour = (0xFF shl 24) or ((m[c] * 255).toInt().coerceIn(0, 255) shl 16) or ((m[c + 1] * 255).toInt().coerceIn(0, 255) shl 8) or (m[c + 2] * 255).toInt().coerceIn(0, 255)
             }
-            if (m != null && m[9] > 0.5f && pts.size >= 3) {
+            val areaPaint = if (holdout) clear else area
+            if ((name == CUTTER_MATERIAL || (!holdout && m != null && m[9] > 0.5f)) && pts.size >= 3) {
                 val path = android.graphics.Path(); path.moveTo(pts[0][0], pts[0][1]); for (p in pts.drop(1)) path.lineTo(p[0], p[1]); path.close()
-                canvas.drawPath(path, area)
+                canvas.drawPath(path, areaPaint)
             }
-            if (m == null || m[10] > 0.5f) {
-                if (pts.size == 1) { line.strokeWidth = info[1] * pts[0][3]; canvas.drawPoint(pts[0][0], pts[0][1], line) }
+            if (name == HOLDOUT_MATERIAL || (!holdout && (m == null || m[10] > 0.5f))) {
+                val lp = if (holdout) android.graphics.Paint(line).apply { xfermode = clear.xfermode } else line
+                if (pts.size == 1) { lp.strokeWidth = info[1] * pts[0][3]; canvas.drawPoint(pts[0][0], pts[0][1], lp) }
                 for (q in 1 until pts.size) {
-                    line.strokeWidth = (info[1] * (pts[q - 1][3] + pts[q][3]) * 0.5f).coerceAtLeast(1f)
-                    canvas.drawLine(pts[q - 1][0], pts[q - 1][1], pts[q][0], pts[q][1], line)
+                    lp.strokeWidth = (info[1] * (pts[q - 1][3] + pts[q][3]) * 0.5f).coerceAtLeast(1f)
+                    canvas.drawLine(pts[q - 1][0], pts[q - 1][1], pts[q][0], pts[q][1], lp)
                 }
             }
         }
         val alpha = java.nio.ByteBuffer.allocate(w * h); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
         val mask = BooleanArray(w * h) { alpha.get(it).toInt() != 0 }
-        val outlines = ImageTrace.trace(mask, w, h, 0.75f, 3)
+        val outlines = withHolesJoined(ImageTrace.trace(mask, w, h, 0.75f, 3))
         if (outlines.isEmpty()) { onMessage?.invoke("Merge: nothing to merge"); return false }
         history.beginBatch()
         val removed = deleteSelectedPoints()
@@ -3110,12 +3120,37 @@ class EditorController {
         return added > 0
     }
 
+    /**
+     * Traced outlines come as separate loops, holes included; filled one by one a ring became a solid
+     * disc. A loop inside an odd number of others is a hole: it is spliced into its enclosing loop
+     * through a zero-width slit (the keyhole), so one fill stroke has the hole.
+     */
+    private fun withHolesJoined(loops: List<List<FloatArray>>): List<List<FloatArray>> {
+        fun inside(p: FloatArray, loop: List<FloatArray>) = pointInPolygon(p[0], p[1], loop.map { it[0] }, loop.map { it[1] })
+        val depth = loops.map { l -> loops.count { o -> o !== l && o.size >= 3 && inside(l[0], o) } }
+        val outers = loops.indices.filter { depth[it] % 2 == 0 }.associateWith { ArrayList(loops[it]) }
+        for (h in loops.indices) {
+            if (depth[h] % 2 == 0) continue
+            // the enclosing outer: the one containing the hole one level up
+            val o = outers.keys.firstOrNull { depth[it] == depth[h] - 1 && inside(loops[h][0], loops[it]) } ?: continue
+            val outer = outers.getValue(o); val hole = loops[h]
+            var bi = 0; var bj = 0; var best = Float.MAX_VALUE
+            for (i in outer.indices) for (j in hole.indices) {
+                val dx = outer[i][0] - hole[j][0]; val dy = outer[i][1] - hole[j][1]
+                if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; bi = i; bj = j }
+            }
+            val ring = hole.subList(bj, hole.size) + hole.subList(0, bj + 1)
+            outer.addAll(bi + 1, ring + listOf(outer[bi]))
+        }
+        return outers.values.toList()
+    }
+
     /** GPENCIL_OT_layer_add (above the active layer, keyed at the current frame), then named: one undo step. */
     fun createLayer(name:String):Boolean {
         history.beginBatch()
         val ok = layerOperator("GPENCIL_OT_layer_add")
         if (ok && name.isNotBlank()) native.renameLayer(selectedLayer, name)
-        if (ok) { history.markEdit(); animation.initialize(); render() }
+        if (ok) { history.markEdit(); animation.refresh(); render() }
         history.endBatch()
         return ok
     }
@@ -3123,7 +3158,7 @@ class EditorController {
         val ok = native.selectLayer(index)
         if (ok) {
             selectedLayer = index
-            animation.initialize()
+            animation.refresh()
             render()
         }
         return ok
@@ -3223,10 +3258,11 @@ class EditorController {
         val press = if (eraserUsePressure) pressure.coerceIn(0.01f, 1f) else 1f
         val mode = when (eraserMode) { EraserMode.HARD -> 0; EraserMode.SOFT -> 1; EraserMode.STROKE -> 2 }
         val fills = pixelEraseFills && mode != 2
+        if (recordHistory) lockHoldouts(true)
         val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode or (if (fills) 8 else 0),
             eraserDrawStrength, press, eraStrength, eraThickness)
         erasePath.add(x); erasePath.add(y); erasePath.add(radius * press)
-        if (recordHistory) eraseFillsAlongPath() // a single tap
+        if (recordHistory) { eraseFillsAlongPath(); lockHoldouts(false) } // a single tap
         android.util.Log.d("PGErase", "erase x=$x y=$y r=${radius * press} mode=$mode -> $ok")
         val photo = eraseOnPhotos && erasePhotosAt(x, y, radius * press)
         if (photo && recordHistory) commitPhotoEdits() // a single tap: saved with this undo step
@@ -3245,7 +3281,7 @@ class EditorController {
     }
     /** Starts an erase drag: Blender's modal GPENCIL_OT_draw in eraser mode (cancels a running paint operator). */
     fun beginErase() {
-        autokeyHeld(); erasePath.clear()
+        autokeyHeld(); erasePath.clear(); lockHoldouts(true)
         if (native.handle != 0L) { runCatching { GPNative.nativeTakeEraseFillHits() }; GPNative.nativeEraseModal(native.handle, 0, false) }
     }
     /** When the gesture touched a fill: one holdout stroke along the eraser path (as wide as the eraser)
@@ -3271,6 +3307,26 @@ class EditorController {
         if (ok) { eraseGestureChanged = true; document.markDirty(); render() }
         return ok
     }
+    /**
+     * The eraser marks (and lasso holes) are strokes too, so Blender's eraser deleted them on the next
+     * swipe and the erased part came back. While erasing their materials are locked (the eraser skips
+     * locked materials, ED_gpencil_stroke_material_editable).
+     */
+    private var lockedHoldouts: List<Int> = emptyList()
+    private fun lockHoldouts(lock: Boolean) {
+        if (native.handle == 0L) return
+        if (lock) {
+            if (lockedHoldouts.isNotEmpty()) return
+            lockedHoldouts = (0 until native.materialCount()).filter { i ->
+                val n = native.materialName(i)
+                (n == HOLDOUT_MATERIAL || n == CUTTER_MATERIAL) && materialRecord(i)?.locked == false
+            }
+            for (i in lockedHoldouts) materialRecord(i)?.let { r -> ProjectGreaseSelect.materialFlags(i, true, !r.visible).let { native.applyEditCommand(it.id, it.args) } }
+        } else {
+            for (i in lockedHoldouts) materialRecord(i)?.let { r -> ProjectGreaseSelect.materialFlags(i, false, !r.visible).let { native.applyEditCommand(it.id, it.args) } }
+            lockedHoldouts = emptyList()
+        }
+    }
     /** The eraser's material: line shown, holdout (GP_MATERIAL_IS_STROKE_HOLDOUT), found or made. */
     private fun holdoutMaterialSlot():Int? {
         val count = native.materialCount()
@@ -3286,6 +3342,7 @@ class EditorController {
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
         val filled = eraseFillsAlongPath()
+        lockHoldouts(false)
         if (endPhotoErase()) { eraseGestureChanged = false; if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, true); return true }
         val changed = eraseGestureChanged || filled
         if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, changed)
@@ -3765,7 +3822,7 @@ class EditorController {
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
             reapplyOnion()
             restoreSelectedStroke()
-            animation.initialize()
+            animation.refresh()
             document.markDirty()
             render()
         }
@@ -3778,7 +3835,7 @@ class EditorController {
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
             reapplyOnion()
             restoreSelectedStroke()
-            animation.initialize()
+            animation.refresh()
             document.markDirty()
             render()
         }

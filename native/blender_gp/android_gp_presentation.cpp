@@ -1040,12 +1040,13 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
  * engine to draw each layer in its own pass. */
 // spare: the other texture of a ping-pong pair, so a new video frame never goes into the texture
 // the GPU is still drawing (Mali waited 40-150 ms for it on every frame step)
-struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
+struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0,exported=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
 constexpr int kRefSlots=16;
 RefSlot g_refs[kRefSlots];
 int g_ref_cur=0,g_ref_count=1;
 GLuint g_ref_prog=0, g_ref_vbo=0;
-bool slot_shown(const RefSlot&r){return r.visible&&r.tex&&r.w>0&&r.h>0&&!g_export_mode;}
+// a reference stays out of exports unless it is part of the animation (an imported video layer)
+bool slot_shown(const RefSlot&r){return r.visible&&r.tex&&r.w>0&&r.h>0&&(!g_export_mode||r.exported);}
 bool reference_shown(){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))return true;return false;}
 void draw_reference_slot(const RefSlot&r,int w,int h){
   if(!g_ref_prog){
@@ -1669,6 +1670,7 @@ extern "C" void project_grease_android_present_set_reference_transform(float dx,
   r.sx=std::clamp(sx,0.05f,20.0f);r.sy=std::clamp(sy,0.05f,20.0f);}
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
   RefSlot&r=g_refs[g_ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
+extern "C" void project_grease_android_present_set_reference_exported(int exported){g_refs[g_ref_cur].exported=exported?1:0;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_modes(int extend_mode,int layer_mode){g_fill_extend_mode=extend_mode==1?1:0;g_fill_layer_mode=std::clamp(layer_mode,0,5);}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}

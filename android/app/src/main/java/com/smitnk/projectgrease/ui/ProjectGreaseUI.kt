@@ -47,6 +47,8 @@ import com.smitnk.projectgrease.editor.EraserMode
 private val Accent = Color(0xFFE84F7B)
 private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
+/** The 3D reference / Line Art screen (OBJ + camera): off until it's wanted again. */
+private const val SHOW_3D_REFERENCE = false
 private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS, AUDIO, IMPORT_PHOTO, IMPORT_VIDEO, IMPORT_AUDIO }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
@@ -1355,7 +1357,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 @NonSkippableComposable
 @Composable private fun MoreSheet(controller:EditorController,onDismiss:()->Unit,onSettings:()->Unit,redraw:()->Unit,onReference:()->Unit){
     ModalBottomSheet(onDismissRequest=onDismiss){Column(Modifier.verticalScroll(rememberScrollState())){Text("Edit actions",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
-        ListItem(headlineContent={Text("3D reference (Line Art)")},supportingContent={Text("Import OBJ meshes and set the camera Line Art will use")},modifier=Modifier.clickable{onReference()})
+        if(SHOW_3D_REFERENCE) ListItem(headlineContent={Text("3D reference (Line Art)")},supportingContent={Text("Import OBJ meshes and set the camera Line Art will use")},modifier=Modifier.clickable{onReference()})
         SelectionActionsPanel(controller,redraw)
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()})
         Spacer(Modifier.height(20.dp))
@@ -1511,6 +1513,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         // canvas overlays turn with the two-finger view rotation (about the viewport centre)
         Box(Modifier.fillMaxSize().graphicsLayer{rotationZ=Math.toDegrees(controller.view.rotation.toDouble()).toFloat()}){
             DrawingGuidesOverlay(controller)
+            PerspectiveOverlay(controller,overlayTick+refresh)
             if(controller.tools.activeTool==GreaseTool.FILL) FillHelpOverlay(controller,overlayTick+refresh)
             LassoPathOverlay(controller)
             ReferenceOverlay(controller,refresh)
@@ -1552,6 +1555,17 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     .border(2.dp,MaterialTheme.colorScheme.outline,CircleShape)
                     .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
                 ToolbarButton(Icons.Default.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
+                // one-point perspective: Blender's radial guide on/off, its vanishing point at the canvas centre at first
+                ToolbarButton(Icons.Default.Architecture,"Perspective",controller.view.guideType==1){
+                    val v=controller.view
+                    if(v.guideType==1) v.setDrawingGuide(-1)
+                    else {
+                        val cw=controller.document.canvasWidth.toFloat(); val ch=controller.document.canvasHeight.toFloat()
+                        val inside=v.guideCenterX in 0f..cw && v.guideCenterY in 0f..ch
+                        v.setDrawingGuide(1, if(inside) v.guideCenterX else cw/2f, if(inside) v.guideCenterY else ch/2f)
+                    }
+                    com.smitnk.projectgrease.CrashLog.event("PERSPECTIVE guide ${if(v.guideType==1) "on" else "off"} at ${v.guideCenterX.toInt()},${v.guideCenterY.toInt()}")
+                    controller.render();redraw()}
                 IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
                 IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
                 // quick Copy / Paste: the selection, or the whole frame when nothing is selected
@@ -1855,7 +1869,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             item(Icons.Default.MusicNote,"Import audio","Pick audio files, trim them, place them on the timeline","importAudio"){onSheet(Sheet.IMPORT_AUDIO)}
             item(Icons.Default.PhotoLibrary,"Photos & videos","The imported photos and videos: box, frames, opacity, copy / paste","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
             item(Icons.Default.GraphicEq,"Audio tracks","Tracks with waveforms: move, trim, split, duplicate, volume, mute, lock","audio"){onSheet(Sheet.AUDIO)}
-            item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
+            // 3D reference (Line Art) is switched off for now: set SHOW_3D_REFERENCE to bring it back
+            if(SHOW_3D_REFERENCE) item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
             item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
             val context=LocalContext.current
             var crash by remember{mutableStateOf<String?>(null)}

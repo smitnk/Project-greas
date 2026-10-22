@@ -254,7 +254,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
                         if (event.eventTime >= controller.lastFillEndMs) {
-                            controller.fillAt(event.x, event.y)
+                            canvasPoint(event.x, event.y).let { c -> controller.fillAt(event.x, event.y, c.first, c.second) }
                             controller.render()
                         }
                     }

@@ -30,6 +30,7 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_set_view_rotation(float radians);
 extern "C" int project_grease_android_present_set_reference(const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
+extern "C" void project_grease_android_present_set_reference_exported(int exported);
 extern "C" void project_grease_android_present_select_reference(int slot, int count);
 extern "C" void project_grease_android_present_set_reference_transform(float dx, float dy, float scale, float rot, float sx, float sy);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
@@ -895,6 +896,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceStyleEglRe
     JNIEnv *, jobject, jlong handle, jboolean visible, jfloat opacity)
 {
   if (from_handle(handle)) project_grease_android_present_set_reference_style(visible ? 1 : 0, opacity);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetReferenceExportedEglRenderer(
+    JNIEnv *, jobject, jlong handle, jboolean exported)
+{
+  if (from_handle(handle)) project_grease_android_present_set_reference_exported(exported ? 1 : 0);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

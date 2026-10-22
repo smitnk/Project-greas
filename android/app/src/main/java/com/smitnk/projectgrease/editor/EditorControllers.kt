@@ -1367,7 +1367,8 @@ class EditorController {
         rotoscope.onFrames.clear(); if (on) rotoscope.onFrames.add(animation.currentFrame); rotoscopeChanged()
     }
     /** Uploads each reference image of the current frame when it changed, in layer order. */
-    private fun syncRotoscope() {
+    /** [blocking]: decode video frames now (export) instead of in the background. */
+    private fun syncRotoscope(blocking:Boolean = false) {
         if (rendererHandle == 0L) return
         val layerCount = native.layerCount()
         val names = (0 until layerCount).map { native.layerName(it) }
@@ -1378,10 +1379,10 @@ class EditorController {
             GPNative.nativeSelectReferenceSlot(rendererHandle, slot, ordered.size)
             val li = order(r)
             val layerShown = li < 0 || (native.layerInfo(li)?.getOrNull(0) ?: 1f) != 0f
-            syncReference(r, layerShown, slot)
+            syncReference(r, layerShown, slot, blocking)
         }
     }
-    private fun syncReference(rotoscope: Rotoscope, layerShown: Boolean, slot: Int) {
+    private fun syncReference(rotoscope: Rotoscope, layerShown: Boolean, slot: Int, blocking: Boolean = false) {
         val n = if (rotoscope.visible && layerShown) rotoscope.imageFrame(animation.currentFrame) else 0
         val key = if (n == 0) "" else rotoscope.kind.name + rotoscope.uris.hashCode() + ":" + n
         // native slots follow layer order, so after a reorder the slot holds another image
@@ -1392,7 +1393,7 @@ class EditorController {
             val loader = rotoscopeLoader
             val img = when {
                 n == 0 || loader == null -> null
-                rotoscope.kind == Rotoscope.Kind.IMAGE -> loader.frame(rotoscope, n)
+                rotoscope.kind == Rotoscope.Kind.IMAGE || blocking -> loader.frame(rotoscope, n)
                 else -> loader.cached(rotoscope, n).also {
                     if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown[rotoscope] != slotKey) render() }
                     loader.prefetch(rotoscope, n + 1, 3)
@@ -1413,6 +1414,7 @@ class EditorController {
         }
         GPNative.nativeSetReferenceTransform(rendererHandle, rotoscope.dx, rotoscope.dy, rotoscope.scale, rotoscope.rotation, rotoscope.stretchX, rotoscope.stretchY)
         GPNative.nativeSetReferenceStyleEglRenderer(rendererHandle, n != 0 && rotoscopeShown.containsKey(rotoscope), rotoscope.opacity)
+        GPNative.nativeSetReferenceExportedEglRenderer(rendererHandle, rotoscope.inExport)
     }
 
     /** The UI re-reads controller state (a colour picked on the canvas changes the swatch). */
@@ -2161,6 +2163,7 @@ class EditorController {
             // Frame Step: every Nth frame is rendered and held for the frames in between
             if (step > 1 && index % step != 0 && held != null) { sink(item, held.copyOf()); continue }
             native.selectFrameOrHold(item.frame)
+            animation.setFrame(item.frame); syncRotoscope(blocking = true) // video layers: this frame's picture
             val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent || s.transparentBackground)
             if (px == null || px.size != document.canvasWidth * document.canvasHeight) { ok = false; break }
             if (!(transparent || s.transparentBackground)) {
@@ -2412,7 +2415,8 @@ class EditorController {
      *  start another full-screen fill and the waits add up to a freeze). */
     var lastFillEndMs = 0L
         private set
-    fun fillAt(x: Float, y: Float): Boolean {
+    /** [cx], [cy]: the tap in canvas units, for recolouring a fill already there when no new area is found. */
+    fun fillAt(x: Float, y: Float, cx: Float = Float.NaN, cy: Float = Float.NaN): Boolean {
         if (rendererHandle == 0L || !activeLayerEditable()) return false
         val slot = fillMaterialSlot() ?: return false
         GPNative.nativeSetFillOptionsEglRenderer(rendererHandle, fillLeak, fillDilate, fillBoundary)
@@ -2442,7 +2446,11 @@ class EditorController {
                 noteIfSlow("fill ok=$ok", t0, t0)
                 com.smitnk.projectgrease.CrashLog.event("FILL at %.0f,%.0f slot $slot -> ok=$ok in ${(System.nanoTime() - t0) / 1_000_000} ms (capture $captureMs ms, outline $computeMs ms in the background)".format(x, y))
                 lastFillEndMs = android.os.SystemClock.uptimeMillis()
-                if (!ok) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
+                // Blender's fill sees an existing fill as boundary: tapping one again failed every time.
+                // Like a paint bucket, it now takes the new colour instead.
+                val recoloured = !ok && cx.isFinite() && recolorFillAt(cx, cy, slot)
+                if (!ok && !recoloured) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
+                if (recoloured) { history.markEdit(); document.markDirty() }
                 if (ok) { history.markEdit(); document.markDirty() }
                 render()
             }
@@ -2450,6 +2458,36 @@ class EditorController {
         return true
     }
     private var fillRunning = false
+    /** The topmost fill-only stroke (a Fill material) around canvas (x, y) gets material [slot]
+     *  (GPENCIL_OT_stroke_change_color on just that stroke); false when the tap is on none. */
+    private fun recolorFillAt(x: Float, y: Float, slot: Int): Boolean {
+        var hit = -1
+        for (i in native.strokeCount() - 1 downTo 0) {
+            val info = native.strokeInfo(i) ?: continue
+            val mat = info[0].toInt()
+            if (mat == slot || native.materialName(mat)?.startsWith("Fill") != true) continue
+            val xs = ArrayList<Float>(); val ys = ArrayList<Float>()
+            var k = 0
+            while (k < 20000) { val p = native.getPoint(i, k) ?: break; xs.add(p[0]); ys.add(p[1]); k++ }
+            if (xs.size >= 3 && pointInPolygon(x, y, xs, ys)) { hit = i; break }
+        }
+        if (hit < 0) return false
+        GPNative.nativeClearSelection(native.handle)
+        if (!native.selectStroke(hit)) return false
+        val r = GPNative.nativeOperatorCall(native.handle, "GPENCIL_OT_stroke_change_color", animation.currentFrame, slot + 1, FloatArray(0))
+        GPNative.nativeClearSelection(native.handle)
+        val ok = (r and 0xff) and 4 != 0
+        com.smitnk.projectgrease.CrashLog.event("FILL recolour stroke $hit to slot $slot -> $ok")
+        return ok
+    }
+    private fun pointInPolygon(x: Float, y: Float, xs: List<Float>, ys: List<Float>): Boolean {
+        var inside = false; var j = xs.size - 1
+        for (i in xs.indices) {
+            if ((ys[i] > y) != (ys[j] > y) && x < (xs[j] - xs[i]) * (y - ys[i]) / (ys[j] - ys[i]) + xs[i]) inside = !inside
+            j = i
+        }
+        return inside
+    }
     private val fillWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 

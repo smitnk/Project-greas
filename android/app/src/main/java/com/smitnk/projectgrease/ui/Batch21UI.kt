@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -913,5 +914,42 @@ fun VertexPaletteBar(controller: EditorController, redraw: () -> Unit) {
         }
         TextButton(onClick = { controller.addPaletteColor(); redraw() }, modifier = Modifier.testTag("paletteAdd")) { Text("+ colour", fontSize = 10.sp) }
         TextButton(onClick = { controller.extractPaletteFromVertexColors(); redraw() }, modifier = Modifier.testTag("paletteExtract")) { Text("From drawing", fontSize = 10.sp) }
+    }
+}
+
+/** Perspective (Blender's radial drawing guide, GP_GUIDE_RADIAL: strokes snap to lines through one
+ *  point = one-point perspective). Faint lines from the vanishing point; drag the dot to move it. */
+@Composable
+fun PerspectiveOverlay(controller: EditorController, tick: Int) {
+    val v = controller.view
+    if (v.guideType != 1) return
+    @Suppress("UNUSED_VARIABLE") val observed = tick
+    var local by remember { mutableIntStateOf(0) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val w = constraints.maxWidth.toFloat(); val h = constraints.maxHeight.toFloat()
+        @Suppress("UNUSED_VARIABLE") val l = local
+        val vp = OverlayMap(w, h, controller).screen(v.guideCenterX to v.guideCenterY)
+        Canvas(Modifier.fillMaxSize()) {
+            @Suppress("UNUSED_VARIABLE") val l2 = local
+            val reach = size.width + size.height
+            for (k in 0 until 24) {
+                val a = (k * 15.0) * Math.PI / 180.0
+                drawLine(Color(0x55E84F7B), vp, Offset(vp.x + (reach * kotlin.math.cos(a)).toFloat(), vp.y + (reach * kotlin.math.sin(a)).toFloat()), 1.2f)
+            }
+            drawCircle(Color.Black, 16f, vp); drawCircle(Color(0xFFE84F7B), 12f, vp)
+        }
+        // only the dot takes touches, so drawing elsewhere goes to the canvas
+        val d = with(LocalDensity.current) { 48.dp.toPx() }
+        Box(Modifier.offset { androidx.compose.ui.unit.IntOffset((vp.x - d / 2).toInt(), (vp.y - d / 2).toInt()) }.size(48.dp)
+            .testTag("perspectiveVanishingPoint")
+            .pointerInput(Unit) {
+                detectDragGestures(onDragEnd = { controller.render() }) { change, drag ->
+                    change.consume()
+                    val m = OverlayMap(w, h, controller)
+                    val dd = m.delta(drag.x, drag.y)
+                    v.setDrawingGuide(1, v.guideCenterX + dd.first, v.guideCenterY + dd.second)
+                    local++
+                }
+            })
     }
 }

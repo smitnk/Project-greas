@@ -1877,6 +1877,16 @@ static bool pg_stroke_fill_only(const bGPdata *gpd, const bGPDstroke *gps)
   return st && (st->flag & GP_MATERIAL_FILL_SHOW) && gps->totpoints >= 3;
 }
 
+/* Strokes the eraser leaves alone: Blender skips locked / hidden materials
+ * (ED_gpencil_stroke_material_editable); the app's eraser marks and lasso holes are holdout strokes,
+ * and erasing them brought back what had been erased. */
+static bool pg_stroke_not_erasable(const bGPdata *gpd, const bGPDstroke *gps)
+{
+  if (!gpd || !gps || gps->mat_nr < 0 || gps->mat_nr >= gpd->totcol || !gpd->mat || !gpd->mat[gps->mat_nr]) return false;
+  const MaterialGPencilStyle *st = gpd->mat[gps->mat_nr]->gp_style;
+  return st && (st->flag & (GP_MATERIAL_LOCKED | GP_MATERIAL_HIDE | GP_MATERIAL_IS_STROKE_HOLDOUT | GP_MATERIAL_IS_FILL_HOLDOUT));
+}
+
 /* The eraser circle touches the fill: its centre inside the outline, or an outline point within reach. */
 static bool pg_circle_hits_fill(const bGPDstroke *gps, float x, float y, float r)
 {
@@ -1916,6 +1926,7 @@ bool Backend::erase(float x, float y, float radius, int mode, float draw_strengt
            static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;) {
     bGPDstroke *next = stroke->next;
+    if (pg_stroke_not_erasable(impl_->gpd, stroke)) { stroke = next; continue; }
     // ADAPTED (pixel eraser): a fill-only stroke (Fill tool) keeps its outline points (deleting them
     // closed the fill with straight cuts); the app erases it with a holdout stroke along the path.
     if (fills_holdout && pg_stroke_fill_only(impl_->gpd, stroke)) {

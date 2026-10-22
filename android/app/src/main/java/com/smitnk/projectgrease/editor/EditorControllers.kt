@@ -3258,11 +3258,11 @@ class EditorController {
         val press = if (eraserUsePressure) pressure.coerceIn(0.01f, 1f) else 1f
         val mode = when (eraserMode) { EraserMode.HARD -> 0; EraserMode.SOFT -> 1; EraserMode.STROKE -> 2 }
         val fills = pixelEraseFills && mode != 2
-        if (recordHistory) lockHoldouts(true)
         val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode or (if (fills) 8 else 0),
             eraserDrawStrength, press, eraStrength, eraThickness)
         erasePath.add(x); erasePath.add(y); erasePath.add(radius * press)
-        if (recordHistory) { eraseFillsAlongPath(); lockHoldouts(false) } // a single tap
+        if (recordHistory) eraseFillsAlongPath() // a single tap
+        else if (erasePath.size >= 3 * 8) eraseFillsAlongPath(live = true) // during a drag: erase the fill as the finger goes
         android.util.Log.d("PGErase", "erase x=$x y=$y r=${radius * press} mode=$mode -> $ok")
         val photo = eraseOnPhotos && erasePhotosAt(x, y, radius * press)
         if (photo && recordHistory) commitPhotoEdits() // a single tap: saved with this undo step
@@ -3281,15 +3281,24 @@ class EditorController {
     }
     /** Starts an erase drag: Blender's modal GPENCIL_OT_draw in eraser mode (cancels a running paint operator). */
     fun beginErase() {
-        autokeyHeld(); erasePath.clear(); lockHoldouts(true)
+        autokeyHeld(); erasePath.clear(); eraseGestureSamples = 0; eraseGestureHits = 0
         if (native.handle != 0L) { runCatching { GPNative.nativeTakeEraseFillHits() }; GPNative.nativeEraseModal(native.handle, 0, false) }
     }
     /** When the gesture touched a fill: one holdout stroke along the eraser path (as wide as the eraser)
      *  on this layer, so the fills under it turn transparent there. Clears the path. */
-    private fun eraseFillsAlongPath():Boolean {
+    private var eraseGestureSamples = 0
+    private var eraseGestureHits = 0
+    private var eraseGestureFilled = false
+    private fun eraseFillsAlongPath(live: Boolean = false):Boolean {
         val path = erasePath.toFloatArray(); erasePath.clear()
+        // a live chunk keeps its last sample so the next chunk joins it without a gap
+        if (live && path.size >= 3) for (k in path.size - 3 until path.size) erasePath.add(path[k])
         val hits = if (native.handle == 0L) 0 else runCatching { GPNative.nativeTakeEraseFillHits() }.getOrElse { com.smitnk.projectgrease.CrashLog.event("ERASE fill hits unavailable: $it"); 0 }
-        if (path.isNotEmpty()) com.smitnk.projectgrease.CrashLog.event("ERASE gesture: ${path.size / 3} samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $hits")
+        eraseGestureSamples += path.size / 3; eraseGestureHits += hits
+        if (!live && path.isNotEmpty()) {
+            com.smitnk.projectgrease.CrashLog.event("ERASE gesture: $eraseGestureSamples samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $eraseGestureHits")
+            eraseGestureSamples = 0; eraseGestureHits = 0
+        }
         if (native.handle == 0L || hits <= 0 || path.size < 3) return false
         val slot = holdoutMaterialSlot() ?: return false
         val n = path.size / 3
@@ -3303,29 +3312,9 @@ class EditorController {
         }
         val info = floatArrayOf(slot.toFloat(), radius * 2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f)
         val ok = native.addStroke(pts, n, info, colors)
-        com.smitnk.projectgrease.CrashLog.event("ERASE fills: holdout stroke of $n points, width ${(radius * 2).toInt()} -> $ok")
-        if (ok) { eraseGestureChanged = true; document.markDirty(); render() }
+        if (!ok) com.smitnk.projectgrease.CrashLog.event("ERASE fills: holdout stroke of $n points, width ${(radius * 2).toInt()} failed")
+        if (ok) { eraseGestureChanged = true; if (live) eraseGestureFilled = true; document.markDirty(); render() }
         return ok
-    }
-    /**
-     * The eraser marks (and lasso holes) are strokes too, so Blender's eraser deleted them on the next
-     * swipe and the erased part came back. While erasing their materials are locked (the eraser skips
-     * locked materials, ED_gpencil_stroke_material_editable).
-     */
-    private var lockedHoldouts: List<Int> = emptyList()
-    private fun lockHoldouts(lock: Boolean) {
-        if (native.handle == 0L) return
-        if (lock) {
-            if (lockedHoldouts.isNotEmpty()) return
-            lockedHoldouts = (0 until native.materialCount()).filter { i ->
-                val n = native.materialName(i)
-                (n == HOLDOUT_MATERIAL || n == CUTTER_MATERIAL) && materialRecord(i)?.locked == false
-            }
-            for (i in lockedHoldouts) materialRecord(i)?.let { r -> ProjectGreaseSelect.materialFlags(i, true, !r.visible).let { native.applyEditCommand(it.id, it.args) } }
-        } else {
-            for (i in lockedHoldouts) materialRecord(i)?.let { r -> ProjectGreaseSelect.materialFlags(i, false, !r.visible).let { native.applyEditCommand(it.id, it.args) } }
-            lockedHoldouts = emptyList()
-        }
     }
     /** The eraser's material: line shown, holdout (GP_MATERIAL_IS_STROKE_HOLDOUT), found or made. */
     private fun holdoutMaterialSlot():Int? {
@@ -3341,8 +3330,8 @@ class EditorController {
     }
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
-        val filled = eraseFillsAlongPath()
-        lockHoldouts(false)
+        val filled = eraseFillsAlongPath() || eraseGestureFilled
+        eraseGestureFilled = false
         if (endPhotoErase()) { eraseGestureChanged = false; if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, true); return true }
         val changed = eraseGestureChanged || filled
         if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, changed)

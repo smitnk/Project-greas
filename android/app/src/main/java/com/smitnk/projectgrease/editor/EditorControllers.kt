@@ -737,6 +737,8 @@ class ToolController {
     }
 }
 
+private const val HOLDOUT_MATERIAL = "Eraser (holdout)"
+
 class EditorController {
     private val native = NativeEditorBridge()
     /** The native GP document handle (tests, diagnostics). */
@@ -1187,6 +1189,11 @@ class EditorController {
     }.filter { it.pixW > 0 }.reversed()
     /** The eraser also erases photos (Eraser options). */
     var eraseOnPhotos by androidx.compose.runtime.mutableStateOf(false)
+    /** Fills are erased where the finger goes (a holdout stroke along the path, Blender's holdout
+     *  material) instead of losing outline points, which closed the fill with straight cuts. */
+    var pixelEraseFills by androidx.compose.runtime.mutableStateOf(true)
+    /** The eraser path of this gesture (x, y, radius), for the holdout stroke. */
+    private val erasePath = ArrayList<Float>()
     private val photoEditBuffers = HashMap<Rotoscope, Triple<IntArray, Int, Int>>()
     /** Clears a circle of [radius] (canvas units) at (x, y) from every photo shown here. */
     fun erasePhotosAt(x:Float, y:Float, radius:Float):Boolean {
@@ -3036,8 +3043,11 @@ class EditorController {
     fun eraseAt(x:Float, y:Float, radius:Float, recordHistory:Boolean = true, pressure:Float = 1f):Boolean {
         val press = if (eraserUsePressure) pressure.coerceIn(0.01f, 1f) else 1f
         val mode = when (eraserMode) { EraserMode.HARD -> 0; EraserMode.SOFT -> 1; EraserMode.STROKE -> 2 }
+        if (native.handle != 0L) runCatching { GPNative.nativeSetEraseFillsHoldout(pixelEraseFills && mode != 2) }
         val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode,
             eraserDrawStrength, press, eraStrength, eraThickness)
+        erasePath.add(x); erasePath.add(y); erasePath.add(radius * press)
+        if (recordHistory) eraseFillsAlongPath() // a single tap
         android.util.Log.d("PGErase", "erase x=$x y=$y r=${radius * press} mode=$mode -> $ok")
         val photo = eraseOnPhotos && erasePhotosAt(x, y, radius * press)
         if (photo && recordHistory) commitPhotoEdits() // a single tap: saved with this undo step
@@ -3055,11 +3065,48 @@ class EditorController {
         return ok
     }
     /** Starts an erase drag: Blender's modal GPENCIL_OT_draw in eraser mode (cancels a running paint operator). */
-    fun beginErase() { autokeyHeld(); if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 0, false) }
+    fun beginErase() {
+        autokeyHeld(); erasePath.clear()
+        if (native.handle != 0L) { runCatching { GPNative.nativeTakeEraseFillHits() }; GPNative.nativeEraseModal(native.handle, 0, false) }
+    }
+    /** When the gesture touched a fill: one holdout stroke along the eraser path (as wide as the eraser)
+     *  on this layer, so the fills under it turn transparent there. Clears the path. */
+    private fun eraseFillsAlongPath():Boolean {
+        val path = erasePath.toFloatArray(); erasePath.clear()
+        if (native.handle == 0L || runCatching { GPNative.nativeTakeEraseFillHits() }.getOrDefault(0) <= 0 || path.size < 3) return false
+        val slot = holdoutMaterialSlot() ?: return false
+        val n = path.size / 3
+        val radius = (0 until n).maxOf { path[3 * it + 2] }
+        val pts = FloatArray(n * 6)
+        val colors = FloatArray(n * 4)
+        for (i in 0 until n) {
+            pts[6 * i] = path[3 * i]; pts[6 * i + 1] = path[3 * i + 1]
+            pts[6 * i + 3] = (path[3 * i + 2] / radius).coerceIn(0.05f, 1f) // pressure: the eraser size here
+            pts[6 * i + 4] = 1f
+        }
+        val info = floatArrayOf(slot.toFloat(), radius * 2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f)
+        val ok = native.addStroke(pts, n, info, colors)
+        com.smitnk.projectgrease.CrashLog.event("ERASE fills: holdout stroke of $n points, width ${(radius * 2).toInt()} -> $ok")
+        if (ok) { eraseGestureChanged = true; document.markDirty(); render() }
+        return ok
+    }
+    /** The eraser's material: line shown, holdout (GP_MATERIAL_IS_STROKE_HOLDOUT), found or made. */
+    private fun holdoutMaterialSlot():Int? {
+        val count = native.materialCount()
+        for (i in 0 until count) if (native.materialName(i) == HOLDOUT_MATERIAL) return i
+        if (!native.createMaterial()) return null
+        native.setMaterialColors(count, floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 0f, 0f, 1f))
+        native.setMaterialStrokeEnabled(count, true)
+        native.setMaterialFillEnabled(count, false)
+        native.setMaterialName(count, HOLDOUT_MATERIAL)
+        setMaterialOptions(count, strokeHoldout = true, fillHoldout = false, selfOverlap = false)
+        return count
+    }
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
+        val filled = eraseFillsAlongPath()
         if (endPhotoErase()) { eraseGestureChanged = false; if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, true); return true }
-        val changed = eraseGestureChanged
+        val changed = eraseGestureChanged || filled
         if (native.handle != 0L) GPNative.nativeEraseModal(native.handle, 2, changed)
         if (changed) history.markEdit()
         eraseGestureChanged = false

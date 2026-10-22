@@ -52,6 +52,8 @@ static void fresh(Backend &b)
   CHECK(b.reset_document() && b.create_layer("A") && b.create_frame(1));
 }
 
+namespace project_grease::gp { extern int pg_erase_fills_holdout; extern int pg_erase_fill_hits; }
+
 int main()
 {
   Backend b;
@@ -97,5 +99,17 @@ int main()
   CHECK(!b.erase(NAN, 100, 20, 0, 1, 1, 1, 1));
 
   std::printf(failures ? "%d FAILURES\n" : "backend eraser tests passed\n", failures);
+  /* Pixel eraser for fills: a fill-only stroke keeps all its points; the touch is counted */
+  fresh(b);
+  line(b, 100);
+  CHECK(b.set_material_fill_enabled(0, true) && b.set_material_stroke_enabled(0, false));
+  project_grease::gp::pg_erase_fills_holdout = 1; project_grease::gp::pg_erase_fill_hits = 0;
+  CHECK(b.erase(150, 100, 20, 0, 1, 1, 1, 1));
+  CHECK(b.stroke_count() == 1 && points_of(b, 0) == 101);
+  CHECK(project_grease::gp::pg_erase_fill_hits == 1);
+  CHECK(!b.erase(150, 400, 20, 0, 1, 1, 1, 1)); /* far away: nothing */
+  project_grease::gp::pg_erase_fills_holdout = 0;
+  CHECK(b.erase(150, 100, 20, 0, 1, 1, 1, 1) && b.stroke_count() == 2); /* off: Blender's point eraser */
+
   return failures ? 1 : 0;
 }

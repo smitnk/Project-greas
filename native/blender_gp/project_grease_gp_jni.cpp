@@ -1063,6 +1063,22 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetSceneRange(JNIEnv *
   pg_mod_set_scene_range(sfra, efra);
 }
 
+namespace project_grease::gp { extern int pg_erase_fills_holdout; extern int pg_erase_fill_hits; }
+/* Pixel eraser for fills: on, the eraser leaves fill-only strokes alone and counts the touches. */
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetEraseFillsHoldout(JNIEnv *, jobject, jboolean on)
+{
+  project_grease::gp::pg_erase_fills_holdout = on ? 1 : 0;
+}
+/* Touches of fills since the last call (reset). */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTakeEraseFillHits(JNIEnv *, jobject)
+{
+  const int n = project_grease::gp::pg_erase_fill_hits;
+  project_grease::gp::pg_erase_fill_hits = 0;
+  return n;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAutokeyHeld(JNIEnv *, jobject, jlong handle, jint cfra)
 {

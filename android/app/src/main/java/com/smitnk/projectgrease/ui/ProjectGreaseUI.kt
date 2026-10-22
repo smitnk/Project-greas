@@ -696,6 +696,9 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     // not in Blender (its eraser only erases strokes): also erase the photos under it
                     FilterChip(selected=controller.eraseOnPhotos,onClick={controller.eraseOnPhotos=!controller.eraseOnPhotos;redraw()},
                         label={Text("Erase photos too",fontSize=10.sp)},modifier=Modifier.padding(end=3.dp).testTag("eraseOnPhotos"))
+                    // fills: erase where the finger goes (holdout stroke) instead of deleting the fill's outline points
+                    FilterChip(selected=controller.pixelEraseFills,onClick={controller.pixelEraseFills=!controller.pixelEraseFills;redraw()},
+                        label={Text("Erase fills like paint",fontSize=10.sp)},modifier=Modifier.padding(end=3.dp).testTag("pixelEraseFills"))
                 }
             }
             Row(

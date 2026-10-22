@@ -1856,6 +1856,30 @@ bool Backend::soft_erase_at(float x, float y, float radius, float strength)
 // (the caller converts Blender's screen-pixel size and applies the pressure scale); pressure is the
 // influence pressure (1 when the brush does not use pressure); era_* are era_strength_f / 100 and
 // era_thickness_f / 100.
+int pg_erase_fills_holdout = 0;
+int pg_erase_fill_hits = 0;
+
+/* Fill tool output: the material shows the fill and hides the line. */
+static bool pg_stroke_fill_only(const bGPdata *gpd, const bGPDstroke *gps)
+{
+  if (!gpd || !gps || gps->mat_nr < 0 || gps->mat_nr >= gpd->totcol || !gpd->mat || !gpd->mat[gps->mat_nr]) return false;
+  const MaterialGPencilStyle *st = gpd->mat[gps->mat_nr]->gp_style;
+  return st && (st->flag & GP_MATERIAL_FILL_SHOW) && !(st->flag & GP_MATERIAL_STROKE_SHOW);
+}
+
+/* The eraser circle touches the fill: its centre inside the outline, or an outline point within reach. */
+static bool pg_circle_hits_fill(const bGPDstroke *gps, float x, float y, float r)
+{
+  bool inside = false;
+  const int n = gps->totpoints;
+  for (int i = 0, j = n - 1; i < n; j = i++) {
+    const bGPDspoint &a = gps->points[i], &b = gps->points[j];
+    if ((a.x - x) * (a.x - x) + (a.y - y) * (a.y - y) <= r * r) return true;
+    if (((a.y > y) != (b.y > y)) && (x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x)) inside = !inside;
+  }
+  return inside;
+}
+
 bool Backend::erase(float x, float y, float radius, int mode, float draw_strength, float pressure,
                     float era_strength, float era_thickness)
 {
@@ -1879,6 +1903,13 @@ bool Backend::erase(float x, float y, float radius, int mode, float draw_strengt
            static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;) {
     bGPDstroke *next = stroke->next;
+    // ADAPTED (pixel eraser): a fill-only stroke (Fill tool) keeps its outline points (deleting them
+    // closed the fill with straight cuts); the app erases it with a holdout stroke along the path.
+    if (pg_erase_fills_holdout && pg_stroke_fill_only(impl_->gpd, stroke)) {
+      if (pg_circle_hits_fill(stroke, x, y, radius)) { pg_erase_fill_hits++; changed = true; }
+      stroke = next;
+      continue;
+    }
     changed |= legacy_gp_eraser::process_stroke(
         impl_->gpd, impl_->frame, stroke, x, y, static_cast<int>(radius), settings);
     stroke = next;

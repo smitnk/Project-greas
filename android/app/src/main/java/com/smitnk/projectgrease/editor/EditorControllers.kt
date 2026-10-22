@@ -1908,7 +1908,8 @@ class EditorController {
         val props = FloatArray(2 + points.size * 2)
         props[0] = selectOp.toFloat(); props[1] = ProjectGreaseSelect.areaMode(activeSelectMode).toFloat()
         points.forEachIndexed { i, p -> props[2 + i * 2] = p.first; props[3 + i * 2] = p.second }
-        return runOperator("GPENCIL_OT_select_lasso", *props)
+        // the invisible eraser marks would be selected too (hundreds of orange dots)
+        return withFillsLocked(fills = false) { runOperator("GPENCIL_OT_select_lasso", *props) }
     }
 
     // ---- Blender 3.6.23 Legacy GP selection (native/blender_gp/project_grease_blender_select.c) ----
@@ -2538,12 +2539,15 @@ class EditorController {
         ProjectGreaseSelect.materialOptions(count, false, true, false).let { native.applyEditCommand(it.id, it.args) }
         return count
     }
-    /** Runs [block] with every fill material locked (Blender's cutter / delete skip locked materials), then unlocks them. */
-    private fun <T> withFillsLocked(block: () -> T): T {
+    /** Runs [block] with every fill material (with [fills]) and the eraser / lasso holdouts locked (Blender's
+     *  select, cutter and delete skip locked materials), then unlocks them. */
+    private fun <T> withFillsLocked(fills: Boolean = true, block: () -> T): T {
         val locked = ArrayList<Int>()
         for (i in 0 until native.materialCount()) {
             val r = materialRecord(i) ?: continue
-            if (!r.locked && (native.materialInfo(i)?.getOrNull(9) ?: 0f) > 0.5f) {
+            val name = native.materialName(i)
+            val holdout = name == HOLDOUT_MATERIAL || name == CUTTER_MATERIAL
+            if (!r.locked && (holdout || (fills && (native.materialInfo(i)?.getOrNull(9) ?: 0f) > 0.5f))) {
                 ProjectGreaseSelect.materialFlags(i, true, !r.visible).let { native.applyEditCommand(it.id, it.args) }; locked.add(i)
             }
         }
@@ -3301,14 +3305,21 @@ class EditorController {
         }
         if (native.handle == 0L || hits <= 0 || path.size < 3) return false
         val slot = holdoutMaterialSlot() ?: return false
-        val n = path.size / 3
-        val radius = (0 until n).maxOf { path[3 * it + 2] }
+        val radius = (0 until path.size / 3).maxOf { path[3 * it + 2] }
+        // samples closer than a tenth of the eraser are dropped: repeated points (finger held still)
+        // give zero-length segments, and such a holdout stroke wiped the whole drawing
+        val keep = ArrayList<Int>()
+        for (i in 0 until path.size / 3) {
+            val l = keep.lastOrNull()
+            if (l == null || Math.hypot((path[3 * i] - path[3 * l]).toDouble(), (path[3 * i + 1] - path[3 * l + 1]).toDouble()) >= radius * 0.1) keep.add(i)
+        }
+        val n = keep.size
         val pts = FloatArray(n * 6)
         val colors = FloatArray(n * 4)
-        for (i in 0 until n) {
-            pts[6 * i] = path[3 * i]; pts[6 * i + 1] = path[3 * i + 1]
-            pts[6 * i + 3] = (path[3 * i + 2] / radius).coerceIn(0.05f, 1f) // pressure: the eraser size here
-            pts[6 * i + 4] = 1f
+        for ((k, i) in keep.withIndex()) {
+            pts[6 * k] = path[3 * i]; pts[6 * k + 1] = path[3 * i + 1]
+            pts[6 * k + 3] = (path[3 * i + 2] / radius).coerceIn(0.05f, 1f) // pressure: the eraser size here
+            pts[6 * k + 4] = 1f
         }
         val info = floatArrayOf(slot.toFloat(), radius * 2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f)
         val ok = native.addStroke(pts, n, info, colors)

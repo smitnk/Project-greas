@@ -2018,7 +2018,7 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
            static_cast<bGPDstroke *>(impl_->frame->strokes.first);
        stroke != nullptr;
        stroke = stroke->next) {
-    if (!stroke->points || stroke->totpoints <= 0) {
+    if (!stroke->points || stroke->totpoints <= 0 || pg_stroke_not_erasable(impl_->gpd, stroke)) {
       continue;
     }
 

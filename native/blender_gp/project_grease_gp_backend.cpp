@@ -1859,12 +1859,13 @@ bool Backend::soft_erase_at(float x, float y, float radius, float strength)
 int pg_erase_fills_holdout = 0;
 int pg_erase_fill_hits = 0;
 
-/* Fill tool output: the material shows the fill and hides the line. */
+/* A stroke that shows a fill (Fill tool output, or a closed line with a fill): erasing its points
+ * reshapes the fill with straight cuts, so the eraser leaves it to the holdout stroke instead. */
 static bool pg_stroke_fill_only(const bGPdata *gpd, const bGPDstroke *gps)
 {
   if (!gpd || !gps || gps->mat_nr < 0 || gps->mat_nr >= gpd->totcol || !gpd->mat || !gpd->mat[gps->mat_nr]) return false;
   const MaterialGPencilStyle *st = gpd->mat[gps->mat_nr]->gp_style;
-  return st && (st->flag & GP_MATERIAL_FILL_SHOW) && !(st->flag & GP_MATERIAL_STROKE_SHOW);
+  return st && (st->flag & GP_MATERIAL_FILL_SHOW) && gps->totpoints >= 3;
 }
 
 /* The eraser circle touches the fill: its centre inside the outline, or an outline point within reach. */

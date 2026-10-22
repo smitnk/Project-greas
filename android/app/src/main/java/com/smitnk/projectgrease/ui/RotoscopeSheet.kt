@@ -28,8 +28,11 @@ class RotoscopeLoader(private val context: Context) {
     }
     private var retriever: MediaMetadataRetriever? = null
     private var retrieverUri: String? = null
+    private var exportRetriever: MediaMetadataRetriever? = null
+    private var exportUri: String? = null
 
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val MOVIE_SIZE = 640f
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val pending = java.util.Collections.synchronizedSet(HashSet<String>())
     private val failed = java.util.Collections.synchronizedSet(HashSet<String>())
@@ -49,9 +52,53 @@ class RotoscopeLoader(private val context: Context) {
             if (ok) main.post(done) else failed.add(k)
         }
     }
-    fun prefetch(r: Rotoscope, from: Int, count: Int) { for (n in from until from + count) decodeAsync(r, n) }
+    fun prefetch(r: Rotoscope, from: Int, count: Int) {
+        // a video: one batch decode of the next frames (the decoder runs on, instead of seeking per frame)
+        if (r.kind == Rotoscope.Kind.MOVIE && Build.VERSION.SDK_INT >= 28) {
+            val uri = r.uris.firstOrNull() ?: return
+            val first = (from until from + count).firstOrNull { it <= r.frames && cached(r, it) == null } ?: return
+            val n = minOf(count, r.frames - first + 1)
+            val k = "batch|$uri|$first"
+            if (n <= 0 || !pending.add(k)) return
+            worker.execute { try { movieBatch(uri, first, n) } catch (_: Throwable) {} finally { pending.remove(k) } }
+            return
+        }
+        for (n in from until from + count) decodeAsync(r, n)
+    }
+    /** Frames [first] .. [first]+[n]-1 of a video in one decoder pass (MediaMetadataRetriever.getFramesAtIndex). */
+    private fun movieBatch(uri: String, first: Int, n: Int) {
+        val mr = retriever?.takeIf { retrieverUri == uri } ?: MediaMetadataRetriever().also {
+            retriever?.release(); it.setDataSource(context, Uri.parse(uri)); retriever = it; retrieverUri = uri
+        }
+        val list = runCatching { mr.getFramesAtIndex(first - 1, n) }.getOrNull() ?: return
+        list.forEachIndexed { i, bmp -> synchronized(cache) { cache[key(Rotoscope.Kind.MOVIE, listOf(uri), first + i)] = small(bmp) } }
+    }
+    /** Video frames at most [MOVIE_SIZE] px: a picture under the drawing, uploaded every frame of playback. */
+    private fun small(bmp: Bitmap): Triple<IntArray, Int, Int> {
+        val s = minOf(1f, MOVIE_SIZE / maxOf(bmp.width, bmp.height).toFloat())
+        val b = if (s < 1f) Bitmap.createScaledBitmap(bmp, maxOf(1, (bmp.width * s).toInt()), maxOf(1, (bmp.height * s).toInt()), true) else bmp
+        val px = IntArray(b.width * b.height); b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
+        return Triple(px, b.width, b.height)
+    }
 
     fun frame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = decode(r.kind, r.uris.toList(), n)
+    /** For export: a video frame at up to 1280 px, not from (or into) the small playback cache. */
+    fun exportFrame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? {
+        if (r.kind != Rotoscope.Kind.MOVIE) return frame(r, n)
+        val uri = r.uris.firstOrNull() ?: return null
+        return runCatching {
+            // its own retriever: the playback one belongs to the background worker
+            val mr = exportRetriever?.takeIf { exportUri == uri } ?: MediaMetadataRetriever().also {
+                exportRetriever?.release(); it.setDataSource(context, Uri.parse(uri)); exportRetriever = it; exportUri = uri
+            }
+            val bmp = (if (Build.VERSION.SDK_INT >= 28) runCatching { mr.getFrameAtIndex(n - 1) }.getOrNull() else null)
+                ?: mr.getFrameAtTime((n - 1) * 1_000_000L / movieFps(mr), MediaMetadataRetriever.OPTION_CLOSEST) ?: return null
+            val s = minOf(1f, 1280f / maxOf(bmp.width, bmp.height))
+            val b = if (s < 1f) Bitmap.createScaledBitmap(bmp, maxOf(1, (bmp.width * s).toInt()), maxOf(1, (bmp.height * s).toInt()), true) else bmp
+            val px = IntArray(b.width * b.height); b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
+            Triple(px, b.width, b.height)
+        }.getOrNull()
+    }
 
     private fun decode(kind: Rotoscope.Kind, uris: List<String>, n: Int): Triple<IntArray, Int, Int>? {
         if (n < 1 || uris.isEmpty()) return null
@@ -77,10 +124,7 @@ class RotoscopeLoader(private val context: Context) {
         val bmp: Bitmap = (if (Build.VERSION.SDK_INT >= 28) runCatching { mr.getFrameAtIndex(n - 1) }.getOrNull() else null)
             ?: (if (Build.VERSION.SDK_INT >= 27) runCatching { mr.getScaledFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST, 1024, 1024) }.getOrNull() else null)
             ?: runCatching { mr.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST) }.getOrNull() ?: return null
-        val s = minOf(1f, 1024f / maxOf(bmp.width, bmp.height))
-        val b = if (s < 1f) Bitmap.createScaledBitmap(bmp, maxOf(1, (bmp.width * s).toInt()), maxOf(1, (bmp.height * s).toInt()), true) else bmp
-        val px = IntArray(b.width * b.height); b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
-        Triple(px, b.width, b.height)
+        small(bmp)
     }.getOrNull()
 
     private fun movieFps(mr: MediaMetadataRetriever): Long {

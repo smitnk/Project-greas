@@ -738,6 +738,7 @@ class ToolController {
 }
 
 private const val HOLDOUT_MATERIAL = "Eraser (holdout)"
+private const val CUTTER_MATERIAL = "Lasso cut (holdout)"
 
 class EditorController {
     private val native = NativeEditorBridge()
@@ -1393,7 +1394,8 @@ class EditorController {
             val loader = rotoscopeLoader
             val img = when {
                 n == 0 || loader == null -> null
-                rotoscope.kind == Rotoscope.Kind.IMAGE || blocking -> loader.frame(rotoscope, n)
+                blocking -> loader.exportFrame(rotoscope, n)
+                rotoscope.kind == Rotoscope.Kind.IMAGE -> loader.frame(rotoscope, n)
                 else -> loader.cached(rotoscope, n).also {
                     if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown[rotoscope] != slotKey) render() }
                     loader.prefetch(rotoscope, n + 1, 8) // ~90 ms a frame on the phone: stay ahead of playback
@@ -1798,9 +1800,13 @@ class EditorController {
                 autokeyHeld()
                 val before = native.strokeCount(); val pointsBefore = native.pointCount()
                 history.beginBatch()
-                val pick = ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, noose)
-                val picked = pick != null && native.applyEditCommand(pick.id, pick.args)
-                val cut = picked && native.selectedPointCount() > 0 && deleteSelectedPoints()
+                val holed = holdoutLoopOverFills(noose)
+                val cut = withFillsLocked {
+                    val pick = ProjectGreaseSelect.lasso(ProjectGreaseSelect.OP_SET, ProjectGreaseSelect.MODE_POINT, noose)
+                    val picked = pick != null && native.applyEditCommand(pick.id, pick.args)
+                    picked && native.selectedPointCount() > 0 && deleteSelectedPoints()
+                } || holed
+                if (holed) { history.markEdit(); document.markDirty(); render() }
                 history.endBatch()
                 com.smitnk.projectgrease.CrashLog.event("CUT INSIDE ${noose.size} noose points -> cut=$cut, strokes $before -> ${native.strokeCount()}, points $pointsBefore -> ${native.pointCount()}")
                 if (!cut) { runOperator("GPENCIL_OT_select_all", ProjectGreaseSelect.ACTION_DESELECT.toFloat()); render() }
@@ -1812,7 +1818,11 @@ class EditorController {
                 val before = native.strokeCount(); val pointsBefore = native.pointCount()
                 val path = FloatArray(1 + noose.size * 2)
                 noose.forEachIndexed { i, p -> path[1 + i * 2] = p.first; path[2 + i * 2] = p.second }
-                val cut = runOperator("GPENCIL_OT_stroke_cutter", *path) && native.pointCount() != pointsBefore
+                history.beginBatch()
+                val holed = holdoutLoopOverFills(noose)
+                val cut = withFillsLocked { runOperator("GPENCIL_OT_stroke_cutter", *path) && native.pointCount() != pointsBefore } || holed
+                if (holed) { history.markEdit(); document.markDirty(); render() }
+                history.endBatch()
                 if (cut) selection.clear()
                 // which part went: lasso bounds (canvas) and strokes / points before -> after
                 com.smitnk.projectgrease.CrashLog.event("CUT ${noose.size} noose points in x %.0f..%.0f y %.0f..%.0f -> cut=$cut, strokes $before -> ${native.strokeCount()}, points $pointsBefore -> ${native.pointCount()}".format(
@@ -2480,6 +2490,65 @@ class EditorController {
         com.smitnk.projectgrease.CrashLog.event("FILL recolour stroke $hit to slot $slot -> $ok")
         return ok
     }
+    /** Strokes of this frame that show a fill (index, outline x, outline y). */
+    private fun filledStrokes(): List<Triple<Int, List<Float>, List<Float>>> {
+        val out = ArrayList<Triple<Int, List<Float>, List<Float>>>()
+        for (i in 0 until native.strokeCount()) {
+            val mat = native.strokeInfo(i)?.get(0)?.toInt() ?: continue
+            if ((native.materialInfo(mat)?.getOrNull(9) ?: 0f) <= 0.5f) continue
+            val xs = ArrayList<Float>(); val ys = ArrayList<Float>()
+            var k = 0
+            while (k < 20000) { val p = native.getPoint(i, k) ?: break; xs.add(p[0]); ys.add(p[1]); k++ }
+            if (xs.size >= 3) out.add(Triple(i, xs, ys))
+        }
+        return out
+    }
+    /**
+     * Fills cut with the lasso: Blender's cutter and point delete reshape a fill along straight lines,
+     * so a loop over a fill instead gets a fill holdout stroke in the loop's shape (Blender's holdout
+     * material), a hole exactly where the lasso went. The fills' own points stay (see withFillsLocked).
+     */
+    private fun holdoutLoopOverFills(noose: List<Pair<Float, Float>>): Boolean {
+        if (noose.size < 3 || !activeLayerEditable()) return false
+        val lx = noose.map { it.first }; val ly = noose.map { it.second }
+        val touches = filledStrokes().any { (_, xs, ys) ->
+            xs.indices.any { pointInPolygon(xs[it], ys[it], lx, ly) } || noose.any { pointInPolygon(it.first, it.second, xs, ys) }
+        }
+        if (!touches) return false
+        val slot = cutterHoldoutSlot() ?: return false
+        val n = noose.size
+        val pts = FloatArray(n * 6)
+        for (i in 0 until n) { pts[6 * i] = noose[i].first; pts[6 * i + 1] = noose[i].second; pts[6 * i + 3] = 1f; pts[6 * i + 4] = 1f }
+        val info = floatArrayOf(slot.toFloat(), 1f, 1f, 1f, 0f, 0f, 0f, 1f, 0f, 0f, 1f)
+        val ok = native.addStroke(pts, n, info, FloatArray(n * 4))
+        com.smitnk.projectgrease.CrashLog.event("CUT fills: holdout loop of $n points -> $ok")
+        return ok
+    }
+    /** The lasso's hole material: fill shown as a holdout (GP_MATERIAL_IS_FILL_HOLDOUT), no line; found or made. */
+    private fun cutterHoldoutSlot():Int? {
+        val count = native.materialCount()
+        for (i in 0 until count) if (native.materialName(i) == CUTTER_MATERIAL) return i
+        if (!native.createMaterial()) return null
+        native.setMaterialColors(count, floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 0f, 0f, 1f))
+        native.setMaterialStrokeEnabled(count, false)
+        native.setMaterialFillEnabled(count, true)
+        native.setMaterialName(count, CUTTER_MATERIAL)
+        ProjectGreaseSelect.materialOptions(count, false, true, false).let { native.applyEditCommand(it.id, it.args) }
+        return count
+    }
+    /** Runs [block] with every fill material locked (Blender's cutter / delete skip locked materials), then unlocks them. */
+    private fun <T> withFillsLocked(block: () -> T): T {
+        val locked = ArrayList<Int>()
+        for (i in 0 until native.materialCount()) {
+            val r = materialRecord(i) ?: continue
+            if (!r.locked && (native.materialInfo(i)?.getOrNull(9) ?: 0f) > 0.5f) {
+                ProjectGreaseSelect.materialFlags(i, true, !r.visible).let { native.applyEditCommand(it.id, it.args) }; locked.add(i)
+            }
+        }
+        try { return block() } finally {
+            for (i in locked) materialRecord(i)?.let { r -> ProjectGreaseSelect.materialFlags(i, false, !r.visible).let { native.applyEditCommand(it.id, it.args) } }
+        }
+    }
     private fun pointInPolygon(x: Float, y: Float, xs: List<Float>, ys: List<Float>): Boolean {
         var inside = false; var j = xs.size - 1
         for (i in xs.indices) {
@@ -2753,7 +2822,23 @@ class EditorController {
     /** GPENCIL_OT_layer_duplicate: empty = keyframes only, below the layer (Blender's "Empty Keyframes"). */
     fun duplicateLayer(index:Int=selectedLayer, empty:Boolean=false):Boolean { selectedLayer = index; return layerOperator("GPENCIL_OT_layer_duplicate", if (empty) 1f else 0f) }
     /** GPENCIL_OT_layer_remove: locked layers stay; the layer below becomes active. */
-    fun deleteLayer(index:Int=selectedLayer):Boolean { selectedLayer = index; return layerOperator("GPENCIL_OT_layer_remove") }
+    fun deleteLayer(index:Int=selectedLayer):Boolean {
+        selectedLayer = index
+        // the layer's photos / video go with it (they stayed on screen until the project was reopened);
+        // removed first so the layer's undo step holds the state without them
+        val name = native.layerName(index)
+        val sameName = (0 until native.layerCount()).count { native.layerName(it) == name }
+        val saved = references.map { it.copy() }
+        if (name != null && sameName == 1 && references.any { it.layer == name }) {
+            references.removeAll { it.layer == name }
+            if (references.isEmpty()) references.add(Rotoscope())
+            activeReference = 0
+            rotoscopeChanged()
+        }
+        val ok = layerOperator("GPENCIL_OT_layer_remove")
+        if (!ok && references.size != saved.size) { references.clear(); references.addAll(saved); rotoscopeChanged() }
+        return ok
+    }
     fun renameLayer(index:Int=selectedLayer,name:String):Boolean {
         val ok=native.renameLayer(index,name)
         if(ok){history.markEdit();document.markDirty();render()}

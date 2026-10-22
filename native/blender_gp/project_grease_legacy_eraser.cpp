@@ -49,7 +49,7 @@ bool process_stroke(bGPdata *gpd, bGPDframe *frame, bGPDstroke *stroke,
   }
   if (result & PG_ERASER_CULL) {
     BKE_gpencil_stroke_delete_tagged_points(
-        gpd, frame, stroke, stroke->next, GP_SPOINT_TAG, false, false, 0);
+        gpd, frame, stroke, stroke->next, GP_SPOINT_TAG, false, false, 1); // ADAPTED limit 1: no 1-point leftovers (they stayed as dots)
   }
   return (result & (PG_ERASER_MODIFIED | PG_ERASER_CULL)) != 0;
 }

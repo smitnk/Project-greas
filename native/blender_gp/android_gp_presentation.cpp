@@ -1656,7 +1656,7 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char*
   std::swap(r.tex,r.spare);std::swap(r.w,r.sw);std::swap(r.h,r.sh);
   const bool same=r.tex&&r.w==w&&r.h==h;
   if(!r.tex)glGenTextures(1,&r.tex);
-  glBindTexture(GL_TEXTURE_2D,r.tex);glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+  glBindTexture(GL_TEXTURE_2D,r.tex);glPixelStorei(GL_UNPACK_ALIGNMENT,(w%4)?1:4); // 4: rows are word aligned (1 took the slow path)
   if(same)glTexSubImage2D(GL_TEXTURE_2D,0,0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
   else glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);

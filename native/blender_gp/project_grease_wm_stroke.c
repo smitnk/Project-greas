@@ -1,3 +1,6 @@
+/* Project Grease: the eraser marks and lasso holes (holdout materials) are app-internal strokes, so
+ * select / edit / sculpt / cutter tools skip them like hidden materials. */
+#define PG_MATERIAL_UNEDITABLE (GP_MATERIAL_HIDE | GP_MATERIAL_IS_STROKE_HOLDOUT | GP_MATERIAL_IS_FILL_HOLDOUT)
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Stroke and material operators of gpencil_edit.c / gpencil_select.c / gpencil_data.c (Blender
  * 3.6.23) on the operator layer (project_grease_wm.h). Stroke bodies are the ported functions
@@ -254,7 +257,7 @@ static int exec_material_select(PGOpContext *C, const float *p, int n)
       LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
         const MaterialGPencilStyle *st = slot_style(C->gpd, gps->mat_nr + 1);
         /* ED_gpencil_stroke_material_editable */
-        if (st && ((st->flag & GP_MATERIAL_HIDE) ||
+        if (st && ((st->flag & PG_MATERIAL_UNEDITABLE) ||
                    (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
           continue;
         if (C->actcol != gps->mat_nr + 1) continue;
@@ -782,7 +785,7 @@ static void selected_hue_table(bGPdata *gpd, int threshold, GHash *hue_table)
     LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
       LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
         const MaterialGPencilStyle *st = slot_style(gpd, gps->mat_nr + 1);
-        if (st && ((st->flag & GP_MATERIAL_HIDE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+        if (st && ((st->flag & PG_MATERIAL_UNEDITABLE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
           continue;
         if ((gps->flag & GP_STROKE_SELECT) == 0) continue;
         for (int i = 0; i < gps->totpoints; i++) {
@@ -1019,7 +1022,7 @@ static int exec_stroke_join(PGOpContext *C, const float *p, int n)
     LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
       if (!(gps->flag & GP_STROKE_SELECT) || gps->totpoints < 1) continue;
       const MaterialGPencilStyle *st = slot_style(C->gpd, gps->mat_nr + 1);
-      if (st && ((st->flag & GP_MATERIAL_HIDE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+      if (st && ((st->flag & PG_MATERIAL_UNEDITABLE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
         continue;
       strokes_list[tot_strokes].gpf = gpf;
       strokes_list[tot_strokes].gps = gps;
@@ -1445,7 +1448,7 @@ static int exec_merge_material(PGOpContext *C, const float *p, int n)
       LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
         LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
           const MaterialGPencilStyle *st = slot_style(gpd, gps->mat_nr + 1);
-          if (st && ((st->flag & GP_MATERIAL_HIDE) ||
+          if (st && ((st->flag & PG_MATERIAL_UNEDITABLE) ||
                      (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
             continue;
           if (gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol && table[gps->mat_nr] >= 0) gps->mat_nr = table[gps->mat_nr];
@@ -1497,7 +1500,7 @@ static bool pgw_extract_palette(bGPdata *gpd, bool selected, int threshold)
     LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
       LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
         const MaterialGPencilStyle *gp_style = slot_style(gpd, gps->mat_nr + 1);
-        if (gp_style == NULL || (gp_style->flag & GP_MATERIAL_HIDE) ||
+        if (gp_style == NULL || (gp_style->flag & PG_MATERIAL_UNEDITABLE) ||
             (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (gp_style->flag & GP_MATERIAL_LOCKED)))
           continue;
         if (selected && !(gps->flag & GP_STROKE_SELECT)) continue;
@@ -1631,7 +1634,7 @@ static int exec_material_to_vertex(PGOpContext *C, const float *p, int n)
     LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
       LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
         const MaterialGPencilStyle *src = slot_style(gpd, gps->mat_nr + 1);
-        if (src == NULL || (src->flag & GP_MATERIAL_HIDE) ||
+        if (src == NULL || (src->flag & PG_MATERIAL_UNEDITABLE) ||
             (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (src->flag & GP_MATERIAL_LOCKED)))
           continue;
         if (selected && !(gps->flag & GP_STROKE_SELECT)) continue;
@@ -1986,7 +1989,7 @@ static int exec_snap_to_cursor(PGOpContext *C, const float *p, int n)
     if (!BKE_gpencil_layer_is_editable(gpl) || gpl->actframe == NULL) continue;
     LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
       const MaterialGPencilStyle *st = slot_style(C->gpd, gps->mat_nr + 1);
-      if (st && ((st->flag & GP_MATERIAL_HIDE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
+      if (st && ((st->flag & PG_MATERIAL_UNEDITABLE) || (!(gpl->flag & GP_LAYER_UNLOCK_COLOR) && (st->flag & GP_MATERIAL_LOCKED))))
         continue;
       if ((gps->flag & GP_STROKE_SELECT) == 0 || gps->totpoints == 0) continue;
       if (use_offset) {

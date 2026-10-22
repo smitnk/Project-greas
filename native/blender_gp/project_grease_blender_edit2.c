@@ -1,3 +1,6 @@
+/* Project Grease: the eraser marks and lasso holes (holdout materials) are app-internal strokes, so
+ * select / edit / sculpt / cutter tools skip them like hidden materials. */
+#define PG_MATERIAL_UNEDITABLE (GP_MATERIAL_HIDE | GP_MATERIAL_IS_STROKE_HOLDOUT | GP_MATERIAL_IS_FILL_HOLDOUT)
 /* SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Second batch of Legacy GP operators on the selection. pg_gp_modifier_point_weight() mirrors
@@ -39,7 +42,7 @@ static MaterialGPencilStyle *pe2_style(const bGPdata *gpd, int mat_nr)
 static bool pe2_stroke_editable(const bGPdata *gpd, const bGPDlayer *gpl, const bGPDstroke *gps)
 {
   const MaterialGPencilStyle *st = pe2_style(gpd, gps->mat_nr);
-  if (st->flag & GP_MATERIAL_HIDE) return false;
+  if (st->flag & PG_MATERIAL_UNEDITABLE) return false;
   if (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (st->flag & GP_MATERIAL_LOCKED)) return false;
   return true;
 }
@@ -354,7 +357,7 @@ int pg_gp_extrude(bGPdata *gpd, const bGPDlayer *only_layer)
             /* ED_gpencil_stroke_can_use (gpencil_edit.c:1298): hidden / locked materials are skipped */
             if (gpd->mat != NULL && gps->mat_nr >= 0 && gps->mat_nr < gpd->totcol && gpd->mat[gps->mat_nr] &&
                 gpd->mat[gps->mat_nr]->gp_style &&
-                ((gpd->mat[gps->mat_nr]->gp_style->flag & GP_MATERIAL_HIDE) ||
+                ((gpd->mat[gps->mat_nr]->gp_style->flag & PG_MATERIAL_UNEDITABLE) ||
                  (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (gpd->mat[gps->mat_nr]->gp_style->flag & GP_MATERIAL_LOCKED))))
               continue;
             pe2_add_move_points(gpd, gpf, gps);

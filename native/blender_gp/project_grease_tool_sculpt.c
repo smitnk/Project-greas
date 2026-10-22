@@ -1,3 +1,6 @@
+/* Project Grease: the eraser marks and lasso holes (holdout materials) are app-internal strokes, so
+ * select / edit / sculpt / cutter tools skip them like hidden materials. */
+#define PG_MATERIAL_UNEDITABLE (GP_MATERIAL_HIDE | GP_MATERIAL_IS_STROKE_HOLDOUT | GP_MATERIAL_IS_FILL_HOLDOUT)
 /* SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Sculpt mode brushes for the native tool session: gpencil_sculpt_paint.c (Blender 3.6.23).
@@ -995,7 +998,7 @@ static bool pgt_sculpt_do_frame(tGP_BrushEditData *gso, bGPDlayer *gpl, bGPDfram
     }
     {
       const MaterialGPencilStyle *gp_style = pg_tool_material_style(gpd, gps->mat_nr + 1);
-      if ((gp_style->flag & GP_MATERIAL_HIDE) ||
+      if ((gp_style->flag & PG_MATERIAL_UNEDITABLE) ||
           (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (gp_style->flag & GP_MATERIAL_LOCKED)))
       {
         continue;
@@ -1069,7 +1072,7 @@ static bool pgt_sculpt_do_frame(tGP_BrushEditData *gso, bGPDlayer *gpl, bGPDfram
 static bool pgt_material_editable(bGPdata *gpd, const bGPDlayer *gpl, const bGPDstroke *gps)
 {
   const MaterialGPencilStyle *gp_style = pg_tool_material_style(gpd, gps->mat_nr + 1);
-  return !((gp_style->flag & GP_MATERIAL_HIDE) ||
+  return !((gp_style->flag & PG_MATERIAL_UNEDITABLE) ||
            (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (gp_style->flag & GP_MATERIAL_LOCKED)));
 }
 

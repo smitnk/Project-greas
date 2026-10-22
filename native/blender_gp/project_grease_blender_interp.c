@@ -1,3 +1,6 @@
+/* Project Grease: the eraser marks and lasso holes (holdout materials) are app-internal strokes, so
+ * select / edit / sculpt / cutter tools skip them like hidden materials. */
+#define PG_MATERIAL_UNEDITABLE (GP_MATERIAL_HIDE | GP_MATERIAL_IS_STROKE_HOLDOUT | GP_MATERIAL_IS_FILL_HOLDOUT)
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Port of Blender 3.6.23 gpencil_interpolate.c (see project_grease_blender_interp.h). */
 #include <limits.h>
@@ -125,7 +128,7 @@ static bool pi_material_editable(const bGPdata *gpd, const bGPDlayer *gpl, const
       gpd->mat[gps->mat_nr]->gp_style == NULL)
     return true;
   const MaterialGPencilStyle *st = gpd->mat[gps->mat_nr]->gp_style;
-  if (st->flag & GP_MATERIAL_HIDE) return false;
+  if (st->flag & PG_MATERIAL_UNEDITABLE) return false;
   if (((gpl->flag & GP_LAYER_UNLOCK_COLOR) == 0) && (st->flag & GP_MATERIAL_LOCKED)) return false;
   return true;
 }

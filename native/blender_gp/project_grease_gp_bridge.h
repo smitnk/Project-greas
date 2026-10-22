@@ -91,6 +91,7 @@ int project_grease_gp_duplicate_frame(ProjectGreaseGPHandle *handle, int source_
 int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_number);
 int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_stroke_selected(ProjectGreaseGPHandle *handle, int index);
+int project_grease_gp_move_stroke(ProjectGreaseGPHandle *handle, int from, int to);
 int project_grease_gp_stroke_center(const ProjectGreaseGPHandle *handle, int index, float *x, float *y);
 int project_grease_gp_hit_test_stroke(
     const ProjectGreaseGPHandle *handle,

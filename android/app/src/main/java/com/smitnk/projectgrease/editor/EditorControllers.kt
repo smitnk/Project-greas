@@ -1908,8 +1908,7 @@ class EditorController {
         val props = FloatArray(2 + points.size * 2)
         props[0] = selectOp.toFloat(); props[1] = ProjectGreaseSelect.areaMode(activeSelectMode).toFloat()
         points.forEachIndexed { i, p -> props[2 + i * 2] = p.first; props[3 + i * 2] = p.second }
-        // the invisible eraser marks would be selected too (hundreds of orange dots)
-        return withFillsLocked(fills = false) { runOperator("GPENCIL_OT_select_lasso", *props) }
+        return runOperator("GPENCIL_OT_select_lasso", *props)
     }
 
     // ---- Blender 3.6.23 Legacy GP selection (native/blender_gp/project_grease_blender_select.c) ----
@@ -2507,37 +2506,54 @@ class EditorController {
         return out
     }
     /**
-     * Fills cut with the lasso: Blender's cutter and point delete reshape a fill along straight lines,
-     * so a loop over a fill instead gets a fill holdout stroke in the loop's shape (Blender's holdout
-     * material), a hole exactly where the lasso went. The fills' own points stay (see withFillsLocked).
+     * Fills cut with the lasso. Blender's cutter and point delete reshape a fill along straight lines,
+     * and the earlier hole (an invisible holdout loop) left the cut part there, invisible but still
+     * selectable. Now each fill the loop touches is redrawn without the loop's area: its fill is
+     * rasterized, the loop is cleared out, and the traced outline(s) (holes kept, see withHolesJoined)
+     * replace it in place, same material and colour, same draw order. The fills are then locked for
+     * the Blender operator (withFillsLocked) so it only cuts lines.
      */
     private fun holdoutLoopOverFills(noose: List<Pair<Float, Float>>): Boolean {
         if (noose.size < 3 || !activeLayerEditable()) return false
         val lx = noose.map { it.first }; val ly = noose.map { it.second }
-        val touches = filledStrokes().any { (_, xs, ys) ->
-            xs.indices.any { pointInPolygon(xs[it], ys[it], lx, ly) } || noose.any { pointInPolygon(it.first, it.second, xs, ys) }
+        val w = document.canvasWidth; val h = document.canvasHeight
+        val loop = android.graphics.Path().apply { moveTo(lx[0], ly[0]); for (k in 1 until lx.size) lineTo(lx[k], ly[k]); close() }
+        val fill = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL }
+        val clear = android.graphics.Paint().apply { isAntiAlias = false; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+        var changed = false
+        // from the top down, so the indices below stay valid while strokes are replaced
+        for ((i, xs, ys) in filledStrokes().asReversed()) {
+            val name = native.strokeInfo(i)?.let { native.materialName(it[0].toInt()) }
+            if (name == HOLDOUT_MATERIAL || name == CUTTER_MATERIAL) continue
+            val touches = xs.indices.any { pointInPolygon(xs[it], ys[it], lx, ly) } || noose.any { pointInPolygon(it.first, it.second, xs, ys) }
+            if (!touches) continue
+            val info = native.strokeInfo(i)?.copyOf(11) ?: continue
+            info[2] = 1f // cyclic
+            val p0 = native.getPoint(i, 0) ?: continue
+            val c0 = GPNative.nativeGetPointColor(native.handle, i, 0) ?: FloatArray(4)
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.drawPath(android.graphics.Path().apply { moveTo(xs[0], ys[0]); for (k in 1 until xs.size) lineTo(xs[k], ys[k]); close() }, fill)
+            canvas.drawPath(loop, clear)
+            val alpha = java.nio.ByteBuffer.allocate(w * h); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
+            val outlines = withHolesJoined(ImageTrace.trace(BooleanArray(w * h) { alpha.get(it).toInt() != 0 }, w, h, 0.75f, 3))
+            if (!native.deleteStroke(i)) continue
+            var at = i
+            for (o in outlines) {
+                val n = o.size
+                val pts = FloatArray(n * 6); val colors = FloatArray(n * 4)
+                for (k in 0 until n) {
+                    pts[6 * k] = o[k][0]; pts[6 * k + 1] = o[k][1]; pts[6 * k + 2] = p0[2]
+                    pts[6 * k + 3] = p0.getOrElse(3) { 1f }; pts[6 * k + 4] = p0.getOrElse(4) { 1f }
+                    for (c in 0 until 4) colors[4 * k + c] = c0.getOrElse(c) { 0f }
+                }
+                if (native.addStroke(pts, n, info, colors)) { GPNative.nativeMoveStroke(native.handle, native.strokeCount() - 1, at); at++ }
+            }
+            changed = true
         }
-        if (!touches) return false
-        val slot = cutterHoldoutSlot() ?: return false
-        val n = noose.size
-        val pts = FloatArray(n * 6)
-        for (i in 0 until n) { pts[6 * i] = noose[i].first; pts[6 * i + 1] = noose[i].second; pts[6 * i + 3] = 1f; pts[6 * i + 4] = 1f }
-        val info = floatArrayOf(slot.toFloat(), 1f, 1f, 1f, 0f, 0f, 0f, 1f, 0f, 0f, 1f)
-        val ok = native.addStroke(pts, n, info, FloatArray(n * 4))
-        com.smitnk.projectgrease.CrashLog.event("CUT fills: holdout loop of $n points -> $ok")
-        return ok
-    }
-    /** The lasso's hole material: fill shown as a holdout (GP_MATERIAL_IS_FILL_HOLDOUT), no line; found or made. */
-    private fun cutterHoldoutSlot():Int? {
-        val count = native.materialCount()
-        for (i in 0 until count) if (native.materialName(i) == CUTTER_MATERIAL) return i
-        if (!native.createMaterial()) return null
-        native.setMaterialColors(count, floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 0f, 0f, 1f))
-        native.setMaterialStrokeEnabled(count, false)
-        native.setMaterialFillEnabled(count, true)
-        native.setMaterialName(count, CUTTER_MATERIAL)
-        ProjectGreaseSelect.materialOptions(count, false, true, false).let { native.applyEditCommand(it.id, it.args) }
-        return count
+        com.smitnk.projectgrease.CrashLog.event("CUT fills: reshaped=$changed")
+        if (changed) render()
+        return changed
     }
     /** Runs [block] with every fill material (with [fills]) and the eraser / lasso holdouts locked (Blender's
      *  select, cutter and delete skip locked materials), then unlocks them. */

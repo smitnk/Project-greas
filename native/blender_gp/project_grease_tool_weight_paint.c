@@ -1,3 +1,6 @@
+/* Project Grease: the eraser marks and lasso holes (holdout materials) are app-internal strokes, so
+ * select / edit / sculpt / cutter tools skip them like hidden materials. */
+#define PG_MATERIAL_UNEDITABLE (GP_MATERIAL_HIDE | GP_MATERIAL_IS_STROKE_HOLDOUT | GP_MATERIAL_IS_FILL_HOLDOUT)
 /* SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Weight Paint mode brushes for the native tool session: gpencil_weight_paint.c (Blender 3.6.23).
@@ -726,7 +729,7 @@ static bool pgt_wpaint_do_frame(tGP_BrushWeightpaintData *gso, bGPDframe *gpf)
     if (gps->points == NULL || gps->totpoints <= 0) {
       continue;
     }
-    if (pg_tool_material_style(gso->gpd, gps->mat_nr + 1)->flag & GP_MATERIAL_HIDE) {
+    if (pg_tool_material_style(gso->gpd, gps->mat_nr + 1)->flag & PG_MATERIAL_UNEDITABLE) {
       continue;
     }
     gpencil_weightpaint_select_stroke(gso, gps, gps_index, diff_mat, bound_mat);

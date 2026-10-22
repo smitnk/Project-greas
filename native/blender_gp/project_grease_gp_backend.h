@@ -99,6 +99,7 @@ class Backend {
   bool select_stroke(int index);
   /* Whether stroke [index] of the active frame is selected (GP_STROKE_SELECT). */
   bool stroke_selected(int index) const;
+  bool move_stroke(int from, int to);
   int hit_test_stroke(float x, float y, float radius) const;
   bool get_point(int stroke_index, int point_index, StrokePoint* out) const;
   // Reads a real Blender Legacy GP deform-group weight from a stroke point.

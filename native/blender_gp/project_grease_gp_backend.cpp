@@ -1608,6 +1608,22 @@ int Backend::frame_selected_point_count() const {
   return count;
 }
 
+/* Moves the stroke at [from] so it sits at index [to] of the active frame (draw order). */
+bool Backend::move_stroke(int from, int to)
+{
+  if (!impl_->frame) return false;
+  ListBase *lb = &impl_->frame->strokes;
+  bGPDstroke *s = static_cast<bGPDstroke *>(BLI_findlink(lb, from));
+  if (!s || to < 0) return false;
+  if (from == to) return true;
+  BLI_remlink(lb, s);
+  bGPDstroke *at = static_cast<bGPDstroke *>(BLI_findlink(lb, to));
+  if (at) BLI_insertlinkbefore(lb, at, s); else BLI_addtail(lb, s);
+  BKE_gpencil_batch_cache_dirty_tag(impl_->gpd);
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
 bool Backend::stroke_selected(int index) const
 {
   if (!impl_->frame || index < 0) return false;

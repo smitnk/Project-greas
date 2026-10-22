@@ -3054,6 +3054,62 @@ class EditorController {
         return importStrokes(StrokeImport.plan(sources, fit, existingMaterials()), newLayer = "Trace")
     }
 
+    /**
+     * Merge shapes: the selected strokes become one solid shape, the way drawing apps merge (Blender's
+     * Merge only chains their points into one line, which looked unchanged and cut oddly). The strokes
+     * are drawn as they look (width = thickness x pressure, fills filled) into a mask, its outline is
+     * traced (the Trace image code) and becomes one filled stroke in the first stroke's colour, in
+     * place of the originals. One undo step.
+     */
+    fun mergeShapes():Boolean {
+        if (native.handle == 0L || !activeLayerEditable()) return false
+        val sel = (0 until native.strokeCount()).filter { GPNative.nativeStrokeSelected(native.handle, it) }
+        if (sel.isEmpty()) { onMessage?.invoke("Merge: lasso the strokes to merge first"); return false }
+        val w = document.canvasWidth; val h = document.canvasHeight
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
+        val canvas = android.graphics.Canvas(bmp)
+        val line = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND; color = android.graphics.Color.BLACK }
+        val area = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL; color = android.graphics.Color.BLACK }
+        var colour = materials.colorArgb
+        for ((k, i) in sel.withIndex()) {
+            val info = native.strokeInfo(i) ?: continue
+            val m = native.materialInfo(info[0].toInt())
+            val pts = ArrayList<FloatArray>()
+            var j = 0
+            while (j < 20000) { pts.add(native.getPoint(i, j) ?: break); j++ }
+            if (pts.isEmpty()) continue
+            if (k == 0 && m != null) { // the shape keeps the first stroke's colour (its line, or its fill for a fill)
+                val c = if (m[10] > 0.5f) 0 else 4
+                colour = (0xFF shl 24) or ((m[c] * 255).toInt().coerceIn(0, 255) shl 16) or ((m[c + 1] * 255).toInt().coerceIn(0, 255) shl 8) or (m[c + 2] * 255).toInt().coerceIn(0, 255)
+            }
+            if (m != null && m[9] > 0.5f && pts.size >= 3) {
+                val path = android.graphics.Path(); path.moveTo(pts[0][0], pts[0][1]); for (p in pts.drop(1)) path.lineTo(p[0], p[1]); path.close()
+                canvas.drawPath(path, area)
+            }
+            if (m == null || m[10] > 0.5f) {
+                if (pts.size == 1) { line.strokeWidth = info[1] * pts[0][3]; canvas.drawPoint(pts[0][0], pts[0][1], line) }
+                for (q in 1 until pts.size) {
+                    line.strokeWidth = (info[1] * (pts[q - 1][3] + pts[q][3]) * 0.5f).coerceAtLeast(1f)
+                    canvas.drawLine(pts[q - 1][0], pts[q - 1][1], pts[q][0], pts[q][1], line)
+                }
+            }
+        }
+        val alpha = java.nio.ByteBuffer.allocate(w * h); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
+        val mask = BooleanArray(w * h) { alpha.get(it).toInt() != 0 }
+        val outlines = ImageTrace.trace(mask, w, h, 0.75f, 3)
+        if (outlines.isEmpty()) { onMessage?.invoke("Merge: nothing to merge"); return false }
+        history.beginBatch()
+        val removed = deleteSelectedPoints()
+        val sources = outlines.map { StrokeImport.Source(it, true, colour, colour, 1f) }
+        val fit = StrokeImport.fit(0f, 0f, w.toFloat(), h.toFloat(), w, h)
+        val added = importStrokes(StrokeImport.plan(sources, fit, existingMaterials()))
+        if (added > 0) { history.markEdit(); document.markDirty() }
+        history.endBatch()
+        com.smitnk.projectgrease.CrashLog.event("MERGE shapes: ${sel.size} strokes -> $added outline(s), originals removed=$removed")
+        render()
+        return added > 0
+    }
+
     /** GPENCIL_OT_layer_add (above the active layer, keyed at the current frame), then named: one undo step. */
     fun createLayer(name:String):Boolean {
         history.beginBatch()
@@ -3166,8 +3222,8 @@ class EditorController {
     fun eraseAt(x:Float, y:Float, radius:Float, recordHistory:Boolean = true, pressure:Float = 1f):Boolean {
         val press = if (eraserUsePressure) pressure.coerceIn(0.01f, 1f) else 1f
         val mode = when (eraserMode) { EraserMode.HARD -> 0; EraserMode.SOFT -> 1; EraserMode.STROKE -> 2 }
-        if (native.handle != 0L) runCatching { GPNative.nativeSetEraseFillsHoldout(pixelEraseFills && mode != 2) }
-        val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode,
+        val fills = pixelEraseFills && mode != 2
+        val ok = native.handle != 0L && GPNative.nativeErase(native.handle, x, y, radius * press, mode or (if (fills) 8 else 0),
             eraserDrawStrength, press, eraStrength, eraThickness)
         erasePath.add(x); erasePath.add(y); erasePath.add(radius * press)
         if (recordHistory) eraseFillsAlongPath() // a single tap
@@ -3196,7 +3252,9 @@ class EditorController {
      *  on this layer, so the fills under it turn transparent there. Clears the path. */
     private fun eraseFillsAlongPath():Boolean {
         val path = erasePath.toFloatArray(); erasePath.clear()
-        if (native.handle == 0L || runCatching { GPNative.nativeTakeEraseFillHits() }.getOrDefault(0) <= 0 || path.size < 3) return false
+        val hits = if (native.handle == 0L) 0 else runCatching { GPNative.nativeTakeEraseFillHits() }.getOrElse { com.smitnk.projectgrease.CrashLog.event("ERASE fill hits unavailable: $it"); 0 }
+        if (path.isNotEmpty()) com.smitnk.projectgrease.CrashLog.event("ERASE gesture: ${path.size / 3} samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $hits")
+        if (native.handle == 0L || hits <= 0 || path.size < 3) return false
         val slot = holdoutMaterialSlot() ?: return false
         val n = path.size / 3
         val radius = (0 until n).maxOf { path[3 * it + 2] }

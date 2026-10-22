@@ -1608,6 +1608,15 @@ int Backend::frame_selected_point_count() const {
   return count;
 }
 
+bool Backend::stroke_selected(int index) const
+{
+  if (!impl_->frame || index < 0) return false;
+  int i = 0;
+  for (const bGPDstroke *s = static_cast<const bGPDstroke *>(impl_->frame->strokes.first); s; s = s->next, ++i)
+    if (i == index) return (s->flag & GP_STROKE_SELECT) != 0;
+  return false;
+}
+
 bool Backend::select_stroke(int index) {
   if (!impl_->frame || index < 0) {
     impl_->last_error = "invalid stroke selection";
@@ -1884,6 +1893,9 @@ static bool pg_circle_hits_fill(const bGPDstroke *gps, float x, float y, float r
 bool Backend::erase(float x, float y, float radius, int mode, float draw_strength, float pressure,
                     float era_strength, float era_thickness)
 {
+  // mode | 8: the pixel eraser for fills (also settable with pg_erase_fills_holdout)
+  const bool fills_holdout = (mode & 8) != 0 || pg_erase_fills_holdout;
+  mode &= 7;
   if (!impl_->frame || radius <= 0.0f || mode < 0 || mode > 2 || !std::isfinite(x) ||
       !std::isfinite(y) || !std::isfinite(radius) || !std::isfinite(draw_strength) ||
       !std::isfinite(pressure) || !std::isfinite(era_strength) || !std::isfinite(era_thickness)) {
@@ -1906,7 +1918,7 @@ bool Backend::erase(float x, float y, float radius, int mode, float draw_strengt
     bGPDstroke *next = stroke->next;
     // ADAPTED (pixel eraser): a fill-only stroke (Fill tool) keeps its outline points (deleting them
     // closed the fill with straight cuts); the app erases it with a holdout stroke along the path.
-    if (pg_erase_fills_holdout && pg_stroke_fill_only(impl_->gpd, stroke)) {
+    if (fills_holdout && pg_stroke_fill_only(impl_->gpd, stroke)) {
       if (pg_circle_hits_fill(stroke, x, y, radius)) { pg_erase_fill_hits++; changed = true; }
       stroke = next;
       continue;

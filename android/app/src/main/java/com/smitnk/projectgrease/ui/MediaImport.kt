@@ -354,3 +354,53 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
         }
     }
 }
+
+/**
+ * An animated GIF as its own "GIF" layer under the drawing: its frames, sampled at the animation's
+ * fps, are written as PNG files in the app's storage and played as an image sequence (shown solid and
+ * in exports, like a video layer). A GIF the decoder can't animate comes in as its first picture.
+ * Blocking: call off the UI thread; the layer is made on the UI thread by [done].
+ */
+internal fun decodeGifFrames(context: Context, uri: Uri, fps: Int): List<String> {
+    @Suppress("DEPRECATION")
+    val movie = runCatching { context.contentResolver.openInputStream(uri)?.use { android.graphics.Movie.decodeStream(it) } }.getOrNull()
+    val dir = java.io.File(context.filesDir, "gif/" + Integer.toHexString(uri.toString().hashCode()) + "_" + System.currentTimeMillis()).apply { mkdirs() }
+    fun save(b: Bitmap, k: Int): String {
+        val f = java.io.File(dir, "frame_%04d.png".format(k))
+        f.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return Uri.fromFile(f).toString()
+    }
+    if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
+        val still = runCatching { context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull() ?: return emptyList()
+        return listOf(save(still, 1))
+    }
+    val dur = movie.duration().coerceAtLeast(1)
+    val n = ((dur.toLong() * fps.coerceAtLeast(1) + 999) / 1000).toInt().coerceIn(1, 600)
+    val out = ArrayList<String>(n)
+    val bmp = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    for (k in 0 until n) {
+        bmp.eraseColor(0)
+        @Suppress("DEPRECATION") movie.setTime(((k * 1000L) / fps.coerceAtLeast(1)).toInt().coerceAtMost(dur - 1))
+        @Suppress("DEPRECATION") movie.draw(canvas, 0f, 0f)
+        out.add(save(bmp, k + 1))
+    }
+    return out
+}
+
+internal fun addGifLayer(controller: EditorController, context: Context, frames: List<String>) {
+    if (frames.isEmpty()) { toast(context, "Couldn't read this GIF"); return }
+    val startAt = controller.animation.currentFrame
+    val drawingLayer = controller.selectedLayer
+    if (!controller.createLayer("GIF")) { toast(context, "Couldn't add a layer for the GIF"); return }
+    val newIndex = controller.selectedLayer
+    if (newIndex > 0) controller.moveLayer(newIndex, 0)
+    val r = controller.addReference("GIF")
+    r.set(if (frames.size == 1) Rotoscope.Kind.IMAGE else Rotoscope.Kind.SEQUENCE, frames, frames.size)
+    r.start = startAt; r.setOpacity(1f); r.inExport = true
+    if (frames.size > 1 && controller.animation.sceneEnd < startAt + frames.size - 1) controller.animation.setSceneEnd(startAt + frames.size - 1)
+    controller.selectLayer((if (newIndex > 0) drawingLayer + 1 else drawingLayer).coerceIn(0, controller.layerCount() - 1))
+    controller.rotoscopeChanged(); controller.history.markEdit()
+    com.smitnk.projectgrease.CrashLog.event("IMPORT GIF ${frames.size} frames as layer 'GIF' from frame $startAt")
+    toast(context, if (frames.size == 1) "GIF added as a picture layer" else "GIF layer added: frames $startAt–${startAt + frames.size - 1}")
+}

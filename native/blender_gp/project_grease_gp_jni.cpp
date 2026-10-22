@@ -541,6 +541,12 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeErase(
                                  era_strength, era_thickness) != 0;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeStrokeSelected(JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_stroke_selected(from_handle(handle), index) != 0;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearSelection(
     JNIEnv *, jobject, jlong handle)

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -414,7 +415,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.IMPORT_VIDEO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importVideo()}
         Sheet.IMPORT_AUDIO->LaunchedEffect(Unit){sheet=Sheet.NONE;mediaImport.importAudio()}
         Sheet.AUDIO->AudioEditor(controller,mediaImport,{sheet=Sheet.NONE},::redraw)
-        Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject)
+        Sheet.PROJECT->ProjectSheet({sheet=Sheet.NONE},onSettings,onExit,controller,context,::persistProject,{mediaImport.importPhoto()})
         Sheet.TOOLS->ToolsSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.LAYERS->LayersSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.MATERIALS->MaterialsSheet(controller,{sheet=Sheet.NONE},::redraw)
@@ -885,7 +886,19 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit,controller:EditorController,context:android.content.Context,onSave:()->Unit){
+@Composable private fun ProjectSheet(onDismiss:()->Unit,onSettings:()->Unit,onExit:()->Unit,controller:EditorController,context:android.content.Context,onSave:()->Unit,onImportPhoto:()->Unit={}){
+    val gifScope=rememberCoroutineScope()
+    val gifPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+        if(uri==null)return@rememberLauncherForActivityResult
+        runCatching{context.contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)}
+        Toast.makeText(context,"Importing GIF frames…",Toast.LENGTH_SHORT).show()
+        val fps=controller.animation.fps
+        gifScope.launch{
+            val frames=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){decodeGifFrames(context,uri,fps)}
+            controller.afterReattach{addGifLayer(controller,context,frames)}
+            onDismiss()
+        }
+    }
     var exportOpen by remember{mutableStateOf(false)}
     if(exportOpen)ExportDialog(controller,context,{exportOpen=false;onDismiss()})
     var projectSettingsOpen by remember{mutableStateOf(false)}
@@ -918,6 +931,8 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         ListItem(headlineContent={Text("Export")},supportingContent={Text("SVG, PDF, PNG, GIF, PNG sequence")},modifier=Modifier.clickable{exportOpen=true})
         ListItem(headlineContent={Text("Project settings")},supportingContent={Text("Canvas size, FPS, frame range, background")},modifier=Modifier.clickable{projectSettingsOpen=true}.testTag("projectSettings"))
         ListItem(headlineContent={Text("Import SVG")},supportingContent={Text("Shapes become strokes on the active layer")},modifier=Modifier.clickable{importSvg()})
+        ListItem(headlineContent={Text("Import image (PNG / JPG)")},supportingContent={Text("A picture on the current frame: move, resize, squash with the box")},modifier=Modifier.clickable{onDismiss();onImportPhoto()}.testTag("projectImportPng"))
+        ListItem(headlineContent={Text("Import GIF")},supportingContent={Text("An animated GIF as its own layer, frame by frame")},modifier=Modifier.clickable{gifPicker.launch(arrayOf("image/gif"))}.testTag("projectImportGif"))
         ListItem(headlineContent={Text("Trace image")},supportingContent={Text("Outlines of an image become filled strokes on a new layer")},modifier=Modifier.clickable{traceOpen=true})
         ListItem(headlineContent={Text("Settings")},modifier=Modifier.clickable{onDismiss();onSettings()});ListItem(headlineContent={Text("Close editor")},modifier=Modifier.clickable{onDismiss();onExit()});Spacer(Modifier.height(20.dp))}
 }
@@ -1613,6 +1628,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
                 OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){Text("Copy")}
                 OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){Text("Paste")}
+                OutlinedButton(onClick={controller.mergeShapes();redraw()},Modifier.testTag("lassoMerge")){Text("Merge",maxLines=1)}
                 OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){Text("Delete",maxLines=1)}
                 OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…",maxLines=1)}
             }

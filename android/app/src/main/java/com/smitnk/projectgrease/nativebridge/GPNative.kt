@@ -178,6 +178,7 @@ object GPNative {
     external fun nativeErase(handle: Long, x: Float, y: Float, radius: Float, mode: Int, drawStrength: Float,
                              pressure: Float, eraStrength: Float, eraThickness: Float): Boolean
     external fun nativeClearSelection(handle: Long)
+    external fun nativeStrokeSelected(handle: Long, index: Int): Boolean
     external fun nativeApplyEditCommand(handle: Long, command: Int, args: FloatArray = floatArrayOf()): Boolean
     /** Blender operator by idname (pg_wm): low byte = WM status (FINISHED 4 / CANCELLED 2),
      *  bits 8+ = operator type flags (OPTYPE_UNDO 2). */

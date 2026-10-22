@@ -293,6 +293,11 @@ int project_grease_gp_delete_frame(ProjectGreaseGPHandle *handle, int frame_numb
 {
   return ensure_operator(handle) && handle->backend.delete_frame(frame_number) ? 1 : 0;
 }
+int project_grease_gp_stroke_selected(ProjectGreaseGPHandle *handle, int index)
+{
+  return handle && handle->backend.stroke_selected(index) ? 1 : 0;
+}
+
 int project_grease_gp_select_stroke(ProjectGreaseGPHandle *handle, int index)
 {
   return ensure_ready(handle) && handle->backend.select_stroke(index) ? 1 : 0;

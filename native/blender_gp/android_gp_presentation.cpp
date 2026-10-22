@@ -1520,6 +1520,17 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
       const MaterialGPencilStyle* style = ma ? ma->gp_style : nullptr;
       if (style && (style->flag & GP_MATERIAL_HIDE)) continue;
       if (stroke->totpoints < 2) continue;
+      // holdouts (the eraser / lasso holes) are not walls: an eraser stroke clears the lines it
+      // erased from the mask (they stayed there as boundaries and the fill failed), a lasso hole is left out
+      if (style && (style->flag & GP_MATERIAL_IS_FILL_HOLDOUT)) continue;
+      if (style && (style->flag & GP_MATERIAL_IS_STROKE_HOLDOUT)) {
+        draw_vertices(strokes, mask_color, false); strokes.clear();
+        std::vector<Vertex> hole;
+        append_stroke_outline(hole, stroke, float(stroke->thickness), w, h);
+        const float clear_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        draw_vertices(hole, clear_color, false);
+        continue;
+      }
       if (skip && !(stroke->flag & GP_STROKE_NOFILL)) continue;
 
       // gpencil_fill.c gpencil_draw_datablock(): STROKE / BOTH draw the strokes as they look

@@ -1540,11 +1540,16 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             FloatingIcon(Icons.Default.Apps,"All tools"){onSheet(Sheet.TOOLS)}
         }
 
-        // floating toolbar
+        // floating toolbar (hide / show: more room to draw)
         val tool=controller.tools.activeTool
-        Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp).testTag("studioToolbar"),
+        var toolbarHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
+        if(toolbarHidden) Box(Modifier.align(Alignment.CenterStart).padding(start=2.dp).testTag("toolbarShow")){
+            FloatingIcon(Icons.Default.ChevronRight,"Show tools"){toolbarHidden=false}
+        }
+        if(!toolbarHidden) Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp).testTag("studioToolbar"),
             shape=RoundedCornerShape(24.dp),tonalElevation=6.dp,shadowElevation=4.dp){
             Column(Modifier.padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                IconButton(onClick={toolbarHidden=true},Modifier.size(32.dp).testTag("toolbarHide")){Icon(Icons.Default.ChevronLeft,"Hide tools")}
                 // Tap a tool to use it; tap the active tool again for its options.
                 fun pick(t:GreaseTool){ if(tool==t) popup=StudioPopup.OPTIONS else { controller.selectTool(t); popup=StudioPopup.NONE }; redraw() }
                 ToolbarButton(Icons.Default.Brush,"Brush",tool==GreaseTool.DRAW||tool==GreaseTool.SCULPT){pick(if(controller.mode==GreaseMode.SCULPT)GreaseTool.SCULPT else GreaseTool.DRAW)}

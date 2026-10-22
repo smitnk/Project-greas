@@ -1396,7 +1396,7 @@ class EditorController {
                 rotoscope.kind == Rotoscope.Kind.IMAGE || blocking -> loader.frame(rotoscope, n)
                 else -> loader.cached(rotoscope, n).also {
                     if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown[rotoscope] != slotKey) render() }
-                    loader.prefetch(rotoscope, n + 1, 3)
+                    loader.prefetch(rotoscope, n + 1, 8) // ~90 ms a frame on the phone: stay ahead of playback
                 }
             }
             if (img != null || n == 0) {

@@ -1427,7 +1427,14 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
   // active guide in the theme's guide colour, over the canvas, not exported.
   if(!g_export_mode&&g_guide_type>=0){
-    std::vector<Vertex> lines;
+    // built once per guide / view change: rebuilding the circular rings every frame (thousands of
+    // segments) made each frame take ~2 s on the phone
+    static std::vector<Vertex> lines;
+    static float key[9]={-1};
+    const float k_now[9]={float(g_guide_type),g_guide_cx,g_guide_cy,g_guide_angle,g_guide_spacing,g_map_scale,g_map_origin_x,g_map_origin_y,float(w*100000+h)};
+    if(std::memcmp(key,k_now,sizeof key)!=0){
+    std::memcpy(key,k_now,sizeof key);
+    lines.clear();
     const float px=1.0f/std::max(g_map_scale,1e-6f);
     const float diag=std::hypot(float(g_canvas_width),float(g_canvas_height));
     auto seg=[&](float x0,float y0,float x1,float y1){
@@ -1437,7 +1444,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     const int count=std::min(200,int(diag/sp)+1);
     if(g_guide_type==0){ // circular: rings around the centre
       for(int k=1;k<=count;k++){
-        const float r=sp*k; const int n=std::clamp(int(r*g_map_scale*0.25f),24,180);
+        const float r=sp*k; const int n=std::clamp(int(r*g_map_scale*0.08f),24,72);
         for(int j=0;j<n;j++){const float a0=6.2831853f*j/n,a1=6.2831853f*(j+1)/n;
           seg(g_guide_cx+r*std::cos(a0),g_guide_cy+r*std::sin(a0),g_guide_cx+r*std::cos(a1),g_guide_cy+r*std::sin(a1));}
       }
@@ -1457,6 +1464,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
           seg(ox-dx*diag,oy-dy*diag,ox+dx*diag,oy+dy*diag);
         }
       }
+    }
     }
     const float guide_color[4]={0.25f,0.55f,0.95f,0.45f};
     draw_vertices(lines,guide_color);

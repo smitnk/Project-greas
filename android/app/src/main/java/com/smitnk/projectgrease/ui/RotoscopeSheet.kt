@@ -49,7 +49,10 @@ class RotoscopeLoader(private val context: Context) {
         if (uris.isEmpty() || n < 1 || n > r.frames || cached(r, n) != null || k in failed || !pending.add(k)) return
         worker.execute {
             // a frame that does not decode is not retried: each failure re-rendered, which asked again
+            val t0 = System.nanoTime()
             val ok = try { decode(kind, uris, n) != null } catch (_: Throwable) { false } finally { pending.remove(k) }
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            if (ms >= 150 || !ok) com.smitnk.projectgrease.CrashLog.event("REF decode frame $n ${kind.name}: ok=$ok in $ms ms")
             if (ok) main.post(done) else failed.add(k)
         }
     }
@@ -82,6 +85,12 @@ class RotoscopeLoader(private val context: Context) {
     }
     /** Frames [first] .. [first]+[n]-1 of a video in one decoder pass (MediaMetadataRetriever.getFramesAtIndex). */
     private fun movieBatch(uri: String, first: Int, n: Int) {
+        val t0 = System.nanoTime()
+        try { movieBatchDecode(uri, first, n) } finally {
+            com.smitnk.projectgrease.CrashLog.event("REF batch frames $first..${first + n - 1}: ${(System.nanoTime() - t0) / 1_000_000} ms")
+        }
+    }
+    private fun movieBatchDecode(uri: String, first: Int, n: Int) {
         val mr = retriever?.takeIf { retrieverUri == uri } ?: MediaMetadataRetriever().also {
             retriever?.release(); it.setDataSource(context, Uri.parse(uri)); retriever = it; retrieverUri = uri
         }

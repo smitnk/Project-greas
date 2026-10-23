@@ -125,6 +125,9 @@ internal class ProjectGreaseDrawingSurfaceView(
 ) : SurfaceView(context) {
     private var rendererHandle = 0L
     private var strokeOpen = false
+    private var fillPending = false
+    private var fillDownX = 0f
+    private var fillDownY = 0f
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var moveOpen = false
     private var lastMoveX = 0f
@@ -253,10 +256,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                         eraseLastY = start.second
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.FILL -> {
-                        if (event.eventTime >= controller.lastFillEndMs) {
-                            canvasPoint(event.x, event.y).let { c -> controller.fillAt(event.x, event.y, c.first, c.second) }
-                            controller.render()
-                        }
+                        // filled on finger up (below): a second finger (pinch / undo tap) cancels it
+                        fillDownX = event.x; fillDownY = event.y; fillPending = event.eventTime >= controller.lastFillEndMs
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.EYEDROPPER -> {
                         controller.pickColorAt(event.x.toInt(), event.y.toInt())
@@ -567,6 +568,10 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                if (fillPending && multiMax < 2) {
+                    canvasPoint(fillDownX, fillDownY).let { c -> controller.fillAt(fillDownX, fillDownY, c.first, c.second) }
+                }
+                fillPending = false
                 if (multiMax >= 2) {
                     val tap = multiMoved <= TAP_SLOP_PX && event.eventTime - multiStartMs <= TAP_TIMEOUT_MS
                     if (tap) { if (multiMax == 2) controller.undo() else controller.redo() }
@@ -595,6 +600,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                fillPending = false
                 endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
                 if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) controller.endErase()
                 if (strokeOpen) controller.cancelStroke()

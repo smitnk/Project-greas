@@ -253,8 +253,17 @@ class AnimationController(private val native: NativeEditorBridge, private val re
             if (!playing || native.handle == 0L) return
             val end = endFrame()
             timelineEnd = end
+            // real-time playback (Blender's Frame Dropping sync): when a frame took longer than 1/fps
+            // to draw (a video layer), the frames it owes are skipped instead of playing slow
+            val now = android.os.SystemClock.uptimeMillis()
+            val period = 1000f / fps.coerceIn(1, 120)
+            owed = if (lastTick == 0L || now - lastTick > 1000) 1f else owed + (now - lastTick) / period
+            lastTick = now
+            val steps = owed.toInt().coerceIn(1, 4); owed = (owed - steps).coerceAtLeast(0f)
             // screen_animation_step: wraps within the preview range when it is on (PRVRANGEON).
-            val next = TimelineRules.nextPlaybackFrame(currentFrame, timeline.preview, end, loop)
+            var step: Int? = currentFrame
+            for (k in 0 until steps) step = step?.let { TimelineRules.nextPlaybackFrame(it, timeline.preview, end, loop) }
+            val next = step
             if (next == null) {
                 playing = false
                 onPlayback?.invoke(false, currentFrame)
@@ -267,9 +276,12 @@ class AnimationController(private val native: NativeEditorBridge, private val re
                 frameCount = native.frameCount().coerceAtLeast(1)
                 renderFrame()
             }
-            if (playing) handler.postDelayed(this, (1000L / fps.coerceIn(1,120)).coerceAtLeast(1L))
+            if (playing) handler.postDelayed(this, (period - (android.os.SystemClock.uptimeMillis() - now)).toLong().coerceAtLeast(1L))
+            else lastTick = 0L
         }
     }
+    private var lastTick = 0L
+    private var owed = 0f
 
     fun initialize() {
         if (native.handle != 0L) {
@@ -418,7 +430,7 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         timeline = state
         return true
     }
-    fun stop(){val was=playing;playing=false;handler.removeCallbacks(tick);if(was)onPlayback?.invoke(false,currentFrame)}
+    fun stop(){val was=playing;playing=false;lastTick=0L;handler.removeCallbacks(tick);if(was)onPlayback?.invoke(false,currentFrame)}
 }
 
 class MaterialController {

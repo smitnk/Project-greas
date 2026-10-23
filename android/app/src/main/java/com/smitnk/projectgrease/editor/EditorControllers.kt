@@ -2516,17 +2516,44 @@ class EditorController {
     private fun holdoutLoopOverFills(noose: List<Pair<Float, Float>>): Boolean {
         if (noose.size < 3 || !activeLayerEditable()) return false
         val lx = noose.map { it.first }; val ly = noose.map { it.second }
-        val w = document.canvasWidth; val h = document.canvasHeight
         val loop = android.graphics.Path().apply { moveTo(lx[0], ly[0]); for (k in 1 until lx.size) lineTo(lx[k], ly[k]); close() }
-        val fill = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL }
         val clear = android.graphics.Paint().apply { isAntiAlias = false; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+        val changed = reshapeFills({ xs, ys -> xs.indices.any { pointInPolygon(xs[it], ys[it], lx, ly) } || noose.any { pointInPolygon(it.first, it.second, xs, ys) } }) { it.drawPath(loop, clear) }
+        com.smitnk.projectgrease.CrashLog.event("CUT fills: reshaped=$changed")
+        return changed
+    }
+    /**
+     * Pixel eraser on fills, made real at the end of the gesture: the fills under the eraser path
+     * (x, y, radius triples) get the path cut out of their geometry (as the lasso does), and the
+     * gesture's live holdout marks are removed, so nothing invisible stays behind for the lasso.
+     */
+    private fun erasePathFromFills(path: FloatArray): Boolean {
+        if (path.size < 3) return false
+        val n = path.size / 3
+        val clear = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+        val dot = android.graphics.Paint().apply { isAntiAlias = false; xfermode = clear.xfermode }
+        return reshapeFills({ xs, ys ->
+            (0 until n).any { k ->
+                val x = path[3 * k]; val y = path[3 * k + 1]; val r = path[3 * k + 2]
+                pointInPolygon(x, y, xs, ys) || xs.indices.any { (xs[it] - x) * (xs[it] - x) + (ys[it] - y) * (ys[it] - y) <= r * r }
+            }
+        }) { c ->
+            for (k in 0 until n) {
+                c.drawCircle(path[3 * k], path[3 * k + 1], path[3 * k + 2], dot)
+                if (k > 0) { clear.strokeWidth = path[3 * k + 2] * 2f; c.drawLine(path[3 * k - 3], path[3 * k - 2], path[3 * k], path[3 * k + 1], clear) }
+            }
+        }
+    }
+    /** Redraws each fill [touches] accepts with [cut] cleared out of it, in place (see holdoutLoopOverFills). */
+    private fun reshapeFills(touches: (List<Float>, List<Float>) -> Boolean, cut: (android.graphics.Canvas) -> Unit): Boolean {
+        val w = document.canvasWidth; val h = document.canvasHeight
+        val fill = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL }
         var changed = false
         // from the top down, so the indices below stay valid while strokes are replaced
         for ((i, xs, ys) in filledStrokes().asReversed()) {
             val name = native.strokeInfo(i)?.let { native.materialName(it[0].toInt()) }
             if (name == HOLDOUT_MATERIAL || name == CUTTER_MATERIAL) continue
-            val touches = xs.indices.any { pointInPolygon(xs[it], ys[it], lx, ly) } || noose.any { pointInPolygon(it.first, it.second, xs, ys) }
-            if (!touches) continue
+            if (!touches(xs, ys)) continue
             val info = native.strokeInfo(i)?.copyOf(11) ?: continue
             info[2] = 1f // cyclic
             val p0 = native.getPoint(i, 0) ?: continue
@@ -2534,7 +2561,7 @@ class EditorController {
             val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
             val canvas = android.graphics.Canvas(bmp)
             canvas.drawPath(android.graphics.Path().apply { moveTo(xs[0], ys[0]); for (k in 1 until xs.size) lineTo(xs[k], ys[k]); close() }, fill)
-            canvas.drawPath(loop, clear)
+            cut(canvas)
             val alpha = java.nio.ByteBuffer.allocate(w * h); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
             val outlines = withHolesJoined(ImageTrace.trace(BooleanArray(w * h) { alpha.get(it).toInt() != 0 }, w, h, 0.75f, 3))
             if (!native.deleteStroke(i)) continue
@@ -2551,7 +2578,6 @@ class EditorController {
             }
             changed = true
         }
-        com.smitnk.projectgrease.CrashLog.event("CUT fills: reshaped=$changed")
         if (changed) render()
         return changed
     }
@@ -3301,7 +3327,7 @@ class EditorController {
     }
     /** Starts an erase drag: Blender's modal GPENCIL_OT_draw in eraser mode (cancels a running paint operator). */
     fun beginErase() {
-        autokeyHeld(); erasePath.clear(); eraseGestureSamples = 0; eraseGestureHits = 0
+        autokeyHeld(); erasePath.clear(); eraseGestureSamples = 0; eraseGestureHits = 0; eraseGestureFilled = false; eraseGestureMarks = 0; eraseGesturePath.clear()
         if (native.handle != 0L) { runCatching { GPNative.nativeTakeEraseFillHits() }; GPNative.nativeEraseModal(native.handle, 0, false) }
     }
     /** When the gesture touched a fill: one holdout stroke along the eraser path (as wide as the eraser)
@@ -3309,16 +3335,38 @@ class EditorController {
     private var eraseGestureSamples = 0
     private var eraseGestureHits = 0
     private var eraseGestureFilled = false
+    private val eraseGesturePath = ArrayList<Float>()
+    private var eraseGestureMarks = 0
     private fun eraseFillsAlongPath(live: Boolean = false):Boolean {
         val path = erasePath.toFloatArray(); erasePath.clear()
         // a live chunk keeps its last sample so the next chunk joins it without a gap
         if (live && path.size >= 3) for (k in path.size - 3 until path.size) erasePath.add(path[k])
         val hits = if (native.handle == 0L) 0 else runCatching { GPNative.nativeTakeEraseFillHits() }.getOrElse { com.smitnk.projectgrease.CrashLog.event("ERASE fill hits unavailable: $it"); 0 }
         eraseGestureSamples += path.size / 3; eraseGestureHits += hits
-        if (!live && path.isNotEmpty()) {
-            com.smitnk.projectgrease.CrashLog.event("ERASE gesture: $eraseGestureSamples samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $eraseGestureHits")
+        for (v in path) eraseGesturePath.add(v)
+        if (!live) {
+            val ok = addFillEraseMark(path, hits)
+            // the live marks were a preview: cut the fills for real and drop the marks
+            if (eraseGestureMarks > 0 && native.handle != 0L) {
+                var left = eraseGestureMarks
+                while (left > 0 && native.strokeCount() > 0) {
+                    val last = native.strokeCount() - 1
+                    if (native.strokeInfo(last)?.let { native.materialName(it[0].toInt()) } != HOLDOUT_MATERIAL) break
+                    native.deleteStroke(last); left--
+                }
+                val cut = erasePathFromFills(eraseGesturePath.toFloatArray())
+                com.smitnk.projectgrease.CrashLog.event("ERASE fills: cut from the fills=$cut, preview marks removed ${eraseGestureMarks - left}")
+                if (cut) { eraseGestureChanged = true; eraseGestureFilled = true }
+            }
+            eraseGestureMarks = 0; eraseGesturePath.clear()
+            if (path.isNotEmpty()) com.smitnk.projectgrease.CrashLog.event("ERASE gesture: $eraseGestureSamples samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $eraseGestureHits")
             eraseGestureSamples = 0; eraseGestureHits = 0
+            return ok || eraseGestureFilled
         }
+        return addFillEraseMark(path, hits)
+    }
+    /** A live preview mark (holdout stroke) along this piece of the eraser path, when it touched a fill. */
+    private fun addFillEraseMark(path: FloatArray, hits: Int): Boolean {
         if (native.handle == 0L || hits <= 0 || path.size < 3) return false
         val slot = holdoutMaterialSlot() ?: return false
         val radius = (0 until path.size / 3).maxOf { path[3 * it + 2] }
@@ -3340,7 +3388,7 @@ class EditorController {
         val info = floatArrayOf(slot.toFloat(), radius * 2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f)
         val ok = native.addStroke(pts, n, info, colors)
         if (!ok) com.smitnk.projectgrease.CrashLog.event("ERASE fills: holdout stroke of $n points, width ${(radius * 2).toInt()} failed")
-        if (ok) { eraseGestureChanged = true; if (live) eraseGestureFilled = true; document.markDirty(); render() }
+        if (ok) { eraseGestureChanged = true; eraseGestureMarks++; document.markDirty(); render() }
         return ok
     }
     /** The eraser's material: line shown, holdout (GP_MATERIAL_IS_STROKE_HOLDOUT), found or made. */

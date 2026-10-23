@@ -244,6 +244,7 @@ private fun addVideoLayer(controller: EditorController, context: Context, uri: U
     if (controller.animation.sceneEnd < startAt + r.usedFrames - 1) controller.animation.setSceneEnd(startAt + r.usedFrames - 1)
     controller.selectLayer(drawingLayer.coerceIn(0, controller.layerCount() - 1).let { if (newIndex > 0) it + 1 else it }.coerceAtMost(controller.layerCount() - 1))
     controller.rotoscopeChanged(); controller.history.markEdit()
+    controller.rotoscopeLoader?.preload(r, a, b)
     com.smitnk.projectgrease.CrashLog.event("IMPORT video frames $a..$b of $frames as layer '$name' from frame $startAt")
     toast(context, "Video layer added: frames $startAt–${startAt + r.usedFrames - 1}")
 }

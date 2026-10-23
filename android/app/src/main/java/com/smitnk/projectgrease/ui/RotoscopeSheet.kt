@@ -24,7 +24,8 @@ import com.smitnk.projectgrease.editor.Rotoscope
 /** Decodes rotoscope frames (still, sequence, movie) for the editor, a few frames cached. */
 class RotoscopeLoader(private val context: Context) {
     private val cache = object : LinkedHashMap<String, Triple<IntArray, Int, Int>>(16, 0.75f, true) {
-        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Triple<IntArray, Int, Int>>?) = size > 24
+        // a whole short clip stays decoded (~0.9 MB a 640 px frame): playback then only uploads, no decoder
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Triple<IntArray, Int, Int>>?) = size > 120
     }
     private var retriever: MediaMetadataRetriever? = null
     private var retrieverUri: String? = null
@@ -65,13 +66,30 @@ class RotoscopeLoader(private val context: Context) {
         }
         for (n in from until from + count) decodeAsync(r, n)
     }
+    /** Decodes a video's frames [from]..[to] in the background right after import, in batches, so the
+     *  first play does not wait on the decoder (frame [from] first, so it shows at once). */
+    fun preload(r: Rotoscope, from: Int, to: Int) {
+        if (r.kind != Rotoscope.Kind.MOVIE || Build.VERSION.SDK_INT < 28) return
+        val uri = r.uris.firstOrNull() ?: return
+        val last = minOf(to, from + 119, r.frames)
+        var f = from
+        while (f <= last) {
+            val first = f; val n = minOf(12, last - f + 1)
+            val k = "batch|$uri|$first"
+            if (pending.add(k)) worker.execute { try { movieBatch(uri, first, n) } catch (_: Throwable) {} finally { pending.remove(k) } }
+            f += n
+        }
+    }
     /** Frames [first] .. [first]+[n]-1 of a video in one decoder pass (MediaMetadataRetriever.getFramesAtIndex). */
     private fun movieBatch(uri: String, first: Int, n: Int) {
         val mr = retriever?.takeIf { retrieverUri == uri } ?: MediaMetadataRetriever().also {
             retriever?.release(); it.setDataSource(context, Uri.parse(uri)); retriever = it; retrieverUri = uri
         }
-        val list = runCatching { mr.getFramesAtIndex(first - 1, n) }.getOrNull() ?: return
-        list.forEachIndexed { i, bmp -> synchronized(cache) { cache[key(Rotoscope.Kind.MOVIE, listOf(uri), first + i)] = small(bmp) } }
+        // RGB_565: half the bytes to decode and copy; the frame is scaled down to 640 px anyway
+        val params = MediaMetadataRetriever.BitmapParams().apply { preferredConfig = Bitmap.Config.RGB_565 }
+        val list = runCatching { mr.getFramesAtIndex(first - 1, n, params) }.getOrNull()
+            ?: runCatching { mr.getFramesAtIndex(first - 1, n) }.getOrNull() ?: return
+        list.forEachIndexed { i, bmp -> val px = small(bmp); bmp.recycle(); synchronized(cache) { cache[key(Rotoscope.Kind.MOVIE, listOf(uri), first + i)] = px } }
     }
     /** Video frames at most [MOVIE_SIZE] px: a picture under the drawing, uploaded every frame of playback. */
     private fun small(bmp: Bitmap): Triple<IntArray, Int, Int> {

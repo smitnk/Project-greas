@@ -1794,6 +1794,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             IconButton(onClick={controller.selectFrame(anim.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
             val keys=remember(anim.keyframes){anim.keyframes.toSet()}
             val state=androidx.compose.foundation.lazy.rememberLazyListState()
+            // the current frame stays in view (playback, + frame, jumps from the timeline)
+            LaunchedEffect(anim.currentFrame){ if(state.layoutInfo.visibleItemsInfo.none{it.index==anim.currentFrame-1}) state.scrollToItem((anim.currentFrame-1).coerceAtLeast(0)) }
             androidx.compose.foundation.lazy.LazyRow(Modifier.weight(1f).padding(vertical=4.dp),state=state){
                 items(anim.timelineEnd.coerceAtLeast(1),key={it+1}){index->
                     val frame=index+1

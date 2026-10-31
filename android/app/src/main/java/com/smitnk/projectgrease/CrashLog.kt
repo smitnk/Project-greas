@@ -73,6 +73,7 @@ object CrashLog {
     private var logFile: File? = null
     private val stamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
     fun event(what: String) {
+        android.util.Log.i("PGLog", what) // also in logcat: emulator runs and adb bug reports see the activity log
         val f = logFile ?: return
         val bug = detectBug(what)
         val time = synchronized(stamp) { stamp.format(java.util.Date()) }

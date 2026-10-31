@@ -1419,6 +1419,7 @@ class EditorController {
                     loader.prefetch(rotoscope, n + 1, 8) // ~90 ms a frame on the phone: stay ahead of playback
                 }
             }
+            com.smitnk.projectgrease.CrashLog.event("REF sync ${rotoscope.kind} frame $n slot $slot img=${img?.second}x${img?.third} loader=${loader != null}")
             if (img != null || n == 0) {
                 val tu = System.nanoTime()
                 GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)

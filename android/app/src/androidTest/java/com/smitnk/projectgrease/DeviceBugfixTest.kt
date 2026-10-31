@@ -497,6 +497,7 @@ class DeviceBugfixTest {
     @Test fun keyframeTypeSavedAndMarked() {
         assertTrue(onUi { controller.createFrame(5) })
         assertTrue(onUi { controller.setFrameKeyType(5, com.smitnk.projectgrease.editor.ProjectGreaseSelect.KEY_BREAKDOWN) })
+        onUi { controller.selectFrame(5) }
         rule.waitForIdle()
         rule.onNodeWithTag("keyMark_5_2").assertExists()
         screenshot("22_keyframe_breakdown")

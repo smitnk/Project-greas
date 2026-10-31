@@ -15,11 +15,13 @@ dismiss() { adb shell settings put global window_animation_scale 0 >/dev/null 2>
   adb shell input keyevent KEYCODE_WAKEUP; adb shell input keyevent 82; sleep 5; }
 adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
 dismiss
-run() { adb shell am instrument -w -r -e class "$CLASSES" \
+# PG_DEVICE_TESTS=all runs every instrumented test class (the full emulator QA sweep)
+if [ "${PG_DEVICE_TESTS:-}" = "all" ]; then SEL="-e package com.smitnk.projectgrease"; else SEL="-e class $CLASSES"; fi
+run() { adb shell am instrument -w -r $SEL \
   com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee device-tests.txt; }
 run
 if grep -q "INJECT_EVENTS" device-tests.txt; then echo "::warning title=device tests::system dialog blocked input, rerunning"; dismiss; run; fi
-mkdir -p android/device-shots
+mkdir -p android/device-shots; cp device-tests.txt android/device-shots/ 2>/dev/null || true
 adb logcat -d > android/device-shots/logcat.txt 2>/dev/null || true
 # app crashes: the first FATAL EXCEPTION with its stack, as one annotation
 grep -A30 -m1 "FATAL EXCEPTION" android/device-shots/logcat.txt | sed 's/%/%25/g' | awk 'BEGIN{printf "::error title=device crash::"}{printf "%s%%0A", $0}END{print ""}' || true

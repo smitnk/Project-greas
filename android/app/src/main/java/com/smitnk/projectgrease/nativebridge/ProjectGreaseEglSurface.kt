@@ -414,6 +414,13 @@ internal class ProjectGreaseDrawingSurfaceView(
                         ghostPointers.remove(pendingPointer)
                         pendingPointer = MotionEvent.INVALID_POINTER_ID
                         startGesture(event)
+                        // the pinch is measured from where the fingers landed, not from where the second
+                        // finger had got to by now: zoom / turn / pan were short by that first part
+                        if (event.pointerCount == 2) {
+                            pinchStartDistance = hypot(pendingX - activeDownX, pendingY - activeDownY).coerceAtLeast(1f)
+                            pinchStartAngle = atan2(pendingY - activeDownY, pendingX - activeDownX)
+                            pinchStartCx = (activeDownX + pendingX) / 2f; pinchStartCy = (activeDownY + pendingY) / 2f
+                        }
                         return true
                     }
                 }
@@ -537,7 +544,20 @@ internal class ProjectGreaseDrawingSurfaceView(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                if (event.getPointerId(event.actionIndex) == pendingPointer) pendingPointer = MotionEvent.INVALID_POINTER_ID
+                if (event.getPointerId(event.actionIndex) == pendingPointer) {
+                    // a second finger that landed with the first and lifted without moving is a
+                    // two-finger tap (undo), not a resting touch: it never moved, so it never became a gesture
+                    val a = event.findPointerIndex(activePointerId)
+                    val still = a >= 0 && hypot(event.getX(a) - activeDownX, event.getY(a) - activeDownY) <= tapSlopPx
+                    val quick = event.eventTime - event.downTime <= TAP_TIMEOUT_MS
+                    ghostPointers.remove(pendingPointer)
+                    pendingPointer = MotionEvent.INVALID_POINTER_ID
+                    if (pendingLateMs < 150L && still && quick) {
+                        startGesture(event)
+                        multiStartMs = event.downTime
+                        return true
+                    }
+                }
                 if (ghostPointers.remove(event.getPointerId(event.actionIndex))) return true
                 if (propPinch) {
                     propPinch = false

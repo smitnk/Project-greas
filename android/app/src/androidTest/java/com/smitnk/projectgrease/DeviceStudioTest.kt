@@ -52,7 +52,7 @@ class DeviceStudioTest : SweepBase() {
     }
 
     @Test fun oneMenuReachesEverySheet() {
-        for (tag in listOf("tools", "materials", "draw", "advanced", "layers", "onion", "timeline", "edit", "rotoscope", "reference", "project")) {
+        for (tag in listOf("tools", "materials", "draw", "advanced", "layers", "onion", "timeline", "edit", "rotoscope", "project")) {
             rule.onNodeWithTag("studioCanvas").assertExists()
             rule.onNodeWithContentDescription("Menu").performClick()
             rule.onNodeWithTag("menu_$tag").performScrollTo().performClick()

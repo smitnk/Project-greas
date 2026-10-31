@@ -1410,6 +1410,10 @@ class EditorController {
                 n == 0 || loader == null -> null
                 blocking -> loader.exportFrame(rotoscope, n)
                 rotoscope.kind == Rotoscope.Kind.IMAGE -> loader.frame(rotoscope, n)
+                // nothing on screen yet (just imported / opened): decode this one frame now, not after
+                // the background queue, so the first frame shows at once (reported: first video frame late)
+                rotoscopeShown[rotoscope] == null && !animation.playing ->
+                    (loader.cached(rotoscope, n) ?: loader.exportFrame(rotoscope, n)).also { loader.prefetch(rotoscope, n + 1, 8) }
                 else -> loader.cached(rotoscope, n).also {
                     if (it == null) loader.decodeAsync(rotoscope, n) { if (rotoscopeShown[rotoscope] != slotKey) render() }
                     loader.prefetch(rotoscope, n + 1, 8) // ~90 ms a frame on the phone: stay ahead of playback

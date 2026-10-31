@@ -165,7 +165,7 @@ class DeviceBugfixTest {
 
     // ---- tests ----
     @Test fun topBarIsBelowTheStatusBar() {
-        val top = rule.onNodeWithTag("editorTopBar").fetchSemanticsNode().boundsInWindow.top
+        val top = rule.onNodeWithTag("studioMode").fetchSemanticsNode().boundsInWindow.top
         val inset = if (Build.VERSION.SDK_INT >= 30) onUi {
             rule.activity.window.decorView.rootWindowInsets.getInsets(WindowInsets.Type.statusBars()).top
         } else 0
@@ -200,10 +200,9 @@ class DeviceBugfixTest {
     }
 
     @Test fun plusFrameAdvancesTheCounter() {
-        rule.onNodeWithText("+ Frame").performClick()
+        rule.onNodeWithTag("stripAdd").performClick()
         rule.waitForIdle()
-        val end = onUi { controller.animation.timelineEnd }
-        rule.onNodeWithText("Frame 2 / $end").assertExists()
+        rule.onNodeWithTag("strip_2").assertExists()
         assertEquals(2, onUi { controller.animation.currentFrame })
         assertEquals(2, onUi { controller.animation.keyframes.size })
         screenshot("04_plus_frame")
@@ -513,11 +512,15 @@ class DeviceBugfixTest {
     }
 
     @Test fun brushPresetValues() {
+        rule.onNodeWithTag("studioTool_Options").performClick()
+        rule.waitForIdle()
         rule.onNodeWithTag("brush_AIRBRUSH").performScrollTo().performClick()
         rule.waitForIdle()
         assertEquals(300f, onUi { controller.brushes.size }, 0f)
         assertEquals(0.4f, onUi { controller.brushes.strength }, 0f)
         rule.onNodeWithTag("brush_INK_PEN").performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("studioTool_Options").performClick() // close the options card before drawing
         rule.waitForIdle()
         assertEquals(60f, onUi { controller.brushes.size }, 0f)
         assertEquals(3, onUi { controller.brushes.pressureCurvePoints.size })

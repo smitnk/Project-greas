@@ -89,6 +89,8 @@ class SweepDrawTest : SweepBase() {
     @Test fun brushPresets() {
         for (preset in BrushPreset.values()) {
             onUi { controller.selectBrush(preset) }
+            // Blender's eraser presets are their own brush: they pick the Erase tool, the drawing brush stays
+            if (preset.kind == BrushPreset.Kind.ERASE) { assertEquals(GreaseTool.ERASE, onUi { controller.tools.activeTool }); continue }
             assertEquals(preset, onUi { controller.brushes.preset })
             assertEquals(preset.pressureCurve.size, onUi { controller.brushes.pressureCurvePoints.size })
         }

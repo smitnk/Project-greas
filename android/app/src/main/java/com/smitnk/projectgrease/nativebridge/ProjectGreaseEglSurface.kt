@@ -361,7 +361,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 // real second finger cannot land that close: ignore it and keep drawing.
                 if (event.pointerCount >= 2) {
                     val n = event.actionIndex
-                    val near = (0 until event.pointerCount).any { i -> i != n &&
+                    val near = event.pointerCount == 2 && (0 until event.pointerCount).any { i -> i != n &&
                         hypot(event.getX(n) - event.getX(i), event.getY(n) - event.getY(i)) < 40f * resources.displayMetrics.density }
                     // palm rejection: a palm resting on the screen while drawing is a contact much larger
                     // than the drawing fingertip (a pinch uses two fingertips of similar size)

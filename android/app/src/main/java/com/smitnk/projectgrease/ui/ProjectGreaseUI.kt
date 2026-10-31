@@ -1524,6 +1524,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
     var layersOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
     Box(Modifier.fillMaxSize().background(CanvasBg).testTag("studioCanvas")){
+        var toolbarHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
+        // the floating toolbar no longer covers the canvas: the viewport starts right of it (narrow phones lost the left edge)
+        Box(Modifier.fillMaxSize().padding(start=if(toolbarHidden)0.dp else 68.dp)){
         viewport()
         // canvas overlays turn with the two-finger view rotation (about the viewport centre)
         Box(Modifier.fillMaxSize().graphicsLayer{rotationZ=Math.toDegrees(controller.view.rotation.toDouble()).toFloat()}){
@@ -1540,6 +1543,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             BezierEditOverlay(controller,overlayTick+refresh,redraw)
             ReferenceAdjustOverlay(controller,redraw)
         }
+        }
 
         // top: project menu, mode, more
         Row(Modifier.align(Alignment.TopCenter).padding(6.dp),verticalAlignment=Alignment.CenterVertically){
@@ -1547,8 +1551,11 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             Spacer(Modifier.width(6.dp))
             Surface(shape=RoundedCornerShape(16.dp),tonalElevation=4.dp,shadowElevation=2.dp,
                 modifier=Modifier.clickable{popup=StudioPopup.MODE}.testTag("studioMode")){
-                Text(controller.mode.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()}+" ▾",
-                    Modifier.padding(horizontal=12.dp,vertical=6.dp),fontSize=12.sp)
+                Row(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                    Icon(modeIcon(controller.mode),null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(controller.mode.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()},fontSize=13.sp)
+                    Icon(Icons.Default.ArrowDropDown,null,Modifier.size(18.dp))
+                }
             }
             Spacer(Modifier.width(6.dp))
             FloatingIcon(Icons.Default.FitScreen,"Fit canvas"){controller.fitCanvas();redraw()}
@@ -1557,7 +1564,6 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
         // floating toolbar (hide / show: more room to draw)
         val tool=controller.tools.activeTool
-        var toolbarHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
         if(toolbarHidden) Box(Modifier.align(Alignment.CenterStart).padding(start=2.dp).testTag("toolbarShow")){
             FloatingIcon(Icons.Default.ChevronRight,"Show tools"){toolbarHidden=false}
         }
@@ -1602,35 +1608,35 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
-                    Modifier.testTag("lassoCut"))
+                    Modifier.testTag("lassoCut"),leadingIcon={Icon(Icons.Default.ContentCut,null,Modifier.size(18.dp))})
                 FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;controller.lassoPhotos=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
-                    Modifier.testTag("lassoCutInside"))
+                    Modifier.testTag("lassoCutInside"),leadingIcon={Icon(Icons.Default.CropFree,null,Modifier.size(18.dp))})
                 FilterChip(controller.lassoPhotos,{controller.lassoPhotos=!controller.lassoPhotos;controller.lassoCut=false;controller.lassoCutInside=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoPhotos)"Photo: on" else "Photo")},
-                    Modifier.testTag("lassoPhotos"))
+                    Modifier.testTag("lassoPhotos"),leadingIcon={Icon(Icons.Default.Photo,null,Modifier.size(18.dp))})
             }
         }
         // a loop drawn over a photo: what to do with that part of the picture
         if(controller.photoLasso!=null){
             PhotoLassoOverlay(controller)
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("photoLassoBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                Button(onClick={controller.applyPhotoLasso(0);redraw()},Modifier.testTag("photoCut")){Text("Cut out",maxLines=1)}
-                OutlinedButton(onClick={controller.applyPhotoLasso(1);redraw()}){Text("Copy out",maxLines=1)}
-                OutlinedButton(onClick={controller.applyPhotoLasso(2);redraw()}){Text("Erase",maxLines=1)}
-                OutlinedButton(onClick={controller.photoLasso=null;controller.render();redraw()}){Text("Cancel",maxLines=1)}
+                Button(onClick={controller.applyPhotoLasso(0);redraw()},Modifier.testTag("photoCut")){BtnLabel(Icons.Default.ContentCut,"Cut out")}
+                OutlinedButton(onClick={controller.applyPhotoLasso(1);redraw()}){BtnLabel(Icons.Default.FileCopy,"Copy out")}
+                OutlinedButton(onClick={controller.applyPhotoLasso(2);redraw()}){BtnLabel(Icons.Default.AutoFixNormal,"Erase")}
+                OutlinedButton(onClick={controller.photoLasso=null;controller.render();redraw()}){BtnLabel(Icons.Default.Close,"Cancel")}
             }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&!controller.bezierEditing&&controller.photoLasso==null&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){Text("Warp",maxLines=1)}
-                OutlinedButton(onClick={controller.beginBezierEdit();redraw()},Modifier.testTag("lassoCurveEdit")){Text("Curve edit",maxLines=1)}
-                OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){Text("Warp mesh",maxLines=1)}
+                Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){BtnLabel(Icons.Default.Transform,"Warp")}
+                OutlinedButton(onClick={controller.beginBezierEdit();redraw()},Modifier.testTag("lassoCurveEdit")){BtnLabel(Icons.Default.Timeline,"Curve edit")}
+                OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){BtnLabel(Icons.Default.GridOn,"Warp mesh")}
                 // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
-                OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){Text("Copy")}
-                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){Text("Paste")}
-                OutlinedButton(onClick={controller.mergeShapes();redraw()},Modifier.testTag("lassoMerge")){Text("Merge",maxLines=1)}
-                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){Text("Delete",maxLines=1)}
-                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){Text("More…",maxLines=1)}
+                OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){BtnLabel(Icons.Default.ContentCopy,"Copy")}
+                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){BtnLabel(Icons.Default.ContentPaste,"Paste")}
+                OutlinedButton(onClick={controller.mergeShapes();redraw()},Modifier.testTag("lassoMerge")){BtnLabel(Icons.Default.CallMerge,"Merge")}
+                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){BtnLabel(Icons.Default.Delete,"Delete")}
+                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){BtnLabel(Icons.Default.MoreHoriz,"More…")}
             }
         if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)},
             {onSheet(Sheet.LAYER_ADVANCED)},{onSheet(Sheet.ROTOSCOPE)})
@@ -1665,7 +1671,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             StudioPopup.MODE->StudioCard({popup=StudioPopup.NONE}){
                 GreaseMode.entries.forEach{m->
                     ListItem(headlineContent={Text(m.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()})},
-                        leadingContent={RadioButton(selected=controller.mode==m,onClick=null)},
+                        leadingContent={Row(verticalAlignment=Alignment.CenterVertically){RadioButton(selected=controller.mode==m,onClick=null);Icon(modeIcon(m),null)}},
                         modifier=Modifier.clickable{
                             // Blender's mode operators (GPENCIL_OT_*mode_toggle)
                             val op=when(m){GreaseMode.DRAW->"GPENCIL_OT_paintmode_toggle";GreaseMode.EDIT->"GPENCIL_OT_editmode_toggle";GreaseMode.SCULPT->"GPENCIL_OT_sculptmode_toggle";GreaseMode.VERTEX_PAINT->"GPENCIL_OT_vertexmode_toggle";GreaseMode.WEIGHT_PAINT->"GPENCIL_OT_weightmode_toggle"}
@@ -1798,7 +1804,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                         border=if(current)androidx.compose.foundation.BorderStroke(2.dp,Accent) else null){
                         Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
                             Text(frame.toString(),fontSize=12.sp)
-                            Box(Modifier.size(8.dp).background(if(frame in keys)keyTypeColor(anim.keyTypes[frame]?:0) else Color.Transparent,CircleShape))
+                            Box(Modifier.size(8.dp).background(if(frame in keys)keyTypeColor(anim.keyTypes[frame]?:0) else Color.Transparent,CircleShape)
+                                .then(if(frame in keys)Modifier.testTag("keyMark_${frame}_${anim.keyTypes[frame]?:0}") else Modifier))
                             // the audio tracks sounding on this frame (Audio tracks to move them)
                             val sounds=controller.audioStrips.count{it.playsAt(frame,anim.fps)}
                             if(sounds>0) Box(Modifier.padding(top=2.dp).fillMaxWidth(if(sounds>1)0.9f else 0.7f).height(4.dp).background(Color(0xFF26A69A),RoundedCornerShape(2.dp)))
@@ -1989,4 +1996,13 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         Text("Vertex Paint Opacity (viewport) ${"%.2f".format(controller.vertexOpacity)}")
         Slider(controller.vertexOpacity,{controller.vertexOpacity=it;tick++;redraw()},modifier=Modifier.testTag("vertexOpacity"))
     }}
+}
+
+/** A button label with its icon (the action reads at a glance, not only by its word). */
+@Composable private fun BtnLabel(icon:ImageVector,label:String){
+    Icon(icon,null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(label,maxLines=1)
+}
+private fun modeIcon(m:GreaseMode):ImageVector=when(m){
+    GreaseMode.DRAW->Icons.Default.Brush; GreaseMode.EDIT->Icons.Default.Edit; GreaseMode.SCULPT->Icons.Default.PanTool
+    GreaseMode.VERTEX_PAINT->Icons.Default.FormatPaint; GreaseMode.WEIGHT_PAINT->Icons.Default.LineWeight
 }

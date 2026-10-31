@@ -16,7 +16,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.smitnk.projectgrease.editor.EditorController
 
 /** Finger travel (px) and time (ms) under which a two / three finger touch is a tap (undo / redo). */
-private const val TAP_SLOP_PX = 24f
+
 private const val TAP_TIMEOUT_MS = 350L
 
 @Composable
@@ -125,6 +125,8 @@ internal class ProjectGreaseDrawingSurfaceView(
 ) : SurfaceView(context) {
     private var rendererHandle = 0L
     private var strokeOpen = false
+    // the platform slop scales with screen density; a fixed 24 px was 24 dp on mdpi phones and 6 dp on xxxhdpi
+    private val tapSlopPx = android.view.ViewConfiguration.get(context).scaledTouchSlop * 1.5f
     private var fillPending = false
     private var fillDownX = 0f
     private var fillDownY = 0f
@@ -427,7 +429,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     if (turn > PI.toFloat()) turn -= 2f * PI.toFloat() else if (turn < -PI.toFloat()) turn += 2f * PI.toFloat()
                     multiMoved = maxOf(multiMoved, abs(distance - pinchStartDistance) + hypot(cx - pinchStartCx, cy - pinchStartCy) +
                         abs(turn) * pinchStartDistance * 0.5f)
-                    if (event.pointerCount == 2 && multiMoved > TAP_SLOP_PX && pinchStartDistance > 0f && distance > 0f) {
+                    if (event.pointerCount == 2 && multiMoved > tapSlopPx && pinchStartDistance > 0f && distance > 0f) {
                         controller.view.setZoom(pinchStartZoom * (distance / pinchStartDistance))
                         controller.view.setRotation((pinchStartRot + turn).let { r ->
                             // a zoom / pan pinch always turns a little: within 6 degrees of upright stays upright
@@ -573,7 +575,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 }
                 fillPending = false
                 if (multiMax >= 2) {
-                    val tap = multiMoved <= TAP_SLOP_PX && event.eventTime - multiStartMs <= TAP_TIMEOUT_MS
+                    val tap = multiMoved <= tapSlopPx && event.eventTime - multiStartMs <= TAP_TIMEOUT_MS
                     if (tap) { if (multiMax == 2) controller.undo() else controller.redo() }
                     resetGestureState()
                     controller.render()

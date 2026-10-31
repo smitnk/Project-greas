@@ -19,9 +19,12 @@ dismiss
 if [ "${PG_DEVICE_TESTS:-}" = "all" ]; then SEL="-e package com.smitnk.projectgrease"; else SEL="-e class $CLASSES"; fi
 run() { adb shell am instrument -w -r $SEL \
   com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee device-tests.txt; }
+# the whole run's log: the ring buffer kept only the last ~35 tests
+mkdir -p android/device-shots; adb logcat -c; adb logcat -v time > android/device-shots/logcat-full.txt 2>/dev/null & LOGPID=$!
 run
 if grep -q "INJECT_EVENTS" device-tests.txt; then echo "::warning title=device tests::system dialog blocked input, rerunning"; dismiss; run; fi
 mkdir -p android/device-shots; cp device-tests.txt android/device-shots/ 2>/dev/null || true
+kill $LOGPID 2>/dev/null; grep -E 'PGLog|TestRunner|FATAL|AndroidRuntime' android/device-shots/logcat-full.txt > android/device-shots/app-log.txt 2>/dev/null
 adb logcat -d > android/device-shots/logcat.txt 2>/dev/null || true
 # app crashes: the first FATAL EXCEPTION with its stack, as one annotation
 grep -A30 -m1 "FATAL EXCEPTION" android/device-shots/logcat.txt | sed 's/%/%25/g' | awk 'BEGIN{printf "::error title=device crash::"}{printf "%s%%0A", $0}END{print ""}' || true

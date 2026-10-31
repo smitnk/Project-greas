@@ -499,7 +499,7 @@ class DeviceBugfixTest {
         assertTrue(onUi { controller.setFrameKeyType(5, com.smitnk.projectgrease.editor.ProjectGreaseSelect.KEY_BREAKDOWN) })
         onUi { controller.selectFrame(5) }
         rule.waitForIdle()
-        rule.onNodeWithTag("keyMark_5_2").assertExists()
+        rule.onNodeWithTag("keyMark_5_2", useUnmergedTree = true).assertExists()
         screenshot("22_keyframe_breakdown")
         val raw = onUi { controller.saveDocumentJson() }!!
         val layer = JSONObject(raw).getJSONArray("layers").getJSONObject(onUi { controller.selectedLayer })

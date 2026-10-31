@@ -12,14 +12,14 @@ android {
         applicationId = "com.smitnk.projectgrease"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.039 beta"
+        versionCode = 17
+        versionName = "0.040 beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // arm64-v8a for devices, x86_64 for the emulator job (instrumented device-bugfix tests).
+        // arm64-v8a + armeabi-v7a (32-bit budget / Android Go phones) for devices, x86_64 for the emulator job (instrumented device-bugfix tests).
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 

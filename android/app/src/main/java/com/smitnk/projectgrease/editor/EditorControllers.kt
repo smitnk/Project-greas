@@ -1422,10 +1422,11 @@ class EditorController {
             com.smitnk.projectgrease.CrashLog.event("REF sync ${rotoscope.kind} frame $n slot $slot img=${img?.second}x${img?.third} loader=${loader != null}")
             if (img != null || n == 0) {
                 val tu = System.nanoTime()
-                GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
+                val uploaded = GPNative.nativeSetReferenceImageEglRenderer(rendererHandle, img?.first, img?.second ?: 0, img?.third ?: 0)
                 val um = (System.nanoTime() - tu) / 1_000_000
                 if (um >= 20) com.smitnk.projectgrease.CrashLog.event("REF upload frame $n ${img?.second}x${img?.third} slot $slot: $um ms")
-                if (img == null) rotoscopeShown.remove(rotoscope) else { rotoscopeShown[rotoscope] = slotKey; rotoscope.pixW = img.second; rotoscope.pixH = img.third }
+                if (!uploaded) com.smitnk.projectgrease.CrashLog.event("REF upload frame $n failed (GL context busy): retried on the next draw")
+                if (img == null || !uploaded) rotoscopeShown.remove(rotoscope) else { rotoscopeShown[rotoscope] = slotKey; rotoscope.pixW = img.second; rotoscope.pixH = img.third }
             } else if (rotoscope.kind == Rotoscope.Kind.IMAGE) {
                 // a photo that does not decode is tried once, not on every frame
                 rotoscopeFailed[rotoscope] = key

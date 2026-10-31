@@ -447,3 +447,14 @@ jobs:
           path: android/device-shots
           if-no-files-found: ignore
           retention-days: 7
+
+      # the same results as a release asset (qa-results), readable where artifact storage is not
+      - name: Publish emulator QA results
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar czf qa-results.tgz -C android device-shots 2>/dev/null || exit 0
+          gh release view qa-results >/dev/null 2>&1 || gh release create qa-results --title "Emulator QA results" --notes "Latest emulator test run" --prerelease --target "$GITHUB_SHA"
+          gh release upload qa-results qa-results.tgz --clobber

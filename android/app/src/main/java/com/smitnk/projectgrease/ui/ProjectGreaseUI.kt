@@ -1617,7 +1617,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         }
         // a loop drawn over a photo: what to do with that part of the picture
         if(controller.photoLasso!=null){
-            PhotoLassoOverlay(controller)
+            // drawn in the canvas area like the other overlays (it sat 68 dp off once the canvas moved right of the toolbar)
+            Box(Modifier.fillMaxSize().padding(start=if(toolbarHidden)0.dp else 68.dp)){ PhotoLassoOverlay(controller) }
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("photoLassoBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 Button(onClick={controller.applyPhotoLasso(0);redraw()},Modifier.testTag("photoCut")){BtnLabel(Icons.Default.ContentCut,"Cut out")}
                 OutlinedButton(onClick={controller.applyPhotoLasso(1);redraw()}){BtnLabel(Icons.Default.FileCopy,"Copy out")}

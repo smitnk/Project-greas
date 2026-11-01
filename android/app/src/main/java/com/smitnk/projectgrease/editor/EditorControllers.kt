@@ -2479,7 +2479,7 @@ class EditorController {
                 // Blender's fill sees an existing fill as boundary: tapping one again failed every time.
                 // Like a paint bucket, it now takes the new colour instead.
                 val recoloured = !ok && cx.isFinite() && recolorFillAt(cx, cy, slot)
-                if (!ok && !recoloured) onMessage?.invoke("Fill: no closed area here (close the gap or raise Leak / Extend)")
+                if (!ok && !recoloured) onMessage?.invoke("Fill works inside a closed shape: tap inside one, or close the gap")
                 if (recoloured) { history.markEdit(); document.markDirty() }
                 if (ok) { history.markEdit(); document.markDirty() }
                 render()

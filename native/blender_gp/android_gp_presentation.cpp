@@ -130,6 +130,9 @@ float g_view_rotation=0.0f;
 /* last engine frame, for the crash report slow steps */
 static double g_last_engine_ms=0.0;static int g_last_engine_rebuilt=0,g_last_w=0,g_last_h=0;
 static unsigned g_last_gl_error=0;static long g_gl_error_frames=0,g_engine_gl_errors=0;
+static const char*g_last_gl_where="";
+/* GL error left since the last check: counted with the step that left it (the report names it) */
+static void gl_check(const char*where){const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_gl_error_frames++;g_last_gl_where=where;while(glGetError()!=GL_NO_ERROR){}}}
 void update_canvas_map(int w,int h){
   const float sx=float(w)/float(std::max(1,g_canvas_width));
   const float sy=float(h)/float(std::max(1,g_canvas_height));
@@ -1224,7 +1227,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   view.vertex_opacity=g_vertex_opacity;
   if(over)for(float&c:view.background)c=0.0f;
   const auto t_engine=std::chrono::steady_clock::now();
-  {const GLenum pre=glGetError();if(pre!=GL_NO_ERROR){g_last_gl_error=pre;g_gl_error_frames++;}} /* before the engine */
+  gl_check("canvas paper / reference / masks before the engine");
   const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
   {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
   glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
@@ -1299,8 +1302,11 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
       ndc(0,0,w,h), ndc(g_canvas_width,0,w,h), ndc(0,g_canvas_height,w,h),
       ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
   });
+  gl_check("between frames (uploads, textures, tool calls)");
   if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:g_paper_color,false);
+  gl_check("canvas paper");
   if(reference_shown())draw_reference(w,h);
+  gl_check("reference image");
   (void)x0; (void)y0; (void)x1; (void)y1;
   const bool by_engine=engine_wanted(gpd)&&engine_draw_canvas(gpd,frame_number,w,h);
   if(by_engine){
@@ -1473,7 +1479,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   if(!g_export_mode)draw_sbuffer(gpd, 1.0f, w, h);
   /* A GL error left by any pass used to fail the frame and the swap was skipped (canvas frozen /
    * black, reported on a turned view). The frame is drawn: keep it, report the error. */
-  {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_gl_error_frames++;}}
+  gl_check("overlays after the engine (onion, guides, live stroke)");
   return 1;
 }
 
@@ -1736,9 +1742,9 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_last_frame(){
   static char buf[900];
-  std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x",g_last_doc_ms,g_last_engine_ms,
+  std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x at %s",g_last_doc_ms,g_last_engine_ms,
                 g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
-                g_gl_error_frames,g_engine_gl_errors,g_last_gl_error);
+                g_gl_error_frames,g_engine_gl_errors,g_last_gl_error,g_last_gl_where);
   unsigned plast=0;const char*pname="";
   const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;
   if(pn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", %ld in passes (last 0x%x at pass %s)",pn,plast,pname);}

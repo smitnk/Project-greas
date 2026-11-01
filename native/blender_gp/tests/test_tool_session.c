@@ -267,6 +267,33 @@ static void test_vertex_paint(PGToolSession *ts)
   free_doc(&d);
 }
 
+/* Smear (user report: smear turned coloured strokes and fills black): it only moves colours that
+ * are there; a painted point never ends darker than both colours it mixes. */
+static void test_vertex_smear_keeps_colour(PGToolSession *ts)
+{
+  Doc d = doc();
+  bGPDstroke *a = stroke(&d, 6, 0, 100, 10, 0);
+  bGPDstroke *b = stroke(&d, 6, 60, 100, 10, 0);
+  for (int i = 0; i < 6; i++) {
+    a->points[i].vert_color[0] = 1; a->points[i].vert_color[3] = 1;
+    b->points[i].vert_color[2] = 1; b->points[i].vert_color[3] = 1;
+  }
+  a->vert_color_fill[0] = 1; a->vert_color_fill[3] = 1;
+  brush(GPVERTEX_TOOL_SMEAR, 30, 1.0f);
+  params[PG_TOOL_P_TARGET] = GPPAINT_MODE_BOTH;
+  float xy[12][2];
+  for (int i = 0; i < 12; i++) { xy[i][0] = 10.0f * i; xy[i][1] = 100; }
+  gesture(ts, d.gpd, PG_TOOL_VERTEX_PAINT, params, (const float (*)[2])xy, 12);
+  for (bGPDstroke *s = a; s; s = (s == a) ? b : NULL)
+    for (int i = 0; i < 6; i++) {
+      const float *c = s->points[i].vert_color;
+      CHECK(c[0] + c[1] + c[2] > 0.5f, "smear made point %d black: %g %g %g a %g", i, c[0], c[1], c[2], c[3]);
+    }
+  CHECK(a->vert_color_fill[0] + a->vert_color_fill[1] + a->vert_color_fill[2] > 0.5f, "smear made the fill black: %g %g %g",
+        a->vert_color_fill[0], a->vert_color_fill[1], a->vert_color_fill[2]);
+  free_doc(&d);
+}
+
 static void test_weight_paint(PGToolSession *ts)
 {
   /* Draw: weight = interpf(brush weight, weight, inf), inf = alpha * pressure * falloff. */
@@ -619,6 +646,7 @@ int main(void)
   test_clone(ts);
   test_automask_and_select_mask(ts);
   test_vertex_paint(ts);
+  test_vertex_smear_keeps_colour(ts);
   test_vertex_select_mask(ts);
   test_vertex_paint_app_canvas(ts);
   test_weight_paint(ts);

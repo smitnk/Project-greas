@@ -1735,6 +1735,10 @@ if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo
   // stale id in the next context has no storage, every later store failed and each input sample
   // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
   {OpenStrokeCache&c=g_open_cache;if(c.tex)glDeleteTextures(1,&c.tex);if(c.program)glDeleteProgram(c.program);if(c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
+  // reference program / buffer / textures were never reset: the next context drew with stale ids
+  // (GL_INVALID_VALUE at "reference image" every frame and no picture until the app restarted)
+  if(g_ref_prog)glDeleteProgram(g_ref_prog);if(g_ref_vbo)glDeleteBuffers(1,&g_ref_vbo);g_ref_prog=0;g_ref_vbo=0;
+  for(auto&r:g_refs){if(r.tex)glDeleteTextures(1,&r.tex);if(r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
   project_grease_fx_reset();}
 
 extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_overlay_unselected=show?1:0;}

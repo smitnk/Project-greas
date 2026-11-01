@@ -791,6 +791,7 @@ class EditorController {
     private var rendererHandle=0L
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
+        rotoscopeShown.clear() // a new GL context has none of the uploaded reference images
         surfaceReady = handle != 0L
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
         native.attach(gpHandle)

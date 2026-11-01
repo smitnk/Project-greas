@@ -113,7 +113,7 @@ object CrashLog {
             what.startsWith("LASSO 1 noose") -> "LASSO: a tap, not a loop (1 point) - selection left as it was"
             what.startsWith("LASSO") -> null // ok=false only means the selection did not change
             // a tap outside every closed shape: fill only works inside one (by design, for speed on phones)
-            what.startsWith("FILL at") || what.startsWith("SLOW fill") -> null
+            (what.startsWith("FILL at") || what.startsWith("SLOW fill")) && what.contains("ok=false") -> null
             what.contains(" -> false") || what.contains("ok=false") -> "FAILED: " + what.take(90)
             what.startsWith("SLOW") && (slowMs.find(what)?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 0) >= 1000 ->
                 "SLOW: step over 1 s - " + what.removePrefix("SLOW ").take(60)

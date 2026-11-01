@@ -14,6 +14,8 @@ class CrashLogBugTest {
         assertNotNull(CrashLog.detectBug("LASSO 1 noose points, op 3"))
         assertNull(CrashLog.detectBug("TOUCH ACTION_DOWN x1 tool CIRCLE canvas 535,-40 late 1 ms handled 1 ms off-canvas"))
         assertNull(CrashLog.detectBug("BUG FAILED: x -> false"))
+        // a fill tapped outside every closed shape is the designed behaviour, not a bug
+        assertNull(CrashLog.detectBug("FILL at 520,863 slot 7 -> ok=false in 401 ms"))
     }
 
     @Test fun glErrorsOnlyWhenTheCountGrows() {

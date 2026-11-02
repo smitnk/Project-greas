@@ -1983,9 +1983,10 @@ class EditorController {
         runSelectCommand(ProjectGreaseSelect.circle(selectOp, ProjectGreaseSelect.areaMode(activeSelectMode), x, y, radius, isFirst))
 
     fun fillSelectedStroke():Boolean {
-        val i=selection.selectedStroke
-        if(i<0) return false
-        val ok=native.fillStroke(i)
+        // every selected stroke (Select All / Lasso select in native), else the last tapped one
+        val sel=(0 until native.strokeCount()).filter{GPNative.nativeStrokeSelected(native.handle,it)}
+            .ifEmpty{listOf(selection.selectedStroke).filter{it>=0}}
+        val ok=sel.isNotEmpty()&&sel.map{native.fillStroke(it)}.all{it}
         if(ok){history.markEdit();document.markDirty();render()}
         return ok
     }

@@ -39,6 +39,8 @@ class SweepPaintTest : SweepBase() {
         line(300f)
         onUi { controller.setMode(GreaseMode.VERTEX_PAINT); controller.setMaterialColor(0xFFFF0000.toInt()); controller.brushes.setSize(60f); controller.brushes.setStrength(1f) }
         if (prepaint) drag(300f to 300f, 600f to 300f)
+        // smear only moves colour between painted points (Blender keeps the alpha), so paint the far half blue first
+        if (brush == S.VPAINT_SMEAR) { onUi { controller.setMaterialColor(0xFF0000FF.toInt()) }; drag(600f to 300f, 1000f to 300f) }
         onUi { controller.setVertexPaintBrush(brush) }
         undoableGesture("vpaint $name") { drag(500f to 300f, 900f to 300f) }
         val painted = points(strokes()[0]).count { it.size > 9 && it[9] > 0.0 }
@@ -55,7 +57,7 @@ class SweepPaintTest : SweepBase() {
 
     @Test fun vertexPaintFillTarget() {
         drag(300f to 200f, 900f to 200f, 900f to 500f, 300f to 500f, 300f to 200f)
-        onUi { controller.selectAll(); controller.setSelectionCyclic(S.CYCLIC_CLOSE); controller.fillSelectedStroke() }
+        assertTrue("fill the closed stroke", onUi { controller.selectAll(); controller.setSelectionCyclic(S.CYCLIC_CLOSE); controller.fillSelectedStroke() })
         onUi { controller.setMode(GreaseMode.VERTEX_PAINT); controller.setVertexPaintTarget(S.PAINT_FILL); controller.setMaterialColor(0xFF00FF00.toInt()); controller.brushes.setSize(200f) }
         undoableGesture("vpaint fill") { drag(500f to 350f, 700f to 350f) }
         shot("vpaint_fill")
@@ -70,7 +72,7 @@ class SweepPaintTest : SweepBase() {
 
     private fun wpaint(brush: Int, name: String) {
         line(300f)
-        onUi { controller.setMode(GreaseMode.WEIGHT_PAINT); controller.brushes.setSize(60f); controller.setWeightPaintValue(1f) }
+        onUi { controller.setMode(GreaseMode.WEIGHT_PAINT); controller.brushes.setSize(60f); controller.brushes.setStrength(1f); controller.setWeightPaintValue(1f) } // Blender default strength 0.3 paints mid weight (green)
         if (brush != ToolSession.GPWEIGHT_DRAW) drag(300f to 300f, 600f to 300f)
         onUi { controller.setWeightPaintBrush(brush) }
         undoableGesture("wpaint $name") { drag(450f to 300f, 900f to 300f) }

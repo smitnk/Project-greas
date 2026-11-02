@@ -247,6 +247,10 @@ struct Backend::Impl {
   bGPdata *gpd = nullptr;
   bGPDlayer *layer = nullptr;
   bGPDframe *frame = nullptr;
+  // scene frame (playhead) while `frame` is the key held there: time-based modifiers and the other
+  // layers must see the playhead, not the held key's number. Valid only while frame == cfra_for.
+  int cfra = 1;
+  const bGPDframe *cfra_for = nullptr;
   bGPDstroke *stroke = nullptr;
   StrokeStyle stroke_style{};
   LegacyPaintSettings paint_settings{};
@@ -1326,6 +1330,8 @@ bool Backend::select_frame(int frame_number) {
        frame = frame->next) {
     if (frame->framenum == frame_number) {
       impl_->frame = frame;
+      impl_->cfra = frame_number;
+      impl_->cfra_for = frame;
       impl_->stroke = nullptr;
       impl_->frame_created = true;
       impl_->last_error.clear();
@@ -1350,6 +1356,8 @@ bool Backend::select_frame_or_hold(int frame_number)
     return false;
   }
   impl_->frame = frame;
+  impl_->cfra = frame_number;
+  impl_->cfra_for = frame;
   impl_->layer->actframe = frame;
   impl_->stroke = nullptr;
   impl_->frame_created = true;
@@ -3682,7 +3690,7 @@ bool Backend::render_with_gpu_context()
   (void)ob;
   GPUBatch *batch = nullptr;
 #else
-  GPUBatch *batch = DRW_cache_gpencil_get(ob, impl_->frame->framenum);
+  GPUBatch *batch = DRW_cache_gpencil_get(ob, scene_frame());
 #endif
   const bool cache_ready = batch != nullptr;
 #ifdef __ANDROID__
@@ -3708,7 +3716,7 @@ bool Backend::render_with_gpu_context()
   // The engine's batch cache is rebuilt when either revision moves (edits, undo / redo, stacks).
   project_grease_android_present_set_data_revision(g_gp_data_revision * 0x9E3779B97F4A7C15ull ^ impl_->stack_revision);
   bool presented =
-      project_grease_android_present_gp_document(impl_->gpd, impl_->frame->framenum) != 0;
+      project_grease_android_present_gp_document(impl_->gpd, scene_frame()) != 0;
   // Annotations are drawn over every layer, in screen-space thickness.
   if (impl_->annotations && impl_->annotations_visible) {
     if (!presented) {
@@ -3717,7 +3725,7 @@ bool Backend::render_with_gpu_context()
 #endif
     }
     else {
-      presented = project_grease_android_present_annotations(impl_->annotations, impl_->frame->framenum) != 0;
+      presented = project_grease_android_present_annotations(impl_->annotations, scene_frame()) != 0;
     }
   }
   project_grease_android_set_frame_evaluator(nullptr, nullptr);
@@ -3781,7 +3789,7 @@ bool Backend::render_fill_mask()
     return false;
   }
   if (!project_grease_android_present_gp_fill_mask(
-          impl_->gpd, impl_->frame->framenum)) {
+          impl_->gpd, scene_frame())) {
     impl_->last_error = "Legacy GP fill mask presentation failed";
     return false;
   }
@@ -4301,7 +4309,7 @@ bool Backend::modifier_apply(int layer_index, int modifier_index)
     return false;
   }
   const PGModEntry entry = (*stack)[static_cast<size_t>(modifier_index)];
-  const int cfra = impl_->frame ? impl_->frame->framenum : 1;
+  const int cfra = scene_frame();
   /* Bake into the originals. Simplify/Merge may free strokes, so drop the open-stroke pointer. */
   impl_->stroke = nullptr;
   pg_mod_apply(impl_->gpd, layer, &entry, cfra);
@@ -5164,6 +5172,10 @@ bGPDlayer *Backend::active_layer_data() const { return impl_->layer; }
 bGPdata *Backend::annotation_data() const { return impl_->annotations; }
 void Backend::set_annotations_visible(bool visible) { impl_->annotations_visible = visible; }
 bool Backend::annotations_visible() const { return impl_->annotations_visible; }
+int Backend::scene_frame() const {
+  if (!impl_->frame) return 1;
+  return impl_->cfra_for == impl_->frame ? impl_->cfra : impl_->frame->framenum;
+}
 int Backend::current_frame_number() const { return impl_->frame ? impl_->frame->framenum : 1; }
 
 std::vector<bGPDlayer *> Backend::layer_list() const

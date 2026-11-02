@@ -139,6 +139,14 @@ class DeviceTwoSecondAnimationTest : SweepBase() {
             goTo(10); val bmp = shot("anim_f10_mods")
             check("frame 10 shows the character after modifier + effect", inkNear(bmp, xAt(10), y, 40) || inkNear(bmp, xAt(10) + r, y, 40))
         }
+        step("other layer active: playhead still drives the character") {
+            // background (one key) active, playhead on 19: the character layer must show its key 19, not key 1
+            onUi { controller.selectLayer(1); controller.animation.setFrame(19); controller.render() }
+            val bmp = shot("anim_f19_bg_active")
+            check("character at frame 19 position", inkNear(bmp, xAt(19) + r, y, 30))
+            check("not the frame 1 drawing", !inkNear(bmp, xAt(1) - r, y, 10))
+            onUi { controller.selectLayer(controller.layerCount() - 1) }
+        }
         step("onion + playback") {
             check("onion", onUi { controller.setOnionSkin(true, 1, 1, 0.35f) })
             goTo(1); onUi { controller.animation.togglePlayback() }

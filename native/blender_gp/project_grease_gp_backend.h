@@ -378,6 +378,7 @@ class Backend {
   bool annotations_visible() const;
   /* Frame number of the active frame (1 without one). */
   int current_frame_number() const;
+  int scene_frame() const; // playhead frame (a held key keeps its own number)
 
   // Opaque implementation storage.
   struct Impl;

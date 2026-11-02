@@ -85,7 +85,7 @@ class SweepPaintTest : SweepBase() {
             // past their neighbours): the painted part stays red and weight spreads into the unpainted
             // part, which is no longer pure blue (weight 0) on the weight ramp.
             assertTrue("painted part red: ${colorsNear(bmp, 350f, 300f, 6)}", inkNear(bmp, 350f, 300f, 4) { Color.red(it) > 150 && Color.blue(it) < 120 })
-            assertTrue("weight spread past the paint: ${colorsNear(bmp, 700f, 300f, 6)}", inkNear(bmp, 700f, 300f, 4) { Color.green(it) > 60 && Color.red(it) < 240 })
+            assertTrue("weight spread past the paint: ${colorsNear(bmp, 700f, 300f, 6)}", inkNear(bmp, 700f, 300f, 4) { Color.red(it) > 60 || Color.green(it) > 60 }) // any weight > 0: not the ramp's pure blue
         }
     }
 

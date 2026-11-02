@@ -9,6 +9,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Phones get the debug APK: keep its native engine optimised (-O0 made fills/renders several times slower). Asserts stay on.
+set(CMAKE_C_FLAGS_DEBUG "-O2 -g")
+set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g")
+
 # The Android target consumes the same minimal Blender legacy-GP closure that
 # already passed the ARM64 --no-undefined native-link probe. This is deliberately
 # not the Blender top-level CMake graph.

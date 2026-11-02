@@ -11,7 +11,8 @@ class CrashLogBugTest {
         assertNotNull(CrashLog.detectBug("SLOW fill ok=true 1204 ms (setup 0 ms)"))
         assertNull(CrashLog.detectBug("SLOW fill ok=true 400 ms (setup 0 ms)"))
         assertNull(CrashLog.detectBug("LASSO 463 noose points, op 3, select mode 1 -> ok=false, selected 8 of 8 points"))
-        assertNotNull(CrashLog.detectBug("LASSO 1 noose points, op 3"))
+        assertNull(CrashLog.detectBug("LASSO 1 noose points, op 3"))
+        assertNull(CrashLog.detectBug("WARP begin -> false"))
         assertNull(CrashLog.detectBug("TOUCH ACTION_DOWN x1 tool CIRCLE canvas 535,-40 late 1 ms handled 1 ms off-canvas"))
         assertNull(CrashLog.detectBug("BUG FAILED: x -> false"))
         // a fill tapped outside every closed shape is the designed behaviour, not a bug

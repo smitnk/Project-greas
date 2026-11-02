@@ -110,8 +110,8 @@ object CrashLog {
         return when {
             what.startsWith("CRASH") -> "CRASH: app crashed - see Last crash report"
             what.startsWith("FREEZE") -> "FREEZE: main thread blocked over 3 s"
-            what.startsWith("LASSO 1 noose") -> "LASSO: a tap, not a loop (1 point) - selection left as it was"
-            what.startsWith("LASSO") -> null // ok=false only means the selection did not change
+            // a lasso tap and warp with nothing selected are user input, already answered by a message
+            what.startsWith("LASSO") || what == "WARP begin -> false" -> null
             // a tap outside every closed shape: fill only works inside one (by design, for speed on phones)
             (what.startsWith("FILL at") || what.startsWith("SLOW fill")) && what.contains("ok=false") -> null
             what.contains(" -> false") || what.contains("ok=false") -> "FAILED: " + what.take(90)

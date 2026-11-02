@@ -61,15 +61,15 @@ class DeviceTwoSecondAnimationTest : SweepBase() {
             onUi {
                 controller.selectLayer(controller.layerCount() - 1)
                 controller.createFrame(f); controller.selectFrame(f)
-                controller.setVertexColorMode(true); controller.updateDrawVertexTarget(2)
+                controller.setVertexColorMode(true); controller.updateDrawVertexTarget(0)
                 controller.setMaterialColor(0xFF000000.toInt()); controller.selectTool(GreaseTool.CIRCLE)
             }
             val cx = xAt(f)
             drag(cx - r to y - r, cx + r to y + r)
             check("circle confirms", onUi { controller.confirmShape() })
-            onUi { controller.setMaterialColor(0xFFF67474.toInt()); controller.selectTool(GreaseTool.FILL) }
+            onUi { controller.updateDrawVertexTarget(2); controller.setMaterialColor(0xFFF67474.toInt()); controller.selectTool(GreaseTool.FILL) }
             tap(cx, y)
-            onUi { controller.setMaterialColor(0xFF000000.toInt()); controller.selectTool(GreaseTool.DRAW) }
+            onUi { controller.updateDrawVertexTarget(0); controller.setMaterialColor(0xFF000000.toInt()); controller.selectTool(GreaseTool.DRAW) }
             drag(cx - 20f to y - 15f, cx - 10f to y - 15f) // eye
             check("key $f has strokes (${strokeCount()})", strokeCount() >= 2)
         }
@@ -130,12 +130,14 @@ class DeviceTwoSecondAnimationTest : SweepBase() {
             goTo(1)
             val n = onUi { controller.interpolateSequence(1) }
             check("in-betweens made ($n)", n > 0)
-            goTo(4); check("frame 4 has the character (${strokeCount()})", strokeCount() >= 1)
+            val empty = (1..24).filter { f -> goTo(f); strokeCount() == 0 }
+            check("every frame has the character, empty: $empty", empty.isEmpty())
         }
         step("modifier + effect") {
             check("noise modifier", onUi { controller.addModifier(ModifierType.NOISE) })
             check("shadow effect", onUi { controller.addEffect(FxType.SHADOW) })
-            goTo(10); shot("anim_f10_mods")
+            goTo(10); val bmp = shot("anim_f10_mods")
+            check("frame 10 shows the character after modifier + effect", inkNear(bmp, xAt(10), y, 40) || inkNear(bmp, xAt(10) + r, y, 40))
         }
         step("onion + playback") {
             check("onion", onUi { controller.setOnionSkin(true, 1, 1, 0.35f) })

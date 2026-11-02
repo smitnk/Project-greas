@@ -108,14 +108,14 @@ class DeviceTwoSecondAnimationTest : SweepBase() {
             goTo(1); val before = signature()
             check("vertex mode", onUi { controller.setMode(GreaseMode.VERTEX_PAINT) })
             onUi { controller.setVertexPaintBrush(S.VPAINT_DRAW); controller.setVertexPaintTarget(S.PAINT_BOTH)
-                controller.setMaterialColor(0xFFDAF674.toInt()); controller.brushes.setSize(60f); controller.selectTool(GreaseTool.DRAW) }
+                controller.setMaterialColor(0xFFDAF674.toInt()); controller.vertexBrush.setSize(60f); controller.selectTool(GreaseTool.DRAW) }
             drag(xAt(1) - r to y, xAt(1) + r to y)
             check("painted", signature() != before)
             shot("anim_vpaint_draw")
         }
         step("vertex paint smear on key 7 keeps colour") {
             goTo(7)
-            onUi { controller.setVertexPaintBrush(S.VPAINT_SMEAR); controller.brushes.setSize(60f) }
+            onUi { controller.setVertexPaintBrush(S.VPAINT_SMEAR); controller.vertexBrush.setSize(60f) }
             val cx = xAt(7)
             drag(cx - r to y - r + 10f, cx to y, cx + r to y + r - 10f)
             val bmp = shot("anim_vpaint_smear")

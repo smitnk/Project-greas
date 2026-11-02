@@ -5007,6 +5007,8 @@ bool Backend::fill_stroke(int index)
     impl_->last_error = "Legacy GP fill triangulation produced no triangles";
     return false;
   }
+  // Fill selected shows the fill: turn on the material's Fill, as Blender's material panel does
+  set_material_fill_enabled(stroke->mat_nr, true);
 
   project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();

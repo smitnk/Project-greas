@@ -127,8 +127,8 @@ class DeviceTwoSecondAnimationTest : SweepBase() {
         }
         // ---- in-betweens, modifier, effect ----
         step("interpolate sequence") {
-            goTo(1)
-            val n = onUi { controller.interpolateSequence(1) }
+            // Blender's Interpolate Sequence fills only the gap around the current frame: run it per gap
+            val n = keys.dropLast(1).sumOf { k -> goTo(k); onUi { controller.interpolateSequence(k) } }
             check("in-betweens made ($n)", n > 0)
             val empty = (1..24).filter { f -> goTo(f); strokeCount() == 0 }
             check("every frame has the character, empty: $empty", empty.isEmpty())

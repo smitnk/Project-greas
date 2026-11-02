@@ -887,6 +887,7 @@ struct OpenStrokeCache {
   bool valid=false;
 } g_open_cache;
 long g_open_cache_stores=0, g_open_cache_reuses=0;
+static long g_engine_reuses=0;
 bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
   const OpenStrokeCache& c=g_open_cache;
   return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y&&c.rot==g_view_rotation;
@@ -1228,11 +1229,24 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   if(over)for(float&c:view.background)c=0.0f;
   const auto t_engine=std::chrono::steady_clock::now();
   gl_check("canvas paper / reference / masks before the engine");
-  const int ok=pg_gp_engine_draw(&copy,frame_number,&view);
-  {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
-  glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
+  /* Nothing changed since the last engine image (same strokes, frame, view, no effects): present
+   * that image again instead of re-running every engine pass. Effects are left out because their
+   * settings are not part of the data revision. */
+  static PGGpEngineView last{};static bool have_last=false;
+  const bool same=have_last&&!changed&&!g_export_mode&&!view.rendered&&!last.rendered&&
+      view.viewport_w==last.viewport_w&&view.viewport_h==last.viewport_h&&view.origin_x==last.origin_x&&
+      view.origin_y==last.origin_y&&view.scale==last.scale&&view.rotation==last.rotation&&
+      std::memcmp(view.background,last.background,sizeof view.background)==0;
+  int ok=1;
+  if(!same){
+    ok=pg_gp_engine_draw(&copy,frame_number,&view);
+    {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
+    glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
+  }
+  last=view;have_last=ok&&!g_export_mode;
+  g_engine_reuses+=same?1:0;
   g_last_engine_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t_engine).count();
-  g_last_engine_rebuilt=changed?1:0;g_last_w=w;g_last_h=h;
+  g_last_engine_rebuilt=same?2:changed?1:0;g_last_w=w;g_last_h=h;
   g_engine_batch_cache=copy.runtime.gpencil_cache;
   MEM_freeN(frames);
   MEM_freeN(layers);
@@ -1747,7 +1761,7 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 extern "C" const char* project_grease_android_present_last_frame(){
   static char buf[900];
   std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x at %s",g_last_doc_ms,g_last_engine_ms,
-                g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
+                g_last_engine_rebuilt==2?"reused last image":g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
                 g_gl_error_frames,g_engine_gl_errors,g_last_gl_error,g_last_gl_where);
   unsigned plast=0;const char*pname="";
   const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;

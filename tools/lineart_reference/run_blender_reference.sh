@@ -9,10 +9,12 @@ VERSION=3.6.23
 DIR="$ROOT/build/blender-$VERSION"
 if [[ ! -x "$DIR/blender" ]]; then
   mkdir -p "$ROOT/build"
-  URL="https://download.blender.org/release/Blender3.6/blender-$VERSION-linux-x64.tar.xz"
-  for attempt in 1 2 3; do
+  F="Blender3.6/blender-$VERSION-linux-x64.tar.xz"
+  # download.blender.org sometimes refuses CI runners (403): fall back to official mirrors
+  for URL in "https://download.blender.org/release/$F" "https://mirrors.ocf.berkeley.edu/blender/release/$F" \
+             "https://mirror.clarkson.edu/blender/release/$F" "https://ftp.halifax.rwth-aachen.de/blender/release/$F"; do
     if curl -fsSL --retry 3 "$URL" -o "$ROOT/build/blender.tar.xz"; then break; fi
-    sleep $((attempt * 5))
+    sleep 5
   done
   mkdir -p "$DIR"
   tar -xJf "$ROOT/build/blender.tar.xz" -C "$DIR" --strip-components=1

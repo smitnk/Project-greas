@@ -146,6 +146,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 if (!controller.document.dirty) continue
                 // A finger is on the canvas (stroke, brush, warp): saving now would cancel it; try again next tick.
                 if (controller.gestureActive()) continue
+                // saving moves the native frame / layer: it waits for playback to stop instead of stopping it every 5 s
+                if (controller.animation.playing) continue
                 try {
                     val revision = controller.document.revision
                     // Build the tree here (native reads); text + file write on IO so the UI never stalls.
@@ -186,6 +188,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     controller.document.canvasWidth=record.width
                     controller.document.canvasHeight=record.height
                     controller.animation.setFps(record.fps)
+                    controller.discardQueuedActions() // an export / import queued for the previous project must not run on this one
                     controller.runWhenAttached {
                         val ok=controller.loadDocumentJson(raw)
                         com.smitnk.projectgrease.CrashLog.event("OPEN loaded -> $ok, ${controller.strokeCount()} strokes")
@@ -208,6 +211,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 controller.animation.setFps(preset.fps)
                 val projectName=controller.document.projectName
                 val template=GreaseTemplates.byId(templateId)
+                controller.discardQueuedActions()
                 controller.runWhenAttached {
                     if(!controller.resetDocument()){
                         android.widget.Toast.makeText(context,"Could not start the new project",android.widget.Toast.LENGTH_LONG).show()

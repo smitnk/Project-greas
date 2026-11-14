@@ -170,6 +170,11 @@ struct PGContext {
   eGPUStencilTest stencil_test = GPU_STENCIL_NONE;
   GLuint present_prog = 0;
   bool failed = false;
+  /* Weight-view overlay objects: owned by the context (a new GL context must not see stale ids) */
+  GPUTexture *wt_ramp = nullptr;
+  GPUUniformBuf *wt_globals = nullptr;
+  GLuint wt_vao = 0;
+  GPUShader *wt_shader[2] = {nullptr, nullptr};
 };
 
 PGContext *G_pg = nullptr;
@@ -1146,8 +1151,8 @@ static void DRW_evaluate_weight_to_color(const float weight, float result[4])
 
 static void draw_weight_overlay(PGContext &c, bGPdata *gpd, int cfra, int group)
 {
-  static GPUTexture *ramp = nullptr;
-  static GPUUniformBuf *globals = nullptr;
+  GPUTexture *&ramp = c.wt_ramp;
+  GPUUniformBuf *&globals = c.wt_globals;
   if (ramp == nullptr) {
     /* ADAPTED: DRW_create_weight_colorramp_texture is GPU_SRGB8_A8 1D: here the decoded (linear)
      * values in a 256x1 2D texture, sampled the same. */
@@ -1182,9 +1187,8 @@ static void draw_weight_overlay(PGContext &c, bGPdata *gpd, int cfra, int group)
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
   glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-  static GLuint vao = 0;
-  if (!vao) glGenVertexArrays(1, &vao);
-  glBindVertexArray(vao);
+  if (!c.wt_vao) glGenVertexArrays(1, &c.wt_vao);
+  glBindVertexArray(c.wt_vao);
   /* gpencil_stroke_format: pos vec4, ma ivec4, uv vec4; gpencil_edit_stroke_format: vflag, weight */
   glBindBuffer(GL_ARRAY_BUFFER, pg_android_vertbuf_gl(lines->verts[0]));
   glEnableVertexAttribArray(0);
@@ -1198,8 +1202,16 @@ static void draw_weight_overlay(PGContext &c, bGPdata *gpd, int cfra, int group)
   glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 8, (const void *)4);
   const bool show_lines = (c.v3d.gp_flag & V3D_GP_SHOW_EDIT_LINES) != 0;
   for (int pass = show_lines ? 0 : 1; pass < 2; pass++) {
-    GPUShader *sh = GPU_shader_create_from_info_name(pass == 0 ? "overlay_edit_gpencil_wire" : "overlay_edit_gpencil_point");
-    if (sh == nullptr) { c.failed = true; break; }
+    /* Compiled once per context. GPU_shader_create_from_info_name never returns null (a failed
+     * compile is a shader with program 0), so test the program and drop the failed object. */
+    GPUShader *&sh = c.wt_shader[pass];
+    if (sh == nullptr) sh = GPU_shader_create_from_info_name(pass == 0 ? "overlay_edit_gpencil_wire" : "overlay_edit_gpencil_point");
+    if (sh == nullptr || pg_gpu_shader_program(sh) == 0) {
+      GPU_shader_free(sh);
+      sh = nullptr;
+      c.failed = true;
+      break;
+    }
     glUseProgram(pg_gpu_shader_program(sh));
     pg_gpu_uniformbuf_bind(c.view_ubo, pg_gpu_shader_block_binding(sh, "drw_view_"));
     pg_gpu_uniformbuf_bind(c.matrices_ubo, pg_gpu_shader_block_binding(sh, "drw_matrices"));
@@ -1430,18 +1442,54 @@ int pg_gp_engine_present(int target_w, int target_h)
   return 1;
 }
 
-void pg_gp_engine_reset(void)
+/* Frees the GL objects the context owns. Only valid while the context that created them is
+ * current; after a context loss the names are dead and must just be forgotten. */
+static void pg_context_release_gl(PGContext &c)
 {
-  /* shortcut: after a context loss the GL names are gone; the CPU side objects are leaked once
-   * per loss rather than freed with a dead context. Free them properly when the presenter's
-   * reset path grows a "context still alive" flag. */
+  if (c.wt_ramp) GPU_texture_free(c.wt_ramp);
+  if (c.wt_globals) GPU_uniformbuf_free(c.wt_globals);
+  for (GPUShader *&sh : c.wt_shader) { if (sh) GPU_shader_free(sh); sh = nullptr; }
+  if (c.wt_vao) glDeleteVertexArrays(1, &c.wt_vao);
+  c.wt_ramp = nullptr; c.wt_globals = nullptr; c.wt_vao = 0;
+  for (PGPoolTex &p : c.pool) GPU_texture_free(p.tex);
+  c.pool.clear();
+  if (!c.frame_buffer_textures.empty()) {
+    glDeleteTextures((GLsizei)c.frame_buffer_textures.size(), c.frame_buffer_textures.data());
+    c.frame_buffer_textures.clear();
+  }
+  GPU_FRAMEBUFFER_FREE_SAFE(c.dfbl.default_fb);
+  GPU_FRAMEBUFFER_FREE_SAFE(c.dfbl.depth_only_fb);
+  GPU_FRAMEBUFFER_FREE_SAFE(c.dfbl.color_only_fb);
+  DRW_TEXTURE_FREE_SAFE(c.dtxl.color);
+  DRW_TEXTURE_FREE_SAFE(c.dtxl.depth);
+  if (c.view_ubo) GPU_uniformbuf_free(c.view_ubo);
+  if (c.matrices_ubo) GPU_uniformbuf_free(c.matrices_ubo);
+  if (c.infos_ubo) GPU_uniformbuf_free(c.infos_ubo);
+  c.view_ubo = c.matrices_ubo = c.infos_ubo = nullptr;
+  if (c.present_prog) glDeleteProgram(c.present_prog);
+  c.present_prog = 0;
+  if (c.vao) glDeleteVertexArrays(1, &c.vao);
+  c.vao = 0;
+}
+
+static void pg_gp_engine_reset_impl(bool context_alive)
+{
   /* Blender frees engine shaders when the draw manager drops a context (DRW_engines_free calls
    * DrawEngineType.engine_free): without it a new EGL context drew with dead GL names and the
-   * strokes stayed invisible after the editor surface was recreated. */
-  if (draw_engine_gpencil_type.engine_free) draw_engine_gpencil_type.engine_free();
+   * strokes stayed invisible after the editor surface was recreated. engine_free issues GL calls,
+   * so on a lost context it is skipped (its CPU objects leak once per loss). */
+  if (context_alive && draw_engine_gpencil_type.engine_free) draw_engine_gpencil_type.engine_free();
   if (G_pg != nullptr) {
+    if (context_alive) pg_context_release_gl(*G_pg);
+    /* The PGContext itself (CPU side, referenced by Blender-side engine state) is dropped, not
+     * deleted: a new one is built lazily by pgc() in the next context. */
     G_pg = nullptr;
   }
 }
+
+void pg_gp_engine_reset(void) { pg_gp_engine_reset_impl(true); }
+
+/* The EGL context is gone (EGL_CONTEXT_LOST / GPU reset): forget every GL name without touching GL. */
+void pg_gp_engine_context_lost(void) { pg_gp_engine_reset_impl(false); }
 
 /** \} */

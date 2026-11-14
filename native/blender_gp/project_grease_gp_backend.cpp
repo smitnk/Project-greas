@@ -566,8 +566,45 @@ static bGPDframe *held_key_at(const bGPDlayer *layer, int cfra)
   return held;
 }
 
+/* One exit for an open stroke: clears Backend's flag, pending input and Blender's paint buffer
+ * together, so no ghost (sbuffer_used > 0 with stroke_open == false) can be drawn or cached. */
+static void stroke_discard(Backend::Impl *impl)
+{
+  impl->stroke_open = false;
+  impl->pending_points.clear();
+  if (impl->gpd && impl->gpd->runtime.sbuffer) {
+    impl->gpd->runtime.sbuffer = ED_gpencil_sbuffer_ensure(
+        static_cast<tGPspoint *>(impl->gpd->runtime.sbuffer),
+        &impl->gpd->runtime.sbuffer_size,
+        &impl->gpd->runtime.sbuffer_used,
+        true);
+  }
+}
+
+/* An open Lasso Warp holds raw bGPDstroke* of the editing frame: put the points back. */
+static void lattice_revert(Backend::Impl *impl)
+{
+  if (impl->lattice_points.empty()) return;
+  for (const auto &p : impl->lattice_points) {
+    p.gps->points[p.index].x = p.x;
+    p.gps->points[p.index].y = p.y;
+    BKE_gpencil_stroke_geometry_update(impl->gpd, p.gps);
+  }
+  impl->lattice_points.clear();
+  BKE_gpencil_batch_cache_dirty_tag(impl->gpd);
+  project_grease_gp_tag(impl->gpd);
+}
+
+/* The editing frame / layer is about to change: end what is bound to the old one. */
+static void editing_ctx_changing(Backend::Impl *impl)
+{
+  stroke_discard(impl);
+  lattice_revert(impl);
+}
+
 static void set_frame(Backend::Impl *impl, bGPDframe *frame)
 {
+  if (frame != impl->frame) editing_ctx_changing(impl);
   impl->frame = frame;
   if (frame && held_key_at(impl->layer, impl->cfra) != frame) {
     impl->cfra = frame->framenum;
@@ -589,6 +626,7 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   if (!restored) {
     return false;
   }
+  impl->lattice_points.clear(); // the strokes it points at are about to be freed (no revert)
   std::memset(&restored->runtime, 0, sizeof(restored->runtime));
 
   BKE_gpencil_free_layers(&impl->gpd->layers);
@@ -624,7 +662,7 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   impl->stroke = nullptr;
   impl->layer_created = impl->layer != nullptr;
   impl->frame_created = impl->frame != nullptr;
-  impl->stroke_open = false;
+  stroke_discard(impl);
   impl->lattice_points.clear(); // its strokes were just freed
   impl->doc_generation++;
   impl->stacks = snapshot->stacks;
@@ -805,6 +843,7 @@ void Backend::shutdown()
     }
     gp_materials_free(impl_->gpd);
     BLI_freelistN(&impl_->gpd->vertex_group_names);
+    MEM_SAFE_FREE(impl_->gpd->runtime.sbuffer); /* paint buffer is not part of the layers */
     MEM_freeN(impl_->gpd);
     impl_->gpd = nullptr;
   }
@@ -908,6 +947,7 @@ bool Backend::reset_document()
     }
     gp_materials_free(impl_->gpd);
     BLI_freelistN(&impl_->gpd->vertex_group_names);
+    MEM_SAFE_FREE(impl_->gpd->runtime.sbuffer); /* paint buffer is not part of the layers */
     MEM_freeN(impl_->gpd);
 #else
     if (impl_->bmain) {
@@ -1039,12 +1079,13 @@ bool Backend::select_layer(int index) {
        layer != nullptr;
        layer = layer->next, ++current) {
     if (current == index) {
+      if (impl_->layer != layer) editing_ctx_changing(impl_); // open stroke / warp belong to the old layer
       impl_->layer = layer;
       // The active layer is document state (GP_LAYER_ACTIVE): undo/redo restore it from the flag.
       BKE_gpencil_layer_active_set(impl_->gpd, layer);
       // Keep the key held at the playhead (select_frame_or_hold) so drawing/render keep working
       // after a layer switch; none held (playhead before the first key) leaves no editing frame.
-      impl_->frame = held_key_at(layer, impl_->cfra);
+      set_frame(impl_, held_key_at(layer, impl_->cfra));
       if (impl_->frame) layer->actframe = impl_->frame;
       impl_->stroke = nullptr;
       impl_->layer_created = true;
@@ -1365,6 +1406,7 @@ bool Backend::select_frame(int frame_number) {
        frame != nullptr;
        frame = frame->next) {
     if (frame->framenum == frame_number) {
+      if (frame != impl_->frame) editing_ctx_changing(impl_);
       impl_->frame = frame;
       impl_->cfra = frame_number;
       impl_->stroke = nullptr;
@@ -1390,6 +1432,7 @@ bool Backend::select_frame_or_hold(int frame_number)
     impl_->last_error = "no preceding frame";
     return false;
   }
+  if (frame != impl_->frame) editing_ctx_changing(impl_);
   impl_->frame = frame;
   impl_->cfra = frame_number;
   impl_->layer->actframe = frame;
@@ -3510,16 +3553,21 @@ bool Backend::end_stroke() {
     impl_->last_error = "stroke is not open";
     return false;
   }
+  if (!impl_->gpd) {
+    stroke_discard(impl_);
+    impl_->last_error = "no document";
+    return false;
+  }
   if (impl_->gpd->runtime.sbuffer_used <= 0 ||
       impl_->gpd->runtime.sbuffer == nullptr) {
     impl_->last_error = "stroke has no points";
-    impl_->stroke_open = false;
+    stroke_discard(impl_);
     return false;
   }
 
   if (!impl_->frame) {
     impl_->last_error = "no editing frame";
-    impl_->stroke_open = false;
+    stroke_discard(impl_);
     return false;
   }
 
@@ -3537,7 +3585,7 @@ bool Backend::end_stroke() {
       impl_->frame, material_index, point_count, thickness, false);
   if (!impl_->stroke) {
     impl_->last_error = "BKE_gpencil_stroke_add() failed";
-    impl_->stroke_open = false;
+    stroke_discard(impl_);
     return false;
   }
 
@@ -3634,29 +3682,23 @@ bool Backend::end_stroke() {
 
 bool Backend::cancel_stroke()
 {
-  if (!impl_->stroke_open) {
-    impl_->pending_points.clear();
-    impl_->stroke = nullptr;
-    return true;
-  }
-
-  // The stroke is only allocated in end_stroke(). During input collection
-  // Android holds points in pending_points, so cancellation must discard the
-  // pending input without creating a Blender bGPDstroke.
-  impl_->pending_points.clear();
+  // The stroke is only allocated in end_stroke(); cancelling discards the pending input and
+  // empties the paint buffer (a cancelled stroke left it filled and the presenter kept drawing
+  // its open-stroke snapshot, hiding later sculpt / edit changes). Also runs when stroke_open is
+  // already false but a ghost sbuffer remains.
   impl_->stroke = nullptr;
-  impl_->stroke_open = false;
-  // Empty the paint buffer too: a cancelled stroke (palm, second finger) left it filled, and the
-  // presenter kept drawing its open-stroke snapshot, hiding later sculpt / edit changes.
-  if (impl_->gpd && impl_->gpd->runtime.sbuffer) {
-    impl_->gpd->runtime.sbuffer = ED_gpencil_sbuffer_ensure(
-        static_cast<tGPspoint *>(impl_->gpd->runtime.sbuffer),
-        &impl_->gpd->runtime.sbuffer_size,
-        &impl_->gpd->runtime.sbuffer_used,
-        true);
-  }
+  stroke_discard(impl_);
   impl_->last_error.clear();
   return true;
+}
+
+void Backend::gpu_context_reset()
+{
+  if (!impl_->gpd || !impl_->gpu_initialized) return;
+  DRW_gpencil_batch_cache_free(impl_->gpd);
+  eval_cache_clear(impl_);
+  impl_->gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+  project_grease_gp_tag(impl_->gpd);
 }
 
 bool Backend::initialize_external_gpu_context()
@@ -5070,6 +5112,33 @@ void Backend::set_fill_factor(float factor)
 }
 float Backend::fill_factor() const { return impl_->fill_factor; }
 
+Backend::FillSnapshot Backend::fill_snapshot() const
+{
+  FillSnapshot snap;
+  snap.factor = impl_->fill_factor;
+  snap.map_scale = impl_->fill_map_scale;
+  snap.map_origin_x = impl_->fill_map_origin_x;
+  snap.map_origin_y = impl_->fill_map_origin_y;
+  snap.map_rotation = impl_->fill_map_rotation;
+  snap.has_frame = impl_->frame && impl_->frame_created;
+  snap.token = fill_token();
+  return snap;
+}
+
+uint64_t Backend::fill_token() const
+{
+  // FNV-style mix of the generation and the two raw pointers (a pointer alone is reusable).
+  uint64_t h = 1469598103934665603ull;
+  const uint64_t parts[3] = {impl_->doc_generation,
+                             static_cast<uint64_t>(reinterpret_cast<uintptr_t>(impl_->layer)),
+                             static_cast<uint64_t>(reinterpret_cast<uintptr_t>(impl_->frame))};
+  for (const uint64_t v : parts) {
+    h ^= v;
+    h *= 1099511628211ull;
+  }
+  return h ? h : 1;
+}
+
 bool Backend::fill_outline(const float* rgba,
                            int width,
                            int height,
@@ -5081,18 +5150,37 @@ bool Backend::fill_outline(const float* rgba,
                            int mask_height,
                            std::vector<StrokePoint>& points) const
 {
-  if (!impl_->frame || !impl_->frame_created || !rgba ||
+  return fill_outline_snapshot(fill_snapshot(), rgba, width, height, seed_x, seed_y, fill_leak,
+                               dilate_pixels, mask_width, mask_height, points, &impl_->last_error);
+}
+
+bool Backend::fill_outline_snapshot(const FillSnapshot& snap,
+                                    const float* rgba,
+                                    int width,
+                                    int height,
+                                    int seed_x,
+                                    int seed_y,
+                                    int fill_leak,
+                                    int dilate_pixels,
+                                    int mask_width,
+                                    int mask_height,
+                                    std::vector<StrokePoint>& points,
+                                    std::string* error)
+{
+  std::string scratch;
+  std::string& last_error = error ? *error : scratch;
+  if (!snap.has_frame || !rgba ||
       width < 3 || height < 3 ||
       seed_x < 0 || seed_x >= width ||
       seed_y < 0 || seed_y >= height) {
-    impl_->last_error = "invalid Legacy GP fill raster or seed";
+    last_error = "invalid Legacy GP fill raster or seed";
     return false;
   }
 
   // gpencil_render_offscreen() renders at region size * fill_factor (min 128 px). The presenter
   // renders at view size, so the mask is resampled on the CPU to that size
   // (project_grease_blender_fill.c documents the adaptation).
-  const float factor = impl_->fill_factor;
+  const float factor = snap.factor;
   const bool prescaled = mask_width > 0 && mask_height > 0;
   const int sx = prescaled ? mask_width : pg_fill_render_size(width, factor);
   const int sy = prescaled ? mask_height : pg_fill_render_size(height, factor);
@@ -5127,7 +5215,7 @@ bool Backend::fill_outline(const float* rgba,
                                    dilate_pixels, &xy, &border_contact);
   if (total < 3) {
     std::free(xy);
-    impl_->last_error = border_contact
+    last_error = border_contact
         ? "Legacy GP fill reached the render boundary"
         : "Legacy GP fill found no closed area";
     return false;
@@ -5135,21 +5223,21 @@ bool Backend::fill_outline(const float* rgba,
 
   // The outline is in pixels of the fill image: back to view pixels and canvas units, as Blender's
   // fill unprojects its 2D boundary (gpencil_stroke_from_buffer -> gpencil_stroke_convertcoords_tpoint).
-  const float map_scale = impl_->fill_map_scale > 1e-6f ? impl_->fill_map_scale : 1.0f;
+  const float map_scale = snap.map_scale > 1e-6f ? snap.map_scale : 1.0f;
   const float kx = static_cast<float>(width) / static_cast<float>(sx);
   const float ky = static_cast<float>(height) / static_cast<float>(sy);
   points.clear();
   points.reserve(static_cast<size_t>(total));
   // the mask was drawn turned by the view rotation about the view centre: turn the outline back
-  const float rc = std::cos(impl_->fill_map_rotation), rs = std::sin(impl_->fill_map_rotation);
+  const float rc = std::cos(snap.map_rotation), rs = std::sin(snap.map_rotation);
   const float hw = 0.5f * static_cast<float>(width), hh = 0.5f * static_cast<float>(height);
   for (int i = 0; i < total; i++) {
     const float dx = xy[i * 2] * kx - hw;
     const float dy = (static_cast<float>(height) - xy[i * 2 + 1] * ky) - hh; /* top-left origin */
     const float sx = hw + rc * dx + rs * dy;
     const float sy = hh - rs * dx + rc * dy;
-    points.push_back({(sx - impl_->fill_map_origin_x) / map_scale,
-                      (sy - impl_->fill_map_origin_y) / map_scale,
+    points.push_back({(sx - snap.map_origin_x) / map_scale,
+                      (sy - snap.map_origin_y) / map_scale,
                       0.0f,
                       1.0f,
                       1.0f,
@@ -5157,6 +5245,15 @@ bool Backend::fill_outline(const float* rgba,
   }
   std::free(xy);
   return true;
+}
+
+bool Backend::fill_commit_checked(const std::vector<StrokePoint>& points, const StrokeStyle& style, uint64_t token)
+{
+  if (token != 0 && token != fill_token()) {
+    impl_->last_error = "the frame, layer or document changed since the fill was captured";
+    return false;
+  }
+  return fill_commit(points, style);
 }
 
 bool Backend::fill_commit(const std::vector<StrokePoint>& points, const StrokeStyle& style)

@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <vector>
 
 #include <cstdint>
@@ -320,6 +321,25 @@ class Backend {
                     int dilate_pixels, int mask_width, int mask_height,
                     std::vector<StrokePoint>& points) const;
   bool fill_commit(const std::vector<StrokePoint>& points, const StrokeStyle& style);
+  // Background fill (capture on the GL thread -> compute on a worker -> commit): everything the
+  // worker needs is copied at capture time so the compute never reads Backend state (no data race
+  // with the document thread), and the commit refuses a fill whose frame / layer / document is not
+  // the one that was captured.
+  struct FillSnapshot {
+    float factor = 1.0f, map_scale = 1.0f, map_origin_x = 0.0f, map_origin_y = 0.0f, map_rotation = 0.0f;
+    uint64_t token = 0; // fill_token() at capture
+    bool has_frame = false;
+  };
+  FillSnapshot fill_snapshot() const;
+  // Identity of (document generation, active layer, editing frame); never 0.
+  uint64_t fill_token() const;
+  // fill_outline() on a snapshot: touches no Backend state (error text goes to *error when given).
+  static bool fill_outline_snapshot(const FillSnapshot& snap, const float* rgba, int width, int height,
+                                    int seed_x, int seed_y, int fill_leak, int dilate_pixels,
+                                    int mask_width, int mask_height, std::vector<StrokePoint>& points,
+                                    std::string* error);
+  // token != 0: fails (without editing) if fill_token() changed since the capture.
+  bool fill_commit_checked(const std::vector<StrokePoint>& points, const StrokeStyle& style, uint64_t token);
   // mask_width / mask_height > 0: rgba is already the fill-size image (mask_width x mask_height,
   // each cell the most opaque pixel of its block of the width x height view), as
   // pg_fill_resample_mask makes it; seed and outline stay in view pixels.
@@ -349,6 +369,9 @@ class Backend {
   // context. The caller owns the GL/EGL context; Blender does not create or
   // destroy GHOST here. This is the Android integration seam.
   bool initialize_external_gpu_context();
+  // The EGL context was replaced (lost): drop the document's GPU batch caches. Call with the NEW
+  // context current and before anything else draws, so the stale names are deleted as no-ops.
+  void gpu_context_reset();
 
   // Builds the Blender GP draw cache using the externally-owned current GL
   // context. The caller must keep that context current on this thread.

@@ -53,6 +53,7 @@ int pg_curve_translate(struct bGPdata *gpd, float dx, float dy) __attribute__((w
 float pg_wm_last_weight_sample(void) __attribute__((weak));
 /* Forget the running modal operator (its tool session was aborted by the owner). */
 void pg_wm_modal_reset(void) __attribute__((weak));
+void pg_wm_modal_reset_session(struct PGToolSession *s) __attribute__((weak));
 /* idname of the running modal operator, NULL when none. */
 const char *pg_wm_modal_running(void) __attribute__((weak));
 

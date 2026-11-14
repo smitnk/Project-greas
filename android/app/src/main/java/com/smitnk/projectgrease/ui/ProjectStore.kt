@@ -37,7 +37,19 @@ class ProjectStore(context: Context) {
                     )
                 }
             }.sortedByDescending { it.lastOpened }
-        }.getOrDefault(emptyList())
+        }.getOrElse {
+            // keep the unreadable list: the next upsert() writes a fresh one over it and would drop every record
+            prefs.edit().putString(key + "_unreadable", raw).apply()
+            emptyList()
+        }
+    }
+
+    /** Removes a project: its record and its document file. True when the record or the file existed. */
+    fun delete(name: String): Boolean {
+        val had = load().any { it.name == name }
+        val removedFile = files.delete(name)
+        if (had) save(load().filterNot { it.name == name })
+        return had || removedFile
     }
 
     fun upsert(record: ProjectRecord) {

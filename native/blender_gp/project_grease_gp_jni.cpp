@@ -44,30 +44,6 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDestroy(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBeginStroke(
-    JNIEnv *, jobject, jlong handle, jint material_index, jfloat thickness)
-{
-  return project_grease_gp_begin_stroke(
-             from_handle(handle), material_index, thickness) != 0;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPoint(
-    JNIEnv *, jobject, jlong handle, jfloat x, jfloat y, jfloat z,
-    jfloat pressure, jfloat strength, jfloat time)
-{
-  const ProjectGreaseGPPoint point{x, y, z, pressure, strength, time};
-  return project_grease_gp_add_point(from_handle(handle), point) != 0;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEndStroke(
-    JNIEnv *, jobject, jlong handle)
-{
-  return project_grease_gp_end_stroke(from_handle(handle)) != 0;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRender(
     JNIEnv *, jobject, jlong handle)
 {
@@ -1277,14 +1253,6 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSmoothStroke(
 {
   return project_grease_gp_smooth_stroke(
              from_handle(handle), index, influence, iterations) != 0;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSculptAt(
-    JNIEnv *, jobject, jlong handle, jint tool, jfloat x, jfloat y, jfloat radius, jfloat influence)
-{
-  return project_grease_gp_sculpt_at(
-             from_handle(handle), tool, x, y, radius, influence) != 0;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

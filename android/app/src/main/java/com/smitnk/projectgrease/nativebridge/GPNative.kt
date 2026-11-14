@@ -24,9 +24,6 @@ object GPNative {
     external fun nativeEglReady(handle: Long): Boolean
     external fun nativeGlesVersion(handle: Long): Int
     external fun nativeBlenderGpConnected(handle: Long): Boolean
-    external fun nativeBeginStrokeEglRenderer(handle: Long, materialIndex: Int, thickness: Float): Boolean
-    external fun nativeAddPointEglRenderer(handle: Long, x: Float, y: Float, z: Float, pressure: Float, strength: Float, time: Float): Boolean
-    external fun nativeEndStrokeEglRenderer(handle: Long): Boolean
     external fun nativeCancelStrokeEglRenderer(handle: Long): Boolean
     external fun nativeFillAtEglRenderer(handle: Long, seedX: Int, seedY: Int, materialIndex: Int, thickness: Float): Boolean
     /** Background fill: capture (GL thread) -> compute (worker) -> commit (GL thread). */
@@ -70,17 +67,6 @@ object GPNative {
 
     external fun nativeCreate(): Long
     external fun nativeDestroy(handle: Long)
-    external fun nativeBeginStroke(handle: Long, materialIndex: Int, thickness: Float): Boolean
-    external fun nativeAddPoint(
-        handle: Long,
-        x: Float,
-        y: Float,
-        z: Float,
-        pressure: Float,
-        strength: Float,
-        time: Float
-    ): Boolean
-    external fun nativeEndStroke(handle: Long): Boolean
     external fun nativeRender(handle: Long): Boolean
     external fun nativeStrokeCount(handle: Long): Int
     external fun nativePointCount(handle: Long): Int
@@ -289,7 +275,6 @@ object GPNative {
     external fun nativeSetMaterialVisibility(handle: Long, index: Int, visible: Boolean): Boolean
     external fun nativeSetMaterialFillEnabled(handle: Long, index: Int, enabled: Boolean): Boolean
     external fun nativeSmoothStroke(handle: Long, index: Int, influence: Float, iterations: Int): Boolean
-    external fun nativeSculptAt(handle: Long, tool: Int, x: Float, y: Float, radius: Float, influence: Float): Boolean
     external fun nativeSetOnionSkin(handle: Long, enabled: Boolean, before: Int, after: Int, opacity: Float): Boolean
     external fun nativeSetMultiframeEditing(handle: Long, enabled: Boolean): Boolean
     external fun nativeApplyBlenderModifier(handle: Long, strokeIndex: Int, name: String, factor: Float, iterations: Int): Boolean
@@ -312,12 +297,29 @@ object GPNative {
     external fun nativeEngineHealthy(): Boolean
     /** Clears the engine failure latch so the next draw tries Blender again. */
     external fun nativeResetEngine()
+
+    // ---- batch 2 (renderer handle, not the GP handle) ----
+    /** Replaces a lost EGL context (and window surface) natively; true = usable again, the frame is not redrawn. */
+    external fun nativeRecoverContext(handle: Long): Boolean
+    /** Counts EGL context replacements: a change means GL textures / reference images must be uploaded again. */
+    external fun nativeContextEpoch(handle: Long): Int
+    /** Frees the pending fill capture and any uncommitted fill job (a dropped fill). */
+    external fun nativeFillDiscardEglRenderer(handle: Long)
 }
 
 /** Calls the batch-1 native entry points; a native library built without them must not crash the app. */
 object NativeSafe {
     fun cancelToolSession(handle: Long): Boolean =
         try { handle != 0L && GPNative.nativeCancelToolSession(handle) } catch (e: UnsatisfiedLinkError) { false }
+    /** Warp still open natively? Unknown (old library) counts as open, so nothing is dropped by mistake. */
+    fun latticeActive(handle: Long): Boolean =
+        try { handle != 0L && GPNative.nativeLatticeActive(handle) } catch (e: UnsatisfiedLinkError) { true }
     fun engineHealthy(): Boolean = try { GPNative.nativeEngineHealthy() } catch (e: UnsatisfiedLinkError) { true }
     fun resetEngine() { try { GPNative.nativeResetEngine() } catch (e: UnsatisfiedLinkError) { } }
+    fun recoverContext(renderer: Long): Boolean =
+        try { renderer != 0L && GPNative.nativeRecoverContext(renderer) } catch (e: UnsatisfiedLinkError) { false }
+    /** -1 when the library has no epoch (never changes, so nothing is re-uploaded). */
+    fun contextEpoch(renderer: Long): Int =
+        try { if (renderer != 0L) GPNative.nativeContextEpoch(renderer) else -1 } catch (e: UnsatisfiedLinkError) { -1 }
+    fun fillDiscard(renderer: Long) { try { if (renderer != 0L) GPNative.nativeFillDiscardEglRenderer(renderer) } catch (e: UnsatisfiedLinkError) { } }
 }

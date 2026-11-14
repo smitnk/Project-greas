@@ -79,6 +79,8 @@ int pg_gp_engine_present(int target_w, int target_h);
 int pg_gp_engine_present_over(int target_w, int target_h);
 /* Frees every GL object of the engine (context loss). */
 void pg_gp_engine_reset(void);
+/* Same, for a lost EGL context: no GL call is made, all names are just forgotten. */
+void pg_gp_engine_context_lost(void);
 
 #ifdef __cplusplus
 }

@@ -141,6 +141,12 @@ int pg_tool_session_is_open(const PGToolSession *s);
 void pg_tool_session_note_unrecorded(PGToolSession *s);
 int pg_tool_session_take_unrecorded(PGToolSession *s);
 
+/* Window-manager modal state (project_grease_wm_modal.c): running tool (-1 none) and eraser flag. */
+int pg_tool_session_modal_running(const PGToolSession *s);
+int pg_tool_session_modal_erasing(const PGToolSession *s);
+void pg_tool_session_set_modal(PGToolSession *s, int running, int erasing);
+PGToolSession *pg_tool_session_last_modal(void);
+
 /* Number of samples the session has applied in the current / last gesture (tests, diagnostics). */
 int pg_tool_session_sample_count(const PGToolSession *s);
 

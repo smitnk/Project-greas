@@ -59,4 +59,34 @@ class ProjectFilesTest {
         assertEquals("b", JSONObject(files.read("P")!!).getString("v"))
         assertEquals(1, files.dir.list()!!.size)
     }
+
+    @Test fun marathiNamesGetDifferentFiles() {
+        val files = ProjectFiles(tmp.newFolder("projects"))
+        val a = "\u0906\u092E\u091A\u0940 \u0917\u094B\u0937\u094D\u091F" // आमची गोष्ट
+        val b = "\u092E\u093E\u091D\u093E \u091A\u093F\u0924\u094D\u0930\u092A\u091F" // माझा चित्रपट
+        assertNotEquals(files.fileFor(a), files.fileFor(b))
+        files.write(a, doc("one")); files.write(b, doc("two"))
+        assertEquals("one", JSONObject(files.read(a)!!).getString("v"))
+        assertEquals("two", JSONObject(files.read(b)!!).getString("v"))
+        assertEquals(files.fileFor(a), files.fileFor(a)) // stable
+    }
+
+    @Test fun oldFileNameIsMigratedOnRead() {
+        val files = ProjectFiles(tmp.newFolder("projects"))
+        val name = "My Project"
+        val old = java.io.File(files.dir, ProjectFiles.legacySafeName(name) + ProjectFiles.EXT)
+        old.writeText(doc("legacy").toString())
+        assertTrue(files.exists(name))
+        assertEquals("legacy", JSONObject(files.read(name)!!).getString("v"))
+        assertTrue(files.fileFor(name).isFile)
+        assertTrue(!old.exists())
+    }
+
+    @Test fun deleteRemovesTheDocument() {
+        val files = ProjectFiles(tmp.newFolder("projects"))
+        files.write("Gone", doc("x"))
+        assertTrue(files.delete("Gone"))
+        assertTrue(!files.exists("Gone"))
+        assertTrue(!files.delete("Gone"))
+    }
 }

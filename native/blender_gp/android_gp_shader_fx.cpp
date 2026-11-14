@@ -290,7 +290,8 @@ bool ensure_targets(int w, int h) {
   bool ok = make_plane(g_layer, w, h, true);
   for (Buffer& b : g_bufs) ok = make_plane(b.color, w, h) && make_plane(b.reveal, w, h) && ok;
   glBindTexture(GL_TEXTURE_2D, 0);
-  g_w = w; g_h = h;
+  /* Cache the size only when every plane is complete; otherwise retry (and fail again) next call. */
+  g_w = ok ? w : 0; g_h = ok ? h : 0;
   return ok;
 }
 
@@ -479,7 +480,12 @@ bool ensure_blend() {
 
 extern "C" int project_grease_fx_end_layer_blend(const PGFxEntry* entries, int count, const PGFxView* view,
                                                  int blend_mode, float opacity) {
-  if (!ensure_blend()) return 0;
+  if (!ensure_blend()) {
+    /* begin_layer left the layer FBO bound: put the caller's target back or every later layer is lost */
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_prev_fbo);
+    glViewport(g_prev_viewport[0], g_prev_viewport[1], g_prev_viewport[2], g_prev_viewport[3]);
+    return 0;
+  }
   const int cur = fx_run(entries, count, view);
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_prev_fbo);
   glViewport(g_prev_viewport[0], g_prev_viewport[1], g_prev_viewport[2], g_prev_viewport[3]);
@@ -532,24 +538,28 @@ extern "C" int project_grease_fx_end_layer_blend(const PGFxEntry* entries, int c
   return 1;
 }
 
-extern "C" void project_grease_fx_reset() {
-  if (g_blend.id) glDeleteProgram(g_blend.id);
+static void fx_reset_impl(bool alive) {
+  if (alive && g_blend.id) glDeleteProgram(g_blend.id);
   g_blend = Program();
-  for (Program& p : g_prog) { if (p.id) glDeleteProgram(p.id); p = Program(); }
-  if (g_convert.id) glDeleteProgram(g_convert.id);
-  if (g_composite.id) glDeleteProgram(g_composite.id);
+  for (Program& p : g_prog) { if (alive && p.id) glDeleteProgram(p.id); p = Program(); }
+  if (alive && g_convert.id) glDeleteProgram(g_convert.id);
+  if (alive && g_composite.id) glDeleteProgram(g_composite.id);
   g_convert = Program(); g_composite = Program();
-  if (g_layer.tex) glDeleteTextures(1, &g_layer.tex);
-  if (g_layer.fbo) glDeleteFramebuffers(1, &g_layer.fbo);
-  if (g_layer.rb) glDeleteRenderbuffers(1, &g_layer.rb);
+  if (alive && g_layer.tex) glDeleteTextures(1, &g_layer.tex);
+  if (alive && g_layer.fbo) glDeleteFramebuffers(1, &g_layer.fbo);
+  if (alive && g_layer.rb) glDeleteRenderbuffers(1, &g_layer.rb);
   g_layer = Plane();
   for (Buffer& b : g_bufs) {
     for (Plane* pl : {&b.color, &b.reveal}) {
-      if (pl->tex) glDeleteTextures(1, &pl->tex);
-      if (pl->fbo) glDeleteFramebuffers(1, &pl->fbo);
+      if (alive && pl->tex) glDeleteTextures(1, &pl->tex);
+      if (alive && pl->fbo) glDeleteFramebuffers(1, &pl->fbo);
       *pl = Plane();
     }
   }
-  if (g_vbo) glDeleteBuffers(1, &g_vbo);
+  if (alive && g_vbo) glDeleteBuffers(1, &g_vbo);
   g_vbo = 0; g_w = g_h = 0;
 }
+
+extern "C" void project_grease_fx_reset() { fx_reset_impl(true); }
+/* EGL context lost: forget every GL name without calling GL. */
+extern "C" void project_grease_fx_context_lost() { fx_reset_impl(false); }

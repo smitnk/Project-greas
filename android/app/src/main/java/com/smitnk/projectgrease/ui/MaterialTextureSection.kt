@@ -49,7 +49,8 @@ internal fun decodeTextureImage(context: Context, uri: Uri, maxSide: Int = 1024)
 /** After a project is opened: decode the saved texture images (URIs) and hand them to the editor. */
 internal fun loadPendingTextureImages(context: Context, controller: EditorController) {
     for ((slot, fill, uri) in controller.texturesNeedingImages()) {
-        val img = decodeTextureImage(context, Uri.parse(uri)) ?: continue
+        val img = decodeTextureImage(context, Uri.parse(uri))
+        if (img == null) { controller.markTextureFailed(slot, fill, uri); continue }
         controller.setMaterialTexture(slot, fill, controller.materialTexture(slot, fill), img.first, img.second, img.third)
     }
 }

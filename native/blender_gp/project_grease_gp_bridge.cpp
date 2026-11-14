@@ -40,6 +40,8 @@ struct ProjectGreaseGPHandle {
   // Backend::document_generation() at the gesture's BEGIN: the gpd pointer alone cannot tell a
   // replaced document (undo restores in place, reset reallocates at the same address).
   uint64_t tool_generation = 0;
+  // Brush stroke settings for the next Draw stroke (PGToolDrawSink.style -> begin), per handle.
+  project_grease::gp::StrokeStyle tool_style;
 };
 
 static int ensure_ready(ProjectGreaseGPHandle *handle)
@@ -68,7 +70,7 @@ static int tool_abort(ProjectGreaseGPHandle *handle, bool doc_valid)
   if (handle->tool_session && pg_tool_session_is_open(handle->tool_session)) {
     result = pg_tool_session_abort(handle->tool_session, doc_valid ? 1 : 0);
   }
-  if (pg_wm_modal_reset) pg_wm_modal_reset();
+  if (pg_wm_modal_reset_session) pg_wm_modal_reset_session(handle->tool_session);
   handle->tool_gpd = nullptr;
   return result;
 }
@@ -523,6 +525,11 @@ int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int 
   return ensure_ready(handle) && handle->backend.lattice_update(nu, nv, ctrl, interp) ? 1 : 0;
 }
 
+void project_grease_gp_context_reset(ProjectGreaseGPHandle *handle)
+{
+  if (ensure_ready(handle)) handle->backend.gpu_context_reset();
+}
+
 int project_grease_gp_lattice_active(const ProjectGreaseGPHandle *handle)
 {
   return handle && handle->ready && handle->backend.lattice_active() ? 1 : 0;
@@ -543,13 +550,18 @@ int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, flo
 int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int changed)
 {
   if (!ensure_operator(handle) || !pg_wm_modal_erase) return PG_OPERATOR_CANCELLED;
+  if (!handle->tool_session) {
+    handle->tool_session = pg_tool_session_new(); // the eraser's modal state lives in the session
+    if (!handle->tool_session) return PG_OPERATOR_CANCELLED;
+  }
   if (tool_session_stale(handle)) tool_abort(handle, false);
   PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), 0, true, 0,
                    handle->tool_session, nullptr};
   const int status = pg_wm_modal_erase(&C, phase, changed != 0);
-  // an eraser BEGIN that cut off a brush gesture has no result bit to report its edits with
-  if (handle->tool_session) pg_tool_session_take_unrecorded(handle->tool_session);
-  return status;
+  // An eraser BEGIN that cut off a brush gesture with edits: bit 0x100 on the status tells Kotlin to
+  // record an undo step for them (low byte stays the PG_OPERATOR_* status).
+  const int cut_off = handle->tool_session ? pg_tool_session_take_unrecorded(handle->tool_session) : 0;
+  return status | (cut_off ? 0x100 : 0);
 }
 
 int project_grease_gp_fill_help_lines(ProjectGreaseGPHandle *handle, float extend_fac, int extend_mode, int collide,
@@ -1301,7 +1313,34 @@ int project_grease_gp_fill_at_mask(ProjectGreaseGPHandle *handle, const float *r
 
 struct PGFillJob {
   std::vector<project_grease::gp::StrokePoint> points;
+  uint64_t token = 0; // Backend::fill_token() at capture; 0 = unchecked
 };
+struct PGFillSnapshot {
+  project_grease::gp::Backend::FillSnapshot snap;
+};
+PGFillSnapshot *project_grease_gp_fill_snapshot(ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(handle)) return nullptr;
+  auto *s = new PGFillSnapshot();
+  s->snap = handle->backend.fill_snapshot();
+  return s;
+}
+void project_grease_gp_fill_snapshot_free(PGFillSnapshot *snap) { delete snap; }
+PGFillJob *project_grease_gp_fill_outline_snapshot(const PGFillSnapshot *snap, const float *rgba, int mask_w,
+                                                   int mask_h, int width, int height, int seed_x, int seed_y,
+                                                   int fill_leak, int dilate_pixels)
+{
+  if (!snap) return nullptr;
+  auto *job = new PGFillJob();
+  if (!project_grease::gp::Backend::fill_outline_snapshot(snap->snap, rgba, width, height, seed_x, seed_y,
+                                                          fill_leak, dilate_pixels, mask_w, mask_h, job->points,
+                                                          nullptr)) {
+    delete job;
+    return nullptr;
+  }
+  job->token = snap->snap.token;
+  return job;
+}
 PGFillJob *project_grease_gp_fill_outline(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w, int mask_h,
                                           int width, int height, int seed_x, int seed_y, int fill_leak,
                                           int dilate_pixels)
@@ -1313,12 +1352,15 @@ PGFillJob *project_grease_gp_fill_outline(ProjectGreaseGPHandle *handle, const f
     delete job;
     return nullptr;
   }
+  job->token = handle->backend.fill_token();
   return job;
 }
 int project_grease_gp_fill_commit(ProjectGreaseGPHandle *handle, PGFillJob *job, int material_index, float thickness)
 {
   if (!job) return 0;
-  const bool ok = ensure_operator(handle) && handle->backend.fill_commit(job->points, {material_index, thickness});
+  // fill_commit_checked: refuses when the frame / layer / document is not the captured one.
+  const bool ok = ensure_operator(handle) &&
+                  handle->backend.fill_commit_checked(job->points, {material_index, thickness}, job->token);
   delete job;
   return ok ? 1 : 0;
 }
@@ -1357,18 +1399,18 @@ int project_grease_gp_interpolate_frame(ProjectGreaseGPHandle *handle, int sourc
 // ---- Native tool session --------------------------------------------------------------------
 // Draw sink: the backend's stroke buffer, as the former per-point JNI calls used it.
 // the brush's stroke settings for the next stroke (PGToolDrawSink.style, called before begin)
-static project_grease::gp::StrokeStyle g_tool_sink_style;
-static void tool_sink_style(void *, float hardness, int caps, float aspect_x, float aspect_y)
+static void tool_sink_style(void *user, float hardness, int caps, float aspect_x, float aspect_y)
 {
-  g_tool_sink_style.hardness = hardness; g_tool_sink_style.caps = caps;
-  g_tool_sink_style.aspect_x = aspect_x; g_tool_sink_style.aspect_y = aspect_y;
+  auto *handle = static_cast<ProjectGreaseGPHandle *>(user);
+  handle->tool_style.hardness = hardness; handle->tool_style.caps = caps;
+  handle->tool_style.aspect_x = aspect_x; handle->tool_style.aspect_y = aspect_y;
 }
 static int tool_sink_begin(void *user, int material, float thickness)
 {
   auto *handle = static_cast<ProjectGreaseGPHandle *>(user);
-  project_grease::gp::StrokeStyle style = g_tool_sink_style;
+  project_grease::gp::StrokeStyle style = handle->tool_style;
   style.material_index = material; style.thickness = thickness;
-  g_tool_sink_style = project_grease::gp::StrokeStyle{};
+  handle->tool_style = project_grease::gp::StrokeStyle{};
   return handle->backend.begin_stroke(style) ? 1 : 0;
 }
 static int tool_sink_add(void *user, float x, float y, float pressure, float strength, float time)

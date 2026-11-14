@@ -2018,7 +2018,28 @@ static int exec_snap_to_cursor(PGOpContext *C, const float *p, int n)
 /* ---- curve edit mode (gpencil_edit_curve.c, rna_GPencil_curve_edit_mode_toggle) ------------------ */
 /* The app has no object modes: curve editing also sets the edit-mode flag, which
  * GPENCIL_CURVE_EDIT_SESSIONS_ON needs, and clears it again when it ends. */
-static bool pgw_curve_set_editmode = false;
+/* The document whose GP_DATA_STROKE_EDITMODE bit curve editing set (a bare "I set it" boolean was
+ * process-global and went stale across undo / reset / a second document). Only compared, never
+ * dereferenced. */
+static const bGPdata *pgw_curve_editmode_owner = NULL;
+static void pgw_curve_claim_editmode(bGPdata *gpd)
+{
+  if (!(gpd->flag & GP_DATA_STROKE_EDITMODE)) {
+    gpd->flag |= GP_DATA_STROKE_EDITMODE;
+    pgw_curve_editmode_owner = gpd;
+  }
+  else if (pgw_curve_editmode_owner == gpd && !(gpd->flag & GP_DATA_CURVE_EDIT_MODE)) {
+    /* the bit was set by someone else since (undo restored it, or edit mode was entered): not ours */
+    pgw_curve_editmode_owner = NULL;
+  }
+}
+static void pgw_curve_release_editmode(bGPdata *gpd)
+{
+  if (pgw_curve_editmode_owner == gpd) {
+    gpd->flag &= ~GP_DATA_STROKE_EDITMODE;
+    pgw_curve_editmode_owner = NULL;
+  }
+}
 
 /* GPENCIL_OT_stroke_enter_editcurve_mode: error_threshold (0.1 BU; canvas units here) */
 static int exec_enter_editcurve(PGOpContext *C, const float *p, int n)
@@ -2052,7 +2073,7 @@ static int exec_enter_editcurve(PGOpContext *C, const float *p, int n)
       }
     }
   }
-  if (!(gpd->flag & GP_DATA_STROKE_EDITMODE)) { gpd->flag |= GP_DATA_STROKE_EDITMODE; pgw_curve_set_editmode = true; }
+  pgw_curve_claim_editmode(gpd);
   gpd->flag |= GP_DATA_CURVE_EDIT_MODE;
   BKE_gpencil_batch_cache_dirty_tag(gpd);
   return PG_OPERATOR_FINISHED;
@@ -2110,14 +2131,14 @@ int pg_curve_edit_set(bGPdata *gpd, bool on)
 {
   if (gpd == NULL) return 0;
   if (on) {
-    if (!(gpd->flag & GP_DATA_STROKE_EDITMODE)) { gpd->flag |= GP_DATA_STROKE_EDITMODE; pgw_curve_set_editmode = true; }
+    pgw_curve_claim_editmode(gpd);
     gpd->flag |= GP_DATA_CURVE_EDIT_MODE;
     BKE_gpencil_strokes_selected_update_editcurve(gpd);
   }
   else {
     gpd->flag &= ~GP_DATA_CURVE_EDIT_MODE;
     BKE_gpencil_strokes_selected_sync_selection_editcurve(gpd);
-    if (pgw_curve_set_editmode) { gpd->flag &= ~GP_DATA_STROKE_EDITMODE; pgw_curve_set_editmode = false; }
+    pgw_curve_release_editmode(gpd);
   }
   BKE_gpencil_batch_cache_dirty_tag(gpd);
   return 1;

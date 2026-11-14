@@ -612,13 +612,117 @@ class DeviceBugfixTest {
         val currentName = onUi { controller.document.projectName }
         val ghost = "Ghost project ${SystemClock.uptimeMillis()}"
         val store = com.smitnk.projectgrease.ui.ProjectStore(rule.activity)
+        // records left behind by earlier runs of this test (ProjectStore had no delete then)
+        store.load().filter { it.name.startsWith("Ghost project") }.forEach { store.delete(it.name) }
         store.upsert(com.smitnk.projectgrease.ui.ProjectRecord(ghost, 640, 360, 12, System.currentTimeMillis()))
-        instrumentation.runOnMainSync { rule.activity.onBackPressedDispatcher.onBackPressed() } // saves, back to Home
-        rule.waitUntil(10_000) { rule.onAllNodesWithText(ghost).fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText(ghost).performClick()
-        rule.waitForIdle()
-        assertEquals("project name unchanged", currentName, onUi { controller.document.projectName })
-        assertTrue("still on Home", rule.onAllNodesWithText("Projects").fetchSemanticsNodes().isNotEmpty())
-        assertEquals("no file written for the missing project", null, store.loadDocument(ghost))
+        try {
+            instrumentation.runOnMainSync { rule.activity.onBackPressedDispatcher.onBackPressed() } // saves, back to Home
+            rule.waitUntil(10_000) { rule.onAllNodesWithText(ghost).fetchSemanticsNodes().isNotEmpty() }
+            rule.onNodeWithText(ghost).performClick()
+            rule.waitForIdle()
+            assertEquals("project name unchanged", currentName, onUi { controller.document.projectName })
+            assertTrue("still on Home", rule.onAllNodesWithText("Projects").fetchSemanticsNodes().isNotEmpty())
+            assertEquals("no file written for the missing project", null, store.loadDocument(ghost))
+        } finally {
+            store.delete(ghost)
+        }
+        assertTrue("ghost record deleted", store.load().none { it.name == ghost })
+    }
+
+    // ---- batch 2 ----
+    /** Marathi names used to share one file ("____.gpjson"): each project keeps its own drawing. */
+    @Test fun marathiProjectNamesDoNotCollide() {
+        val store = com.smitnk.projectgrease.ui.ProjectStore(rule.activity)
+        val stamp = SystemClock.uptimeMillis()
+        val a = "\u0906\u092E\u091A\u0940 \u0917\u094B\u0937\u094D\u091F $stamp" // आमची गोष्ट
+        val b = "\u092E\u093E\u091D\u093E \u091A\u093F\u0924\u094D\u0930\u092A\u091F $stamp" // माझा चित्रपट
+        try {
+            store.saveDocument(a, "{\"who\":\"first\"}")
+            store.saveDocument(b, "{\"who\":\"second\"}")
+            store.upsert(com.smitnk.projectgrease.ui.ProjectRecord(a, 640, 360, 12, stamp))
+            store.upsert(com.smitnk.projectgrease.ui.ProjectRecord(b, 640, 360, 12, stamp + 1))
+            assertTrue("different files", store.files.fileFor(a) != store.files.fileFor(b))
+            assertEquals("{\"who\":\"first\"}", store.loadDocument(a))
+            assertEquals("{\"who\":\"second\"}", store.loadDocument(b))
+            assertEquals("both records kept", 2, store.load().count { it.name == a || it.name == b })
+        } finally {
+            store.delete(a); store.delete(b)
+        }
+        assertTrue("deleted", store.loadDocument(a) == null && store.loadDocument(b) == null && store.load().none { it.name == a || it.name == b })
+    }
+
+    /** A canvas touch, a scrub and an export all stop playback (the tick used to move the frame under the stroke). */
+    @Test fun playbackStoppedByTouchScrubAndExport() {
+        drag(200f to 300f, 1000f to 300f)
+        onUi { controller.createFrame(2); controller.animation.setFrame(1); controller.animation.togglePlayback() }
+        assertTrue("playing", onUi { controller.animation.playing })
+        drag(200f to 450f, 1000f to 450f) // touch on the canvas
+        assertTrue("touch stopped playback", !onUi { controller.animation.playing })
+        assertEquals("the stroke was drawn", 2, strokes().size)
+
+        onUi { controller.animation.togglePlayback() }
+        assertTrue(onUi { controller.animation.playing })
+        onUi { controller.scrubTo(1f) }
+        assertTrue("scrub stopped playback", !onUi { controller.animation.playing })
+
+        onUi { controller.animation.togglePlayback() }
+        assertTrue(onUi { controller.animation.playing })
+        assertTrue(onUi { controller.exportPages(listOf(1)) }.isNotEmpty())
+        assertTrue("export stopped playback", !onUi { controller.animation.playing })
+
+        onUi { controller.animation.togglePlayback() }
+        assertTrue(onUi { controller.animation.playing })
+        assertTrue(onUi { controller.exportCanvasPixels(false) } != null)
+        assertTrue("png export stopped playback", !onUi { controller.animation.playing })
+        // the tick holds the frame while a batch / gesture is open
+        onUi { controller.history.beginBatch() }
+        assertTrue("tick blocked while a gesture is open", !onUi { controller.animation.canAdvance() })
+        onUi { controller.history.endBatch() }
+        assertTrue(onUi { controller.animation.canAdvance() })
+    }
+
+    /** Batches nest: the inner end no longer closes the outer one, so both deletes are one undo step. */
+    @Test fun historyBatchesNest() {
+        drag(200f to 200f, 1000f to 200f)
+        drag(200f to 400f, 1000f to 400f)
+        assertEquals(2, strokes().size)
+        onUi {
+            val h = controller.history
+            h.beginBatch(); h.beginBatch()
+            assertEquals(2, h.batchNesting)
+            controller.deleteLastStroke()
+            h.endBatch()
+            assertTrue("inner end keeps the outer batch open", h.isBatching)
+            controller.deleteLastStroke()
+            h.endBatch()
+            assertTrue(!h.isBatching)
+        }
+        assertEquals(0, strokes().size)
+        onUi { controller.undo() }
+        assertEquals("one undo restores both strokes", 2, strokes().size)
+    }
+
+    /** A stroke index belongs to one frame: changing frame clears the selected stroke. */
+    @Test fun selectedStrokeClearedOnFrameChange() {
+        drag(200f to 300f, 1000f to 300f)
+        onUi { assertTrue(controller.selectStroke(0)) }
+        assertTrue("selected", onUi { controller.selection.selectedStroke } >= 0)
+        onUi { controller.selectFrame(2) }
+        assertEquals("selection dropped on the new frame", -1, onUi { controller.selection.selectedStroke })
+        onUi { controller.selectFrame(1); controller.selectStroke(0) }
+        assertTrue(onUi { controller.selection.selectedStroke } >= 0)
+        onUi { controller.animation.setFrame(1) } // same frame: kept
+        assertTrue("same frame keeps it", onUi { controller.selection.selectedStroke } >= 0)
+    }
+
+    /** A Move tap on empty canvas used to key a held frame and open a history batch before the hit test. */
+    @Test fun moveTapOnEmptyCanvasDoesNotKeyOrBatch() {
+        drag(200f to 300f, 1000f to 300f)
+        onUi { controller.animation.setFrame(3) } // a held frame: only frame 1 is a key
+        val keysBefore = onUi { controller.frameNumbers().toList() }
+        onUi { controller.selectTool(GreaseTool.MOVE) }
+        tap(100f, 60f) // far from the stroke
+        assertEquals("no key created", keysBefore, onUi { controller.frameNumbers().toList() })
+        assertTrue("no batch left open", !onUi { controller.history.isBatching })
     }
 }

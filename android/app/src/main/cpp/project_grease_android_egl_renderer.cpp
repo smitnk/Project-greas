@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <vector>
 #include <mutex>
+#include <condition_variable>
+#include <set>
 #include <memory>
 
 #include "project_grease_gp_backend.h"
@@ -24,6 +26,7 @@ namespace {
 using GPHandle = ProjectGreaseGPHandle *;
 
 extern "C" void project_grease_android_present_reset(void);
+extern "C" void project_grease_android_present_context_lost(void);
 extern "C" void project_grease_android_present_set_color(float r, float g, float b, float a);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_view_transform(float zoom, float pan_x, float pan_y);
@@ -59,7 +62,18 @@ struct FillCapture {
   std::vector<GLubyte> pixels;  // raw screen readback; shrunk to rgba off the UI thread
   std::vector<float> rgba;
   int mw = 0, mh = 0, width = 0, height = 0, seed_x = 0, seed_y = 0;
+  PGFillSnapshot *snap = nullptr; // taken at capture (document thread); owned here
+  FillCapture() = default;
+  FillCapture(const FillCapture &) = delete;
+  FillCapture &operator=(const FillCapture &) = delete;
+  ~FillCapture() { project_grease_gp_fill_snapshot_free(snap); }
 };
+// Fill workers: a renderer may be destroyed only when no nativeFillCompute is running on it, and a
+// compute is refused for a renderer that is gone (g_live_renderers), so the worker never touches a
+// freed Renderer.
+static std::mutex g_fill_mutex;
+static std::condition_variable g_fill_cv;
+static std::set<const void *> g_live_renderers;
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
   EGLContext context = EGL_NO_CONTEXT;
@@ -84,6 +98,11 @@ struct Renderer {
   int fill_layer_mode = 0;   // GP_FILL_GPLMODE_*
   std::unique_ptr<FillCapture> fill_capture; // background fill: captured mask
   PGFillJob *fill_job = nullptr;                    // background fill: computed outline
+  int fill_computing = 0;                           // nativeFillCompute calls in flight (g_fill_mutex)
+  // EGL context recovery: every recovery bumps the epoch (Kotlin re-uploads textures when it changes);
+  // gl_stale = the new context has not yet had its stale GL names dropped (no current surface).
+  int context_epoch = 0;
+  bool gl_stale = false;
 
 };
 
@@ -242,6 +261,11 @@ bool attach_window(Renderer &renderer, ANativeWindow *window)
     return false;
   }
 
+  if (renderer.gl_stale) {
+    // the context was replaced while there was no surface: drop the document's stale GPU caches now
+    if (renderer.gp_connected) project_grease_gp_context_reset(renderer.gp_handle);
+    renderer.gl_stale = false;
+  }
   renderer.window = window;
   renderer.width = 0;
   renderer.height = 0;
@@ -263,9 +287,17 @@ void detach_window(Renderer &renderer)
     return;
   }
 
-  // Destroy GP and presentation resources while the external GL context is still current.
+  // Destroy GP and presentation resources while the external GL context is still current. After
+  // detach_surface_keep_document nothing is current: try a surfaceless make-current (or the surface)
+  // so the deletes hit the right context; when that is impossible the context is destroyed right
+  // after, which frees every object it owns, so the GL names are only forgotten (no GL call).
+  bool gl_alive = renderer.context != EGL_NO_CONTEXT &&
+                  (eglGetCurrentContext() == renderer.context ||
+                   eglMakeCurrent(renderer.display, renderer.surface, renderer.surface, renderer.context) == EGL_TRUE ||
+                   eglMakeCurrent(renderer.display, EGL_NO_SURFACE, EGL_NO_SURFACE, renderer.context) == EGL_TRUE);
   disconnect_blender_gp(renderer);
-  project_grease_android_present_reset();
+  if (gl_alive) project_grease_android_present_reset();
+  else project_grease_android_present_context_lost();
 
   eglMakeCurrent(
       renderer.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -305,6 +337,45 @@ void detach_surface_keep_document(Renderer &renderer)
   renderer.height = 0;
 }
 
+/* EGL_CONTEXT_LOST / GPU reset: every GL object of the old context is gone. Forget the presenter's
+ * names WITHOUT calling GL (they belong to a dead context), replace the context (and the window
+ * surface, whose config must match), and let everything rebuild lazily. The document (CPU side) is
+ * untouched; its GPU caches are dropped once the new context is current (gl_stale). Reference-image
+ * and material textures are wiped with the presenter state: the caller re-uploads them when
+ * context_epoch changes. */
+bool recover_context(Renderer &r)
+{
+  if (r.display == EGL_NO_DISPLAY) return false;
+  eglMakeCurrent(r.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  project_grease_android_present_context_lost();
+  if (r.context != EGL_NO_CONTEXT) {
+    eglDestroyContext(r.display, r.context);
+    r.context = EGL_NO_CONTEXT;
+  }
+  const bool es3 = r.gles_version >= 3;
+  EGLConfig config = nullptr;
+  bool ok = choose_config(r, config, es3) && create_context(r, config, es3 ? 3 : 2);
+  if (!ok && es3) ok = choose_config(r, config, false) && create_context(r, config, 2);
+  if (!ok) return false;
+  r.gl_stale = true;
+  r.context_epoch++;
+  if (r.window) {
+    if (r.surface != EGL_NO_SURFACE) {
+      eglDestroySurface(r.display, r.surface);
+      r.surface = EGL_NO_SURFACE;
+    }
+    r.surface = eglCreateWindowSurface(r.display, config, r.window, nullptr);
+    if (r.surface == EGL_NO_SURFACE) return false; // attach again (nativeAttachSurface) later
+    if (eglMakeCurrent(r.display, r.surface, r.surface, r.context) != EGL_TRUE) return false;
+    if (r.gp_connected) project_grease_gp_context_reset(r.gp_handle);
+    r.gl_stale = false;
+    eglQuerySurface(r.display, r.surface, EGL_WIDTH, &r.width);
+    eglQuerySurface(r.display, r.surface, EGL_HEIGHT, &r.height);
+    glViewport(0, 0, r.width, r.height);
+  }
+  return true;
+}
+
 void destroy_renderer(Renderer &renderer)
 {
   detach_window(renderer);
@@ -331,6 +402,10 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateEglRenderer(
     delete renderer;
     return 0;
   }
+  {
+    std::lock_guard<std::mutex> lock(g_fill_mutex);
+    g_live_renderers.insert(renderer);
+  }
   return to_handle(renderer);
 }
 
@@ -343,8 +418,16 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDestroyEglRenderer(
     return;
   }
 
+  {
+    // no new fill compute from now on; wait for the one in flight (it stores into this Renderer)
+    std::unique_lock<std::mutex> lock(g_fill_mutex);
+    if (g_live_renderers.erase(renderer) == 0) return; // unknown / already destroyed handle
+    g_fill_cv.wait(lock, [&] { return renderer->fill_computing == 0; });
+  }
   destroy_renderer(*renderer);
-  delete renderer;
+  project_grease_gp_fill_job_free(renderer->fill_job); // an uncommitted job was leaked here
+  renderer->fill_job = nullptr;
+  delete renderer; // fill_capture (unique_ptr) frees itself
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -418,6 +501,9 @@ static bool render_now(Renderer *renderer)
 
   if (eglMakeCurrent(
           renderer->display, renderer->surface, renderer->surface, renderer->context) != EGL_TRUE) {
+    // a lost context / surface cannot be made current again: build a new one (frame dropped)
+    const EGLint err = eglGetError();
+    if (err == EGL_CONTEXT_LOST || err == EGL_BAD_CONTEXT) recover_context(*renderer);
     return false;
   }
 
@@ -454,6 +540,7 @@ static bool render_now(Renderer *renderer)
 
   const auto t_swap = std::chrono::steady_clock::now();
   const bool swapped = eglSwapBuffers(renderer->display, renderer->surface) == EGL_TRUE;
+  if (!swapped && eglGetError() == EGL_CONTEXT_LOST) recover_context(*renderer);
   g_last_swap_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_swap).count();
   return swapped;
 }
@@ -465,36 +552,24 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRenderEgl(
   return render_now(from_handle(handle)) ? JNI_TRUE : JNI_FALSE;
 }
 
+/* EGL context recovery (see recover_context). render_now already does this when EGL reports the loss;
+ * this entry is for the app's own detection (e.g. repeated render failures). True = a usable context
+ * (and surface, when a window is attached) exists again; the frame was NOT redrawn. */
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeBeginStrokeEglRenderer(
-    JNIEnv *, jobject, jlong handle, jint material_index, jfloat thickness)
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeRecoverContext(JNIEnv *, jobject, jlong handle)
 {
   Renderer *renderer = from_handle(handle);
-  if (!renderer || !renderer->gp_connected) {
-    return JNI_FALSE;
-  }
-  return project_grease_gp_begin_stroke(
-             renderer->gp_handle, material_index, thickness) ? JNI_TRUE : JNI_FALSE;
+  if (!renderer) return JNI_FALSE;
+  return recover_context(*renderer) ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeAddPointEglRenderer(
-    JNIEnv *,
-    jobject,
-    jlong handle,
-    jfloat x,
-    jfloat y,
-    jfloat z,
-    jfloat pressure,
-    jfloat strength,
-    jfloat time)
+/* Counts context replacements of this renderer: when it changes, re-upload reference images and
+ * material textures (they were dropped with the lost context). */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeContextEpoch(JNIEnv *, jobject, jlong handle)
 {
   Renderer *renderer = from_handle(handle);
-  if (!renderer || !renderer->gp_connected) {
-    return JNI_FALSE;
-  }
-  ProjectGreaseGPPoint point{x, y, z, pressure, strength, time};
-  return project_grease_gp_add_point(renderer->gp_handle, point) ? JNI_TRUE : JNI_FALSE;
+  return renderer ? renderer->context_epoch : 0;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -705,6 +780,8 @@ static bool fill_capture(Renderer *renderer, int seed_x, int seed_y, FillCapture
   project_grease_android_present_get_canvas_map(width, height, &map_scale, &map_ox, &map_oy, &map_rot);
   project_grease_gp_set_fill_screen_map(renderer->gp_handle, map_scale, map_ox, map_oy, map_rot);
   out.pixels = std::move(pixels);
+  project_grease_gp_fill_snapshot_free(out.snap);
+  out.snap = project_grease_gp_fill_snapshot(renderer->gp_handle); // after the screen map / factor are set
   out.mw = mw; out.mh = mh; out.width = width; out.height = height; out.seed_x = seed_x; out.seed_y = seed_y;
   project_grease_gp_render_external_context(renderer->gp_handle);
   return true;
@@ -727,7 +804,6 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillAtEglRenderer(
 /* Fill in the background (the tap no longer blocks the screen):
  * nativeFillCapture (GL thread) -> nativeFillCompute (any thread; the document must not change
  * meanwhile) -> nativeFillCommit (GL thread). A capture replaces a pending one. */
-static std::mutex g_fill_mutex;
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillCaptureEglRenderer(
     JNIEnv *, jobject, jlong handle, jint seed_x, jint seed_y)
@@ -746,23 +822,45 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillComputeEglRenderer(JNIEnv *, jobject, jlong handle)
 {
   Renderer *renderer = from_handle(handle);
-  if (!renderer) return JNI_FALSE;
   std::unique_ptr<FillCapture> cap;
   int leak = 0, dilate = 0;
   {
     std::lock_guard<std::mutex> lock(g_fill_mutex);
+    // a destroyed (or never created) renderer is not dereferenced
+    if (!renderer || g_live_renderers.find(renderer) == g_live_renderers.end()) return JNI_FALSE;
     cap = std::move(renderer->fill_capture);
     leak = renderer->fill_leak; dilate = renderer->fill_dilate;
+    if (!cap) return JNI_FALSE;
+    renderer->fill_computing++;
   }
-  if (!cap) return JNI_FALSE;
+  // Runs on the worker WITHOUT reading the document or the gp handle: everything comes from the
+  // capture's snapshot, so UI-thread edits / undo meanwhile cannot race with it.
   fill_downsample(*cap);
-  PGFillJob *job = project_grease_gp_fill_outline(renderer->gp_handle, cap->rgba.data(), cap->mw, cap->mh, cap->width,
-                                                  cap->height, cap->seed_x, cap->seed_y, leak, dilate);
-  std::lock_guard<std::mutex> lock(g_fill_mutex);
-  project_grease_gp_fill_job_free(renderer->fill_job);
-  renderer->fill_job = job;
+  PGFillJob *job = project_grease_gp_fill_outline_snapshot(cap->snap, cap->rgba.data(), cap->mw, cap->mh, cap->width,
+                                                           cap->height, cap->seed_x, cap->seed_y, leak, dilate);
+  {
+    std::lock_guard<std::mutex> lock(g_fill_mutex);
+    project_grease_gp_fill_job_free(renderer->fill_job);
+    renderer->fill_job = job;
+    renderer->fill_computing--;
+  }
+  g_fill_cv.notify_all();
   return job ? JNI_TRUE : JNI_FALSE;
 }
+/* Drops a pending capture and an uncommitted job (a fill the app decided not to commit). Capture is also
+ * idempotent: the next capture frees whatever is pending. Safe while a compute runs (it then stores its
+ * job, which the next discard / capture / destroy frees). */
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillDiscardEglRenderer(JNIEnv *, jobject, jlong handle)
+{
+  Renderer *renderer = from_handle(handle);
+  std::lock_guard<std::mutex> lock(g_fill_mutex);
+  if (!renderer || g_live_renderers.find(renderer) == g_live_renderers.end()) return;
+  renderer->fill_capture.reset();
+  project_grease_gp_fill_job_free(renderer->fill_job);
+  renderer->fill_job = nullptr;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillCommitEglRenderer(
     JNIEnv *, jobject, jlong handle, jint material_index, jfloat thickness)
@@ -785,17 +883,6 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCancelStrokeEglRendere
   Renderer *renderer = from_handle(handle);
   if (!renderer || !renderer->gp_connected) return JNI_FALSE;
   return project_grease_gp_cancel_stroke(renderer->gp_handle) ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEndStrokeEglRenderer(
-    JNIEnv *, jobject, jlong handle)
-{
-  Renderer *renderer = from_handle(handle);
-  if (!renderer || !renderer->gp_connected) {
-    return JNI_FALSE;
-  }
-  return project_grease_gp_end_stroke(renderer->gp_handle) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

@@ -59,6 +59,8 @@ int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle, int tool, cons
  * PG_TOOL_RESULT_ENDED in its result. */
 int project_grease_gp_cancel_tool_session(ProjectGreaseGPHandle *handle);
 int project_grease_gp_lattice_active(const ProjectGreaseGPHandle *handle);
+/* The EGL context was replaced: forget the document's GPU caches (new context current, nothing drawn yet). */
+void project_grease_gp_context_reset(ProjectGreaseGPHandle *handle);
 int project_grease_gp_initialize_external_gpu(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render_external_context(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render_fill_mask(ProjectGreaseGPHandle *handle);
@@ -235,6 +237,16 @@ struct PGFillJob;
 struct PGFillJob *project_grease_gp_fill_outline(ProjectGreaseGPHandle *handle, const float *rgba, int mask_w,
                                                  int mask_h, int width, int height, int seed_x, int seed_y,
                                                  int fill_leak, int dilate_pixels);
+/* Worker-safe variant: the capture (document thread) takes a snapshot of everything the outline
+ * needs; project_grease_gp_fill_outline_snapshot then never touches the handle or the document.
+ * The job remembers the frame / layer / document of the snapshot and project_grease_gp_fill_commit
+ * refuses (returns 0, document untouched) when they changed. Free the snapshot with _snapshot_free. */
+struct PGFillSnapshot;
+struct PGFillSnapshot *project_grease_gp_fill_snapshot(ProjectGreaseGPHandle *handle);
+void project_grease_gp_fill_snapshot_free(struct PGFillSnapshot *snap);
+struct PGFillJob *project_grease_gp_fill_outline_snapshot(const struct PGFillSnapshot *snap, const float *rgba,
+                                                          int mask_w, int mask_h, int width, int height,
+                                                          int seed_x, int seed_y, int fill_leak, int dilate_pixels);
 int project_grease_gp_fill_commit(ProjectGreaseGPHandle *handle, struct PGFillJob *job, int material_index,
                                   float thickness);
 void project_grease_gp_fill_job_free(struct PGFillJob *job);

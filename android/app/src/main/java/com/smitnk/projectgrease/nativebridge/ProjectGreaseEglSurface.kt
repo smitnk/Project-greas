@@ -142,19 +142,35 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var fillDownX = 0f
     private var fillDownY = 0f
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
-    private var moveOpen = false
+    /** The one transform gesture that may be open (Move / Rotate / Scale / Mirror are mutually exclusive). */
+    private enum class Xform { NONE, MOVE, ROTATE, SCALE, MIRROR }
+    private var xform = Xform.NONE
+    private var moveOpen: Boolean
+        get() = xform == Xform.MOVE
+        set(v) { if (v) xform = Xform.MOVE else if (xform == Xform.MOVE) xform = Xform.NONE }
     private var lastMoveX = 0f
     private var lastMoveY = 0f
-    private var rotateOpen = false
+    private var rotateOpen: Boolean
+        get() = xform == Xform.ROTATE
+        set(v) { if (v) xform = Xform.ROTATE else if (xform == Xform.ROTATE) xform = Xform.NONE }
     private var rotateCenterX = 0f
     private var rotateCenterY = 0f
     private var lastRotateAngle = 0f
-    private var scaleOpen = false
+    private var scaleOpen: Boolean
+        get() = xform == Xform.SCALE
+        set(v) { if (v) xform = Xform.SCALE else if (xform == Xform.SCALE) xform = Xform.NONE }
     private var scaleCenterX = 0f
     private var scaleCenterY = 0f
     private var lastScaleRadius = 0f
     private var scaleAccumulated = 1f
-    private var mirrorOpen = false
+    private var mirrorOpen: Boolean
+        get() = xform == Xform.MIRROR
+        set(v) { if (v) xform = Xform.MIRROR else if (xform == Xform.MIRROR) xform = Xform.NONE }
+    /** An erase gesture was begun by this view (endErase only ever pairs with a beginErase). */
+    private var eraseOpen = false
+    /** This view opened a history batch for the transform (it closes exactly that one). */
+    private var xformBatchOpen = false
+    private fun endXformBatch() { if (xformBatchOpen) { xformBatchOpen = false; controller.history.endBatch() } }
     private var mirrorCenterX = 0f
     private var mirrorCenterY = 0f
     private var mirrorStartX = 0f
@@ -224,6 +240,19 @@ internal class ProjectGreaseDrawingSurfaceView(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // a gesture whose UP never arrived (Compose took the touch, a dialog opened) must not leak into this one
+                if (activePointerId != MotionEvent.INVALID_POINTER_ID || strokeOpen || sessionTool >= 0 || eraseOpen ||
+                    xform != Xform.NONE || pinchOpen || propPinch || multiMax > 0 || fillPending) {
+                    endSession(cancel = true)
+                    if (strokeOpen) controller.cancelStroke()
+                    if (eraseOpen) controller.endErase()
+                    resetGestureState()
+                }
+                // safety net: no batch outlives a gesture (a code path that threw between begin and end would keep every
+                // later edit queued, never recorded)
+                controller.history.endAllBatches()
+                // playback and editing do not mix: the tick would move the native frame under the stroke
+                controller.stopPlayback()
                 ghostPointers.clear()
                 pendingPointer = MotionEvent.INVALID_POINTER_ID
                 controller.screenPxPerUnit = pixelsPerUnit()
@@ -264,6 +293,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.ERASE -> {
                         // one undo step per erase gesture (endErase), so a second finger can still revert it
                         controller.beginErase()
+                        eraseOpen = true
                         if (controller.eraseAt(start.first, start.second, controller.eraserRadius(pixelsPerUnit()), false)) controller.render()
                         eraseLastX = start.first
                         eraseLastY = start.second
@@ -278,8 +308,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MOVE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.autokeyHeld(); controller.history.beginBatch()
-                        moveOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
+                        val kept = keepsSelection(start)
+                        moveOpen = kept || controller.hitTestAndSelectStroke(start.first, start.second)
+                        if (moveOpen) beginTransformEdit(start, kept)
                         if (moveOpen) {
                             lastMoveX = start.first
                             lastMoveY = start.second
@@ -288,8 +319,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.autokeyHeld(); controller.history.beginBatch()
-                        rotateOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
+                        val kept = keepsSelection(start)
+                        rotateOpen = kept || controller.hitTestAndSelectStroke(start.first, start.second)
+                        if (rotateOpen) beginTransformEdit(start, kept)
                         if (rotateOpen) {
                             val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
@@ -307,8 +339,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.SCALE -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.autokeyHeld(); controller.history.beginBatch()
-                        scaleOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
+                        val kept = keepsSelection(start)
+                        scaleOpen = kept || controller.hitTestAndSelectStroke(start.first, start.second)
+                        if (scaleOpen) beginTransformEdit(start, kept)
                         if (scaleOpen) {
                             val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
@@ -328,8 +361,9 @@ internal class ProjectGreaseDrawingSurfaceView(
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
-                        controller.autokeyHeld(); controller.history.beginBatch()
-                        mirrorOpen = keepsSelection(start) || controller.hitTestAndSelectStroke(start.first, start.second)
+                        val kept = keepsSelection(start)
+                        mirrorOpen = kept || controller.hitTestAndSelectStroke(start.first, start.second)
+                        if (mirrorOpen) beginTransformEdit(start, kept)
                         if (mirrorOpen) {
                             val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
                             if (center == null || center.size < 2) {
@@ -487,7 +521,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                                 controller.render()
                             }
                         }
-                        controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && !strokeOpen -> {
+                        eraseOpen -> {
                             val changed = eraseAlongPath(x, y)
                             if (changed) controller.render()
                         }
@@ -586,6 +620,8 @@ internal class ProjectGreaseDrawingSurfaceView(
                     if (sessionTool >= 0) {
                         if ((event.flags and MotionEvent.FLAG_CANCELED) != 0) endSession(cancel = true)
                         else endSession(event, event.actionIndex)
+                    } else if (eraseOpen) {
+                        controller.endErase()
                     } else if (mirrorOpen) {
                         commitMirror(up.first, up.second)
                     } else if (strokeOpen) {
@@ -616,7 +652,7 @@ internal class ProjectGreaseDrawingSurfaceView(
                 val pointerIndex = event.findPointerIndex(activePointerId)
                 if (sessionTool >= 0) {
                     if (pointerIndex >= 0) endSession(event, pointerIndex) else endSession(cancel = true)
-                } else if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && !strokeOpen) {
+                } else if (eraseOpen) {
                     controller.endErase()
                 } else if (mirrorOpen && pointerIndex >= 0) {
                     val up = canvasPoint(event.getX(pointerIndex), event.getY(pointerIndex))
@@ -635,7 +671,7 @@ internal class ProjectGreaseDrawingSurfaceView(
             MotionEvent.ACTION_CANCEL -> {
                 fillPending = false
                 endSession(cancel = sessionTool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
-                if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE) controller.endErase()
+                if (eraseOpen) controller.endErase()
                 if (strokeOpen) controller.cancelStroke()
                 resetGestureState()
                 controller.render()
@@ -684,6 +720,18 @@ internal class ProjectGreaseDrawingSurfaceView(
         return changed
     }
 
+    /**
+     * Something was hit: only now does the transform key a held frame and open its one-undo-step batch
+     * (a tap on empty canvas used to key the frame and leave a batch open). A new key is a copy of the
+     * held drawing, so a stroke picked before it is picked again on the key.
+     */
+    private fun beginTransformEdit(start: Pair<Float, Float>, selectionKept: Boolean) {
+        val keyed = controller.autokeyHeld()
+        controller.history.beginBatch()
+        xformBatchOpen = true
+        if (keyed && !selectionKept) controller.hitTestAndSelectStroke(start.first, start.second)
+    }
+
     /** A Move / Rotate / Scale / Mirror touch on or near the lasso selection transforms that selection
      *  (Blender: G / R / S act on what is selected) instead of re-selecting the stroke under the finger. */
     private fun keepsSelection(p: Pair<Float, Float>): Boolean {
@@ -717,9 +765,12 @@ internal class ProjectGreaseDrawingSurfaceView(
                         strokeOpen = false
                     }
                     panOpen = false
+                    // a transform drag in progress ends here as its own undo step, so the two-finger tap
+                    // (undo) runs with no batch open and undoes exactly that drag
+                    if (xform != Xform.NONE) { xform = Xform.NONE; endXformBatch() }
                     if (multiMax < 2) {
                         // the first finger's erase was not meant: revert it before the gesture
-                        if (controller.tools.activeTool == com.smitnk.projectgrease.editor.GreaseTool.ERASE && controller.endErase()) controller.undo()
+                        if (eraseOpen) { eraseOpen = false; if (controller.endErase()) controller.undo() }
                         multiStartMs = event.eventTime
                     }
                     multiMax = maxOf(multiMax, event.pointerCount)
@@ -778,11 +829,10 @@ internal class ProjectGreaseDrawingSurfaceView(
         propPinch = false
         multiMax = 0
         multiMoved = 0f
-        controller.history.endBatch()
-        moveOpen = false
-        rotateOpen = false
-        scaleOpen = false
-        mirrorOpen = false
+        endXformBatch()
+        xform = Xform.NONE
+        fillPending = false
+        eraseOpen = false
         panOpen = false
         sessionTool = -1
         eraseLastX = Float.NaN

@@ -16,6 +16,8 @@ struct PGToolSession {
   int samples;    /* samples applied in the current / last gesture */
   int draw_end_ok;   /* the last Draw close committed a stroke (sink.end succeeded) */
   int unrecorded;    /* a gesture was closed implicitly with edits nobody recorded for undo */
+  int modal_running; /* wm layer: tool of the running modal operator, -1 none (per handle, not global) */
+  int modal_erasing; /* wm layer: GPENCIL_OT_draw in eraser mode */
   PGDrawInput draw;
   PGToolDrawSink sink;
   int draw_open;
@@ -32,9 +34,24 @@ struct PGToolSession {
 PGToolSession *pg_tool_session_new(void)
 {
   PGToolSession *s = calloc(1, sizeof(PGToolSession));
-  if (s) s->tool = -1;
+  if (s) { s->tool = -1; s->modal_running = -1; }
   return s;
 }
+
+/* The modal operator state of the window-manager layer (project_grease_wm_modal.c) lives in the
+ * session, so it is per document handle. g_last_modal only serves the argument-less
+ * pg_wm_modal_running() / pg_wm_modal_reset() helpers. */
+static PGToolSession *g_last_modal = NULL;
+int pg_tool_session_modal_running(const PGToolSession *s) { return s ? s->modal_running : -1; }
+int pg_tool_session_modal_erasing(const PGToolSession *s) { return s ? s->modal_erasing : 0; }
+void pg_tool_session_set_modal(PGToolSession *s, int running, int erasing)
+{
+  if (!s) return;
+  s->modal_running = running;
+  s->modal_erasing = erasing;
+  g_last_modal = s;
+}
+PGToolSession *pg_tool_session_last_modal(void) { return g_last_modal; }
 
 static float param(const float *p, int n, int i, float fallback)
 {
@@ -148,6 +165,7 @@ int pg_tool_session_take_unrecorded(PGToolSession *s)
 void pg_tool_session_free(PGToolSession *s)
 {
   if (!s) return;
+  if (g_last_modal == s) g_last_modal = NULL;
   close_gesture(s, 1);
   pg_draw_input_free(&s->draw);
   free(s);
@@ -212,6 +230,22 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
     s->guide_angle = param(p, n, PG_DRAW_P_GUIDE_ANGLE, 0);
     s->guide_spacing = param(p, n, PG_DRAW_P_GUIDE_SPACING, 0);
     s->guide_started = 0;
+    /* gpencil_stroke_newfrombuffer(): hardeness, caps_type and aspect_ratio come from the brush's
+     * gpencil_settings (defaults 1 / ROUND / 1,1). Out-of-range or missing values fall back to the
+     * defaults; the sink clamps again when it builds the stroke. */
+    if (s->sink.style) {
+      float hardness = param(p, n, PG_DRAW_P_HARDNESS, 1.0f);
+      float ax = param(p, n, PG_DRAW_P_ASPECT_X, 1.0f);
+      float ay = param(p, n, PG_DRAW_P_ASPECT_Y, 1.0f);
+      const int caps = (int)param(p, n, PG_DRAW_P_CAPS, 0) == 1 ? 1 : 0;
+      if (!isfinite(hardness)) hardness = 1.0f;
+      if (!isfinite(ax)) ax = 1.0f;
+      if (!isfinite(ay)) ay = 1.0f;
+      hardness = hardness < 0.0f ? 0.0f : (hardness > 1.0f ? 1.0f : hardness);
+      ax = ax < 0.01f ? 0.01f : (ax > 1.0f ? 1.0f : ax);
+      ay = ay < 0.01f ? 0.01f : (ay > 1.0f ? 1.0f : ay);
+      s->sink.style(s->sink.user, hardness, caps, ax, ay);
+    }
     if (!s->sink.begin(s->sink.user, (int)param(p, n, PG_DRAW_P_MATERIAL, 0),
                        param(p, n, PG_DRAW_P_THICKNESS, 3)))
     {

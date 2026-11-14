@@ -43,6 +43,7 @@
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
 extern "C" __attribute__((weak)) long pg_gp_engine_pass_gl_errors(unsigned *last, const char **pass);
 extern "C" __attribute__((weak)) void pg_gp_engine_reset(void);
+extern "C" __attribute__((weak)) void pg_gp_engine_context_lost(void);
 extern "C" __attribute__((weak)) const char *pg_gp_engine_gl_debug_message(long *count);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
@@ -345,7 +346,7 @@ bool ensure_mask_target(int w,int h){
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,g_mask_tex,0);
   const bool complete=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
   glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev);glBindTexture(GL_TEXTURE_2D,0);
-  g_mask_w=w;g_mask_h=h;
+  if(complete){g_mask_w=w;g_mask_h=h;}else{g_mask_w=g_mask_h=0;} // do not cache an incomplete target
   return complete;
 }
 inline Vertex ndc(float x,float y,int w,int h){float sx=g_map_origin_x+x*g_map_scale;float sy=g_map_origin_y+y*g_map_scale;
@@ -686,6 +687,7 @@ extern "C" int project_grease_fx_pass_count(const PGFxEntry*,int,const PGFxView*
 extern "C" int project_grease_fx_begin_layer(int,int);
 extern "C" int project_grease_fx_end_layer(const PGFxEntry*,int,const PGFxView*,unsigned char*,unsigned char*);
 extern "C" void project_grease_fx_reset();
+extern "C" void project_grease_fx_context_lost();
 extern "C" int project_grease_fx_end_layer_blend(const PGFxEntry*,int,const PGFxView*,int,float);
 namespace {
 FxProvider g_fx_provider=nullptr;
@@ -928,7 +930,7 @@ void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
   glBindTexture(GL_TEXTURE_2D,0);
   c.valid=glGetError()==GL_NO_ERROR;
   if(c.valid)g_open_cache_stores++;
-  c.gpd=gpd;c.frame=frame;c.w=w;c.h=h;c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;c.rot=g_view_rotation;
+  c.gpd=gpd;c.frame=frame;c.w=c.valid?w:0;c.h=c.valid?h:0; /* a failed store must reallocate next time */ c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;c.rot=g_view_rotation;
 }
 bool open_cache_draw(){
   OpenStrokeCache& c=g_open_cache;
@@ -1456,8 +1458,9 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     // built once per guide / view change: rebuilding the circular rings every frame (thousands of
     // segments) made each frame take ~2 s on the phone
     static std::vector<Vertex> lines;
-    static float key[9]={-1};
-    const float k_now[9]={float(g_guide_type),g_guide_cx,g_guide_cy,g_guide_angle,g_guide_spacing,g_map_scale,g_map_origin_x,g_map_origin_y,float(w*100000+h)};
+    static float key[12]={-1};
+    const float k_now[12]={float(g_guide_type),g_guide_cx,g_guide_cy,g_guide_angle,g_guide_spacing,g_map_scale,g_map_origin_x,g_map_origin_y,float(w*100000+h),
+      g_view_rotation,float(g_canvas_width),float(g_canvas_height)}; // vertices come from ndc(), which applies the view rotation
     if(std::memcmp(key,k_now,sizeof key)!=0){
     std::memcpy(key,k_now,sizeof key);
     lines.clear();
@@ -1752,26 +1755,30 @@ static void engine_clear_latch(){
 }
 extern "C" int project_grease_android_present_engine_healthy(){return g_engine_failed?0:1;}
 extern "C" void project_grease_android_present_engine_reset(){engine_clear_latch();}
-extern "C" void project_grease_android_present_reset(){
+static void present_reset_impl(bool alive){
   engine_clear_latch();
   // the engine and its stroke cache belong to this context too: a new context rebuilds them
   // shortcut: the old GpencilBatchCache CPU memory leaks once per context; free it with a gpd once one is at hand here
-  if(pg_gp_engine_reset)pg_gp_engine_reset();
+  if(alive){if(pg_gp_engine_reset)pg_gp_engine_reset();}else if(pg_gp_engine_context_lost)pg_gp_engine_context_lost();
   g_engine_batch_cache=nullptr;g_engine_drawn_revision=~0ull;g_engine_drawn_frame=-1;g_engine_drawn_frames.clear();
-if(g_vbo)glDeleteBuffers(1,&g_vbo);if(g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
-  if(g_mask_program)glDeleteProgram(g_mask_program);if(g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
+if(alive&&g_vbo)glDeleteBuffers(1,&g_vbo);if(alive&&g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
+  if(alive&&g_mask_program)glDeleteProgram(g_mask_program);if(alive&&g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(alive&&g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
-  for(auto&kv:g_mat_tex)if(kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;
-  if(g_vc_program)glDeleteProgram(g_vc_program);if(g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+  for(auto&kv:g_mat_tex)if(alive&&kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(alive&&g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(alive&&g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;
+  if(alive&&g_vc_program)glDeleteProgram(g_vc_program);if(alive&&g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
   // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
   // stale id in the next context has no storage, every later store failed and each input sample
   // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
-  {OpenStrokeCache&c=g_open_cache;if(c.tex)glDeleteTextures(1,&c.tex);if(c.program)glDeleteProgram(c.program);if(c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
+  {OpenStrokeCache&c=g_open_cache;if(alive&&c.tex)glDeleteTextures(1,&c.tex);if(alive&&c.program)glDeleteProgram(c.program);if(alive&&c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
   // reference program / buffer / textures were never reset: the next context drew with stale ids
   // (GL_INVALID_VALUE at "reference image" every frame and no picture until the app restarted)
-  if(g_ref_prog)glDeleteProgram(g_ref_prog);if(g_ref_vbo)glDeleteBuffers(1,&g_ref_vbo);g_ref_prog=0;g_ref_vbo=0;
-  for(auto&r:g_refs){if(r.tex)glDeleteTextures(1,&r.tex);if(r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
-  project_grease_fx_reset();}
+  if(alive&&g_ref_prog)glDeleteProgram(g_ref_prog);if(alive&&g_ref_vbo)glDeleteBuffers(1,&g_ref_vbo);g_ref_prog=0;g_ref_vbo=0;
+  for(auto&r:g_refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
+  if(alive)project_grease_fx_reset();else project_grease_fx_context_lost();}
+extern "C" void project_grease_android_present_reset(){present_reset_impl(true);}
+/* The EGL context was lost (EGL_CONTEXT_LOST / GPU reset): drop every GL id and cache WITHOUT calling
+ * GL (the names belong to a dead context), so everything is rebuilt lazily in the next context. */
+extern "C" void project_grease_android_present_context_lost(){present_reset_impl(false);}
 
 extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_overlay_unselected=show?1:0;}
 

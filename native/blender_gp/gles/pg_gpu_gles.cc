@@ -108,6 +108,9 @@ static bool has_ext(const char *name)
   return false;
 }
 
+/* The GL context changed: probe the API level again on the next pg_gles_api(). */
+void pg_gles_api_reset(void) { g_api = -1; }
+
 int pg_gles_api(void)
 {
   if (g_api >= 0) return g_api;

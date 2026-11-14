@@ -25,12 +25,22 @@ const char *pg_wm_modal_running(void)
   return pg_modal_running >= 0 ? pg_modal_idnames[pg_modal_running] : NULL;
 }
 
+/* The session was ended from outside the phase protocol: forget the running operator. */
+void pg_wm_modal_reset(void)
+{
+  pg_modal_running = -1;
+  pg_modal_erasing = false;
+}
+
 int pg_wm_modal_erase(PGOpContext *C, int phase, bool changed)
 {
   if (phase == PG_TOOL_PHASE_BEGIN) {
     /* invoke cancels a running paint operator, as for the other modal tools */
     if (pg_modal_running >= 0 && C && C->tool_session) {
-      pg_tool_session_samples(C->tool_session, NULL, pg_modal_running, NULL, 0, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL);
+      if (pg_tool_session_samples(C->tool_session, NULL, pg_modal_running, NULL, 0, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL) &
+          PG_TOOL_RESULT_ENDED) {
+        pg_tool_session_note_unrecorded(C->tool_session); /* cut-off brush edits still need an undo step */
+      }
     }
     pg_modal_running = -1;
     if (C == NULL || C->gpd == NULL) return PG_OPERATOR_CANCELLED; /* gpencil_draw_poll */
@@ -56,7 +66,10 @@ int pg_wm_modal_tool(PGOpContext *C, int tool, int phase, const float *samples, 
     /* invoke: a running modal operator is cancelled first (its gesture was cut off) */
     pg_modal_erasing = false;
     if (pg_modal_running >= 0) {
-      pg_tool_session_samples(C->tool_session, NULL, pg_modal_running, NULL, 0, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL);
+      if (pg_tool_session_samples(C->tool_session, NULL, pg_modal_running, NULL, 0, PG_TOOL_PHASE_CANCEL, NULL, 0, NULL) &
+          PG_TOOL_RESULT_ENDED) {
+        pg_tool_session_note_unrecorded(C->tool_session);
+      }
       pg_modal_running = -1;
     }
     /* poll: the brush tools need GP data; Draw creates its stroke through the sink */

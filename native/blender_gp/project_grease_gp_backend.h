@@ -69,6 +69,7 @@ class Backend {
   bool lattice_update(int nu, int nv, const float *ctrl, int interp);
   void lattice_end(bool keep);
   bool modal_confirm(); // ends a running Lasso Warp, keeping its result
+  bool lattice_active() const; // a Lasso Warp is open
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);
   bool move_layer(int from_index, int to_index);
@@ -379,6 +380,8 @@ class Backend {
   /* Frame number of the active frame (1 without one). */
   int current_frame_number() const;
   int scene_frame() const; // playhead frame (a held key keeps its own number)
+  // Changes whenever the document's strokes are replaced or freed (undo/redo, reset, shutdown).
+  uint64_t document_generation() const;
 
   // Opaque implementation storage.
   struct Impl;

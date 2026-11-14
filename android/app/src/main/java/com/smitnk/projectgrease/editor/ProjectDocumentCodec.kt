@@ -230,6 +230,8 @@ object ProjectDocumentCodec {
         return root
     }
 
+    /** True when [raw] is a project file this codec can load (used before a project is opened). */
+    fun isReadable(raw: String): Boolean = runCatching { parse(raw) != null }.getOrDefault(false)
     fun parse(raw: String): ParsedDocument? {
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         val layersJson = root.optJSONArray("layers")

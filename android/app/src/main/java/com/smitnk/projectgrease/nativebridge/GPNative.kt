@@ -303,4 +303,21 @@ object GPNative {
     external fun nativeHistoryRedo(handle: Long): Boolean
     external fun nativeHistoryCanUndo(handle: Long): Boolean
     external fun nativeHistoryCanRedo(handle: Long): Boolean
+
+    /** Ends any open tool session on the current document; true when it changed the document (record an undo step). */
+    external fun nativeCancelToolSession(handle: Long): Boolean
+    /** True while a Lasso Warp is still open natively (an operator may have confirmed it implicitly). */
+    external fun nativeLatticeActive(handle: Long): Boolean
+    /** False after a failed Blender GP draw disabled the renderer (process-wide latch). */
+    external fun nativeEngineHealthy(): Boolean
+    /** Clears the engine failure latch so the next draw tries Blender again. */
+    external fun nativeResetEngine()
+}
+
+/** Calls the batch-1 native entry points; a native library built without them must not crash the app. */
+object NativeSafe {
+    fun cancelToolSession(handle: Long): Boolean =
+        try { handle != 0L && GPNative.nativeCancelToolSession(handle) } catch (e: UnsatisfiedLinkError) { false }
+    fun engineHealthy(): Boolean = try { GPNative.nativeEngineHealthy() } catch (e: UnsatisfiedLinkError) { true }
+    fun resetEngine() { try { GPNative.nativeResetEngine() } catch (e: UnsatisfiedLinkError) { } }
 }

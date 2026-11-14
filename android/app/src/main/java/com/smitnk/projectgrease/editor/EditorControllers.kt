@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 import com.smitnk.projectgrease.nativebridge.GPNative
+import com.smitnk.projectgrease.nativebridge.NativeSafe
 
 // Fill boundary source (Blender brush fill_draw_mode): All, Strokes, Edit Lines.
 const val FILL_BOUNDARY_ALL = 0
@@ -166,7 +167,11 @@ class HistoryController(private val native: NativeEditorBridge) {
     private val redoExtras = ArrayList<Any?>()
 
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
+    /** Called whenever an edit is recorded (or queued in a batch): keeps the document's dirty flag exact. */
+    var onRecorded: () -> Unit = {}
+    val isBatching: Boolean get() = batching
     fun markEdit(): Boolean {
+        onRecorded()
         if (batching) { batchChanged = true; return true }
         return record()
     }
@@ -214,8 +219,10 @@ class DocumentController {
     var canvasWidth = 1280
     var canvasHeight = 720
     var dirty = false; private set
-    fun markDirty() { dirty = true }
-    fun markSaved() { dirty = false }
+    /** Counts edits: a save marks only the revision it captured clean, so edits made during the write stay dirty. */
+    var revision = 0; private set
+    fun markDirty() { dirty = true; revision++ }
+    fun markSaved(upToRevision: Int = revision) { if (upToRevision == revision) dirty = false }
 }
 
 class AnimationController(private val native: NativeEditorBridge, private val renderFrame: () -> Unit) {
@@ -767,6 +774,7 @@ class EditorController {
     val history=HistoryController(native).also { h ->
         // Kotlin-side state of an undo step: material textures plus the timeline (markers, preview range).
         // photos / videos and audio tracks are Kotlin-side document state: undo covers them too
+        h.onRecorded = { document.markDirty() }
         h.captureExtras = { listOf(captureTextures(), animation.timeline, referencesJson(), AudioStrip.listToJson(audioStrips).toString()) }
         h.restoreExtras = { e -> (e as? List<*>)?.let {
             restoreTextures(it[0]); (it[1] as? TimelineState)?.let(animation::restoreTimeline)
@@ -791,6 +799,11 @@ class EditorController {
     private var rendererHandle=0L
     fun attachRenderer(handle:Long) {
         rendererHandle = handle
+        rendererGeneration++
+        gizmo = null // modifier handles of the previous document must not eat the new document's touches
+        // one failed Blender draw used to disable the renderer for the rest of the process: a new surface starts clean
+        if (!NativeSafe.engineHealthy()) com.smitnk.projectgrease.CrashLog.event("ENGINE unhealthy on attach: resetting")
+        NativeSafe.resetEngine()
         rotoscopeShown.clear() // a new GL context has none of the uploaded reference images
         surfaceReady = handle != 0L
         val gpHandle = if (handle != 0L) GPNative.nativeGetGpHandle(handle) else 0L
@@ -823,6 +836,8 @@ class EditorController {
             queued.forEach { com.smitnk.projectgrease.CrashLog.event("ATTACH runs a queued action"); it() }
         }
     }
+    /** Bumped whenever the native renderer changes: a late fill result for an older renderer is dropped. */
+    private var rendererGeneration = 0
     private val whenAttached = ArrayList<() -> Unit>()
     /** Runs [block] once the drawing is attached. A file picker sends the app to the background,
      *  which destroys the surface and its native document; Android hands the picked file back
@@ -863,19 +878,25 @@ class EditorController {
         val queued = whenAttached.toList(); whenAttached.clear()
         queued.forEach { com.smitnk.projectgrease.CrashLog.event("ATTACH runs a queued action"); it() }
     }
-    fun surfaceDetached() { animation.stop(); surfaceReady = false }
+    fun surfaceDetached() { animation.stop(); surfaceReady = false; cancelActiveGestures() }
     fun detachRenderer(){
         surfaceReady = false
         animation.stop()
         setupTrace("detach ready=$rendererReady")
+        cancelActiveGestures()
         if (rendererReady) saveDocumentJson()?.let { detachedSnapshot = it; detachedFrame = animation.currentFrame }
+        gizmo = null
+        quiesceFill() // the fill worker must be done with the renderer before it is destroyed
+        rendererGeneration++
         rendererHandle=0L;native.detach()
     }
     fun resetDocument():Boolean {
         if (rendererHandle == 0L) return false
+        cancelActiveGestures()
         val ok=GPNative.nativeResetDocumentEgl(rendererHandle)
         setupTrace("resetDocument ok=$ok")
         if(ok){
+            gizmo = null
             clearTextures()
             references.clear(); references.add(Rotoscope()); activeReference = 0; rotoscopeShown.clear(); audioStrips.clear()
             projectSettings = ProjectSettings()
@@ -902,6 +923,7 @@ class EditorController {
         }
         if (tool != tools.activeTool && shapeEdit.isActive) confirmShape()
         if (warpActive) endWarp(true)
+        if (gizmo != null) editModifierHandles(null) // the handle overlay would keep eating every touch
         // Sculpt is one thing: the Sculpt tool is Sculpt mode, and any other tool leaves it.
         if (tool == GreaseTool.SCULPT) mode = GreaseMode.SCULPT
         else if (mode == GreaseMode.SCULPT) mode = GreaseMode.DRAW
@@ -916,7 +938,7 @@ class EditorController {
 
     /** Which native session tool a touch on the canvas runs, or -1 (other tools keep their path). */
     fun sessionToolForTouch():Int = when {
-        gizmoActive -> -1 // modifier handles take the touch (beginStroke path)
+        run { validateGizmo(); gizmoActive } -> -1 // modifier handles take the touch (beginStroke path)
         mode == GreaseMode.VERTEX_PAINT && paintsInMode() -> ToolSession.TOOL_VERTEX_PAINT
         mode == GreaseMode.WEIGHT_PAINT && paintsInMode() -> ToolSession.TOOL_WEIGHT_PAINT
         tools.activeTool == GreaseTool.SCULPT -> ToolSession.TOOL_SCULPT
@@ -1007,6 +1029,8 @@ class EditorController {
         val result = GPNative.nativeToolSamples(rendererHandle, tool, ToolSession.pack(samples, count, params), count, phase)
         if ((System.nanoTime() - t0) / 1_000_000 >= 120)
             noteIfSlow("tool $tool phase $phase ($count samples) [${GPNative.nativeLastFrameInfo(rendererHandle)}]", t0, t0)
+        // a previous gesture whose UP never came was closed natively with edits: record that as its own step
+        if (phase == ToolSession.PHASE_BEGIN && (result and ToolSession.RESULT_ENDED) != 0) { history.markEdit(); document.markDirty() }
         if (phase != ToolSession.PHASE_MOVE)
             com.smitnk.projectgrease.CrashLog.event("SESSION tool $tool phase $phase -> result $result, mode $mode" +
                 (if (tool == ToolSession.TOOL_VERTEX_PAINT) ", target $vertexPaintTarget, mask $vertexSelectMask, selected ${native.selectedPointCount()}, colour ${Integer.toHexString(materials.colorArgb)}" else ""))
@@ -1024,7 +1048,8 @@ class EditorController {
                         runSelectCommand(ProjectGreaseSelect.all(ProjectGreaseSelect.ACTION_DESELECT))
                     }
                 }
-                if (phase == ToolSession.PHASE_END) { val t1 = System.nanoTime(); history.markEdit(); document.markDirty(); noteIfSlow("undo step", t1, t1) }
+                // END, and a CANCEL that left edits behind (native keeps the dabs already applied), is one undo step
+                if (phase == ToolSession.PHASE_END || sessionGestureChanged || (result and ToolSession.RESULT_ENDED) != 0) { val t1 = System.nanoTime(); history.markEdit(); document.markDirty(); noteIfSlow("undo step", t1, t1) }
             }
             sessionTool = -1
             sessionGestureChanged = false
@@ -1051,6 +1076,7 @@ class EditorController {
     fun setMode(value:GreaseMode):Boolean {
         com.smitnk.projectgrease.CrashLog.event("MODE $value (was $mode)")
         if (warpActive) endWarp(true)
+        if (gizmo != null) editModifierHandles(null)
         val supported = when (value) {
             GreaseMode.DRAW, GreaseMode.EDIT -> true
             GreaseMode.SCULPT -> FeatureRegistry.capability(FeatureId.SCULPT).state != FeatureState.NOT_IMPLEMENTED
@@ -1587,6 +1613,7 @@ class EditorController {
     private var shapeConfirmOnRelease = false
     fun beginStroke():Boolean {
         if (rendererHandle == 0L) return false
+        validateGizmo()
         if (gizmoActive) { gizmoGestureFirst = true; return true }
         if (shapeEdit.isActive && tools.activeTool in setOf(GreaseTool.LINE, GreaseTool.RECTANGLE, GreaseTool.CIRCLE, GreaseTool.ARC)) {
             shapeAwaitingPress = true; shapeConfirmOnRelease = false; return true
@@ -1895,6 +1922,35 @@ class EditorController {
         }
     }
 
+    /** Hook the touch view sets: clears its own gesture flags (strokeOpen, pointers, move/pinch state). */
+    var onCancelGestures: (() -> Unit)? = null
+    /** Hook the touch view sets: true while a finger gesture is open on the canvas. */
+    var isGestureOpenInView: (() -> Boolean)? = null
+    /** True while a tool session, history batch, warp, gizmo drag or finger gesture is open (autosave waits for idle). */
+    fun gestureActive(): Boolean =
+        sessionTool >= 0 || history.isBatching || warpActive || gizmoDrag >= 0 || (isGestureOpenInView?.invoke() ?: false)
+    /**
+     * One place that ends every open gesture before the document is replaced, saved, exported, undone
+     * or its surface goes: native tool session (recorded for undo when it changed the document),
+     * Kotlin-side stroke/shape state, open history batch, warp (reverted) and gizmo drag.
+     */
+    fun cancelActiveGestures() {
+        runCatching {
+            if (warpActive) endWarp(false)
+            if (eraseGestureChanged || eraseGestureMarks > 0) endErase() // records the part already erased
+            if (rendererHandle != 0L && sessionTool >= 0) cancelStroke() // records a changed brush gesture
+            else cancelPendingStrokeState()
+            // the native session may still be open (hand-over, refused BEGIN): end it and record what it changed
+            if (native.handle != 0L && NativeSafe.cancelToolSession(native.handle)) { history.markEdit(); document.markDirty(); render() } // takes the GP handle, not the renderer's
+            sessionTool = -1; sessionGestureChanged = false
+            gizmoRelease()
+            history.endBatch()
+            onCancelGestures?.invoke()
+        }.onFailure { com.smitnk.projectgrease.CrashLog.event("cancelActiveGestures failed: ${it.javaClass.simpleName}: ${it.message}") }
+    }
+    private fun cancelPendingStrokeState() {
+        pendingShapePoints.clear(); pendingShapeTool = null; pendingLassoPoints.clear()
+    }
     fun cancelStroke(){
         if (rendererHandle != 0L && sessionTool >= 0) {
             toolSamples(sessionTool, FloatArray(0), 0, ToolSession.PHASE_CANCEL)
@@ -2173,6 +2229,7 @@ class EditorController {
         val s = projectSettings
         val keys = native.frameNumbers().sorted().toIntArray()
         val plan = FrameSequenceExport.plan(keys, s.frameStart.coerceAtLeast(1), s.frameEnd.coerceAtLeast(s.frameStart.coerceAtLeast(1)), document.projectName.ifBlank { "frame" }.replace(Regex("[^A-Za-z0-9_-]"), "_"), "png")
+        cancelActiveGestures()
         val original = animation.currentFrame
         GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
         // shortcut: export renders on the UI thread (GL context) and the screen waits; a progress view needs an async encoder
@@ -2191,6 +2248,7 @@ class EditorController {
         var ok = true
         val step = s.frameStep.coerceIn(1, 100)
         var held: IntArray? = null
+        try {
         for ((index, item) in plan.withIndex()) {
             // Frame Step: every Nth frame is rendered and held for the frames in between
             if (step > 1 && index % step != 0 && held != null) { sink(item, held.copyOf()); continue }
@@ -2206,9 +2264,11 @@ class EditorController {
             held = px.copyOf()
             sink(item, px)
         }
-        native.selectFrameOrHold(original)
-        animation.setFrame(original)
-        render()
+        } finally {
+            // an encoder or sink failure must not leave the native document on another frame
+            if (!animation.setFrame(original)) restoreLayerAndFrame(native.activeLayer().takeIf { it >= 0 } ?: selectedLayer, original)
+            render()
+        }
         com.smitnk.projectgrease.CrashLog.event("EXPORT frames done ok=$ok: back on frame $original, ${native.strokeCount()} strokes, ${native.layerCount()} layers, " +
             GPNative.nativeLastFrameInfo(rendererHandle))
         return ok
@@ -2231,13 +2291,37 @@ class EditorController {
         val adapter = NativeDocumentAdapter(native)
         return (0 until adapter.layerCount()).map { adapter.layerRecord(it)?.name?.ifBlank { "Layer ${it + 1}" } ?: "Layer ${it + 1}" }
     }
+    /**
+     * Puts the layer AND the frame the user was on back after save/export moved them. selectLayer leaves the
+     * native frame unset, so the frame must be selected again, and the result must be checked: a failed
+     * restore used to leave drawing dead until the user scrubbed.
+     */
+    private fun restoreLayerAndFrame(layer:Int, frame:Int) {
+        if (native.handle == 0L || native.layerCount() <= 0) return
+        runCatching {
+            native.selectLayer(layer.coerceIn(0, native.layerCount() - 1))
+            if (!animation.setFrame(frame)) {
+                // the playhead is before this layer's first key: use the first key rather than leave no frame
+                val first = native.frameNumbers().minOrNull()
+                if (first == null || !animation.setFrame(first)) animation.initialize()
+                com.smitnk.projectgrease.CrashLog.event("RESTORE frame $frame not selectable; now on ${animation.currentFrame}")
+            }
+        }.onFailure { com.smitnk.projectgrease.CrashLog.event("RESTORE failed: ${it.javaClass.simpleName}: ${it.message}") }
+    }
     fun exportPages(frames:List<Int>, includeAnnotations:Boolean = false, options:VectorExportOptions = VectorExportOptions()):List<VectorPage> {
         if (native.handle == 0L || frames.isEmpty()) return emptyList()
+        cancelActiveGestures()
         // Restore the layer edits go to (the native active layer), not a possibly stale index.
         val originalLayer = native.activeLayer().takeIf { it >= 0 } ?: selectedLayer
         selectedLayer = originalLayer
         val originalFrame = animation.currentFrame
-        var pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames, options)
+        var pages: List<VectorPage>
+        try {
+            pages = VectorExport.pages(NativeDocumentAdapter(native), document.canvasWidth, document.canvasHeight, frames, options)
+        } finally {
+            restoreLayerAndFrame(originalLayer, originalFrame)
+            render()
+        }
         if (includeAnnotations) {
             val dump = annotationDump()
             val style = annotationStyle()
@@ -2246,11 +2330,6 @@ class EditorController {
                 if (notes == null) page else VectorPage(page.frame, page.width, page.height, page.layers + notes, page.clip)
             }
         }
-        if (native.layerCount() > 0) {
-            native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
-            native.selectFrameOrHold(originalFrame)
-        }
-        render()
         return pages
     }
 
@@ -2259,20 +2338,21 @@ class EditorController {
     /** The document as a JSON tree; turning it into text is slow for big projects, so autosave does that off the UI thread. */
     fun saveDocumentTree():org.json.JSONObject? {
         if (native.handle == 0L) return null
+        cancelActiveGestures()
         // Restore the layer edits go to (the native active layer), not a possibly stale index.
         val originalLayer = native.activeLayer().takeIf { it >= 0 } ?: selectedLayer
         selectedLayer = originalLayer
         val originalFrame = animation.currentFrame
-        val obj = ProjectDocumentCodec.encodeTree(
-            NativeDocumentAdapter(native),
-            document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd,
-            animation.timeline
-        )
-        if (native.layerCount() > 0) {
-            native.selectLayer(originalLayer.coerceIn(0, native.layerCount() - 1))
-            native.selectFrameOrHold(originalFrame)
+        val obj = try {
+            ProjectDocumentCodec.encodeTree(
+                NativeDocumentAdapter(native),
+                document.canvasWidth, document.canvasHeight, animation.fps, originalFrame, animation.sceneEnd,
+                animation.timeline
+            )
+        } finally {
+            restoreLayerAndFrame(originalLayer, originalFrame)
+            render()
         }
-        render()
         // Project settings, material textures and annotations have their own keys (older files have none).
         runCatching {
             obj.put("settings", org.json.JSONObject(projectSettings.toJson()))
@@ -2289,7 +2369,9 @@ class EditorController {
     fun loadDocumentJson(raw:String):Boolean {
         if (native.handle == 0L) return false
         val parsed = ProjectDocumentCodec.parse(raw) ?: return false
+        cancelActiveGestures()
         if (!GPNative.nativeResetDocumentEgl(rendererHandle)) return false
+        gizmo = null
         reapplyOnion()
         document.canvasWidth = (parsed.width ?: document.canvasWidth).coerceAtLeast(1)
         document.canvasHeight = (parsed.height ?: document.canvasHeight).coerceAtLeast(1)
@@ -2468,13 +2550,17 @@ class EditorController {
         val captureMs = (System.nanoTime() - t0) / 1_000_000
         fillRunning = true
         val thickness = materials.thickness
-        fillWorker.execute {
+        val generation = rendererGeneration
+        fillFuture = try { fillWorker.submit(Runnable {
             val t1 = System.nanoTime()
-            val found = GPNative.nativeFillComputeEglRenderer(handle)
+            var found = false
+            try { found = GPNative.nativeFillComputeEglRenderer(handle) }
+            catch (t: Throwable) { com.smitnk.projectgrease.CrashLog.event("FILL compute failed: ${t.javaClass.simpleName}: ${t.message}") }
             val computeMs = (System.nanoTime() - t1) / 1_000_000
             mainHandler.post {
                 fillRunning = false
-                val ok = found && handle == rendererHandle && GPNative.nativeFillCommitEglRenderer(handle, slot, thickness)
+                if (handle != rendererHandle || generation != rendererGeneration) return@post // the renderer is gone or replaced
+                val ok = found && handle == rendererHandle && generation == rendererGeneration && GPNative.nativeFillCommitEglRenderer(handle, slot, thickness)
                 noteIfSlow("fill ok=$ok", t0, t0)
                 com.smitnk.projectgrease.CrashLog.event("FILL at %.0f,%.0f slot $slot -> ok=$ok in ${(System.nanoTime() - t0) / 1_000_000} ms (capture $captureMs ms, outline $computeMs ms in the background)".format(x, y))
                 lastFillEndMs = android.os.SystemClock.uptimeMillis()
@@ -2486,10 +2572,17 @@ class EditorController {
                 if (ok) { history.markEdit(); document.markDirty() }
                 render()
             }
-        }
+        }) } catch (e: java.util.concurrent.RejectedExecutionException) { fillRunning = false; null }
         return true
     }
     private var fillRunning = false
+    private var fillFuture: java.util.concurrent.Future<*>? = null
+    /** Waits for a running fill compute so the native renderer is never destroyed under it. */
+    fun quiesceFill() {
+        fillFuture?.let { runCatching { it.get(5, java.util.concurrent.TimeUnit.SECONDS) } }
+        fillFuture = null
+        fillRunning = false
+    }
     /** The topmost fill-only stroke (a Fill material) around canvas (x, y) gets material [slot]
      *  (GPENCIL_OT_stroke_change_color on just that stroke); false when the tap is on none. */
     private fun recolorFillAt(x: Float, y: Float, slot: Int): Boolean {
@@ -2841,8 +2934,8 @@ class EditorController {
         return ok
     }
     fun addModifier(type:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.add(native,layer,type)>=0)
-    fun removeModifier(index:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.remove(native,layer,index))
-    fun moveModifier(index:Int,delta:Int,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.moveBy(native,layer,index,delta))
+    fun removeModifier(index:Int,layer:Int=selectedLayer):Boolean { gizmo = null; return modifierChanged(ModifierStackCommands.remove(native,layer,index)) }
+    fun moveModifier(index:Int,delta:Int,layer:Int=selectedLayer):Boolean { gizmo = null; return modifierChanged(ModifierStackCommands.moveBy(native,layer,index,delta)) }
     fun setModifierEnabled(index:Int,enabled:Boolean,layer:Int=selectedLayer):Boolean = modifierChanged(ModifierStackCommands.setEnabled(native,layer,index,enabled))
     fun setModifierParam(index:Int,paramIndex:Int,value:Float,commit:Boolean=true,layer:Int=selectedLayer):Boolean {
         val ok=ModifierStackCommands.setParam(native,layer,index,paramIndex,value)
@@ -2891,6 +2984,7 @@ class EditorController {
     fun duplicateLayer(index:Int=selectedLayer, empty:Boolean=false):Boolean { selectedLayer = index; return layerOperator("GPENCIL_OT_layer_duplicate", if (empty) 1f else 0f) }
     /** GPENCIL_OT_layer_remove: locked layers stay; the layer below becomes active. */
     fun deleteLayer(index:Int=selectedLayer):Boolean {
+        gizmo = null
         selectedLayer = index
         // the layer's photos / video go with it (they stayed on screen until the project was reopened);
         // removed first so the layer's undo step holds the state without them
@@ -3713,7 +3807,7 @@ class EditorController {
     /** Apply keeps the warp as one undo step; Cancel puts the points back. */
     fun endWarp(apply:Boolean) {
         if (!warpActive) return
-        GPNative.nativeLatticeEnd(native.handle, apply)
+        if (native.handle != 0L) GPNative.nativeLatticeEnd(native.handle, apply)
         com.smitnk.projectgrease.CrashLog.event("WARP ${if (apply) "apply" else "cancel"}")
         warpPoints = null; warpBounds = null
         if (apply) { history.markEdit(); document.markDirty() }
@@ -3901,6 +3995,7 @@ class EditorController {
     }
     fun undo():Boolean {
         if (warpActive) { endWarp(false); return true } // undo during a warp cancels it
+        cancelActiveGestures()
         val ok = history.undo()
         if (ok) {
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
@@ -3914,6 +4009,7 @@ class EditorController {
     }
     fun redo():Boolean {
         if (warpActive) endWarp(true)
+        cancelActiveGestures()
         val ok = history.redo()
         if (ok) {
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
@@ -4120,6 +4216,10 @@ class EditorController {
     /** The modifier whose handles are shown and dragged on the canvas (Hook, Lattice, Weight Proximity, Mirror). */
     var gizmo:Pair<Int,Int>? = null; private set
     val gizmoActive:Boolean get() = gizmo != null
+    /** Drops a gizmo whose modifier or layer is gone (it would otherwise take every touch, invisibly). */
+    private fun validateGizmo() {
+        if (gizmo != null && gizmoHandles().isEmpty()) { gizmo = null; gizmoDrag = -1; onOverlayChanged?.invoke() }
+    }
     fun editModifierHandles(index:Int?, layer:Int = selectedLayer) {
         gizmo = index?.let { layer to it }
         onOverlayChanged?.invoke()

@@ -25,15 +25,19 @@ fun ProjectGreaseEglViewport(
     controller: EditorController
 ) {
   androidx.compose.foundation.layout.Box(modifier) {
+    // the drawing view, so onDispose can zero its native handle before the renderer is destroyed
+    val viewRef = androidx.compose.runtime.remember { arrayOfNulls<ProjectGreaseDrawingSurfaceView>(1) }
     AndroidView(
         modifier = Modifier.matchParentSize(),
         factory = { context ->
             val view = ProjectGreaseDrawingSurfaceView(context, controller)
+            viewRef[0] = view
             view.holder.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     // One renderer (GL context + Blender document) for the editor's lifetime: a surface
                     // coming back (picker closed, app resumed) attaches to the same document.
                     val existing = controller.rendererHandleOrZero()
+                    controller.cancelActiveGestures()
                     val handle = if (existing != 0L) existing else GPNative.nativeCreateEglRenderer()
                     view.setRendererHandle(handle)
                     if (existing != 0L) {
@@ -66,7 +70,9 @@ fun ProjectGreaseEglViewport(
                 }
 
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    // only the window surface goes; the document stays (see detach_surface_keep_document)
+                    // only the window surface goes; the document stays (see detach_surface_keep_document).
+                    // The view's handle is zeroed when the editor is disposed (renderer destroyed): never
+                    // use a handle the controller no longer owns.
                     val handle = view.getRendererHandle()
                     controller.surfaceDetached()
                     if (handle != 0L) GPNative.nativeDetachSurface(handle)
@@ -78,9 +84,14 @@ fun ProjectGreaseEglViewport(
     // The editor screen leaves (Home, another project): now the renderer and its document go.
     androidx.compose.runtime.DisposableEffect(controller) {
         onDispose {
-            val handle = controller.rendererHandleOrZero()
+            val view = viewRef[0]
+            val handle = controller.rendererHandleOrZero().takeIf { it != 0L } ?: view?.getRendererHandle() ?: 0L
+            // zero the view's copy first: surfaceDestroyed / touches arriving after this must not see a freed pointer
+            view?.setRendererHandle(0L)
+            controller.onCancelGestures = null
+            controller.isGestureOpenInView = null
             if (handle != 0L) {
-                controller.detachRenderer()
+                controller.detachRenderer() // cancels gestures, snapshots the document, waits for a running fill
                 GPNative.nativeDetachSurface(handle)
                 GPNative.nativeDestroyEglRenderer(handle)
             }
@@ -759,6 +770,10 @@ internal class ProjectGreaseDrawingSurfaceView(
         sessionTool = -1
     }
 
+    init {
+        controller.onCancelGestures = { resetGestureState() }
+        controller.isGestureOpenInView = { activePointerId != MotionEvent.INVALID_POINTER_ID || strokeOpen || pinchOpen }
+    }
     private fun resetGestureState() {
         propPinch = false
         multiMax = 0

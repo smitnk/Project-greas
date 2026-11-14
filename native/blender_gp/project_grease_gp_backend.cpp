@@ -247,10 +247,11 @@ struct Backend::Impl {
   bGPdata *gpd = nullptr;
   bGPDlayer *layer = nullptr;
   bGPDframe *frame = nullptr;
-  // scene frame (playhead) while `frame` is the key held there: time-based modifiers and the other
-  // layers must see the playhead, not the held key's number. Valid only while frame == cfra_for.
+  // Scene frame (playhead): time-based modifiers and the other layers see it, not the held key's
+  // number. Only select_frame / select_frame_or_hold set it from the caller; every other writer of
+  // `frame` goes through set_frame(), which keeps it while `frame` is the key held there and
+  // otherwise moves it to the frame's own number (no cached frame pointer to go stale).
   int cfra = 1;
-  const bGPDframe *cfra_for = nullptr;
   bGPDstroke *stroke = nullptr;
   StrokeStyle stroke_style{};
   LegacyPaintSettings paint_settings{};
@@ -300,6 +301,10 @@ struct Backend::Impl {
   // Shader effect lists (2D post-pass, see project_grease_shader_fx.h), same indexing and lifetime.
   FxStacks fx_stacks;
   uint64_t stack_revision = 1;
+  // Bumped whenever the document's strokes/layers are replaced or freed (undo/redo restore, reset,
+  // create, shutdown): sessions that hold stroke pointers compare it instead of the gpd pointer,
+  // which stays the same across an in-place restore or a same-address realloc.
+  uint64_t doc_generation = 1;
   uint64_t eval_count = 0;
   // Annotation data (project_grease_annotations.h): a second bGPdata drawn on top of the
   // drawing, not part of the drawing's layers, undo snapshots or modifier evaluation.
@@ -549,6 +554,26 @@ static void history_copy_settings(const bGPdata *source, bGPdata *destination)
   destination->grid = source->grid;
 }
 
+// The key held at `cfra` on a layer (last key at or before it), without BKE_gpencil_layer_frame_get's
+// actframe side effect.
+static bGPDframe *held_key_at(const bGPDlayer *layer, int cfra)
+{
+  bGPDframe *held = nullptr;
+  if (!layer) return nullptr;
+  LISTBASE_FOREACH (bGPDframe *, f, &layer->frames) {
+    if (f->framenum <= cfra && (!held || f->framenum >= held->framenum)) held = f;
+  }
+  return held;
+}
+
+static void set_frame(Backend::Impl *impl, bGPDframe *frame)
+{
+  impl->frame = frame;
+  if (frame && held_key_at(impl->layer, impl->cfra) != frame) {
+    impl->cfra = frame->framenum;
+  }
+}
+
 static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot *snapshot)
 {
   if (!impl || !impl->gpd || !snapshot || !snapshot->data) {
@@ -595,11 +620,13 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   if (!impl->layer) {
     impl->layer = static_cast<bGPDlayer *>(impl->gpd->layers.first);
   }
-  impl->frame = impl->layer ? impl->layer->actframe : nullptr;
+  set_frame(impl, impl->layer ? impl->layer->actframe : nullptr);
   impl->stroke = nullptr;
   impl->layer_created = impl->layer != nullptr;
   impl->frame_created = impl->frame != nullptr;
   impl->stroke_open = false;
+  impl->lattice_points.clear(); // its strokes were just freed
+  impl->doc_generation++;
   impl->stacks = snapshot->stacks;
   impl->fx_stacks = snapshot->fx_stacks;
   impl->stack_revision++;
@@ -794,6 +821,8 @@ void Backend::shutdown()
   impl_->frame = nullptr;
   impl_->layer = nullptr;
   impl_->gpd = nullptr;
+  impl_->doc_generation++;
+  impl_->lattice_points.clear();
   impl_->stroke_open = false;
   impl_->frame_created = false;
   impl_->layer_created = false;
@@ -889,6 +918,8 @@ bool Backend::reset_document()
     impl_->gpd = nullptr;
   }
 
+  impl_->doc_generation++;
+  impl_->lattice_points.clear(); // the freed document's strokes
   impl_->layer = nullptr;
   impl_->frame = nullptr;
   impl_->stroke = nullptr;
@@ -984,7 +1015,7 @@ bool Backend::create_frame(int frame_number) {
     impl_->last_error = "frame already exists";
     return false;
   }
-  impl_->frame = BKE_gpencil_frame_addnew(impl_->layer, frame_number);
+  set_frame(impl_, BKE_gpencil_frame_addnew(impl_->layer, frame_number));
   if (!impl_->frame) {
     impl_->last_error = "BKE_gpencil_frame_addnew() failed";
     return false;
@@ -1011,10 +1042,13 @@ bool Backend::select_layer(int index) {
       impl_->layer = layer;
       // The active layer is document state (GP_LAYER_ACTIVE): undo/redo restore it from the flag.
       BKE_gpencil_layer_active_set(impl_->gpd, layer);
-      impl_->frame = nullptr;
+      // Keep the key held at the playhead (select_frame_or_hold) so drawing/render keep working
+      // after a layer switch; none held (playhead before the first key) leaves no editing frame.
+      impl_->frame = held_key_at(layer, impl_->cfra);
+      if (impl_->frame) layer->actframe = impl_->frame;
       impl_->stroke = nullptr;
       impl_->layer_created = true;
-      impl_->frame_created = false;
+      impl_->frame_created = impl_->frame != nullptr;
       impl_->last_error.clear();
       return true;
     }
@@ -1098,6 +1132,8 @@ bool Backend::lattice_update(int nu, int nv, const float *ctrl, int interp)
   lattice_tag();
   return true;
 }
+
+bool Backend::lattice_active() const { return !impl_->lattice_points.empty(); }
 
 bool Backend::modal_confirm()
 {
@@ -1207,7 +1243,7 @@ bool Backend::move_layer(int from_index, int to_index)
   }
   impl_->stack_revision++;
   impl_->layer = layer_at(impl_->gpd, to_index);
-  impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
+  set_frame(impl_, impl_->layer ? impl_->layer->actframe : nullptr);
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
   return true;
@@ -1230,7 +1266,7 @@ bool Backend::duplicate_layer(int index)
   impl_->fx_stacks.push_back(source_fx);  /* ... and its effects */
   impl_->stack_revision++;
   impl_->layer = copy;
-  impl_->frame = copy->actframe;
+  set_frame(impl_, copy->actframe);
   impl_->layer_created = true;
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
@@ -1263,7 +1299,7 @@ bool Backend::delete_layer(int index)
   impl_->stack_revision++;
   BKE_gpencil_layer_delete(impl_->gpd, layer);
   impl_->layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
-  impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
+  set_frame(impl_, impl_->layer ? impl_->layer->actframe : nullptr);
   impl_->layer_created = impl_->layer != nullptr;
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
@@ -1288,7 +1324,7 @@ bool Backend::merge_layer_down()
   eval_cache_clear(impl_);
   BKE_gpencil_layer_active_set(impl_->gpd, below);
   impl_->layer = below;
-  impl_->frame = below->actframe;
+  set_frame(impl_, below->actframe);
   impl_->stroke = nullptr;
   impl_->layer_created = true;
   impl_->frame_created = impl_->frame != nullptr;
@@ -1331,7 +1367,6 @@ bool Backend::select_frame(int frame_number) {
     if (frame->framenum == frame_number) {
       impl_->frame = frame;
       impl_->cfra = frame_number;
-      impl_->cfra_for = frame;
       impl_->stroke = nullptr;
       impl_->frame_created = true;
       impl_->last_error.clear();
@@ -1357,7 +1392,6 @@ bool Backend::select_frame_or_hold(int frame_number)
   }
   impl_->frame = frame;
   impl_->cfra = frame_number;
-  impl_->cfra_for = frame;
   impl_->layer->actframe = frame;
   impl_->stroke = nullptr;
   impl_->frame_created = true;
@@ -1470,7 +1504,7 @@ bool Backend::interpolate_frame(int source_frame, int target_frame, int result_f
   BLI_addtail(&impl_->layer->frames, result);
   BKE_gpencil_layer_frames_sort(impl_->layer, nullptr);
   impl_->layer->actframe = result;
-  impl_->frame = result;
+  set_frame(impl_, result);
   impl_->frame_created = true;
   impl_->stroke = nullptr;
   project_grease_gp_tag(impl_->gpd);
@@ -1539,7 +1573,7 @@ bool Backend::duplicate_frame(int source_frame, int target_frame)
   BLI_addtail(&impl_->layer->frames, copy);
   BKE_gpencil_layer_frames_sort(impl_->layer, nullptr);
   impl_->layer->actframe = copy;
-  impl_->frame = copy;
+  set_frame(impl_, copy);
   impl_->frame_created = true;
   impl_->stroke = nullptr;
   project_grease_gp_tag(impl_->gpd);
@@ -1562,7 +1596,7 @@ bool Backend::delete_frame(int frame_number)
   // BKE_gpencil_layer_frame_delete() returns whether strokes were freed, not whether the frame
   // went away: an empty keyframe is deleted too, so its result is not a failure.
   BKE_gpencil_layer_frame_delete(impl_->layer, target);
-  impl_->frame = static_cast<bGPDframe *>(impl_->layer->frames.first);
+  set_frame(impl_, static_cast<bGPDframe *>(impl_->layer->frames.first));
   impl_->layer->actframe = impl_->frame;
   impl_->frame_created = impl_->frame != nullptr;
   impl_->stroke = nullptr;
@@ -3483,6 +3517,12 @@ bool Backend::end_stroke() {
     return false;
   }
 
+  if (!impl_->frame) {
+    impl_->last_error = "no editing frame";
+    impl_->stroke_open = false;
+    return false;
+  }
+
   const int point_count = impl_->gpd->runtime.sbuffer_used;
   const int material_index = impl_->stroke_style.material_index;
   const short thickness = static_cast<short>(
@@ -5174,9 +5214,9 @@ bGPDlayer *Backend::active_layer_data() const { return impl_->layer; }
 bGPdata *Backend::annotation_data() const { return impl_->annotations; }
 void Backend::set_annotations_visible(bool visible) { impl_->annotations_visible = visible; }
 bool Backend::annotations_visible() const { return impl_->annotations_visible; }
+uint64_t Backend::document_generation() const { return impl_->doc_generation; }
 int Backend::scene_frame() const {
-  if (!impl_->frame) return 1;
-  return impl_->cfra_for == impl_->frame ? impl_->cfra : impl_->frame->framenum;
+  return impl_->cfra; // the playhead
 }
 int Backend::current_frame_number() const { return impl_->frame ? impl_->frame->framenum : 1; }
 
@@ -5225,7 +5265,7 @@ void Backend::remap_layers(const std::vector<bGPDlayer *> &before, const bGPDlay
 
 void Backend::sync_active_frame()
 {
-  impl_->frame = impl_->layer ? impl_->layer->actframe : nullptr;
+  set_frame(impl_, impl_->layer ? impl_->layer->actframe : nullptr);
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
 }

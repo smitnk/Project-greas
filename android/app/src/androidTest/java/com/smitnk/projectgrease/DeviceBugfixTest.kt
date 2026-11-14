@@ -568,4 +568,57 @@ class DeviceBugfixTest {
             assertTrue("first frame decodes", first != null && first.width > 0)
         } finally { r.release() }
     }
+
+    // ---- batch 1: gesture cancel, save/export frame restore, missing project ----
+    /** Undo while a sculpt session is still open must not crash and must leave a frame that can be drawn on. */
+    @Test fun undoDuringOpenSculptSessionKeepsValidFrame() {
+        drag(200f to 300f, 400f to 260f, 600f to 340f, 800f to 260f, 1000f to 300f)
+        val strokesBefore = strokes().size
+        onUi {
+            controller.selectTool(GreaseTool.SCULPT)
+            controller.sculpt.select(SculptBrush.SMOOTH)
+            controller.brushes.setSize(80f)
+            val begin = floatArrayOf(300f, 300f, 1f, 0f)
+            controller.toolSamples(com.smitnk.projectgrease.editor.ToolSession.TOOL_SCULPT, begin, 1,
+                com.smitnk.projectgrease.editor.ToolSession.PHASE_BEGIN)
+            val move = floatArrayOf(500f, 300f, 1f, 16f, 700f, 300f, 1f, 32f, 900f, 300f, 1f, 48f)
+            controller.toolSamples(com.smitnk.projectgrease.editor.ToolSession.TOOL_SCULPT, move, 3,
+                com.smitnk.projectgrease.editor.ToolSession.PHASE_MOVE)
+            controller.undo() // the session is still open here
+        }
+        rule.waitForIdle()
+        assertTrue("renderer still ready", onUi { controller.rendererReady })
+        val afterUndo = strokes().size
+        assertTrue("undo left $afterUndo strokes (had $strokesBefore)", afterUndo in 0..strokesBefore)
+        onUi { controller.selectTool(GreaseTool.DRAW) }
+        drag(200f to 500f, 1000f to 500f)
+        assertEquals("drawing works after the undo", afterUndo + 1, strokes().size)
+    }
+
+    /** Autosave / save / export switch layer and frame natively; the user's frame must come back so drawing still works. */
+    @Test fun saveAndExportThenDrawStillDraws() {
+        drag(200f to 300f, 1000f to 300f)
+        val frame = onUi { controller.animation.currentFrame }
+        repeat(3) { assertTrue(onUi { controller.saveDocumentTree() } != null) }
+        assertTrue(onUi { controller.exportPages(listOf(frame)) }.isNotEmpty())
+        assertEquals(frame, onUi { controller.animation.currentFrame })
+        drag(200f to 450f, 1000f to 450f)
+        assertEquals("both strokes exist", 2, strokes().size)
+    }
+
+    /** Opening a project whose file is missing must keep the current project and document, and write no file. */
+    @Test fun openMissingProjectKeepsCurrentDocument() {
+        drag(200f to 300f, 1000f to 300f)
+        val currentName = onUi { controller.document.projectName }
+        val ghost = "Ghost project ${SystemClock.uptimeMillis()}"
+        val store = com.smitnk.projectgrease.ui.ProjectStore(rule.activity)
+        store.upsert(com.smitnk.projectgrease.ui.ProjectRecord(ghost, 640, 360, 12, System.currentTimeMillis()))
+        instrumentation.runOnMainSync { rule.activity.onBackPressedDispatcher.onBackPressed() } // saves, back to Home
+        rule.waitUntil(10_000) { rule.onAllNodesWithText(ghost).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText(ghost).performClick()
+        rule.waitForIdle()
+        assertEquals("project name unchanged", currentName, onUi { controller.document.projectName })
+        assertTrue("still on Home", rule.onAllNodesWithText("Projects").fetchSemanticsNodes().isNotEmpty())
+        assertEquals("no file written for the missing project", null, store.loadDocument(ghost))
+    }
 }

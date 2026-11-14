@@ -53,6 +53,12 @@ int project_grease_gp_cancel_stroke(ProjectGreaseGPHandle *handle);
  * PG_TOOL_RESULT_* bits (0 = refused). */
 int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle, int tool, const float *samples,
                                    int count, int phase, const float *params, int param_count);
+/* Ends any open tool session / Lasso Warp on the current document (safe no-op when idle). Brush edits
+ * made so far stay. Returns 1 when the document changed and the caller must record an undo step
+ * (result had PG_TOOL_RESULT_ENDED). A BEGIN that cut off an earlier gesture reports the same via
+ * PG_TOOL_RESULT_ENDED in its result. */
+int project_grease_gp_cancel_tool_session(ProjectGreaseGPHandle *handle);
+int project_grease_gp_lattice_active(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_initialize_external_gpu(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render_external_context(ProjectGreaseGPHandle *handle);
 int project_grease_gp_render_fill_mask(ProjectGreaseGPHandle *handle);

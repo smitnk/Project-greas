@@ -1497,8 +1497,9 @@ int pg_sculpt_session_sample(PGSculptSession *s, float x, float y, float pressur
   return changed ? 1 : 0;
 }
 
-/* gpencil_sculpt_brush_exit(). */
-void pg_sculpt_session_end(PGSculptSession *s)
+/* gpencil_sculpt_brush_exit(). touch_gpd false = the document was replaced or freed under the
+ * session: release only what the session owns, never dereference gso->gpd or its strokes. */
+static void pgt_sculpt_session_free(PGSculptSession *s, bool touch_gpd)
 {
   if (s == NULL) {
     return;
@@ -1516,7 +1517,12 @@ void pg_sculpt_session_end(PGSculptSession *s)
   if (gso->customdata != NULL) {
     gpencil_brush_clone_free(gso);
   }
-  pg_tool_link_runtime(gso->gpd, false);
-  pgt_sculpt_update_geometry(gso->gpd);
+  if (touch_gpd) {
+    pg_tool_link_runtime(gso->gpd, false);
+    pgt_sculpt_update_geometry(gso->gpd);
+  }
   MEM_freeN(s);
 }
+
+void pg_sculpt_session_end(PGSculptSession *s) { pgt_sculpt_session_free(s, true); }
+void pg_sculpt_session_abandon(PGSculptSession *s) { pgt_sculpt_session_free(s, false); }

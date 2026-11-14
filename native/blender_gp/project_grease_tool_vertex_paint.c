@@ -1101,14 +1101,19 @@ int pg_vpaint_session_sample(PGVertexPaintSession *s, float x, float y, float pr
   return changed ? 1 : 0;
 }
 
-/* gpencil_vertexpaint_brush_exit(). */
-void pg_vpaint_session_end(PGVertexPaintSession *s)
+/* gpencil_vertexpaint_brush_exit(). touch_gpd false: see pg_sculpt_session_abandon. */
+static void pgt_vpaint_session_free(PGVertexPaintSession *s, bool touch_gpd)
 {
   if (s == NULL) {
     return;
   }
   MEM_SAFE_FREE(s->gso.pbuffer);
   MEM_SAFE_FREE(s->gso.grid);
-  pg_tool_link_runtime(s->gso.gpd, false);
+  if (touch_gpd) {
+    pg_tool_link_runtime(s->gso.gpd, false);
+  }
   MEM_freeN(s);
 }
+
+void pg_vpaint_session_end(PGVertexPaintSession *s) { pgt_vpaint_session_free(s, true); }
+void pg_vpaint_session_abandon(PGVertexPaintSession *s) { pgt_vpaint_session_free(s, false); }

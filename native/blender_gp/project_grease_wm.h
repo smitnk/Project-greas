@@ -51,6 +51,8 @@ int pg_curve_select(struct bGPdata *gpd, int layer, int stroke, int point, int p
 int pg_curve_translate(struct bGPdata *gpd, float dx, float dy) __attribute__((weak));
 /* Brush weight found by the last GPENCIL_OT_weight_sample. */
 float pg_wm_last_weight_sample(void) __attribute__((weak));
+/* Forget the running modal operator (its tool session was aborted by the owner). */
+void pg_wm_modal_reset(void) __attribute__((weak));
 /* idname of the running modal operator, NULL when none. */
 const char *pg_wm_modal_running(void) __attribute__((weak));
 

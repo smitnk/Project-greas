@@ -14,6 +14,8 @@ struct PGToolSession {
   int tool;       /* open gesture's tool, -1 when none */
   int changed;    /* the open gesture changed the document */
   int samples;    /* samples applied in the current / last gesture */
+  int draw_end_ok;   /* the last Draw close committed a stroke (sink.end succeeded) */
+  int unrecorded;    /* a gesture was closed implicitly with edits nobody recorded for undo */
   PGDrawInput draw;
   PGToolDrawSink sink;
   int draw_open;
@@ -64,7 +66,9 @@ static void close_gesture(PGToolSession *s, int cancel)
           const PGDrawPoint *out;
           const int n = pg_draw_input_end(&s->draw, &out);
           draw_send(s, out, n);
-          if (s->sink.end && s->sink.end(s->sink.user)) s->changed = 1;
+          /* only a committed stroke is an undo step (a failed sink.end leaves nothing to undo) */
+          s->draw_end_ok = (s->sink.end && s->sink.end(s->sink.user)) ? 1 : 0;
+          if (s->draw_end_ok) s->changed = 1;
         }
       }
       s->draw_open = 0;
@@ -87,6 +91,60 @@ static void close_gesture(PGToolSession *s, int cancel)
   s->tool = -1;
 }
 
+/* The document the session ran on was replaced or freed: drop the gesture without touching it. */
+static void abandon_gesture(PGToolSession *s)
+{
+  switch (s->tool) {
+    case PG_TOOL_DRAW:
+      if (s->draw_open) {
+        pg_draw_input_cancel(&s->draw);
+        /* the sink only clears the backend's current stroke buffer, valid whatever happened to the
+         * strokes of the old document */
+        if (s->sink.cancel) s->sink.cancel(s->sink.user);
+      }
+      s->draw_open = 0;
+      break;
+    case PG_TOOL_SCULPT:
+      pg_sculpt_session_abandon(s->sculpt);
+      s->sculpt = NULL;
+      break;
+    case PG_TOOL_VERTEX_PAINT:
+      pg_vpaint_session_abandon(s->vpaint);
+      s->vpaint = NULL;
+      break;
+    case PG_TOOL_WEIGHT_PAINT:
+      pg_wpaint_session_abandon(s->wpaint);
+      s->wpaint = NULL;
+      break;
+    default:
+      break;
+  }
+  s->tool = -1;
+}
+
+int pg_tool_session_abort(PGToolSession *s, int doc_valid)
+{
+  if (!s || s->tool < 0) return 0;
+  if (!doc_valid) {
+    abandon_gesture(s);
+    return PG_TOOL_RESULT_OK;
+  }
+  /* A brush edit made so far stays (no rollback) and is reported so the caller records it. */
+  const int brush_edits = s->tool != PG_TOOL_DRAW && s->changed;
+  close_gesture(s, 1);
+  return PG_TOOL_RESULT_OK | PG_TOOL_RESULT_CHANGED | (brush_edits ? PG_TOOL_RESULT_ENDED : 0);
+}
+
+int pg_tool_session_is_open(const PGToolSession *s) { return s && s->tool >= 0; }
+void pg_tool_session_note_unrecorded(PGToolSession *s) { if (s) s->unrecorded = 1; }
+int pg_tool_session_take_unrecorded(PGToolSession *s)
+{
+  if (!s) return 0;
+  const int u = s->unrecorded;
+  s->unrecorded = 0;
+  return u;
+}
+
 void pg_tool_session_free(PGToolSession *s)
 {
   if (!s) return;
@@ -102,6 +160,7 @@ static int open_gesture(PGToolSession *s, struct bGPdata *gpd, int tool, const f
 {
   s->changed = 0;
   s->samples = 0;
+  s->draw_end_ok = 0;
   if (tool == PG_TOOL_DRAW) {
     if (!sink || !sink->begin) return 0;
     s->sink = *sink;
@@ -243,12 +302,16 @@ int pg_tool_session_samples(PGToolSession *s, struct bGPdata *gpd, int tool, con
   if (!s || count < 0 || (count > 0 && !samples)) return 0;
   int result = 0;
   if (phase == PG_TOOL_PHASE_CANCEL) {
-    close_gesture(s, 1);
-    return PG_TOOL_RESULT_OK | PG_TOOL_RESULT_CHANGED;
+    /* idle cancel keeps its former OK | CHANGED result */
+    if (s->tool < 0) return PG_TOOL_RESULT_OK | PG_TOOL_RESULT_CHANGED;
+    return pg_tool_session_abort(s, 1);
   }
   if (phase == PG_TOOL_PHASE_BEGIN) {
     if (s->tool >= 0) {
+      /* implicit end of a missed-UP gesture: its edits have no caller to record them */
+      const int was_draw = s->tool == PG_TOOL_DRAW;
       close_gesture(s, 0);
+      if (was_draw ? s->draw_end_ok : s->changed) s->unrecorded = 1;
     }
     if ((!gpd && tool != PG_TOOL_DRAW) || !open_gesture(s, gpd, tool, params, n_params, sink)) return 0;
   }
@@ -265,9 +328,10 @@ int pg_tool_session_samples(PGToolSession *s, struct bGPdata *gpd, int tool, con
     result |= PG_TOOL_RESULT_CHANGED;
   }
   if (phase == PG_TOOL_PHASE_END) {
+    const int was_draw = s->tool == PG_TOOL_DRAW;
     close_gesture(s, 0);
     result |= PG_TOOL_RESULT_CHANGED;
-    if (s->changed) result |= PG_TOOL_RESULT_ENDED;
+    if (was_draw ? s->draw_end_ok : s->changed) result |= PG_TOOL_RESULT_ENDED;
   }
   return result;
 }

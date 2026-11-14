@@ -130,6 +130,17 @@ int pg_tool_session_samples(PGToolSession *s, struct bGPdata *gpd, int tool, con
                             int count, int phase, const float *params, int n_params,
                             const PGToolDrawSink *sink);
 
+/* Ends the open gesture (if any) from outside the phase protocol. doc_valid != 0: CANCEL on the live
+ * document; brush edits stay and the result carries CHANGED | ENDED so the caller records an undo
+ * step. doc_valid == 0: the document was replaced/freed, the gesture is dropped without touching it.
+ * Returns 0 when no gesture was open. */
+int pg_tool_session_abort(PGToolSession *s, int doc_valid);
+int pg_tool_session_is_open(const PGToolSession *s);
+/* A gesture closed implicitly (BEGIN over an open one) left edits nobody recorded; the owner of the
+ * history takes the flag and records them. */
+void pg_tool_session_note_unrecorded(PGToolSession *s);
+int pg_tool_session_take_unrecorded(PGToolSession *s);
+
 /* Number of samples the session has applied in the current / last gesture (tests, diagnostics). */
 int pg_tool_session_sample_count(const PGToolSession *s);
 

@@ -41,16 +41,19 @@ PGSculptSession *pg_sculpt_session_begin(struct bGPdata *gpd, const PGToolBrushP
 /* One input event; returns 1 when strokes changed. */
 int pg_sculpt_session_sample(PGSculptSession *s, float x, float y, float pressure);
 void pg_sculpt_session_end(PGSculptSession *s);
+void pg_sculpt_session_abandon(PGSculptSession *s); /* free without touching the (replaced) document */
 
 typedef struct PGVertexPaintSession PGVertexPaintSession;
 PGVertexPaintSession *pg_vpaint_session_begin(struct bGPdata *gpd, const PGToolBrushParams *params);
 int pg_vpaint_session_sample(PGVertexPaintSession *s, float x, float y, float pressure);
 void pg_vpaint_session_end(PGVertexPaintSession *s);
+void pg_vpaint_session_abandon(PGVertexPaintSession *s);
 
 typedef struct PGWeightPaintSession PGWeightPaintSession;
 PGWeightPaintSession *pg_wpaint_session_begin(struct bGPdata *gpd, const PGToolBrushParams *params);
 int pg_wpaint_session_sample(PGWeightPaintSession *s, float x, float y, float pressure);
 void pg_wpaint_session_end(PGWeightPaintSession *s);
+void pg_wpaint_session_abandon(PGWeightPaintSession *s);
 
 #ifdef __cplusplus
 }

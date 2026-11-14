@@ -47,6 +47,7 @@ extern "C" __attribute__((weak)) const char *pg_gp_engine_gl_debug_message(long 
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gp_engine_present_over(int target_w, int target_h);
 extern "C" __attribute__((weak)) int pg_gles_api(void);
+extern "C" __attribute__((weak)) void pg_gles_api_reset(void);
 extern "C" __attribute__((weak)) unsigned int pg_gp_engine_result_texture(void);
 
 namespace {
@@ -962,6 +963,13 @@ uint64_t g_engine_revision=0, g_engine_drawn_revision=~0ull;
 int g_engine_drawn_frame=-1;
 void* g_engine_batch_cache=nullptr; // the copy's GpencilBatchCache, kept between frames
 std::vector<const bGPDframe*> g_engine_drawn_frames;
+// Probe result of engine_context_ok (-1 = not probed) and the engine-image reuse state: file scope so
+// present_reset / nativeResetEngine can clear them with the rest of the engine state.
+int g_engine_ctx_ok=-1;
+int g_engine_drawn_weight=-2;       // the overlay's vertex group (its edit batch)
+float g_engine_drawn_vopacity=-1.0f;
+PGGpEngineView g_engine_last_view{};
+bool g_engine_have_last=false;
 
 // Startup self-test (reported: on an ARM Mali phone the engine compiled but drew a black / broken
 // canvas and the app hung): a black line on white paper through the engine, read back. A wrong
@@ -1020,7 +1028,7 @@ bool engine_self_test(){
 }
 
 bool engine_context_ok(){
-  static int ok=-1;
+  int&ok=g_engine_ctx_ok;
   if(ok<0){
     const char*v=reinterpret_cast<const char*>(glGetString(GL_VERSION));
     if(!v)return false; // no current context yet: ask again next frame instead of keeping "off"
@@ -1201,9 +1209,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   }
   /* Update tagging: the batch cache (draw_cache_impl_gpencil.cc) is rebuilt only when the document
    * or modifier revision, the frame or the evaluated frames changed (GP_DATA_CACHE_IS_DIRTY). */
-  static int drawn_weight=-2; /* the overlay's vertex group (its edit batch) */
-  static float drawn_vopacity=-1.0f;
-  const bool changed=drawn_weight!=g_weight_group||drawn_vopacity!=g_vertex_opacity||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
+  const bool changed=g_engine_drawn_weight!=g_weight_group||g_engine_drawn_vopacity!=g_vertex_opacity||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
                      shown_frames!=g_engine_drawn_frames;
   copy.flag&=~GP_DATA_CACHE_IS_DIRTY;
   if(changed)copy.flag|=GP_DATA_CACHE_IS_DIRTY;
@@ -1232,8 +1238,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   /* Nothing changed since the last engine image (same strokes, frame, view, no effects): present
    * that image again instead of re-running every engine pass. Effects are left out because their
    * settings are not part of the data revision. */
-  static PGGpEngineView last{};static bool have_last=false;
-  const bool same=have_last&&!changed&&!g_export_mode&&!view.rendered&&!last.rendered&&
+  PGGpEngineView&last=g_engine_last_view;
+  const bool same=g_engine_have_last&&!changed&&!g_export_mode&&!view.rendered&&!last.rendered&&
       view.viewport_w==last.viewport_w&&view.viewport_h==last.viewport_h&&view.origin_x==last.origin_x&&
       view.origin_y==last.origin_y&&view.scale==last.scale&&view.rotation==last.rotation&&
       std::memcmp(view.background,last.background,sizeof view.background)==0;
@@ -1243,7 +1249,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
     {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
     glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
   }
-  last=view;have_last=ok&&!g_export_mode;
+  last=view;g_engine_have_last=ok&&!g_export_mode;
   g_engine_reuses+=same?1:0;
   g_last_engine_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t_engine).count();
   g_last_engine_rebuilt=same?2:changed?1:0;g_last_w=w;g_last_h=h;
@@ -1261,8 +1267,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   g_engine_drawn_revision=g_engine_revision;
   g_engine_drawn_frame=frame_number;
   g_engine_drawn_frames=shown_frames;
-  drawn_weight=g_weight_group;
-  drawn_vopacity=g_vertex_opacity;
+  g_engine_drawn_weight=g_weight_group;
+  g_engine_drawn_vopacity=g_vertex_opacity;
   /* The engine image replaces the paper rectangle only (strokes are clipped to the canvas, as the
    * camera frame clips them in Blender). */
   const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));
@@ -1735,7 +1741,19 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom,flo
 }
 extern "C" void project_grease_android_present_set_view_rotation(float radians){g_view_rotation=std::isfinite(radians)?radians:0.0f;}
 extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
+/* The failure latch is process-wide state about "this context"; a new context (present_reset) or the
+ * app (nativeResetEngine) clears it so one transient failure does not disable the engine for good. */
+static void engine_clear_latch(){
+  g_engine_failed=0;g_engine_ctx_ok=-1;
+  g_engine_have_last=false;g_engine_last_view=PGGpEngineView{};
+  g_engine_drawn_weight=-2;g_engine_drawn_vopacity=-1.0f;
+  g_engine_drawn_revision=~0ull;g_engine_drawn_frame=-1;g_engine_drawn_frames.clear();
+  if(pg_gles_api_reset)pg_gles_api_reset(); // the next context may offer a different GLES level
+}
+extern "C" int project_grease_android_present_engine_healthy(){return g_engine_failed?0:1;}
+extern "C" void project_grease_android_present_engine_reset(){engine_clear_latch();}
 extern "C" void project_grease_android_present_reset(){
+  engine_clear_latch();
   // the engine and its stroke cache belong to this context too: a new context rebuilds them
   // shortcut: the old GpencilBatchCache CPU memory leaks once per context; free it with a gpd once one is at hand here
   if(pg_gp_engine_reset)pg_gp_engine_reset();

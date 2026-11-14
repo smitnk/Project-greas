@@ -17,6 +17,7 @@ struct ListBase;
 /* Which GL ES the engine runs on: 32, 31 (3.1 with the texture buffer and base vertex extensions,
  * shaders as ESSL 3.10) or 0 (not supported). Needs a current context. */
 int pg_gles_api(void);
+void pg_gles_api_reset(void);
 /* Diagnostics: compile + link every engine shader, "N/M shaders compile" and each failure. */
 const char *pg_gles_shader_report(void);
 

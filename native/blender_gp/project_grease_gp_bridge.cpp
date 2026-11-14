@@ -37,6 +37,9 @@ struct ProjectGreaseGPHandle {
   // Native tool session (project_grease_tool_session.h) and the document its gesture runs on.
   PGToolSession *tool_session = nullptr;
   bGPdata *tool_gpd = nullptr;
+  // Backend::document_generation() at the gesture's BEGIN: the gpd pointer alone cannot tell a
+  // replaced document (undo restores in place, reset reallocates at the same address).
+  uint64_t tool_generation = 0;
 };
 
 static int ensure_ready(ProjectGreaseGPHandle *handle)
@@ -53,6 +56,38 @@ static int ensure_operator(ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(handle)) return 0;
   handle->backend.modal_confirm();
+  return 1;
+}
+
+/* Ends the open gesture (not the warp). doc_valid: the document the gesture started on is still the
+ * live one, so it is closed normally (brush edits stay); otherwise it is dropped without touching
+ * the old strokes. Returns the PG_TOOL_RESULT_* bits of the cancel (0 = nothing was open). */
+static int tool_abort(ProjectGreaseGPHandle *handle, bool doc_valid)
+{
+  int result = 0;
+  if (handle->tool_session && pg_tool_session_is_open(handle->tool_session)) {
+    result = pg_tool_session_abort(handle->tool_session, doc_valid ? 1 : 0);
+  }
+  if (pg_wm_modal_reset) pg_wm_modal_reset();
+  handle->tool_gpd = nullptr;
+  return result;
+}
+
+/* A gesture opened on a document that has since been replaced is dropped, never continued. */
+static bool tool_session_stale(const ProjectGreaseGPHandle *handle)
+{
+  return handle->tool_session && pg_tool_session_is_open(handle->tool_session) &&
+         (handle->tool_gpd != handle->backend.document_data() ||
+          handle->tool_generation != handle->backend.document_generation());
+}
+
+/* Before undo / redo / reset swap the strokes: end the gesture on the live document and revert an open
+ * warp (a confirm would keep a half-made deformation the user is undoing away). */
+static int ensure_replace(ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(handle)) return 0;
+  tool_abort(handle, true);
+  handle->backend.lattice_end(false);
   return 1;
 }
 
@@ -264,7 +299,7 @@ int project_grease_gp_set_material_name(ProjectGreaseGPHandle *handle, int slot,
 }
 int project_grease_gp_reset_document(ProjectGreaseGPHandle *handle)
 {
-  return ensure_operator(handle) && handle->backend.reset_document() ? 1 : 0;
+  return ensure_replace(handle) && handle->backend.reset_document() ? 1 : 0;
 }
 
 int project_grease_gp_create_frame(ProjectGreaseGPHandle *handle, int frame_number)
@@ -390,11 +425,11 @@ int project_grease_gp_history_record(ProjectGreaseGPHandle *handle)
 }
 int project_grease_gp_history_undo(ProjectGreaseGPHandle *handle)
 {
-  return ensure_operator(handle) && handle->backend.history_undo() ? 1 : 0;
+  return ensure_replace(handle) && handle->backend.history_undo() ? 1 : 0;
 }
 int project_grease_gp_history_redo(ProjectGreaseGPHandle *handle)
 {
-  return ensure_operator(handle) && handle->backend.history_redo() ? 1 : 0;
+  return ensure_replace(handle) && handle->backend.history_redo() ? 1 : 0;
 }
 int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle)
 {
@@ -488,6 +523,11 @@ int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int 
   return ensure_ready(handle) && handle->backend.lattice_update(nu, nv, ctrl, interp) ? 1 : 0;
 }
 
+int project_grease_gp_lattice_active(const ProjectGreaseGPHandle *handle)
+{
+  return handle && handle->ready && handle->backend.lattice_active() ? 1 : 0;
+}
+
 void project_grease_gp_lattice_end(ProjectGreaseGPHandle *handle, int keep)
 {
   if (ensure_ready(handle)) handle->backend.lattice_end(keep != 0);
@@ -503,9 +543,13 @@ int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, flo
 int project_grease_gp_erase_modal(ProjectGreaseGPHandle *handle, int phase, int changed)
 {
   if (!ensure_operator(handle) || !pg_wm_modal_erase) return PG_OPERATOR_CANCELLED;
+  if (tool_session_stale(handle)) tool_abort(handle, false);
   PGOpContext C = {handle->backend.document_data(), handle->backend.active_layer_data(), 0, true, 0,
                    handle->tool_session, nullptr};
-  return pg_wm_modal_erase(&C, phase, changed != 0);
+  const int status = pg_wm_modal_erase(&C, phase, changed != 0);
+  // an eraser BEGIN that cut off a brush gesture has no result bit to report its edits with
+  if (handle->tool_session) pg_tool_session_take_unrecorded(handle->tool_session);
+  return status;
 }
 
 int project_grease_gp_fill_help_lines(ProjectGreaseGPHandle *handle, float extend_fac, int extend_mode, int collide,
@@ -1363,12 +1407,32 @@ int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle,
   // The paint tools run as Blender's modal operators (GPENCIL_OT_draw / sculpt_paint / ...).
   PGOpContext C = {gpd, handle->backend.active_layer_data(), 0, true, 0, handle->tool_session, &sink};
   int status = 0;
-  // A gesture never survives a document replacement (reset / load / undo): cancel it.
-  if (phase != PG_TOOL_PHASE_BEGIN && handle->tool_gpd != gpd) {
-    pg_wm_modal_tool(&C, tool, PG_TOOL_PHASE_CANCEL, nullptr, 0, nullptr, 0, &status);
-    handle->tool_gpd = nullptr;
-    return 0;
+  // A gesture never survives a document replacement (reset / load / undo): drop it without touching
+  // the old strokes (pointer + generation, see tool_generation). This also guards BEGIN, whose implicit
+  // cancel of an open gesture would otherwise walk freed strokes.
+  if (tool_session_stale(handle)) {
+    tool_abort(handle, false);
+    if (phase != PG_TOOL_PHASE_BEGIN) return 0;
   }
-  if (phase == PG_TOOL_PHASE_BEGIN) handle->tool_gpd = gpd;
-  return pg_wm_modal_tool(&C, tool, phase, samples, count, params, param_count, &status);
+  if (phase == PG_TOOL_PHASE_BEGIN) {
+    handle->tool_gpd = gpd;
+    handle->tool_generation = handle->backend.document_generation();
+  }
+  int result = pg_wm_modal_tool(&C, tool, phase, samples, count, params, param_count, &status);
+  if (phase == PG_TOOL_PHASE_BEGIN) {
+    // The gesture that BEGIN cut off left edits nobody recorded: report them as ENDED so the caller
+    // records an undo step for them (it must not call history_record itself twice for them).
+    if (pg_tool_session_take_unrecorded(handle->tool_session) && result != 0) result |= PG_TOOL_RESULT_ENDED;
+  }
+  if (!pg_tool_session_is_open(handle->tool_session)) handle->tool_gpd = nullptr; // refused / ended / cancelled
+  return result;
+}
+
+int project_grease_gp_cancel_tool_session(ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(handle)) return 0;
+  const bool stale = tool_session_stale(handle);
+  const int result = tool_abort(handle, !stale);
+  handle->backend.lattice_end(false); // an open Lasso Warp is a modal too: revert it
+  return (result & PG_TOOL_RESULT_ENDED) != 0 ? 1 : 0;
 }

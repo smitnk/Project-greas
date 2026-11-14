@@ -125,7 +125,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var state by remember{mutableStateOf(GreaseUiState())}
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
-    fun saveCurrentProject(tree: org.json.JSONObject? = controller.saveDocumentTree(), write: Boolean = true) {
+    fun saveCurrentProject(tree: org.json.JSONObject? = controller.saveDocumentTree(), write: Boolean = true, savedRevision: Int = controller.document.revision) {
         if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString()) }
         projectStore.upsert(ProjectRecord(
             controller.document.projectName,
@@ -135,18 +135,30 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
             System.currentTimeMillis()
         ))
         projects=projectStore.load()
-        controller.document.markSaved()
+        controller.document.markSaved(savedRevision)
     }
 
     LaunchedEffect(screen) {
         if (screen == Screen.EDITOR) {
             while (true) {
                 kotlinx.coroutines.delay(5000L)
-                // Build the tree here (native reads); text + file write on IO so the UI never stalls.
-                val tree = controller.saveDocumentTree() ?: continue
-                val projectName = controller.document.projectName
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString()) }
-                saveCurrentProject(tree, write = false)
+                // Nothing changed since the last save: no native layer/frame juggling and no file write.
+                if (!controller.document.dirty) continue
+                // A finger is on the canvas (stroke, brush, warp): saving now would cancel it; try again next tick.
+                if (controller.gestureActive()) continue
+                try {
+                    val revision = controller.document.revision
+                    // Build the tree here (native reads); text + file write on IO so the UI never stalls.
+                    val tree = controller.saveDocumentTree() ?: continue
+                    val projectName = controller.document.projectName
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString()) }
+                    saveCurrentProject(tree, write = false, savedRevision = revision)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    // disk full, encode failure, native hiccup: log and try again next tick, never crash
+                    com.smitnk.projectgrease.CrashLog.event("AUTOSAVE failed: ${t.javaClass.simpleName}: ${t.message}")
+                }
             }
         }
     }
@@ -162,14 +174,31 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     ProjectGreaseTheme(mode=themeMode){
         when(screen){
             Screen.HOME->Home(projects,{record->
-                controller.document.projectName=record.name
-                controller.document.canvasWidth=record.width
-                controller.document.canvasHeight=record.height
-                controller.animation.setFps(record.fps)
                 val raw=projectStore.loadDocument(record.name)
                 com.smitnk.projectgrease.CrashLog.event("OPEN project '${record.name}' ${record.width}x${record.height}: saved drawing ${if(raw==null)"missing" else "${raw.length} chars"}")
-                raw?.let { controller.runWhenAttached { val ok=controller.loadDocumentJson(it);controller.setMode(GreaseMode.DRAW);controller.fitCanvas();com.smitnk.projectgrease.CrashLog.event("OPEN loaded -> $ok, ${controller.strokeCount()} strokes") } }
-                screen=Screen.EDITOR
+                // A missing or unreadable file used to open the PREVIOUS project's drawing under this name, and autosave
+                // then wrote it over the new project. Stay on Home with a message instead; no file is touched.
+                if(raw==null||!com.smitnk.projectgrease.editor.ProjectDocumentCodec.isReadable(raw)){
+                    android.widget.Toast.makeText(context,"Cannot open '${record.name}': its drawing file is missing or damaged",android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    val prevName=controller.document.projectName;val prevW=controller.document.canvasWidth;val prevH=controller.document.canvasHeight;val prevFps=controller.animation.fps
+                    controller.document.projectName=record.name
+                    controller.document.canvasWidth=record.width
+                    controller.document.canvasHeight=record.height
+                    controller.animation.setFps(record.fps)
+                    controller.runWhenAttached {
+                        val ok=controller.loadDocumentJson(raw)
+                        com.smitnk.projectgrease.CrashLog.event("OPEN loaded -> $ok, ${controller.strokeCount()} strokes")
+                        if(ok){controller.setMode(GreaseMode.DRAW);controller.fitCanvas()}
+                        else{
+                            // load failed after the name switched: go back Home under the old name so autosave cannot overwrite this file
+                            controller.document.projectName=prevName;controller.document.canvasWidth=prevW;controller.document.canvasHeight=prevH;controller.animation.setFps(prevFps)
+                            android.widget.Toast.makeText(context,"Cannot open '${record.name}': its drawing file is damaged",android.widget.Toast.LENGTH_LONG).show()
+                            screen=Screen.HOME
+                        }
+                    }
+                    screen=Screen.EDITOR
+                }
             },{screen=Screen.NEW},{screen=Screen.SETTINGS})
             Screen.NEW->NewProject(name,{name=it},preset,{preset=it},templateId,{templateId=it},controller,{screen=Screen.HOME}){
                 // Never overwrite an existing project: pick "Name (2)", "Name (3)", ... if taken.
@@ -180,7 +209,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                 val projectName=controller.document.projectName
                 val template=GreaseTemplates.byId(templateId)
                 controller.runWhenAttached {
-                    controller.resetDocument()
+                    if(!controller.resetDocument()){
+                        android.widget.Toast.makeText(context,"Could not start the new project",android.widget.Toast.LENGTH_LONG).show()
+                        return@runWhenAttached
+                    }
                     controller.createFrame(1)
                     // Layers, material slots, fps and end frame come from the chosen template.
                     template?.let { controller.applyTemplate(it) }

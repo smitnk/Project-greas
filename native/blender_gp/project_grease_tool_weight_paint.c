@@ -891,8 +891,8 @@ int pg_wpaint_session_sample(PGWeightPaintSession *s, float x, float y, float pr
   return changed ? 1 : 0;
 }
 
-/* gpencil_weightpaint_brush_exit(). */
-void pg_wpaint_session_end(PGWeightPaintSession *s)
+/* gpencil_weightpaint_brush_exit(). touch_gpd false: see pg_sculpt_session_abandon. */
+static void pgt_wpaint_session_free(PGWeightPaintSession *s, bool touch_gpd)
 {
   if (s == NULL) {
     return;
@@ -906,6 +906,11 @@ void pg_wpaint_session_end(PGWeightPaintSession *s)
   if (gso->fn_kdtree != NULL) {
     BLI_kdtree_2d_free(gso->fn_kdtree);
   }
-  pg_tool_link_runtime(gso->gpd, false);
+  if (touch_gpd) {
+    pg_tool_link_runtime(gso->gpd, false);
+  }
   MEM_freeN(s);
 }
+
+void pg_wpaint_session_end(PGWeightPaintSession *s) { pgt_wpaint_session_free(s, true); }
+void pg_wpaint_session_abandon(PGWeightPaintSession *s) { pgt_wpaint_session_free(s, false); }

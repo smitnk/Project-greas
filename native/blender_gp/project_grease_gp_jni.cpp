@@ -510,6 +510,35 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLatticeUpdate(
   return project_grease_gp_lattice_update(from_handle(handle), nu, nv, c.data(), interp) != 0;
 }
 
+/* Ends any open tool session / Lasso Warp on the current document. true = the document changed and
+ * the caller must record an undo step. Safe no-op when idle. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCancelToolSession(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_cancel_tool_session(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLatticeActive(JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_lattice_active(from_handle(handle)) != 0;
+}
+
+/* Blender renderer failure latch (process-wide): healthy = not latched off. */
+extern "C" int project_grease_android_present_engine_healthy(void);
+extern "C" void project_grease_android_present_engine_reset(void);
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeEngineHealthy(JNIEnv *, jobject)
+{
+  return project_grease_android_present_engine_healthy() != 0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeResetEngine(JNIEnv *, jobject)
+{
+  project_grease_android_present_engine_reset();
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLatticeEnd(JNIEnv *, jobject, jlong handle, jboolean keep)
 {

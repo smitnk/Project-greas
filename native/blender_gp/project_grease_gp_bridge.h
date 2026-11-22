@@ -183,7 +183,6 @@ int project_grease_gp_set_material_visibility(ProjectGreaseGPHandle *handle, int
 int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, int index, int enabled);
 int project_grease_gp_set_material_stroke_enabled(ProjectGreaseGPHandle *handle, int index, int enabled);
 int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, float influence, int iterations);
-int project_grease_gp_sculpt_at(ProjectGreaseGPHandle *handle, int tool, float x, float y, float radius, float influence);
 int project_grease_gp_apply_blender_modifier(ProjectGreaseGPHandle *handle, int index, int modifier_type, float factor, int iterations);
 int project_grease_gp_apply_blender_modifier_named(ProjectGreaseGPHandle *handle, int index, const char *name, float factor, int iterations);
 typedef struct ProjectGreaseGPLegacyGeometryOp {

@@ -120,6 +120,9 @@ jobs:
       - name: Run native document-state tests
         run: bash tools/run_native_document_state_tests.sh
 
+      - name: Run native handle-registry tests (stale JNI handles refused)
+        run: bash tools/run_native_handle_tests.sh
+
       - name: Run native stroke outline tests (miter / round joins)
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

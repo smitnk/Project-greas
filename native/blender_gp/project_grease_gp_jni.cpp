@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "project_grease_gp_bridge.h"
+#include "project_grease_handle_registry.h"
 #include "project_grease_wm.h"
 static void pg_rgb_s2l(float *rgb);
 #include "project_grease_modifier_stack.h"
@@ -13,16 +14,16 @@ static void pg_rgb_s2l(float *rgb);
 
 namespace {
 
+/* A handle is a registry token, not a pointer: a freed / reused / foreign one resolves to nullptr,
+ * which every project_grease_gp_* entry point refuses. */
 ProjectGreaseGPHandle *from_handle(jlong value)
 {
-  return reinterpret_cast<ProjectGreaseGPHandle *>(
-      static_cast<uintptr_t>(value));
+  return pg_handles::Registry<ProjectGreaseGPHandle>::get(value);
 }
 
 jlong to_handle(ProjectGreaseGPHandle *handle)
 {
-  return static_cast<jlong>(
-      reinterpret_cast<uintptr_t>(handle));
+  return pg_handles::Registry<ProjectGreaseGPHandle>::add(handle);
 }
 
 }  // namespace
@@ -40,7 +41,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDestroy(
     JNIEnv *, jobject, jlong handle)
 {
-  project_grease_gp_destroy(from_handle(handle));
+  // remove() first: a second destroy of the same token finds nothing and frees nothing
+  project_grease_gp_destroy(pg_handles::Registry<ProjectGreaseGPHandle>::remove(handle));
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

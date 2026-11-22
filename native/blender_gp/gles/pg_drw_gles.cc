@@ -1481,9 +1481,20 @@ static void pg_gp_engine_reset_impl(bool context_alive)
   if (context_alive && draw_engine_gpencil_type.engine_free) draw_engine_gpencil_type.engine_free();
   if (G_pg != nullptr) {
     if (context_alive) pg_context_release_gl(*G_pg);
-    /* The PGContext itself (CPU side, referenced by Blender-side engine state) is dropped, not
-     * deleted: a new one is built lazily by pgc() in the next context. */
+    /* The CPU side goes too (engine_free above already dropped Blender's references to it): the
+     * view-layer data as DRW's own free does (callback, then the storage), the per-engine vedata
+     * lists, then the PGContext. A new one is built lazily by pgc() in the next context. The view-layer
+     * callback releases GL uniform buffers, so it only runs while the context is alive. */
+    PGContext *c = G_pg;
     G_pg = nullptr;
+    if (context_alive && c->view_layer_engine_data != nullptr) {
+      if (c->view_layer_engine_data_free) c->view_layer_engine_data_free(c->view_layer_engine_data);
+      MEM_freeN(c->view_layer_engine_data);
+    }
+    for (int i = 1; i < 5; i++) {
+      if (c->vedata_lists[i]) MEM_freeN(c->vedata_lists[i]);
+    }
+    delete c;
   }
 }
 

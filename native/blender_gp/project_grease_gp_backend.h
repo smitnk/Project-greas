@@ -236,12 +236,6 @@ class Backend {
   bool set_layer_opacity(int index, float opacity);
   bool get_material_info(int index, PGMaterialInfo* out) const;
   bool smooth_stroke(int index, float influence, int iterations);
-  // Focused Legacy GP sculpt brush bridge. Position/strength/thickness use Blender BKE algorithms;
-  // grab/push use the same real bGPD point data with a local falloff.
-  bool sculpt_at(int tool, float x, float y, float radius, float influence);
-  bool sculpt_begin(int tool, float x, float y, float pressure, float radius, float strength, bool invert);
-  bool sculpt_update(int tool, float x, float y, float prev_x, float prev_y, float pressure, float radius, float strength, bool invert);
-  bool sculpt_end();
   // One batched entry point for the real Blender 3.6.23 Legacy GP geometry API.
   // Each operation dispatches directly to Blender's BKE_gpencil_* implementation;
   // Project Grease does not reimplement the geometry algorithms.

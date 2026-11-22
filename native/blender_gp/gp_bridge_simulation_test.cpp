@@ -55,13 +55,20 @@ int main()
     return 3;
   }
 
-  // Sculpt foundation must operate on the real Legacy GP stroke without changing
-  // stroke topology. Smooth is Blender's BKE GP algorithm.
-  if (!project_grease_gp_sculpt_at(handle, 0, 0.0f, 0.0f, 64.0f, 0.25f)) {
-    std::fprintf(stderr, "legacy GP sculpt smooth failed: %s\n",
-                 project_grease_gp_last_error(handle));
-    project_grease_gp_destroy(handle);
-    return 4;
+  // Sculpt runs through the native tool session (the only sculpt path): Blender's Smooth brush
+  // must accept a BEGIN sample on the real Legacy GP stroke, and END must close the gesture.
+  {
+    const float sample[4] = {0.0f, 0.0f, 1.0f, 0.0f};
+    const float params[4] = {0.0f /* PG_TOOL_P_BRUSH smooth */, 64.0f /* radius */, 0.25f /* strength */,
+                             1.0f /* px per unit */};
+    const int begun = project_grease_gp_tool_samples(handle, 1 /* PG_TOOL_SCULPT */, sample, 1, 0 /* BEGIN */, params, 4);
+    const int ended = project_grease_gp_tool_samples(handle, 1, nullptr, 0, 2 /* END */, nullptr, 0);
+    if ((begun & 1) == 0 || (ended & 1) == 0) {
+      std::fprintf(stderr, "legacy GP tool-session sculpt smooth failed (begin=%d end=%d): %s\n", begun, ended,
+                   project_grease_gp_last_error(handle));
+      project_grease_gp_destroy(handle);
+      return 4;
+    }
   }
 
   if (!project_grease_gp_soft_erase_at(handle, 0.0f, 0.0f, 64.0f, 0.25f)) {

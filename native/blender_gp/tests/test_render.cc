@@ -1137,6 +1137,37 @@ static void test_open_stroke_cache_after_reset()
   present(d);
 }
 
+extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
+/* The open-stroke cache is keyed on the data revision: an edit mid-gesture (revision moved) must not
+ * be hidden behind the cached texture of the old drawing. */
+static void test_open_stroke_cache_revision()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  tGPspoint pts[3] = {};
+  for (int i = 0; i < 3; i++) { pts[i].m_xy[0] = 20.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  project_grease_android_present_set_data_revision(1000);
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* stores at revision 1000 */
+  long s0 = 0, r0 = 0, s1 = 0, r1 = 0, s2 = 0, r2 = 0;
+  project_grease_android_present_cache_stats(&s0, &r0);
+  d.gpd->runtime.sbuffer_used = 3;
+  present(d); /* same revision: reused */
+  project_grease_android_present_cache_stats(&s1, &r1);
+  CHECK(r1 == r0 + 1 && s1 == s0);
+  project_grease_android_present_set_data_revision(1001); /* an edit */
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* not reused: redrawn and stored again */
+  project_grease_android_present_cache_stats(&s2, &r2);
+  CHECK(r2 == r1 && s2 == s1 + 1);
+  d.gpd->runtime.sbuffer_used = 0;
+  d.gpd->runtime.sbuffer = nullptr;
+  present(d);
+}
+
 extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
 /* Annotations draw over the document in their layer colour. */
 static void test_annotations()
@@ -1219,6 +1250,7 @@ int main()
   test_batch21_guide();
   test_open_stroke_cache();
   test_open_stroke_cache_after_reset();
+  test_open_stroke_cache_revision();
   test_annotations();
   project_grease_android_present_reset();
   if (failures) {

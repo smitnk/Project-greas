@@ -886,14 +886,15 @@ struct OpenStrokeCache {
   GLuint tex=0, program=0, vbo=0;
   int w=0, h=0, frame=0;
   const bGPdata* gpd=nullptr;
+  uint64_t rev=0; // data revision the texture was taken at: any edit since then invalidates it
   float scale=0, ox=0, oy=0, rot=0;
   bool valid=false;
 } g_open_cache;
 long g_open_cache_stores=0, g_open_cache_reuses=0;
 static long g_engine_reuses=0;
-bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
+bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
   const OpenStrokeCache& c=g_open_cache;
-  return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y&&c.rot==g_view_rotation;
+  return c.valid&&c.gpd==gpd&&c.rev==rev&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y&&c.rot==g_view_rotation;
 }
 bool open_cache_program(){
   OpenStrokeCache& c=g_open_cache;
@@ -915,7 +916,7 @@ bool open_cache_program(){
 // sample of the open stroke redrew the whole frame.
 void clear_gl_errors(){for(int i=0;i<16&&glGetError()!=GL_NO_ERROR;i++){}}
 // Copies the framebuffer as drawn so far (canvas and committed strokes) into the cache texture.
-void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
+void open_cache_store(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
   OpenStrokeCache& c=g_open_cache;
   clear_gl_errors();
   if(!c.tex)glGenTextures(1,&c.tex);
@@ -930,7 +931,7 @@ void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
   glBindTexture(GL_TEXTURE_2D,0);
   c.valid=glGetError()==GL_NO_ERROR;
   if(c.valid)g_open_cache_stores++;
-  c.gpd=gpd;c.frame=frame;c.w=c.valid?w:0;c.h=c.valid?h:0; /* a failed store must reallocate next time */ c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;c.rot=g_view_rotation;
+  c.gpd=gpd;c.rev=rev;c.frame=frame;c.w=c.valid?w:0;c.h=c.valid?h:0; /* a failed store must reallocate next time */ c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;c.rot=g_view_rotation;
 }
 bool open_cache_draw(){
   OpenStrokeCache& c=g_open_cache;
@@ -1314,7 +1315,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   update_canvas_map(w,h);
   const bool drawing=!g_export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
   if(!drawing)g_open_cache.valid=false;
-  const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h)&&open_cache_draw();
+  const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h,g_engine_revision)&&open_cache_draw();
   if(reuse)g_open_cache_reuses++;
   if(!reuse){
   std::vector<Vertex> canvas;
@@ -1450,7 +1451,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     g_active_mask_tex=0;
     if(g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
   }
-  if(drawing)open_cache_store(gpd,frame_number,w,h);
+  if(drawing)open_cache_store(gpd,frame_number,w,h,g_engine_revision);
   }
   // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
   // active guide in the theme's guide colour, over the canvas, not exported.

@@ -907,10 +907,47 @@ int main()
     CHECK(b.fx_count(1) == PG_FX_MAX_STACK && b.fx_add(1, PG_FX_PIXEL) == -1);
   }
 
+  /* --- Impl::layer and GP_LAYER_ACTIVE agree after delete_layer, undo and redo --- */
+  {
+    CHECK(b.history_reset());
+    for (int i = 0; i < 16 && b.layer_count() > 1; i++) CHECK(b.delete_layer(b.layer_count() - 1));
+    CHECK(b.create_layer("P") && b.create_layer("Q") && b.create_frame(1));
+    CHECK(b.layer_count() == 3);
+    auto agree = [&]() {
+      int flagged = 0, at = -1, i = 0;
+      for (bGPDlayer *l = static_cast<bGPDlayer *>(b.document_data()->layers.first); l; l = l->next, ++i) {
+        if (l->flag & GP_LAYER_ACTIVE) { flagged++; at = i; }
+      }
+      return flagged == 1 && at == b.active_layer_index() &&
+             b.active_layer_data() == BLI_findlink(&b.document_data()->layers, at);
+    };
+    CHECK(b.select_layer(2) && agree());
+    CHECK(b.delete_layer(0) && agree());               /* another layer deleted: the active one stays */
+    CHECK(b.active_layer_index() == 1 && std::strcmp(b.active_layer_data()->info, "Q") == 0);
+    CHECK(b.history_record());
+    CHECK(b.select_layer(0) && agree() && std::strcmp(b.active_layer_data()->info, "P") == 0);
+    CHECK(b.history_record());
+    CHECK(b.delete_layer(0) && agree());               /* the active layer deleted: flag moves, no stale pointer */
+    CHECK(b.history_record());
+    CHECK(b.history_undo() && agree());
+    CHECK(b.history_undo() && agree());
+    CHECK(b.history_redo() && agree());
+    CHECK(b.duplicate_layer(0) && agree());
+    CHECK(b.move_layer(0, b.layer_count() - 1) && agree());
+  }
+
   /* --- reset clears every stack --- */
+  const uint64_t gen_before_reset = b.document_generation();
   CHECK(b.reset_document());
   CHECK(b.layer_count() == 1 && b.modifier_count(0) == 0);
   CHECK(b.fx_count(0) == 0);
+  /* revisions are monotonic across a reset and across backends: they never fall back to a seed */
+  CHECK(b.document_generation() > gen_before_reset);
+  {
+    Backend other;
+    CHECK(other.document_generation() > b.document_generation());
+  }
+  CHECK(b.document_generation() < Backend().document_generation());
 
   b.shutdown();
   if (failures) {

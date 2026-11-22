@@ -20,6 +20,7 @@
 
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_bridge.h"
+#include "project_grease_handle_registry.h"
 
 namespace {
 
@@ -69,11 +70,10 @@ struct FillCapture {
   ~FillCapture() { project_grease_gp_fill_snapshot_free(snap); }
 };
 // Fill workers: a renderer may be destroyed only when no nativeFillCompute is running on it, and a
-// compute is refused for a renderer that is gone (g_live_renderers), so the worker never touches a
+// compute is refused for a renderer that is gone (its registry token is dead), so the worker never touches a
 // freed Renderer.
 static std::mutex g_fill_mutex;
 static std::condition_variable g_fill_cv;
-static std::set<const void *> g_live_renderers;
 struct Renderer {
   EGLDisplay display = EGL_NO_DISPLAY;
   EGLContext context = EGL_NO_CONTEXT;
@@ -83,6 +83,7 @@ struct Renderer {
   int height = 0;
   int gles_version = 0;
   GPHandle gp_handle = nullptr;
+  jlong gp_token = 0; // registry token Kotlin holds for gp_handle (see project_grease_handle_registry.h)
   bool gp_connected = false;
   std::vector<ProjectGreaseGPPoint> preview_points;
   float preview_thickness = 1.0f;
@@ -106,14 +107,15 @@ struct Renderer {
 
 };
 
+/* Handles are registry tokens, never pointers: a freed, reused or foreign token resolves to nullptr. */
 Renderer *from_handle(jlong value)
 {
-  return reinterpret_cast<Renderer *>(static_cast<uintptr_t>(value));
+  return pg_handles::Registry<Renderer>::get(value);
 }
 
 jlong to_handle(Renderer *renderer)
 {
-  return static_cast<jlong>(reinterpret_cast<uintptr_t>(renderer));
+  return pg_handles::Registry<Renderer>::add(renderer);
 }
 
 bool choose_config(Renderer &renderer, EGLConfig &config, bool es3)
@@ -210,9 +212,11 @@ void disconnect_blender_gp(Renderer &renderer)
     return;
   }
 
+  pg_handles::Registry<ProjectGreaseGPHandle>::remove(renderer.gp_token);
   project_grease_gp_destroy(renderer.gp_handle);
 
   renderer.gp_handle = nullptr;
+  renderer.gp_token = 0;
   renderer.gp_connected = false;
 }
 
@@ -231,6 +235,7 @@ bool connect_blender_gp(Renderer &renderer)
   }
 
   renderer.gp_handle = handle;
+  renderer.gp_token = pg_handles::Registry<ProjectGreaseGPHandle>::add(handle);
   renderer.gp_connected = true;
   return true;
 }
@@ -402,10 +407,6 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeCreateEglRenderer(
     delete renderer;
     return 0;
   }
-  {
-    std::lock_guard<std::mutex> lock(g_fill_mutex);
-    g_live_renderers.insert(renderer);
-  }
   return to_handle(renderer);
 }
 
@@ -413,15 +414,12 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeDestroyEglRenderer(
     JNIEnv *, jobject, jlong handle)
 {
-  Renderer *renderer = from_handle(handle);
-  if (!renderer) {
-    return;
-  }
-
+  Renderer *renderer = nullptr;
   {
     // no new fill compute from now on; wait for the one in flight (it stores into this Renderer)
     std::unique_lock<std::mutex> lock(g_fill_mutex);
-    if (g_live_renderers.erase(renderer) == 0) return; // unknown / already destroyed handle
+    renderer = pg_handles::Registry<Renderer>::remove(handle);
+    if (!renderer) return; // unknown / already destroyed handle
     g_fill_cv.wait(lock, [&] { return renderer->fill_computing == 0; });
   }
   destroy_renderer(*renderer);
@@ -450,7 +448,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeGetGpHandle(
 {
   Renderer *renderer = from_handle(handle);
   if (!renderer || !renderer->gp_connected) return 0;
-  return static_cast<jlong>(reinterpret_cast<uintptr_t>(renderer->gp_handle));
+  return renderer->gp_token;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -821,13 +819,14 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillCaptureEglRenderer
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillComputeEglRenderer(JNIEnv *, jobject, jlong handle)
 {
-  Renderer *renderer = from_handle(handle);
+  Renderer *renderer = nullptr;
   std::unique_ptr<FillCapture> cap;
   int leak = 0, dilate = 0;
   {
     std::lock_guard<std::mutex> lock(g_fill_mutex);
-    // a destroyed (or never created) renderer is not dereferenced
-    if (!renderer || g_live_renderers.find(renderer) == g_live_renderers.end()) return JNI_FALSE;
+    // a destroyed (or never created) renderer is not dereferenced; looked up under the lock destroy holds
+    renderer = from_handle(handle);
+    if (!renderer) return JNI_FALSE;
     cap = std::move(renderer->fill_capture);
     leak = renderer->fill_leak; dilate = renderer->fill_dilate;
     if (!cap) return JNI_FALSE;
@@ -853,9 +852,9 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillComputeEglRenderer
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeFillDiscardEglRenderer(JNIEnv *, jobject, jlong handle)
 {
-  Renderer *renderer = from_handle(handle);
   std::lock_guard<std::mutex> lock(g_fill_mutex);
-  if (!renderer || g_live_renderers.find(renderer) == g_live_renderers.end()) return;
+  Renderer *renderer = from_handle(handle);
+  if (!renderer) return;
   renderer->fill_capture.reset();
   project_grease_gp_fill_job_free(renderer->fill_job);
   renderer->fill_job = nullptr;

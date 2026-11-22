@@ -26,10 +26,12 @@
 #include "DNA_shader_fx_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
+#include "ED_gpencil_legacy.h"
 #include "MEM_guardedalloc.h"
 
 #include "gles/pg_gpu_gles.h"
 
+extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
@@ -418,6 +420,87 @@ int main()
     project_grease_android_present_set_reference(nullptr, 0, 0);
   }
 
+  /* A9: the stroke being drawn looks like the stroke it is committed as (hardness, flat caps, aspect),
+   * because both go through Blender's gpencil engine. */
+  {
+    const int N = 12;
+    const float hard = 0.3f, ax = 1.0f, ay = 0.5f;
+    const short thick = 14;
+    auto fill_pts = [&](float (*xy)[2]) { for (int i = 0; i < N; i++) { xy[i][0] = 30.0f + 12.0f * i; xy[i][1] = 60.0f + 6.0f * std::sin(i * 0.6f); } };
+    float xy[N][2];
+    fill_pts(xy);
+    auto frame_pixels = [&](bGPdata *d, uint64_t rev) {
+      project_grease_android_present_set_canvas_size(W, H);
+      project_grease_android_present_set_data_revision(rev);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glViewport(0, 0, W, H);
+      CHECK(project_grease_android_present_gp_document(d, 1) == 1);
+      std::vector<unsigned char> out((size_t)W * H * 4);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, out.data());
+      return out;
+    };
+    auto diff = [&](const std::vector<unsigned char> &a, const std::vector<unsigned char> &b, int tol, int *max_d) {
+      int n = 0; *max_d = 0;
+      for (size_t i = 0; i < a.size(); i++) {
+        const int dd = std::abs((int)a[i] - (int)b[i]);
+        *max_d = std::max(*max_d, dd);
+        if (dd > tol && (i & 3) != 3) n++;
+      }
+      return n;
+    };
+    auto new_doc = [&]() {
+      bGPdata *d = make_doc();
+      bGPDlayer *l = BKE_gpencil_layer_addnew(d, "live", true, false);
+      BKE_gpencil_frame_addnew(l, 1);
+      return d;
+    };
+    auto commit = [&](bGPdata *d, float hardness, short caps) {
+      bGPDlayer *l = BKE_gpencil_layer_active_get(d);
+      bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+      bGPDstroke *g = add_stroke(d, f, 0, xy, N, thick, false);
+      g->hardeness = hardness;
+      g->aspect_ratio[0] = ax;
+      g->aspect_ratio[1] = ay;
+      g->caps[0] = g->caps[1] = caps;
+      BKE_gpencil_stroke_geometry_update(d, g);
+    };
+    /* live: the same points in the paint buffer + the brush style */
+    bGPdata *live = new_doc();
+    tGPspoint *sb = static_cast<tGPspoint *>(MEM_callocN(sizeof(tGPspoint) * N, "sbuffer"));
+    for (int i = 0; i < N; i++) { sb[i].m_xy[0] = xy[i][0]; sb[i].m_xy[1] = xy[i][1]; sb[i].pressure = 1.0f; sb[i].strength = 1.0f; }
+    live->runtime.sbuffer = sb;
+    live->runtime.sbuffer_size = N;
+    live->runtime.sbuffer_used = N;
+    project_grease_android_present_set_live_stroke(1, thick, hard, ax, ay, 1, 0);
+    const std::vector<unsigned char> img_live = frame_pixels(live, 900);
+    /* committed with that style */
+    project_grease_android_present_set_live_stroke(0, 1, 1, 1, 1, 0, 0);
+    bGPdata *done = new_doc();
+    commit(done, hard, GP_STROKE_CAP_FLAT);
+    const std::vector<unsigned char> img_done = frame_pixels(done, 901);
+    /* the same stroke with the defaults (hardness 1, round caps, aspect 1) must look different */
+    bGPdata *plain = new_doc();
+    commit(plain, 1.0f, GP_STROKE_CAP_ROUND);
+    bGPDstroke *pg = static_cast<bGPDstroke *>(static_cast<bGPDframe *>(BKE_gpencil_layer_active_get(plain)->frames.first)->strokes.first);
+    pg->aspect_ratio[0] = pg->aspect_ratio[1] = 1.0f;
+    BKE_gpencil_stroke_geometry_update(plain, pg);
+    const std::vector<unsigned char> img_plain = frame_pixels(plain, 902);
+    int dark = 0;
+    for (size_t i = 0; i < img_done.size(); i += 4) dark += img_done[i] < 120;
+    std::printf("  committed stroke dark pixels: %d\n", dark);
+    CHECK(dark > 100);
+    int md = 0;
+    const int n_live = diff(img_live, img_done, 6, &md);
+    int md2 = 0;
+    const int n_plain = diff(img_plain, img_done, 20, &md2);
+    std::printf("  live vs committed: %d channel values differ > 6 (max %d); defaults vs committed: %d differ > 20\n", n_live, md, n_plain);
+    CHECK(n_live == 0);
+    CHECK(n_plain > 50); /* the style is visible: the test cannot pass with a style-less preview */
+    live->runtime.sbuffer_used = 0;
+    MEM_freeN(sb);
+    live->runtime.sbuffer = nullptr;
+  }
+
   /* Editor surface recreated (log 18): the presenter resets the engine while the old context is
    * current, a new context replaces it, and the next frame still draws the strokes. */
   {
@@ -443,6 +526,45 @@ int main()
     CHECK(pg_gp_engine_draw(gpd, 1, &v2) == 1);
     read_result();
     dump("line after a new context", 100, 30);
+    CHECK(near4(px(100, 30), 0, 0, 0, 1));
+  }
+
+  /* A8: a reset frees the engine's context object (it used to leak one per reset). */
+  {
+    CHECK(pg_gp_engine_live_contexts() == 1); /* the one the draws above made */
+    for (int i = 0; i < 3; i++) {
+      pg_gp_engine_reset();
+      CHECK(pg_gp_engine_live_contexts() == 0);
+      gpd->runtime.gpencil_cache = nullptr;
+      gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
+      PGGpEngineView rv = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
+      rv.weight_group = -1;
+      rv.vertex_opacity = 1.0f;
+      CHECK(pg_gp_engine_draw(gpd, 1, &rv) == 1);
+      CHECK(pg_gp_engine_live_contexts() == 1);
+    }
+  }
+
+  /* A6: pooled render targets of a size no longer drawn are freed; the next draw works. */
+  {
+    PGGpEngineView big = {W + 40, H + 40, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
+    big.weight_group = -1;
+    big.vertex_opacity = 1.0f;
+    CHECK(pg_gp_engine_draw(gpd, 1, &big) == 1); /* an "export size" frame */
+    PGGpEngineView small = {W, H, 0.0f, 0.0f, 1.0f, {paper[0], paper[1], paper[2], paper[3]}, 1};
+    small.weight_group = -1;
+    small.vertex_opacity = 1.0f;
+    CHECK(pg_gp_engine_draw(gpd, 1, &small) == 1); /* back to the screen size: the big ones are unused */
+    const int freed = pg_gp_engine_trim_pool(0);
+    std::printf("  trim after export size: %d textures freed\n", freed);
+    CHECK(freed > 0);
+    CHECK(pg_gp_engine_trim_pool(0) == 0); /* what the last draw used stays */
+    CHECK(pg_gp_engine_draw(gpd, 1, &small) == 1);
+    read_result();
+    CHECK(near4(px(100, 30), 0, 0, 0, 1)); /* still draws the line */
+    CHECK(pg_gp_engine_trim_pool(1) > 0); /* background: everything */
+    CHECK(pg_gp_engine_draw(gpd, 1, &small) == 1);
+    read_result();
     CHECK(near4(px(100, 30), 0, 0, 0, 1));
   }
 

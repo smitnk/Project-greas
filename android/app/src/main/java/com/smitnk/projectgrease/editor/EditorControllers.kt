@@ -2297,6 +2297,9 @@ class EditorController {
         native.setOnionSkin(false, onion.beforeFrames, onion.afterFrames, onion.opacity)
         try { return block() } finally { native.setOnionSkin(true, onion.beforeFrames, onion.afterFrames, onion.opacity) }
     }
+    /** A6: gives the engine's unused pooled render targets back (export-sized ones after an export; all in the background). */
+    fun trimGpuMemory(all:Boolean):Int = if (rendererHandle == 0L) 0 else GPNative.nativeTrimMemoryEglRenderer(rendererHandle, all)
+
     private fun renderPlan(plan: List<FrameSequenceExport.Item>, original: Int, transparent: Boolean, sink:(FrameSequenceExport.Item, IntArray) -> Unit): Boolean {
         val s = projectSettings
         var ok = true
@@ -2322,6 +2325,7 @@ class EditorController {
             // an encoder or sink failure must not leave the native document on another frame
             if (!animation.setFrame(original)) restoreLayerAndFrame(native.activeLayer().takeIf { it >= 0 } ?: selectedLayer, original)
             render()
+            trimGpuMemory(false)
         }
         com.smitnk.projectgrease.CrashLog.event("EXPORT frames done ok=$ok: back on frame $original, ${native.strokeCount()} strokes, ${native.layerCount()} layers, " +
             GPNative.nativeLastFrameInfo(rendererHandle))
@@ -2898,6 +2902,7 @@ class EditorController {
         if (rendererHandle == 0L) return null
         val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent)
         render()
+        trimGpuMemory(false)
         return px?.takeIf { it.size == document.canvasWidth * document.canvasHeight }
     }
 
@@ -4254,14 +4259,16 @@ class EditorController {
         val c = ProjectGreaseSelect.frameSelect(frame, mode)
         val ok = native.applyEditCommand(c.id, c.args)
         animation.refreshKeyInfo()
-        if (ok) { document.markDirty(); render() }
+        // GP_FRAME_SELECT is in the undo snapshots: a selection left out of the history is rolled back
+        // (or brought back) by the next undo / redo, so it is a step like Blender's action.select ops
+        if (ok) { history.markEdit(); document.markDirty(); render() }
         return ok
     }
     fun deselectTimelineFrames():Boolean {
         val c = ProjectGreaseSelect.frameDeselect()
         val ok = native.applyEditCommand(c.id, c.args)
         animation.refreshKeyInfo()
-        if (ok) render()
+        if (ok) { history.markEdit(); document.markDirty(); render() }
         return ok
     }
 

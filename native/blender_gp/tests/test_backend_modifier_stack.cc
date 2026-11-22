@@ -936,6 +936,65 @@ int main()
     CHECK(b.move_layer(0, b.layer_count() - 1) && agree());
   }
 
+  /* --- A5: frame selection and the material Self Overlap (GP_MATERIAL_DISABLE_STENCIL) flag live in the
+   * snapshots: an undo / redo restores them, so the UI must record a step after changing them --- */
+  {
+    CHECK(b.reset_document());
+    CHECK(b.create_layer("S") && b.create_frame(1));
+    add_line(b, 10.0f, 10.0f);
+    CHECK(b.history_reset());
+    auto first_frame = [&]() { return static_cast<bGPDframe *>(b.active_layer_data()->frames.first); };
+    auto style = [&]() { return b.document_data()->mat[0]->gp_style; };
+    first_frame()->flag |= GP_FRAME_SELECT;
+    style()->flag |= GP_MATERIAL_DISABLE_STENCIL;
+    CHECK(b.history_record());
+    first_frame()->flag &= ~GP_FRAME_SELECT;
+    style()->flag &= ~GP_MATERIAL_DISABLE_STENCIL;
+    CHECK(b.history_record());
+    CHECK(b.history_undo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK((style()->flag & GP_MATERIAL_DISABLE_STENCIL) != 0);
+    CHECK(b.history_redo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) == 0);
+    CHECK((style()->flag & GP_MATERIAL_DISABLE_STENCIL) == 0);
+    /* a change that was never recorded is dropped by the next undo (what the UI fix prevents) */
+    first_frame()->flag |= GP_FRAME_SELECT;
+    CHECK(b.history_undo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) != 0); /* the undo target had it set (step 1) */
+    CHECK(b.history_redo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) == 0); /* unrecorded selection lost on redo */
+  }
+
+  /* --- A2: the evaluated-frame cache never serves an entry of a replaced document, even when the new
+   * layer / frame sit at the freed addresses of the old ones (the key also holds doc_generation) --- */
+  {
+    bool reused = false;
+    for (int round = 0; round < 40; round++) {
+      CHECK(b.reset_document());
+      CHECK(b.create_layer("E") && b.create_frame(1));
+      add_line(b, 100.0f, 100.0f);
+      CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);
+      set_offset(b, 0, 0, 25.0f);
+      bGPDlayer *lay = b.active_layer_data();
+      bGPDframe *fr = static_cast<bGPDframe *>(lay->frames.first);
+      const float old_first = first_x(b.evaluated_frame(lay, fr, 1));
+      const uint64_t gen = b.document_generation();
+      CHECK(b.reset_document());
+      CHECK(b.document_generation() > gen);
+      CHECK(b.create_layer("E") && b.create_frame(1));
+      add_line(b, 300.0f, 100.0f); /* different content, same shape of document */
+      CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);
+      set_offset(b, 0, 0, 25.0f);
+      bGPDlayer *lay2 = b.active_layer_data();
+      bGPDframe *fr2 = static_cast<bGPDframe *>(lay2->frames.first);
+      reused |= (lay2 == lay && fr2 == fr);
+      const float new_first = first_x(b.evaluated_frame(lay2, fr2, 1));
+      CHECK(b.modifier_eval_count() >= 1);                      /* evaluated (a reset restarts the count) */
+      CHECK(std::fabs(new_first - old_first - 200.0f) < 1e-3f); /* and from the new strokes */
+    }
+    std::printf("  eval cache: addresses reused across a reset: %s\n", reused ? "yes" : "no (allocator did not reuse)");
+  }
+
   /* --- reset clears every stack --- */
   const uint64_t gen_before_reset = b.document_generation();
   CHECK(b.reset_document());

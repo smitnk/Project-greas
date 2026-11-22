@@ -178,11 +178,13 @@ struct PGContext {
 };
 
 PGContext *G_pg = nullptr;
+int G_pg_live = 0; /* PGContext objects allocated and not yet freed (pg_gp_engine_live_contexts) */
 
 PGContext &pgc()
 {
   if (G_pg == nullptr) {
     G_pg = new PGContext();
+    G_pg_live++;
   }
   return *G_pg;
 }
@@ -1495,10 +1497,31 @@ static void pg_gp_engine_reset_impl(bool context_alive)
       if (c->vedata_lists[i]) MEM_freeN(c->vedata_lists[i]);
     }
     delete c;
+    G_pg_live--;
   }
 }
 
+int pg_gp_engine_live_contexts(void) { return G_pg_live; }
+
 void pg_gp_engine_reset(void) { pg_gp_engine_reset_impl(true); }
+
+/* DRW_texture_pool_reset: pool textures the last draw did not query (a viewport / export size no
+ * longer shown) are freed; all = every one (between draws nothing holds them: the engine queries
+ * them again at the next draw). Needs the context current. Returns the number of textures freed. */
+int pg_gp_engine_trim_pool(int all)
+{
+  if (G_pg == nullptr) return 0;
+  std::vector<PGPoolTex> &pool = G_pg->pool;
+  int freed = 0;
+  for (size_t i = pool.size(); i-- > 0;) {
+    if (all || !pool[i].used) {
+      GPU_texture_free(pool[i].tex);
+      pool.erase(pool.begin() + (ptrdiff_t)i);
+      freed++;
+    }
+  }
+  return freed;
+}
 
 /* The EGL context is gone (EGL_CONTEXT_LOST / GPU reset): forget every GL name without touching GL. */
 void pg_gp_engine_context_lost(void) { pg_gp_engine_reset_impl(false); }

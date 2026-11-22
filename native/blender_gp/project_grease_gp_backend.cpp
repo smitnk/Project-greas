@@ -63,6 +63,7 @@ extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
+extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
 extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 typedef const bGPDframe *(*ProjectGreaseGPFrameEvaluator)(void *user, const bGPDlayer *layer,
@@ -3802,6 +3803,12 @@ bool Backend::render_with_gpu_context()
   project_grease_android_set_fx_provider(fx_provider_trampoline, this);
   // The engine's batch cache is rebuilt when either revision moves (edits, undo / redo, stacks).
   project_grease_android_present_set_data_revision(g_gp_data_revision * 0x9E3779B97F4A7C15ull ^ impl_->stack_revision);
+  // The open stroke is drawn with the style it will be committed with (A9, commit_stroke above).
+  {
+    const StrokeStyle &st = impl_->stroke_style;
+    project_grease_android_present_set_live_stroke(impl_->stroke_open ? 1 : 0, std::max(1.0f, st.thickness),
+                                                   st.hardness, st.aspect_x, st.aspect_y, st.caps, st.material_index);
+  }
   bool presented =
       project_grease_android_present_gp_document(impl_->gpd, scene_frame()) != 0;
   // Annotations are drawn over every layer, in screen-space thickness.

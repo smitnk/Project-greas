@@ -29,6 +29,11 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void *project_grease_android_present_config_new();
+extern "C" void project_grease_android_present_config_free(void *cfg);
+extern "C" void project_grease_android_present_config_bind(void *cfg);
+extern "C" void project_grease_android_present_set_view_rotation(float radians);
+extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy, float *rotation);
 extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
@@ -1138,6 +1143,36 @@ static void test_open_stroke_cache_after_reset()
 }
 
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
+/* A4: the presenter's settings belong to the renderer that set them. An export (export mode, canvas size)
+ * on one config must not show in another config's canvas map, and freeing the bound one falls back. */
+static void test_per_renderer_config()
+{
+  void *a = project_grease_android_present_config_new();
+  void *b = project_grease_android_present_config_new();
+  float sc, ox, oy, rot;
+  project_grease_android_present_config_bind(a);
+  project_grease_android_present_set_view_rotation(0.5f);
+  project_grease_android_present_set_canvas_size(640, 480);
+  project_grease_android_present_config_bind(b);
+  project_grease_android_present_set_export_mode(1);
+  project_grease_android_present_set_canvas_size(320, 200);
+  project_grease_android_present_get_canvas_map(320, 200, &sc, &ox, &oy, &rot);
+  CHECK(rot == 0.0f);                 /* b exports: no rotation */
+  CHECK(std::fabs(sc - 1.0f) > 1e-4f); /* b's 320x200 canvas fitted into 320x200 at 92% */
+  const float sc_b = sc;
+  project_grease_android_present_config_bind(a);
+  project_grease_android_present_get_canvas_map(320, 200, &sc, &ox, &oy, &rot);
+  CHECK(rot == 0.5f);                 /* a is not exporting and keeps its rotation */
+  CHECK(sc != sc_b);                  /* a's canvas is 640x480 */
+  project_grease_android_present_config_bind(b);
+  project_grease_android_present_set_export_mode(0);
+  project_grease_android_present_config_free(a); /* a is not the bound one: b stays bound */
+  project_grease_android_present_get_canvas_map(320, 200, &sc, &ox, &oy, &rot);
+  CHECK(sc == sc_b);
+  project_grease_android_present_config_free(b); /* the bound one: falls back to the default config */
+  project_grease_android_present_config_bind(nullptr);
+}
+
 /* The open-stroke cache is keyed on the data revision: an edit mid-gesture (revision moved) must not
  * be hidden behind the cached texture of the old drawing. */
 static void test_open_stroke_cache_revision()
@@ -1251,6 +1286,7 @@ int main()
   test_open_stroke_cache();
   test_open_stroke_cache_after_reset();
   test_open_stroke_cache_revision();
+  test_per_renderer_config();
   test_annotations();
   project_grease_android_present_reset();
   if (failures) {

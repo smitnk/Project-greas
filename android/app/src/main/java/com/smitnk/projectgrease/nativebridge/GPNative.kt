@@ -22,6 +22,8 @@ object GPNative {
     external fun nativeDetachSurface(handle: Long)
     external fun nativeRenderEgl(handle: Long): Boolean
     external fun nativeEglReady(handle: Long): Boolean
+    /** Frees GL render targets nothing uses (all = every pooled one); returns how many. */
+    external fun nativeTrimMemoryEglRenderer(handle: Long, all: Boolean): Int
     external fun nativeGlesVersion(handle: Long): Int
     external fun nativeBlenderGpConnected(handle: Long): Boolean
     external fun nativeCancelStrokeEglRenderer(handle: Long): Boolean

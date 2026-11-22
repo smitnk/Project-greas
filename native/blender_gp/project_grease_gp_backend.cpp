@@ -1566,6 +1566,13 @@ bool Backend::set_multiframe_editing(bool enabled)
     impl_->last_error = "document is not created";
     return false;
   }
+  /* Only a real change of the switch selects / deselects the frames: the editor re-pushes its value
+   * after every undo / redo / load, and doing the frame loop then wiped the timeline selection
+   * (GP_FRAME_SELECT, restored by the snapshot) every time. */
+  const bool was = (impl_->gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
+  if (was == enabled) {
+    return true;
+  }
   if (enabled) {
     impl_->gpd->flag |= GP_DATA_STROKE_MULTIEDIT;
     if (impl_->layer) {

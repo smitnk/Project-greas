@@ -480,6 +480,8 @@ void draw_holdout(const std::vector<Vertex>&v,float alpha,bool overlap){
   const float c[4]={bg[0],bg[1],bg[2],a};
   const bool on=overlap?false:coverage_begin();draw_vertices(v,c);if(!overlap)coverage_end(on);
 }
+struct LiveStyle{int active=0;float thickness=1.0f,hardness=1.0f,ax=1.0f,ay=1.0f;int caps=0,material=0;} g_live;
+void* g_live_batch_cache=nullptr;
 bool engine_draw_live(const bGPdata *gpd, int w, int h);
 void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
 {
@@ -490,12 +492,14 @@ void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
   const tGPspoint *points = static_cast<const tGPspoint *>(gpd->runtime.sbuffer);
   std::vector<Vertex> stroke;
   std::vector<PGOutlinePoint> pts;
+  /* the brush size the stroke is committed with (as append_stroke_outline draws it), not 1 unit */
+  const float tk = g_live.active ? g_live.thickness : thickness;
   pts.reserve(static_cast<size_t>(gpd->runtime.sbuffer_used));
   for (int i = 0; i < gpd->runtime.sbuffer_used; ++i) {
     pts.push_back(outline_point(points[i].m_xy[0], points[i].m_xy[1],
-                                thickness * std::max(points[i].pressure, 0.01f)));
+                                tk * std::max(points[i].pressure, 0.01f)));
   }
-  append_outline(stroke, pts, 0, w, h);
+  append_outline(stroke, pts, g_live.active && g_live.caps == 1 ? (PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END) : 0, w, h);
   // g_cfg->stroke_color carries the material colour and opacity only; the point strength of the open
   // buffer is applied here once, as draw_frame() applies it to committed strokes.
   float strength = 0.0f;
@@ -1312,8 +1316,6 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
  * hardness falloff, round-cap mask, aspect) over the frame as drawn so far. The engine's own cache is
  * not involved (a second GpencilBatchCache), so the committed drawing's cache stays valid. */
 namespace {
-struct LiveStyle{int active=0;float thickness=1.0f,hardness=1.0f,ax=1.0f,ay=1.0f;int caps=0,material=0;} g_live;
-void* g_live_batch_cache=nullptr;
 bool engine_draw_live(const bGPdata*gpd,int w,int h){
   if(!g_live.active||!gpd||gpd->runtime.sbuffer_used<=0||!gpd->runtime.sbuffer||!engine_wanted(gpd))return false;
   const tGPspoint*src=static_cast<const tGPspoint*>(gpd->runtime.sbuffer);

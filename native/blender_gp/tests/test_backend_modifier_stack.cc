@@ -957,6 +957,14 @@ int main()
     CHECK(b.history_redo());
     CHECK((first_frame()->flag & GP_FRAME_SELECT) == 0);
     CHECK((style()->flag & GP_MATERIAL_DISABLE_STENCIL) == 0);
+    /* the editor re-pushes its multiframe switch after undo / redo: an unchanged value must not touch the
+     * restored frame selection (it used to deselect every frame) */
+    CHECK(b.history_undo() && (first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK(b.set_multiframe_editing(false));
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK(b.set_multiframe_editing(true) && (first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK(b.set_multiframe_editing(false) && (first_frame()->flag & GP_FRAME_SELECT) == 0); /* a real change */
+    CHECK(b.history_redo());
     /* a change that was never recorded is dropped by the next undo (what the UI fix prevents) */
     first_frame()->flag |= GP_FRAME_SELECT;
     CHECK(b.history_undo());

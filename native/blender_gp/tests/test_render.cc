@@ -1107,6 +1107,31 @@ static void test_open_stroke_cache()
   CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
 }
 
+extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
+/* A9 (presenter fallback, GLES < 3.2): the open stroke has the brush size it is committed with and its
+ * flat caps, not 1 unit round. */
+static void test_live_stroke_style()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 0);
+  add_layer(d, "A");
+  tGPspoint pts[2] = {};
+  for (int i = 0; i < 2; i++) { pts[i].m_xy[0] = 40.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  d.gpd->runtime.sbuffer_used = 2;
+  project_grease_android_present_set_live_stroke(0, 1, 1, 1, 1, 0, 0);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(70, 80), 245, 245, 245)); /* 1 unit: 8 units off the line is paper */
+  project_grease_android_present_set_live_stroke(1, 20, 1, 1, 1, 1, 0);
+  d.gpd->runtime.sbuffer_used = 1; d.gpd->runtime.sbuffer_used = 2; /* new frame of the gesture */
+  present(d);
+  CHECK(!near_rgb(pixel_at_canvas(70, 80), 245, 245, 245)); /* brush size 20: covered */
+  CHECK(near_rgb(pixel_at_canvas(34, 88), 245, 245, 245));  /* flat start cap: nothing behind the first point */
+  project_grease_android_present_set_live_stroke(0, 1, 1, 1, 1, 0, 0);
+  d.gpd->runtime.sbuffer_used = 0;
+  d.gpd->runtime.sbuffer = nullptr;
+}
+
 extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 /* Regression (emulator sweep: cache stored once per run): present_reset() runs when the window and
  * its GL context go away; the cache must not keep its texture id into the next context, or every
@@ -1287,6 +1312,7 @@ int main()
   test_open_stroke_cache_after_reset();
   test_open_stroke_cache_revision();
   test_per_renderer_config();
+  test_live_stroke_style();
   test_annotations();
   project_grease_android_present_reset();
   if (failures) {

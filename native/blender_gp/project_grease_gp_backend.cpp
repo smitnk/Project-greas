@@ -2048,7 +2048,7 @@ bool Backend::erase(float x, float y, float radius, int mode, float draw_strengt
       continue;
     }
     changed |= legacy_gp_eraser::process_stroke(
-        impl_->gpd, impl_->frame, stroke, x, y, static_cast<int>(radius), settings);
+        impl_->gpd, impl_->frame, stroke, x, y, radius, settings);
     stroke = next;
   }
 

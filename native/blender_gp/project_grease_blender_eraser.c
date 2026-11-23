@@ -35,15 +35,15 @@ typedef struct PGRect {
 } PGRect;
 
 /* gpencil_point_to_xy() with the identity projection. */
-static void pg_point_to_xy(const bGPDspoint *pt, int r_co[2])
+static void pg_point_to_xy(const bGPDspoint *pt, float scale, int r_co[2])
 {
   if (!isfinite(pt->x) || !isfinite(pt->y) || fabsf(pt->x) > 1.0e6f || fabsf(pt->y) > 1.0e6f) {
     r_co[0] = PG_V2D_IS_CLIPPED;
     r_co[1] = PG_V2D_IS_CLIPPED;
     return;
   }
-  r_co[0] = (int)lroundf(pt->x);
-  r_co[1] = (int)lroundf(pt->y);
+  r_co[0] = (int)lroundf(pt->x * scale);
+  r_co[1] = (int)lroundf(pt->y * scale);
 }
 
 static bool pg_clipped(const int co[2])
@@ -154,7 +154,10 @@ int pg_eraser_dostroke(bGPDstroke *gps, const PGEraserParams *p)
   }
 
   const int radius = p->radius;
-  const float *mval = p->mval;
+  /* Blender projects points to region pixels (gpencil_point_to_xy) before the int-pixel radius
+   * test; px_per_unit is that view scale, so a sub-unit radius at high zoom still hits. */
+  const float scale = p->px_per_unit > 0.0f ? p->px_per_unit : 1.0f;
+  const float mval[2] = {p->mval[0] * scale, p->mval[1] * scale};
 
   /* gpencil_stroke_doeraser(): rect is rectangle of eraser */
   PGRect rect;
@@ -172,7 +175,7 @@ int pg_eraser_dostroke(bGPDstroke *gps, const PGEraserParams *p)
     return PG_ERASER_FREE;
   }
   if (gps->totpoints == 1) {
-    pg_point_to_xy(gps->points, pc1);
+    pg_point_to_xy(gps->points, scale, pc1);
     /* Do bound-box check first. */
     if (!pg_clipped(pc1) && pg_rect_isect_pt(&rect, pc1)) {
       /* only check if point is inside */
@@ -187,7 +190,7 @@ int pg_eraser_dostroke(bGPDstroke *gps, const PGEraserParams *p)
     for (i = 0; (i + 1) < gps->totpoints; i++) {
       /* get points to work with */
       pt1 = gps->points + i;
-      pg_point_to_xy(pt1, pc1);
+      pg_point_to_xy(pt1, scale, pc1);
 
       /* Do bound-box check first. */
       if (!pg_clipped(pc1) && pg_rect_isect_pt(&rect, pc1)) {
@@ -229,11 +232,11 @@ int pg_eraser_dostroke(bGPDstroke *gps, const PGEraserParams *p)
     float inf1 = 0.0f;
     float inf2 = 0.0f;
 
-    pg_point_to_xy(pt1, pc1);
-    pg_point_to_xy(pt2, pc2);
+    pg_point_to_xy(pt1, scale, pc1);
+    pg_point_to_xy(pt2, scale, pc2);
 
     if (pt0) {
-      pg_point_to_xy(pt0, pc0);
+      pg_point_to_xy(pt0, scale, pc0);
     }
     else {
       /* avoid null values */

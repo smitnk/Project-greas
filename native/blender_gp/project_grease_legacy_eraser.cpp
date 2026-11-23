@@ -20,16 +20,19 @@
 namespace project_grease::legacy_gp_eraser {
 
 bool process_stroke(bGPdata *gpd, bGPDframe *frame, bGPDstroke *stroke,
-                    float x, float y, int radius, const Settings &settings)
+                    float x, float y, float radius, const Settings &settings)
 {
-  if (!gpd || !frame || !stroke || radius <= 0 || !std::isfinite(x) || !std::isfinite(y)) {
+  if (!gpd || !frame || !stroke || !(radius > 0.0f) || !std::isfinite(x) || !std::isfinite(y)) {
     return false;
   }
 
   PGEraserParams params{};
   params.mval[0] = x;
   params.mval[1] = y;
-  params.radius = radius;
+  // Blender's eraser radius is whole pixels (brush size >= 1). At zooms where the radius is under one
+  // canvas unit, test in a finer pixel grid (1/radius px per unit) instead of truncating it to 0.
+  params.px_per_unit = radius < 1.0f ? 1.0f / radius : 1.0f;
+  params.radius = radius < 1.0f ? 1 : static_cast<int>(radius);
   params.mode = settings.stroke_eraser ? PG_ERASER_STROKE :
                 (settings.soft ? PG_ERASER_SOFT : PG_ERASER_HARD);
   params.draw_strength = settings.draw_strength;

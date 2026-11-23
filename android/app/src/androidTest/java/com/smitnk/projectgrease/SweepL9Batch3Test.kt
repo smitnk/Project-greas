@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.smitnk.projectgrease.editor.EraserMode
 import com.smitnk.projectgrease.editor.GreaseTool
 import com.smitnk.projectgrease.editor.ProjectGreaseSelect as S
+import com.smitnk.projectgrease.ui.VideoImportState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -95,9 +96,8 @@ class SweepL9Batch3Test : SweepBase() {
 
     /** B8: the trim screen's state after the file is read. */
     @Test fun videoImportStates() {
-        val s = com.smitnk.projectgrease.ui.VideoImportState
-        assertEquals(s.READY, s.afterLoad(120))
-        assertEquals(s.UNREADABLE, s.afterLoad(0))
+        assertEquals(VideoImportState.READY, VideoImportState.afterLoad(120))
+        assertEquals(VideoImportState.UNREADABLE, VideoImportState.afterLoad(0))
     }
 
     /** B9: overlapping expected-busy sections keep the watchdog quiet until the last one ends. */

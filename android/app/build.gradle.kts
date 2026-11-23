@@ -32,6 +32,10 @@ android {
         }
     }
 
+    // lintVitalAnalyzeRelease crashed in lifecycle's NullSafeMutableLiveData detector (built against
+    // another Kotlin analysis API: IncompatibleClassChangeError), failing assembleRelease in CI.
+    lint { disable += "NullSafeMutableLiveData" }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -124,7 +124,7 @@ class RotoscopeLoader(private val context: Context) {
                 exportRetriever?.release(); it.setDataSource(context, Uri.parse(uri)); exportRetriever = it; exportUri = uri
             }
             val bmp = (if (Build.VERSION.SDK_INT >= 28) runCatching { mr.getFrameAtIndex(n - 1) }.getOrNull() else null)
-                ?: mr.getFrameAtTime((n - 1) * 1_000_000L / movieFps(mr), MediaMetadataRetriever.OPTION_CLOSEST) ?: return null
+                ?: mr.getFrameAtTime((n - 1) * 1_000_000L / movieFps(mr), MediaMetadataRetriever.OPTION_CLOSEST) ?: return@runCatching null
             val s = minOf(1f, 1280f / maxOf(bmp.width, bmp.height))
             val b = if (s < 1f) Bitmap.createScaledBitmap(bmp, maxOf(1, (bmp.width * s).toInt()), maxOf(1, (bmp.height * s).toInt()), true) else bmp
             val px = IntArray(b.width * b.height); b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)

@@ -206,6 +206,16 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_l7_tests.sh
 
+      - name: Blender 3.6.23 binary vs PG modifiers (real headless Blender run, evaluated stroke points compared)
+        run: |
+          set -euo pipefail
+          mkdir -p build/qa
+          # build/blender-3.6.23 is the official Linux x64 build, fetched by the Line Art reference step
+          build/blender-3.6.23/blender -b --factory-startup --python-exit-code 1 \
+            --python tools/modifier_reference/blender_modifier_reference.py -- build/qa/blender_modifier_run.txt
+          L7_BLENDER_RUN=build/qa/blender_modifier_run.txt bash tools/run_native_l7_tests.sh | tee build/qa/blender_modifier_compare.txt
+          grep BLENDER-RUN build/qa/blender_modifier_compare.txt
+
       - name: Cache glslang 14.3.0 (GLES shader validator)
         id: glslang-cache
         uses: actions/cache@v4
@@ -458,6 +468,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p android/device-shots && cp build/qa/* android/device-shots/ 2>/dev/null || true
           tar czf qa-results.tgz -C android device-shots 2>/dev/null || exit 0
           gh release view qa-results >/dev/null 2>&1 || gh release create qa-results --title "Emulator QA results" --notes "Latest emulator test run" --prerelease --target "$GITHUB_SHA"
           gh release upload qa-results qa-results.tgz --clobber

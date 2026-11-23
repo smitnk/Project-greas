@@ -112,7 +112,9 @@ class SweepL9ScenarioTest : SweepBase() {
         assertTrue("erased gap around x 600", erased.flatMap { points(it) }.none { kotlin.math.abs(it[0] - 600.0) < 10.0 })
 
         // ---- lasso the left half of the frame 5 line, move it down 50 ----
-        onUi { controller.animation.setFrame(5); controller.selectTool(GreaseTool.LASSO) }
+        // the app's select mode defaults to Stroke, where Blender's lasso selects every point of a
+        // stroke it touches (all 23); the left half alone needs Point mode, as in Blender
+        onUi { controller.animation.setFrame(5); controller.setSelectMode(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODE_POINT); controller.selectTool(GreaseTool.LASSO) }
         drag(150f to 450f, 590f to 450f, 590f to 550f, 150f to 550f, 150f to 450f)
         val before5 = points(frameStrokes("Ink", 5).single())
         val left = before5.count { it[0] < 590.0 }

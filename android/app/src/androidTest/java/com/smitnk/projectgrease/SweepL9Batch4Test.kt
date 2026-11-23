@@ -27,7 +27,8 @@ class SweepL9Batch4Test : SweepBase() {
     }
 
     /** n fingers down together, moved by [move] (finger, fraction), then up. */
-    private fun fingers(start: List<Pair<Float, Float>>, steps: Int = 0, move: (Int, Float) -> Pair<Float, Float> = { i, _ -> start[i] }) {
+    // idle = false during playback: the playing timeline keeps Compose busy, and sendPointerSync is synchronous anyway
+    private fun fingers(start: List<Pair<Float, Float>>, steps: Int = 0, idle: Boolean = true, move: (Int, Float) -> Pair<Float, Float> = { i, _ -> start[i] }) {
         val down = SystemClock.uptimeMillis()
         instrumentation.sendPointerSync(multi(MotionEvent.ACTION_DOWN, down, start.take(1)))
         for (k in 2..start.size)
@@ -41,14 +42,15 @@ class SweepL9Batch4Test : SweepBase() {
         for (k in start.size downTo 2)
             instrumentation.sendPointerSync(multi(MotionEvent.ACTION_POINTER_UP or ((k - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), down, cur.take(k)))
         instrumentation.sendPointerSync(multi(MotionEvent.ACTION_UP, down, cur.take(1)))
-        rule.waitForIdle()
+        if (idle) rule.waitForIdle() else instrumentation.waitForIdleSync()
     }
 
-    /** Two fingers 200 px apart around canvas (600, 400), spread to 1.5x. */
-    private fun pinchOut() {
-        val a = screen(500f, 400f); val b = screen(700f, 400f)
+    /** Two fingers around canvas (600, 400) spread to 2x: far enough that the second finger counts as moving
+     *  (a still second finger while drawing is a resting contact until it moves 24 dp). */
+    private fun pinchOut(idle: Boolean = true) {
+        val a = screen(400f, 400f); val b = screen(800f, 400f)
         val cx = (a.first + b.first) / 2; val r0 = (b.first - a.first) / 2
-        fingers(listOf(a, b), steps = 20) { i, t -> val r = r0 * (1f + 0.5f * t); (if (i == 0) cx - r else cx + r) to a.second }
+        fingers(listOf(a, b), steps = 20, idle = idle) { i, t -> val r = r0 * (1f + t); (if (i == 0) cx - r else cx + r) to a.second }
     }
 
     // ---- B1: one test per gesture type ----
@@ -78,7 +80,7 @@ class SweepL9Batch4Test : SweepBase() {
     @Test fun gesturePinchZooms() {
         val z0 = onUi { controller.view.zoom }
         pinchOut()
-        assertEquals(z0 * 1.5f, onUi { controller.view.zoom }, 0.15f)
+        assertEquals(z0 * 2f, onUi { controller.view.zoom }, 0.25f)
         assertEquals("a pinch draws nothing", 0, strokes().size)
     }
 
@@ -192,12 +194,13 @@ class SweepL9Batch4Test : SweepBase() {
     @Test fun pinchDuringPlaybackKeepsPlaying() {
         startPlayback()
         val z0 = onUi { controller.view.zoom }
-        pinchOut()
+        pinchOut(idle = false)
         assertTrue("still playing after the pinch", onUi { controller.animation.playing })
         assertNotEquals("zoom changed", z0, onUi { controller.view.zoom }, 0.1f)
         onUi { controller.selectTool(GreaseTool.PAN) }
         val px = onUi { controller.view.panX }
-        drag(400f to 300f, 600f to 300f)
+        val a = screen(400f, 300f)
+        fingers(listOf(a), steps = 12, idle = false) { _, t -> a.first + 200f * t to a.second }
         assertTrue("still playing after the pan", onUi { controller.animation.playing })
         assertNotEquals("pan changed", px, onUi { controller.view.panX }, 10f)
         onUi { controller.stopPlayback() }

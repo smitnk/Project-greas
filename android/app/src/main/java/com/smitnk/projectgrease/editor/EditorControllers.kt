@@ -980,7 +980,7 @@ class EditorController {
         // Sculpt is one thing: the Sculpt tool is Sculpt mode (mode follows the tool), and any other tool leaves it.
         // The Draw brush is not an Edit-mode tool: picking it goes back to Draw mode.
         if (!tools.select(tool)) return false
-        if (!tool.allowedIn(baseMode)) setMode(GreaseMode.DRAW)
+        if (!tool.allowedIn(mode)) setMode(GreaseMode.DRAW)
         // Re-render so the edit overlay follows the tool at once.
         render()
         return true

@@ -306,12 +306,14 @@ internal class ProjectGreaseDrawingSurfaceView(
                     com.smitnk.projectgrease.editor.GreaseTool.MIRROR -> {
                         // Click-select + transform drag = one undo step (Blender's tweak transform).
                         val kept = keepsSelection(start)
+                        // the batch opens before the click-select: the select records an edit of its own, which would be a second undo step
+                        controller.history.beginBatch()
                         if (kept || controller.hitTestAndSelectStroke(start.first, start.second)) {
                             beginTransformEdit(start, kept)
                             val t = transformFor(controller.tools.activeTool, start)
                             if (t != null) { gesture = t; controller.render() }
                             else controller.history.endBatch() // nothing to turn / scale about: close the batch it opened
-                        }
+                        } else controller.history.endBatch() // nothing hit
                     }
                     com.smitnk.projectgrease.editor.GreaseTool.PAN -> {
                         gesture = Gesture.Pan(event.x, event.y)
@@ -683,13 +685,12 @@ internal class ProjectGreaseDrawingSurfaceView(
     }
 
     /**
-     * Something was hit: only now does the transform key a held frame and open its one-undo-step batch
+     * Something was hit: only now does the transform key a held frame (inside the one-undo-step batch opened before the pick)
      * (a tap on empty canvas used to key the frame and leave a batch open). A new key is a copy of the
      * held drawing, so a stroke picked before it is picked again on the key.
      */
     private fun beginTransformEdit(start: Pair<Float, Float>, selectionKept: Boolean) {
         val keyed = controller.autokeyHeld()
-        controller.history.beginBatch()
         if (keyed && !selectionKept) controller.hitTestAndSelectStroke(start.first, start.second)
     }
 

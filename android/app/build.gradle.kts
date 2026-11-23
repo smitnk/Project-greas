@@ -12,8 +12,8 @@ android {
         applicationId = "com.smitnk.projectgrease"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.053 beta"
+        versionCode = 31
+        versionName = "0.054 beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

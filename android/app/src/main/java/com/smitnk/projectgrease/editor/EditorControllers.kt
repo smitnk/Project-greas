@@ -160,8 +160,11 @@ class HistoryController(private val native: NativeEditorBridge) {
      */
     var captureExtras: () -> Any? = { null }
     var restoreExtras: (Any?) -> Unit = {}
-    private val undoExtras = ArrayList<Any?>()
-    private val redoExtras = ArrayList<Any?>()
+    /** One list of steps (the Kotlin-side extras of each native step); [at] is the step the document is on, so undo / redo cannot desync two stacks. */
+    private val steps = ArrayList<Any?>()
+    private var at = -1
+    internal val stepCount: Int get() = steps.size
+    internal val stepIndex: Int get() = at
 
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
     /** Called whenever an edit is recorded (or queued in a batch): keeps the document's dirty flag exact. */
@@ -175,8 +178,9 @@ class HistoryController(private val native: NativeEditorBridge) {
     private fun record(): Boolean {
         val ok = native.historyRecord()
         if (ok) {
-            undoExtras += captureExtras(); redoExtras.clear()
-            while (undoExtras.size > MAX_STEPS) undoExtras.removeAt(0)
+            while (steps.size > at + 1) steps.removeAt(steps.size - 1) // a new step drops the redo tail
+            steps += captureExtras(); at = steps.size - 1
+            while (steps.size > MAX_STEPS) { steps.removeAt(0); at-- }
         }
         return ok
     }
@@ -206,19 +210,19 @@ class HistoryController(private val native: NativeEditorBridge) {
     }
     fun reset(): Boolean {
         batchDepth = 0; batchChanged = false
-        undoExtras.clear(); redoExtras.clear()
-        return native.historyReset().also { if (it) undoExtras += captureExtras() }
+        steps.clear(); at = -1
+        return native.historyReset().also { if (it) { steps += captureExtras(); at = 0 } }
     }
     fun undo(): Boolean {
         endAllBatches() // an open batch would record the post-undo state as a new step and clear redo
         if (!native.historyUndo()) return false
-        if (undoExtras.size >= 2) { redoExtras += undoExtras.removeAt(undoExtras.size - 1); restoreExtras(undoExtras.last()) }
+        if (at > 0) restoreExtras(steps[--at])
         return true
     }
     fun redo(): Boolean {
         endAllBatches()
         if (!native.historyRedo()) return false
-        if (redoExtras.isNotEmpty()) { val e = redoExtras.removeAt(redoExtras.size - 1); undoExtras += e; restoreExtras(e) }
+        if (at < steps.size - 1) restoreExtras(steps[++at])
         return true
     }
     companion object { const val MAX_STEPS = 64 } // kMaxHistory of the native history
@@ -817,7 +821,7 @@ class EditorController {
     val selection=SelectionController(native)
     init {
         // a stroke index belongs to one frame of one layer: leaving it drops the selection
-        animation.onFrameChanged = { selection.clear() }
+        animation.onFrameChanged = { selection.clear(); cancelFrameBoundSessions() }
         // the playback tick never moves the native frame while a stroke / session / batch is open
         animation.canAdvance = { !gestureActive() }
     }
@@ -1572,6 +1576,7 @@ class EditorController {
     /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
     fun curveHandles(): List<Pair<Float, Float>> = curve.handles()
     val curveEditing: Boolean get() = curve.phase == CurveSession.Phase.EDIT
+    val polylineEditing: Boolean get() = polyline.isActive
     /** Commits the edited curve (gpencil_primitive.c confirm). */
     fun confirmCurve(): Boolean {
         val anchors = curve.anchors()
@@ -1990,6 +1995,13 @@ class EditorController {
             onCancelGestures?.invoke()
         }.onFailure { com.smitnk.projectgrease.CrashLog.event("cancelActiveGestures failed: ${it.javaClass.simpleName}: ${it.message}") }
     }
+    /** The playhead moved: handles of an open gizmo drag / shape / curve / polyline belong to the old frame. A warp is reverted natively (resyncWarp). */
+    private fun cancelFrameBoundSessions() {
+        gizmoRelease()
+        if (shapeEdit.isActive) cancelShape()
+        if (curve.isActive) cancelCurve()
+        if (polyline.isActive) { polyline.reset(); polylineAwaitingPress = false; showPrimitivePreview(null); onOverlayChanged?.invoke(); render() }
+    }
     private fun cancelPendingStrokeState() {
         pendingShapePoints.clear(); pendingShapeTool = null; pendingLassoPoints.clear()
     }
@@ -2287,9 +2299,7 @@ class EditorController {
         val original = animation.currentFrame
         GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
         // shortcut: export renders on the UI thread (GL context) and the screen waits; a progress view needs an async encoder
-        com.smitnk.projectgrease.CrashLog.expectedBusy = "export"
-        try { return withoutOnion { renderPlan(plan, original, transparent, sink) } }
-        finally { com.smitnk.projectgrease.CrashLog.expectedBusy = null }
+        return com.smitnk.projectgrease.CrashLog.expectBusy { withoutOnion { renderPlan(plan, original, transparent, sink) } }
     }
     /** Onion skin is a viewport overlay (Blender never renders it): off while exporting, then restored. */
     private fun <T> withoutOnion(block: () -> T): T {
@@ -3582,63 +3592,33 @@ class EditorController {
         eraseGestureSamples += path.size / 3; eraseGestureHits += hits
         for (v in path) eraseGesturePath.add(v)
         if (!live) {
-            val ok = addFillEraseMark(path, hits)
-            // the live marks were a preview: cut the fills for real and drop the marks
-            if (eraseGestureMarks > 0 && native.handle != 0L) {
-                var left = eraseGestureMarks
-                while (left > 0 && native.strokeCount() > 0) {
-                    val last = native.strokeCount() - 1
-                    if (native.strokeInfo(last)?.let { native.materialName(it[0].toInt()) } != HOLDOUT_MATERIAL) break
-                    native.deleteStroke(last); left--
-                }
+            // the live preview was overlay only (never in the document): drop it, cut the fills for real
+            if ((eraseGestureMarks > 0 || eraseGestureHits > 0) && native.handle != 0L) {
+                if (rendererHandle != 0L) GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
                 val cut = erasePathFromFills(eraseGesturePath.toFloatArray())
-                com.smitnk.projectgrease.CrashLog.event("ERASE fills: cut from the fills=$cut, preview marks removed ${eraseGestureMarks - left}")
+                com.smitnk.projectgrease.CrashLog.event("ERASE fills: cut from the fills=$cut")
                 if (cut) { eraseGestureChanged = true; eraseGestureFilled = true }
             }
             eraseGestureMarks = 0; eraseGesturePath.clear()
             if (path.isNotEmpty()) com.smitnk.projectgrease.CrashLog.event("ERASE gesture: $eraseGestureSamples samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $eraseGestureHits")
             eraseGestureSamples = 0; eraseGestureHits = 0
-            return ok || eraseGestureFilled
+            return eraseGestureFilled
         }
-        return addFillEraseMark(path, hits)
+        return showFillEraseMark(hits)
     }
-    /** A live preview mark (holdout stroke) along this piece of the eraser path, when it touched a fill. */
-    private fun addFillEraseMark(path: FloatArray, hits: Int): Boolean {
-        if (native.handle == 0L || hits <= 0 || path.size < 3) return false
-        val slot = holdoutMaterialSlot() ?: return false
-        val radius = (0 until path.size / 3).maxOf { path[3 * it + 2] }
-        // samples closer than a tenth of the eraser are dropped: repeated points (finger held still)
-        // give zero-length segments, and such a holdout stroke wiped the whole drawing
-        val keep = ArrayList<Int>()
-        for (i in 0 until path.size / 3) {
-            val l = keep.lastOrNull()
-            if (l == null || Math.hypot((path[3 * i] - path[3 * l]).toDouble(), (path[3 * i + 1] - path[3 * l + 1]).toDouble()) >= radius * 0.1) keep.add(i)
+    /** Live preview along the eraser path once it touched a fill: renderer overlay only, never a document stroke (no save / undo / export). */
+    private fun showFillEraseMark(hits: Int): Boolean {
+        if (rendererHandle == 0L || (hits <= 0 && eraseGestureMarks == 0) || eraseGesturePath.size < 3) return false
+        val n = eraseGesturePath.size / 3
+        val packed = FloatArray(n * 3)
+        var radius = 0f
+        for (i in 0 until n) {
+            packed[3 * i] = eraseGesturePath[3 * i]; packed[3 * i + 1] = eraseGesturePath[3 * i + 1]; packed[3 * i + 2] = 1f
+            radius = maxOf(radius, eraseGesturePath[3 * i + 2])
         }
-        val n = keep.size
-        val pts = FloatArray(n * 6)
-        val colors = FloatArray(n * 4)
-        for ((k, i) in keep.withIndex()) {
-            pts[6 * k] = path[3 * i]; pts[6 * k + 1] = path[3 * i + 1]
-            pts[6 * k + 3] = (path[3 * i + 2] / radius).coerceIn(0.05f, 1f) // pressure: the eraser size here
-            pts[6 * k + 4] = 1f
-        }
-        val info = floatArrayOf(slot.toFloat(), radius * 2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f)
-        val ok = native.addStroke(pts, n, info, colors)
-        if (!ok) com.smitnk.projectgrease.CrashLog.event("ERASE fills: holdout stroke of $n points, width ${(radius * 2).toInt()} failed")
-        if (ok) { eraseGestureChanged = true; eraseGestureMarks++; document.markDirty(); render() }
-        return ok
-    }
-    /** The eraser's material: line shown, holdout (GP_MATERIAL_IS_STROKE_HOLDOUT), found or made. */
-    private fun holdoutMaterialSlot():Int? {
-        val count = native.materialCount()
-        for (i in 0 until count) if (native.materialName(i) == HOLDOUT_MATERIAL) return i
-        if (!native.createMaterial()) return null
-        native.setMaterialColors(count, floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 0f, 0f, 1f))
-        native.setMaterialStrokeEnabled(count, true)
-        native.setMaterialFillEnabled(count, false)
-        native.setMaterialName(count, HOLDOUT_MATERIAL)
-        setMaterialOptions(count, strokeHoldout = true, fillHoldout = false, selfOverlap = false)
-        return count
+        if (!GPNative.nativeSetPreviewStrokeEglRenderer(rendererHandle, packed, radius * 2f)) return false
+        eraseGestureMarks++; render()
+        return true
     }
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {

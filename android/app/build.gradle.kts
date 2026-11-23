@@ -12,20 +12,23 @@ android {
         applicationId = "com.smitnk.projectgrease"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.056 beta"
+        versionCode = 34
+        versionName = "0.057 beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // arm64-v8a + armeabi-v7a (32-bit budget / Android Go phones) for devices, x86_64 for the emulator job (instrumented device-bugfix tests).
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
     }
 
     buildTypes {
+        // debug: arm64-v8a for phones, x86_64 for the emulator job (instrumented tests)
+        debug {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
+        // release (phones): arm64-v8a only; the packager strips the .so files, the unstripped
+        // ones are kept by CI (android-shell.yml) for crash symbolication
         release {
             isMinifyEnabled = false
+            ndk { abiFilters += listOf("arm64-v8a") }
         }
     }
 

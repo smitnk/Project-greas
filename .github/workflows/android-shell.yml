@@ -404,6 +404,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Release APK for phones: arm64-v8a only, -O3 + ThinLTO (CMakeLists.txt), stripped .so files.
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Verify every native method has its JNI symbol in the release APK
+        run: |
+          NM="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          python3 tools/verify_jni_symbols.py android/app/build/outputs/apk/release/app-release-unsigned.apk "$NM"
+
+      - name: Record APK sizes
+        run: |
+          mkdir -p build/qa
+          for f in android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/release/app-release-unsigned.apk; do
+            echo "$(stat -c %s "$f") $(basename "$f") $(unzip -l "$f" | grep -o 'lib/[^ ]*\.so' | tr '\n' ' ')"
+          done | tee build/qa/apk-sizes.txt
+
+      # The APKs carry stripped .so files: keep the unstripped ones to symbolicate native crashes.
+      - name: Upload unstripped native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-grease-native-symbols
+          path: android/app/build/intermediates/merged_native_libs/**/*.so
+          if-no-files-found: error
+          retention-days: 30
+
       # Anyone can download the newest build from the repository's Releases ("Latest build").
       - name: Publish APK to the Latest build release
         if: github.ref == 'refs/heads/feature/l8-implementation'

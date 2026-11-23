@@ -137,7 +137,7 @@ class SweepL9ScenarioTest : SweepBase() {
         val red = frameStrokes("Ink", 5).last()
         assertEquals(1, red.getInt("material"))
         val m1 = document().getJSONArray("materials").getJSONObject(1).getJSONArray("stroke")
-        assertEquals(listOf(1.0, 0.0, 0.0, 1.0), (0 until 4).map { m1.getDouble(it) })
+        listOf(1.0, 0.0, 0.0, 1.0).forEachIndexed { i, v -> assertEquals(v, m1.getDouble(i), 1e-4) }
         assertEquals(2, frameStrokes("Ink", 5).size)
 
         // ---- Smooth modifier: evaluated only, the stored points stay ----

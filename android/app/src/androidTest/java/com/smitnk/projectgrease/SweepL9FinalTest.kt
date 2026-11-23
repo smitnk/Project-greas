@@ -62,7 +62,8 @@ class SweepL9FinalTest : SweepBase() {
         assertEquals(original, allPoints())
     }
 
-    /** B5 (content): the eraser preview over a fill leaves every stroke's points as they were, and the lift keeps the original strokes' points. */
+    /** B5 (content): the live preview leaves the document alone; the lift cuts the eraser path out of the fill
+     *  ("Erase fills like paint", v0.029/v0.038) as a hole, the outline keeps its corners, and undo restores the original points. */
     @Test fun eraserPreviewLeavesStrokeContentAlone() {
         onUi { controller.selectTool(GreaseTool.RECTANGLE) }
         drag(300f to 200f, 900f to 500f)
@@ -79,11 +80,15 @@ class SweepL9FinalTest : SweepBase() {
             val t = i / 20f
             instrumentation.sendPointerSync(event(MotionEvent.ACTION_MOVE, down, a.first + (b.first - a.first) * t, a.second))
         }
-        assertEquals("every stroke's points are unchanged while the finger is down", before, allPoints())
+        // no document read while the finger is down: saving would end (and commit) the gesture
         instrumentation.sendPointerSync(event(MotionEvent.ACTION_UP, down, b.first, b.second))
         rule.waitForIdle()
-        // the path crosses only the fill's interior, so the outline points are all still there, unmoved
-        val after = allPoints()
-        before.forEach { assertTrue("an original stroke survived the erase with the same points", it in after) }
+        val after = allPoints().flatten()
+        assertNotEquals("the fill was cut", before, allPoints())
+        assertTrue("a hole loop lies along the eraser path", after.any { it[0] in 450.0..750.0 && it[1] in 300.0..400.0 })
+        for ((cx, cy) in listOf(300.0 to 200.0, 900.0 to 200.0, 900.0 to 500.0, 300.0 to 500.0))
+            assertTrue("the outline keeps the corner $cx,$cy", after.any { kotlin.math.abs(it[0] - cx) <= 3.0 && kotlin.math.abs(it[1] - cy) <= 3.0 })
+        assertTrue(onUi { controller.undo() })
+        assertEquals("undo restores the rectangle's points exactly", before, allPoints())
     }
 }

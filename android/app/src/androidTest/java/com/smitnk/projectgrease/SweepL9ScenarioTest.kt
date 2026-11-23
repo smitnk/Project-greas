@@ -74,7 +74,7 @@ class SweepL9ScenarioTest : SweepBase() {
         assertEquals("each layer add is one undo step", s0 + 2, step())
 
         // ---- keys on frames 1, 5, 9 of Ink ----
-        assertTrue(onUi { controller.selectLayer(layerIndex("Ink")) && controller.animation.setFrame(1) })
+        run { val li = layerIndex("Ink"); assertTrue(onUi { controller.selectLayer(li) && controller.animation.setFrame(1) }) }
         line(300f)
         val afterFirstLine = signature(); val sFirstLine = step()
         assertEquals(1, frameStrokes("Ink", 1).size)
@@ -88,13 +88,13 @@ class SweepL9ScenarioTest : SweepBase() {
         assertEquals("frame 5 line at y 500", 500.0, y5.average(), 3.0)
 
         // ---- Color layer gets its own key on frame 1 ----
-        assertTrue(onUi { controller.selectLayer(layerIndex("Color")) && controller.animation.setFrame(1) })
+        run { val li = layerIndex("Color"); assertTrue(onUi { controller.selectLayer(li) && controller.animation.setFrame(1) }) }
         onUi { controller.brushes.setSize(30f) }; line(200f, 300f, 900f); onUi { controller.brushes.setSize(8f) }
         assertEquals(1, frameStrokes("Color", 1).size)
         assertEquals("Ink frame 1 untouched by the Color stroke", 1, frameStrokes("Ink", 1).size)
 
         // ---- onion skin on frame 5 ----
-        assertTrue(onUi { controller.selectLayer(layerIndex("Ink")) && controller.animation.setFrame(5) })
+        run { val li = layerIndex("Ink"); assertTrue(onUi { controller.selectLayer(li) && controller.animation.setFrame(5) }) }
         assertTrue(onUi { controller.setOnionSkin(true, 1, 1, 0.8f) })
         assertTrue(onUi { controller.onion.enabled })
         assertInk(shot("scenario_onion"), 600f, 300f, "onion ghost of frame 1")

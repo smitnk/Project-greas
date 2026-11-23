@@ -88,7 +88,7 @@ const char* kind_body(int kind) {
       return
         "void main(){ vec2 uv0 = gl_FragCoord.xy / uSize; vec2 pixel_size = 1.0 / uSize; vec2 ofs = offset * pixel_size;\n"
         "  fragColor = vec4(0.0); fragRevealage = vec4(0.0); float weight_accum = 0.0;\n"
-        "  for (int i = -32; i <= 32; i++) { if (i < -sampCount || i > sampCount) continue;\n"
+        "  for (int k = 0; k <= 64; k++) { int i = k - sampCount; if (i > sampCount) break;\n"
         "    float x = float(i) / float(sampCount); float weight = gaussian_weight(x); weight_accum += weight;\n"
         "    vec2 uv = uv0 + ofs * x;\n"
         "    fragColor.rgb += texture2D(colorBuf, uv).rgb * weight; fragRevealage.rgb += texture2D(revealBuf, uv).rgb * weight; }\n"
@@ -117,7 +117,7 @@ const char* kind_body(int kind) {
       return
         "void main(){ vec2 uv0 = gl_FragCoord.xy / uSize; vec2 pixel_size = 1.0 / uSize; vec2 ofs = offset * pixel_size;\n"
         "  fragColor = vec4(0.0); fragRevealage = vec4(0.0); float weight_accum = 0.0;\n"
-        "  for (int i = -32; i <= 32; i++) { if (i < -sampCount || i > sampCount) continue;\n"
+        "  for (int k = 0; k <= 64; k++) { int i = k - sampCount; if (i > sampCount) break;\n"
         "    float x = float(i) / float(sampCount); float weight = gaussian_weight(x); weight_accum += weight;\n"
         "    vec2 uv = uv0 + ofs * x; vec3 col = texture2D(colorBuf, uv).rgb; vec3 rev = texture2D(revealBuf, uv).rgb;\n"
         "    if (threshold.x > -1.0) {\n"
@@ -136,7 +136,7 @@ const char* kind_body(int kind) {
       return
         "void main(){ vec2 uv0 = gl_FragCoord.xy / uSize;\n"
         "  fragRevealage = vec4(0.0); fragColor = vec4(0.0); float weight_accum = 0.0;\n"
-        "  for (int i = -32; i <= 32; i++) { if (i < -sampCount || i > sampCount) continue;\n"
+        "  for (int k = 0; k <= 64; k++) { int i = k - sampCount; if (i > sampCount) break;\n"
         "    float x = float(i) / float(sampCount); float weight = gaussian_weight(x); weight_accum += weight;\n"
         "    vec2 uv = uv0 + blurDir * x + uvOffset; vec3 col = texture2D(revealBuf, uv).rgb;\n"
         "    if (any(notEqual(vec2(0.0), floor(uv)))) col = vec3(0.0);\n"
@@ -151,7 +151,7 @@ const char* kind_body(int kind) {
       return
         "void main(){ vec2 uv0 = gl_FragCoord.xy / uSize;\n"
         "  fragRevealage = vec4(0.0); fragColor = vec4(0.0); float weight_accum = 0.0;\n"
-        "  for (int i = -32; i <= 32; i++) { if (i < -sampCount || i > sampCount) continue;\n"
+        "  for (int k = 0; k <= 64; k++) { int i = k - sampCount; if (i > sampCount) break;\n"
         "    float x = float(i) / float(sampCount); float weight = gaussian_weight(x); weight_accum += weight;\n"
         "    vec2 uv = uv0.x * uvRotX + uv0.y * uvRotY + uvOffset; uv += blurDir * x;\n"
         "    float wave_time = dot(uv, waveDir.xy); uv += sin(wave_time + wavePhase) * waveOffset;\n"
@@ -563,3 +563,5 @@ static void fx_reset_impl(bool alive) {
 extern "C" void project_grease_fx_reset() { fx_reset_impl(true); }
 /* EGL context lost: forget every GL name without calling GL. */
 extern "C" void project_grease_fx_context_lost() { fx_reset_impl(false); }
+/* Fragment body of a pass kind, for the host test that keeps the sample loops bounded. */
+extern "C" const char* project_grease_fx_pass_body(int kind) { return kind_body(kind); }

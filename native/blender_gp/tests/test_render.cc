@@ -43,6 +43,7 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, i
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
 extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
 extern "C" int project_grease_fx_begin_layer(int, int);
+extern "C" const char *project_grease_fx_pass_body(int kind);
 extern "C" int project_grease_fx_end_layer(const PGFxEntry *, int, const PGFxView *, unsigned char *, unsigned char *);
 extern "C" void project_grease_android_set_fx_provider(
     int (*)(void *, const bGPDlayer *, const PGFxEntry **), void *);
@@ -489,6 +490,18 @@ static void test_queries_per_frame()
   const Rgba cross = pixel_at_canvas(100, 60), single = pixel_at_canvas(60, 45);
   CHECK(cross.r < 200);
   CHECK(std::abs(cross.r - single.r) <= 3);
+}
+
+/* The 4-13 s frames of the blur, glow, rim and shadow tests on the emulator: the sample loops ran
+ * all 65 iterations (i = -32..32, 'continue' outside sampCount), so a 2-sample blur paid 65
+ * texture-fetch iterations per pixel per pass on a software GPU. They must stop after 2n+1. */
+static void test_fx_loops_bounded()
+{
+  const int kinds[] = {PGFX_PASS_BLUR, PGFX_PASS_GLOW, PGFX_PASS_RIM, PGFX_PASS_SHADOW};
+  for (int k : kinds) {
+    const char *b = project_grease_fx_pass_body(k);
+    CHECK(b && std::strstr(b, "if (i > sampCount) break;") && !std::strstr(b, "continue"));
+  }
 }
 
 static void test_self_overlap()
@@ -1412,6 +1425,7 @@ int main()
   test_strength_full();
   test_self_overlap();
   test_queries_per_frame();
+  test_fx_loops_bounded();
   test_gradient_fill();
   test_holdout_and_overlap();
   test_cyclic_square();

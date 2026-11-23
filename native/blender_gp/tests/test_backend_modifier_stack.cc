@@ -23,6 +23,54 @@
 #include "project_grease_blender_fill.h"
 #include "BKE_gpencil_legacy.h"
 #include "DNA_material_types.h"
+#include "MEM_guardedalloc.h"
+#include <vector>
+
+/* A2 reused-address case: while active, freed guardedalloc blocks are parked and handed back (LIFO,
+ * same allocation name) to the next allocation, so a new document's layer / frame land at the old
+ * addresses. Names are recorded here because the lock-free allocator does not keep them. */
+#include <map>
+#include <string>
+static std::vector<std::pair<void *, std::string>> g_parked;
+static std::map<void *, std::string> g_names;
+static void *(*g_real_calloc)(size_t, const char *);
+static void *(*g_real_malloc)(size_t, const char *);
+static void (*g_real_free)(void *);
+static void *recycle(size_t len, const char *s, void *(*real)(size_t, const char *))
+{
+  void *p = nullptr;
+  for (size_t i = g_parked.size(); i-- > 0;) {
+    if (g_parked[i].second == s && MEM_allocN_len(g_parked[i].first) == len) {
+      p = std::memset(g_parked[i].first, 0, len);
+      g_parked.erase(g_parked.begin() + static_cast<std::ptrdiff_t>(i));
+      break;
+    }
+  }
+  if (!p) p = real(len, s);
+  g_names[p] = s;
+  return p;
+}
+static void *recycling_calloc(size_t len, const char *s) { return recycle(len, s, g_real_calloc); }
+static void *recycling_malloc(size_t len, const char *s) { return recycle(len, s, g_real_malloc); }
+static void parking_free(void *p)
+{
+  auto it = g_names.find(p);
+  if (it == g_names.end()) { g_real_free(p); return; }
+  g_parked.emplace_back(p, it->second);
+  g_names.erase(it);
+}
+static void recycling_alloc(bool on)
+{
+  if (on) {
+    g_real_calloc = MEM_callocN; g_real_malloc = MEM_mallocN; g_real_free = MEM_freeN;
+    MEM_callocN = recycling_calloc; MEM_mallocN = recycling_malloc; MEM_freeN = parking_free;
+    return;
+  }
+  MEM_callocN = g_real_calloc; MEM_mallocN = g_real_malloc; MEM_freeN = g_real_free;
+  for (auto &e : g_parked) MEM_freeN(e.first);
+  g_parked.clear();
+  g_names.clear(); /* still-live blocks are freed later through the real MEM_freeN */
+}
 
 /* The draw module is not part of this host test: the backend only needs these two to be non-null. */
 extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *) {}
@@ -978,8 +1026,8 @@ int main()
   {
     bool reused = false;
     for (int round = 0; round < 40; round++) {
-      CHECK(b.reset_document());
-      CHECK(b.create_layer("E") && b.create_frame(1));
+      recycling_alloc(true); /* the old document's allocation to the new one's */
+      CHECK(b.reset_document()); /* the document's own "Layer 1" / frame 1 */
       add_line(b, 100.0f, 100.0f);
       CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);
       set_offset(b, 0, 0, 25.0f);
@@ -989,18 +1037,22 @@ int main()
       const uint64_t gen = b.document_generation();
       CHECK(b.reset_document());
       CHECK(b.document_generation() > gen);
-      CHECK(b.create_layer("E") && b.create_frame(1));
+      bGPDlayer *lay2 = b.active_layer_data();
+      bGPDframe *fr2 = static_cast<bGPDframe *>(lay2->frames.first);
+      recycling_alloc(false);
+      reused |= (lay2 == lay && fr2 == fr);
+      /* same (layer, frame, cfra) key, no edit yet: the stale evaluated strokes must not come back */
+      const bGPDframe *fresh_eval = b.evaluated_frame(lay2, fr2, 1);
+      CHECK(fresh_eval == nullptr || BLI_listbase_is_empty(&fresh_eval->strokes));
       add_line(b, 300.0f, 100.0f); /* different content, same shape of document */
       CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);
       set_offset(b, 0, 0, 25.0f);
-      bGPDlayer *lay2 = b.active_layer_data();
-      bGPDframe *fr2 = static_cast<bGPDframe *>(lay2->frames.first);
-      reused |= (lay2 == lay && fr2 == fr);
       const float new_first = first_x(b.evaluated_frame(lay2, fr2, 1));
       CHECK(b.modifier_eval_count() >= 1);                      /* evaluated (a reset restarts the count) */
       CHECK(std::fabs(new_first - old_first - 200.0f) < 1e-3f); /* and from the new strokes */
     }
-    std::printf("  eval cache: addresses reused across a reset: %s\n", reused ? "yes" : "no (allocator did not reuse)");
+    CHECK(reused); /* the recycling allocator forces the stale-address case */
+    std::printf("  eval cache: addresses reused across a reset: %s\n", reused ? "yes" : "no");
   }
 
   /* --- reset clears every stack --- */

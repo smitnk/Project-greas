@@ -492,6 +492,156 @@ void draw_holdout(const std::vector<Vertex>&v,float alpha,bool overlap){
   const float c[4]={bg[0],bg[1],bg[2],a};
   const bool on=overlap?false:coverage_begin();draw_vertices(v,c);if(!overlap)coverage_end(on);
 }
+// A9, presenter fallback: hardness and aspect as Blender's GP stroke shader applies them. Each segment
+// (or dot) is a quad that carries gpencil_vertex()'s sspos / thickness, and the fragment shader is
+// gpencil_stroke_round_cap_mask() (common_gpencil_lib.glsl) verbatim in GLSL ES 1.0. Fragments with
+// alpha < 0.001 are discarded as gpencil_frag.glsl does, so they do not take the stroke's stencil.
+GLuint g_soft_program=0;
+GLint g_soft_color=-1,g_soft_hard=-1,g_soft_aspect=-1;
+const char *soft_vs_src(){
+  return "attribute vec2 a_position; attribute vec4 a_sspos; attribute float a_thickness; "
+         "varying vec4 v_sspos; varying float v_thickness; "
+         "void main(){gl_Position=vec4(a_position,0.0,1.0);v_sspos=a_sspos;v_thickness=a_thickness;}";
+}
+const char *soft_fs_src(){
+  return "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n"
+         "varying vec4 v_sspos; varying float v_thickness; uniform vec4 u_color; uniform float u_hardness; uniform vec2 u_aspect;\n"
+         "float gpencil_stroke_round_cap_mask(vec2 p1, vec2 p2, vec2 aspect, float thickness, float hardfac){\n"
+         "  vec2 line = p2.xy - p1.xy; vec2 pos = gl_FragCoord.xy - p1.xy;\n"
+         "  float line_len = length(line); float half_line_len = line_len * 0.5;\n"
+         "  line = (line_len > 0.0) ? (line / line_len) : vec2(1.0, 0.0);\n"
+         "  vec2 uv_end;\n"
+         "  uv_end.x = max(abs(dot(line, pos) - half_line_len) - half_line_len, 0.0);\n"
+         "  uv_end.y = dot(vec2(-line.y, line.x), pos);\n"
+         "  uv_end /= thickness; uv_end *= aspect;\n"
+         "  float dist = clamp(1.0 - length(uv_end) * 2.0, 0.0, 1.0);\n"
+         "  if (hardfac > 0.999) { return step(1e-8, dist); }\n"
+         "  float hardness = 1.0 - hardfac;\n"
+         "  dist = pow(dist, mix(0.01, 10.0, hardness));\n"
+         "  return smoothstep(0.0, 1.0, dist);\n"
+         "}\n"
+         "void main(){float a=u_color.a*gpencil_stroke_round_cap_mask(v_sspos.xy,v_sspos.zw,u_aspect,v_thickness,u_hardness);\n"
+         "  if(a<0.001)discard; gl_FragColor=vec4(u_color.rgb,a);}";
+}
+bool ensure_soft_program(){
+  if(g_soft_program)return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,soft_vs_src()),fs=compile_shader(GL_FRAGMENT_SHADER,soft_fs_src());
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  GLuint p=glCreateProgram();glAttachShader(p,vs);glAttachShader(p,fs);
+  glBindAttribLocation(p,0,"a_position");glBindAttribLocation(p,1,"a_sspos");glBindAttribLocation(p,2,"a_thickness");
+  glLinkProgram(p);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(p,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(p);return false;}
+  g_soft_program=p;g_soft_color=glGetUniformLocation(p,"u_color");
+  g_soft_hard=glGetUniformLocation(p,"u_hardness");g_soft_aspect=glGetUniformLocation(p,"u_aspect");
+  return true;
+}
+struct SoftVertex{float x,y,s1x,s1y,s2x,s2y,thickness;};
+// canvas -> target pixel (gl_FragCoord space: y up)
+inline void to_px(float x,float y,int w,int h,float out[2]){const Vertex n=ndc(x,y,w,h);out[0]=(n.x+1.0f)*0.5f*float(w);out[1]=(n.y+1.0f)*0.5f*float(h);}
+inline void push_soft(std::vector<SoftVertex>&v,float px,float py,const float s1[2],const float s2[2],float th,int w,int h){
+  v.push_back({2.0f*px/float(std::max(1,w))-1.0f,2.0f*py/float(std::max(1,h))-1.0f,s1[0],s1[1],s2[0],s2[1],th});}
+// gpencil_vertex() stroke path: pts are canvas x, y and radius (thickness / 2, as outline_point).
+void append_soft_line(std::vector<SoftVertex>&v,const std::vector<PGOutlinePoint>&pts,bool cyclic,bool flat_start,bool flat_end,int w,int h){
+  const int n=int(pts.size());
+  if(n<=0)return;
+  std::vector<float> ss(size_t(n)*2),th(static_cast<size_t>(n));
+  for(int i=0;i<n;i++){to_px(pts[size_t(i)].x,pts[size_t(i)].y,w,h,&ss[size_t(i)*2]);
+    th[size_t(i)]=std::max(1.0f,2.0f*pts[size_t(i)].radius*g_cfg->map_scale);} // gpencil_stroke_thickness_modulate: max(1, ...)
+  if(n==1){ // a one-point stroke is a round dot (gpencil_vertex(): is_dot, not squares)
+    const float*c=&ss[0];const float r=th[0]*0.5f;const float z[2]={c[0]+0.5f,c[1]};
+    const float q[4][2]={{c[0]-r,c[1]-r},{c[0]+r,c[1]-r},{c[0]+r,c[1]+r},{c[0]-r,c[1]+r}};
+    for(int k:{0,1,2,0,2,3})push_soft(v,q[k][0],q[k][1],c,z,th[0],w,h);
+    return;
+  }
+  auto dir=[&](int a,int b,float o[2]){const float dx=ss[size_t(b)*2]-ss[size_t(a)*2],dy=ss[size_t(b)*2+1]-ss[size_t(a)*2+1];
+    const float l=std::hypot(dx,dy);if(l>1e-8f){o[0]=dx/l;o[1]=dy/l;}else{o[0]=0;o[1]=0;}};
+  const int segs=cyclic?n:n-1;
+  for(int i=0;i<segs;i++){
+    const int a=i,b=(i+1)%n;
+    float line[2];dir(a,b,line);
+    float corner[4][2];
+    for(int end=0;end<2;end++){ // end 0: x = -1 at a, end 1: x = +1 at b
+      const int p=end?b:a;
+      const bool open_end=!cyclic&&(end?b==n-1:a==0);
+      float adj[2];
+      if(open_end){adj[0]=line[0];adj[1]=line[1];}
+      else if(end)dir(b,(b+1)%n,adj);else dir((a+n-1)%n,a,adj);
+      float mt[2]={adj[0]+line[0],adj[1]+line[1]};
+      {const float l=std::hypot(mt[0],mt[1]);if(l>1e-8f){mt[0]/=l;mt[1]/=l;}else{mt[0]=mt[1]=0;}}
+      const float md=mt[0]*adj[0]+mt[1]*adj[1];
+      const bool brk=md<0.5f; // miter_limit cos(60 deg)
+      if(brk||open_end){mt[0]=line[0];mt[1]=line[1];}else{mt[0]/=md;mt[1]/=md;}
+      const float miter[2]={-mt[1],mt[0]};
+      const float x=end?1.0f:-1.0f;
+      const bool cap=open_end&&!(end?flat_end:flat_start);
+      const float r=th[size_t(p)]*0.5f; // clamped_thickness * viewport_size.zw in pixels
+      for(int side=0;side<2;side++){
+        const float y=side?1.0f:-1.0f;
+        float ox=miter[0]*y,oy=miter[1]*y;
+        if(cap||(brk&&!open_end)){ox+=line[0]*x;oy+=line[1]*x;}
+        corner[end*2+side][0]=ss[size_t(p)*2]+ox*r;corner[end*2+side][1]=ss[size_t(p)*2+1]+oy*r;
+      }
+    }
+    const float*s1=&ss[size_t(a)*2],*s2=&ss[size_t(b)*2];
+    const float ta=th[size_t(a)],tb=th[size_t(b)];
+    push_soft(v,corner[0][0],corner[0][1],s1,s2,ta,w,h);push_soft(v,corner[1][0],corner[1][1],s1,s2,ta,w,h);push_soft(v,corner[3][0],corner[3][1],s1,s2,tb,w,h);
+    push_soft(v,corner[0][0],corner[0][1],s1,s2,ta,w,h);push_soft(v,corner[3][0],corner[3][1],s1,s2,tb,w,h);push_soft(v,corner[2][0],corner[2][1],s1,s2,tb,w,h);
+  }
+}
+// gpencil_vertex() is_dot path: a quad of thickness * aspect along x_axis, sspos = (p, p + x_axis / 2).
+void append_soft_dots(std::vector<SoftVertex>&v,const bGPDstroke*s,const MaterialGPencilStyle*st,float thickness,const float aspect[2],int w,int h){
+  const bool squares=st->mode==GP_MATERIAL_MODE_SQUARE;
+  const float ca=std::cos(st->alignment_rotation),sa=std::sin(st->alignment_rotation);
+  for(int i=0;i<s->totpoints;i++){
+    const bGPDspoint&p=s->points[i];
+    const float tk=std::max(1.0f,std::max(g_line_change!=0.0f?1.0f:0.0f,thickness*std::max(p.pressure,0.01f)+g_line_change)*g_cfg->map_scale);
+    float c[2];to_px(p.x,p.y,w,h,c);
+    float ax=1.0f,ay=0.0f;
+    if(st->alignment_mode==GP_MATERIAL_FOLLOW_PATH&&s->totpoints>1){
+      const bGPDspoint&a=i+1<s->totpoints?s->points[i]:s->points[i-1];
+      const bGPDspoint&b=i+1<s->totpoints?s->points[i+1]:s->points[i];
+      float pa[2],pb[2];to_px(a.x,a.y,w,h,pa);to_px(b.x,b.y,w,h,pb);
+      const float l=std::hypot(pb[0]-pa[0],pb[1]-pa[1]);
+      if(l>1e-6f){ax=(pb[0]-pa[0])/l;ay=(pb[1]-pa[1])/l;}
+    }
+    const float xx=ax*ca-ay*sa,xy=ax*sa+ay*ca,yx=-xy,yy=xx;
+    const float hx=0.5f*tk*aspect[0],hy=0.5f*tk*aspect[1];
+    const float z[2]={c[0]+xx*0.5f,c[1]+xy*0.5f};
+    const float k4[4][2]={{-1,-1},{1,-1},{1,1},{-1,1}};
+    float q[4][2];
+    for(int k=0;k<4;k++){q[k][0]=c[0]+k4[k][0]*hx*xx+k4[k][1]*hy*yx;q[k][1]=c[1]+k4[k][0]*hx*xy+k4[k][1]*hy*yy;}
+    const float t=squares?1e18f:tk; // squares: out_thickness 1e18, the mask is 1
+    for(int k:{0,1,2,0,2,3})push_soft(v,q[k][0],q[k][1],c,z,t,w,h);
+  }
+}
+// pack_rotation_aspect_hardness() + gpencil_decode_aspect(): the quad scale of a dot.
+void stroke_aspect(const bGPDstroke*s,float out[2]){
+  const float asp=s->aspect_ratio[0]/std::max(s->aspect_ratio[1],1e-8f);
+  if(asp>1.0f){out[0]=1.0f;out[1]=1.0f/asp;}else{out[0]=std::max(asp,0.0f);out[1]=1.0f;}
+}
+// false: not drawn (no program, a masked layer or a revealage / invert pass), the caller draws it flat.
+bool draw_soft(const std::vector<SoftVertex>&v,const float color[4],float hardness,const float aspect[2],bool overlap){
+  if(g_active_mask_tex!=0||(g_draw_mode!=DRAW_NORMAL&&g_draw_mode!=DRAW_PREMULT)||!ensure_program()||!ensure_soft_program())return false;
+  if(v.empty())return true;
+  const bool on=overlap?false:coverage_begin();
+  glUseProgram(g_soft_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(SoftVertex)),v.data(),GL_DYNAMIC_DRAW);
+  for(GLuint a=0;a<3;a++)glEnableVertexAttribArray(a);
+  glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),nullptr);
+  glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),(const void*)offsetof(SoftVertex,s1x));
+  glVertexAttribPointer(2,1,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),(const void*)offsetof(SoftVertex,thickness));
+  glUniform4f(g_soft_color,color[0],color[1],color[2],color[3]);
+  glUniform1f(g_soft_hard,std::clamp(hardness,0.0f,1.0f));
+  glUniform2f(g_soft_aspect,1.0f/std::max(aspect[0],1e-6f),1.0f/std::max(aspect[1],1e-6f)); // "invert for vertex shader"
+  glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
+  glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
+  glDisable(GL_BLEND);
+  for(GLuint a=0;a<3;a++)glDisableVertexAttribArray(a);
+  glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
+  coverage_end(on);
+  return true;
+}
 struct LiveStyle{int active=0;float thickness=1.0f,hardness=1.0f,ax=1.0f,ay=1.0f;int caps=0,material=0;} g_live;
 void* g_live_batch_cache=nullptr;
 bool engine_draw_live(const bGPdata *gpd, int w, int h);
@@ -511,13 +661,20 @@ void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
     pts.push_back(outline_point(points[i].m_xy[0], points[i].m_xy[1],
                                 tk * std::max(points[i].pressure, 0.01f)));
   }
-  append_outline(stroke, pts, g_live.active && g_live.caps == 1 ? (PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END) : 0, w, h);
+  const bool flat = g_live.active && g_live.caps == 1;
   // g_cfg->stroke_color carries the material colour and opacity only; the point strength of the open
   // buffer is applied here once, as draw_frame() applies it to committed strokes.
   float strength = 0.0f;
   for (int i = 0; i < gpd->runtime.sbuffer_used; ++i) strength += std::clamp(points[i].strength, 0.0f, 1.0f);
   strength /= float(gpd->runtime.sbuffer_used);
   const float color[4] = {g_cfg->stroke_color[0], g_cfg->stroke_color[1], g_cfg->stroke_color[2], g_cfg->stroke_color[3] * strength};
+  if (g_live.active && g_live.hardness < 0.999f) {
+    std::vector<SoftVertex> soft;
+    append_soft_line(soft, pts, false, flat, flat, w, h);
+    const float one[2] = {1.0f, 1.0f}; // a line's aspect is (1, 1); aspect shapes dots only
+    if (draw_soft(soft, color, g_live.hardness, one, false)) return;
+  }
+  append_outline(stroke, pts, flat ? (PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END) : 0, w, h);
   draw_stroke_once(stroke, color);
 }
 
@@ -666,10 +823,25 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
         std::vector<UVVertex> tv;append_textured_stroke(tv,s,style->texture_pixsize,w,h);
         const bool on=coverage_begin();draw_textured(tv,*stroke_tex,color,style->mix_stroke_factor);coverage_end(on);
       }
+      else if(style&&style->mode!=GP_MATERIAL_MODE_LINE&&(s->hardeness<0.999f||s->aspect_ratio[0]!=s->aspect_ratio[1])&&
+              [&]{std::vector<SoftVertex> sv;float asp[2];stroke_aspect(s,asp);
+                  append_soft_dots(sv,s,style,float(s->thickness),asp,w,h);
+                  return draw_soft(sv,color,s->hardeness,asp,style->flag&GP_MATERIAL_DISABLE_STENCIL);}()){
+      }
       else if(style&&style->mode!=GP_MATERIAL_MODE_LINE){
         append_dots(stroke,s,style,float(s->thickness),w,h);
         if(overlap)draw_vertices(stroke,color);else draw_stroke_once(stroke,color);
         stroke.clear();
+      }
+      else if(s->hardeness<0.999f&&[&]{
+                std::vector<PGOutlinePoint> pts;pts.reserve(size_t(s->totpoints));
+                for(int i=0;i<s->totpoints;i++)
+                  pts.push_back(outline_point(s->points[i].x,s->points[i].y,
+                      std::max(g_line_change!=0.0f?1.0f:0.0f,float(s->thickness)*std::max(s->points[i].pressure,0.01f)+g_line_change)));
+                std::vector<SoftVertex> sv;
+                append_soft_line(sv,pts,(s->flag&GP_STROKE_CYCLIC)!=0,s->caps[0]==GP_STROKE_CAP_FLAT,s->caps[1]==GP_STROKE_CAP_FLAT,w,h);
+                const float one[2]={1.0f,1.0f};
+                return draw_soft(sv,color,s->hardeness,one,style&&(style->flag&GP_MATERIAL_DISABLE_STENCIL));}()){
       }
       else{
         append_stroke_outline(stroke,s,float(s->thickness),w,h);
@@ -1868,7 +2040,7 @@ if(alive&&g_vbo)glDeleteBuffers(1,&g_vbo);if(alive&&g_program)glDeleteProgram(g_
   if(alive&&g_mask_program)glDeleteProgram(g_mask_program);if(alive&&g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(alive&&g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
   g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
   for(auto&kv:g_mat_tex)if(alive&&kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(alive&&g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(alive&&g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;
-  if(alive&&g_vc_program)glDeleteProgram(g_vc_program);if(alive&&g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+  if(alive&&g_vc_program)glDeleteProgram(g_vc_program);if(alive&&g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;if(alive&&g_soft_program)glDeleteProgram(g_soft_program);g_soft_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
   // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
   // stale id in the next context has no storage, every later store failed and each input sample
   // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).

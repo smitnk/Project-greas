@@ -1163,6 +1163,43 @@ static void test_live_stroke_style()
   d.gpd->runtime.sbuffer = nullptr;
 }
 
+/* A9 on the presenter fallback: gps->hardeness and aspect_ratio as gpencil_frag.glsl's
+ * gpencil_stroke_round_cap_mask() applies them (hardness falloff on every stroke, aspect on dots). */
+static void test_a9_hardness_aspect()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 40, 160, 60, 30); /* radius 15 units */
+  bGPDstroke *s = static_cast<bGPDstroke *>(static_cast<bGPDframe *>(l->frames.first)->strokes.first);
+  present(d);
+  const Rgba hard_edge = pixel_at_canvas(100, 60 + 11), hard_mid = pixel_at_canvas(100, 60);
+  s->hardeness = 0.3f;
+  present(d);
+  const Rgba soft_edge = pixel_at_canvas(100, 60 + 11), soft_mid = pixel_at_canvas(100, 60);
+  printf("  A9 hardness: edge hard %d,%d,%d soft %d,%d,%d; centre soft %d,%d,%d\n", hard_edge.r, hard_edge.g,
+         hard_edge.b, soft_edge.r, soft_edge.g, soft_edge.b, soft_mid.r, soft_mid.g, soft_mid.b);
+  CHECK(near_rgb(hard_edge, 255, 0, 0));
+  CHECK(std::abs(soft_edge.g - hard_edge.g) > 100); /* the soft edge fades towards the paper */
+  CHECK(near_rgb(hard_mid, 255, 0, 0) && soft_mid.r > 240 && soft_mid.g < 80); /* the centre stays (near) full */
+  CHECK(near_rgb(pixel_at_canvas(100, 60 + 20), 245, 245, 245));
+  s->hardeness = 1.0f;
+
+  /* dots: aspect_ratio (1, 0.5) is a dot half as tall (gpencil_decode_aspect: asp 2 -> (1, 0.5)) */
+  MaterialGPencilStyle *st = d.gpd->mat[0]->gp_style;
+  st->mode = GP_MATERIAL_MODE_DOT;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 10), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(40 + 10, 60), 255, 0, 0));
+  s->aspect_ratio[1] = 0.5f;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 10), 245, 245, 245)); /* squashed vertically */
+  CHECK(near_rgb(pixel_at_canvas(40 + 10, 60), 255, 0, 0));      /* full width */
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 5), 255, 0, 0));
+  s->aspect_ratio[1] = 1.0f;
+  st->mode = GP_MATERIAL_MODE_LINE;
+}
+
 extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 /* Regression (emulator sweep: cache stored once per run): present_reset() runs when the window and
  * its GL context go away; the cache must not keep its texture id into the next context, or every
@@ -1345,6 +1382,7 @@ int main()
   test_open_stroke_cache_revision();
   test_per_renderer_config();
   test_live_stroke_style();
+  test_a9_hardness_aspect();
   test_annotations();
   project_grease_android_present_reset();
   if (failures) {

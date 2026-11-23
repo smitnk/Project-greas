@@ -326,10 +326,12 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         val target = value.coerceAtLeast(1)
         if (native.handle == 0L) return false
         if (!native.selectFrameOrHold(target)) return false
-        if (target != currentFrame) onFrameChanged?.invoke()
+        val moved = target != currentFrame
+        if (moved) onFrameChanged?.invoke()
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
         timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
+        if (moved && playing) onPlayback?.invoke(true, target) // a scrub while playing: the sound jumps with the playhead
         return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
@@ -436,7 +438,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     fun setFps(value:Int){
         fpsState.intValue=value.coerceIn(1,120)
         runCatching { GPNative.nativeSetSceneFps(fpsState.intValue) }
-        if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))}
+        if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))
+            onPlayback?.invoke(true, currentFrame)} // the sound's time of this frame changed with the rate
     }
     fun togglePlayback(){
         playing=!playing
@@ -764,7 +767,13 @@ data class MaterialTexture(
 val SELECTION_TOOLS = setOf(GreaseTool.SELECT, GreaseTool.LASSO, GreaseTool.MOVE, GreaseTool.ROTATE,
     GreaseTool.SCALE, GreaseTool.MIRROR, GreaseTool.BOX_SELECT, GreaseTool.CIRCLE_SELECT)
 
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT, BOX_SELECT, CIRCLE_SELECT }
+/** [mode]: the mode the tool is (Sculpt is Sculpt mode); null = a tool of the current mode. */
+enum class GreaseTool(val mode: GreaseMode? = null) {
+    DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN,
+    SCULPT(GreaseMode.SCULPT), BOX_SELECT, CIRCLE_SELECT;
+    /** Whether the tool can be active in [m]: a mode tool only in its mode, no other tool in Sculpt, no Draw brush in Edit. */
+    fun allowedIn(m: GreaseMode): Boolean = if (mode != null) m == mode else m != GreaseMode.SCULPT && !(this == DRAW && m == GreaseMode.EDIT)
+}
 
 class ToolController {
     var activeTool=GreaseTool.DRAW; private set
@@ -813,8 +822,10 @@ class EditorController {
     val animation=AnimationController(native) { render() }
     val materials=MaterialController()
     val brushes=BrushController(materials)
-    var mode=GreaseMode.DRAW
-        private set
+    /** The mode set by setMode; never Sculpt (the Sculpt tool is Sculpt mode). */
+    private var baseMode=GreaseMode.DRAW
+    /** Derived from the tool, so mode and tool can never disagree. */
+    val mode: GreaseMode get() = tools.activeTool.mode ?: baseMode
     var multiframeEditing=false
         private set
     val view=ViewController()
@@ -966,11 +977,13 @@ class EditorController {
         if (tool != tools.activeTool && shapeEdit.isActive) confirmShape()
         if (warpActive) endWarp(true)
         if (gizmo != null) editModifierHandles(null) // the handle overlay would keep eating every touch
-        // Sculpt is one thing: the Sculpt tool is Sculpt mode, and any other tool leaves it.
-        if (tool == GreaseTool.SCULPT) mode = GreaseMode.SCULPT
-        else if (mode == GreaseMode.SCULPT) mode = GreaseMode.DRAW
+        // Sculpt is one thing: the Sculpt tool is Sculpt mode (mode follows the tool), and any other tool leaves it.
+        // The Draw brush is not an Edit-mode tool: picking it goes back to Draw mode.
+        if (!tools.select(tool)) return false
+        if (!tool.allowedIn(baseMode)) setMode(GreaseMode.DRAW)
         // Re-render so the edit overlay follows the tool at once.
-        return tools.select(tool).also { if (it) render() }
+        render()
+        return true
     }
     // ---- Native tool session (ToolSession.kt / project_grease_tool_session.h) ----
     /** The session tool the current gesture uses, or -1. */
@@ -1129,7 +1142,8 @@ class EditorController {
         if (value != GreaseMode.EDIT && bezierEditing) endBezierEdit()
         // the Photo lasso option is a Draw-mode control: left on, it would turn every Edit-mode lasso into a photo loop
         if (value != GreaseMode.DRAW) { lassoPhotos = false; photoLasso = null }
-        mode = value
+        // leaving Sculpt (picking another tool) returns to Draw mode
+        baseMode = if (value == GreaseMode.SCULPT) GreaseMode.DRAW else value
         // The mode chip and the sculpt tool are the same switch (the chip alone used to leave Draw active).
         if (value == GreaseMode.SCULPT) tools.select(GreaseTool.SCULPT)
         else if (tools.activeTool == GreaseTool.SCULPT) tools.select(if (value == GreaseMode.EDIT) GreaseTool.SELECT else GreaseTool.DRAW)

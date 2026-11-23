@@ -97,7 +97,9 @@ class SweepL9ScenarioTest : SweepBase() {
         run { val li = layerIndex("Ink"); assertTrue(onUi { controller.selectLayer(li) && controller.animation.setFrame(5) }) }
         assertTrue(onUi { controller.setOnionSkin(true, 1, 1, 0.8f) })
         assertTrue(onUi { controller.onion.enabled })
-        assertInk(shot("scenario_onion"), 600f, 300f, "onion ghost of frame 1")
+        onUi { controller.render() }
+        // the ghost is faded and tinted, so look for any non-white ink, as SweepLayersFramesTest.onionSkin does
+        assertTrue("onion ghost of frame 1 visible", inkNear(shot("scenario_onion"), 600f, 300f, 4) { it != android.graphics.Color.WHITE && android.graphics.Color.red(it) < 250 })
 
         // ---- erase through the frame 1 line ----
         onUi { controller.setOnionSkin(false); controller.animation.setFrame(1) }

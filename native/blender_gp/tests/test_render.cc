@@ -1200,6 +1200,54 @@ static void test_a9_hardness_aspect()
   st->mode = GP_MATERIAL_MODE_LINE;
 }
 
+/* A4: two renderers, each with its own EGL context and presenter config, as two GL surfaces in the
+ * app. Each must draw with its own GL objects; destroying one (bind, reset with its context current,
+ * free its config: nativeDestroyEglRenderer) must leave the other drawing correctly. */
+static void test_two_renderers_gl()
+{
+  const EGLint pa[] = {EGL_WIDTH, W, EGL_HEIGHT, H, EGL_NONE};
+  const EGLint xa[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+  EGLSurface sa = eglCreatePbufferSurface(g_dpy, g_cfg, pa), sb = eglCreatePbufferSurface(g_dpy, g_cfg, pa);
+  EGLContext ca = eglCreateContext(g_dpy, g_cfg, EGL_NO_CONTEXT, xa), cb = eglCreateContext(g_dpy, g_cfg, EGL_NO_CONTEXT, xa);
+  CHECK(sa != EGL_NO_SURFACE && sb != EGL_NO_SURFACE && ca != EGL_NO_CONTEXT && cb != EGL_NO_CONTEXT);
+  void *a = project_grease_android_present_config_new(), *b = project_grease_android_present_config_new();
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  add_bar(add_layer(d, "A"), 20, 180, 60, 20);
+  auto draw = [&](void *cfg, EGLSurface s, EGLContext c) {
+    CHECK(eglMakeCurrent(g_dpy, s, s, c));
+    project_grease_android_present_config_bind(cfg);
+    project_grease_android_present_set_canvas_size(W, H);
+    project_grease_android_present_set_view_transform(1.0f, 0.0f, 0.0f);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    present(d);
+    CHECK(glGetError() == GL_NO_ERROR);
+    return near_rgb(pixel_at_canvas(100, 60), 255, 0, 0);
+  };
+  CHECK(draw(a, sa, ca));
+  CHECK(draw(b, sb, cb)); /* b's context has none of a's objects: it must build its own */
+  CHECK(draw(a, sa, ca));
+  /* destroy renderer a */
+  CHECK(eglMakeCurrent(g_dpy, sa, sa, ca));
+  project_grease_android_present_config_bind(a);
+  project_grease_android_present_reset();
+  project_grease_android_present_config_free(a);
+  eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  eglDestroyContext(g_dpy, ca);
+  eglDestroySurface(g_dpy, sa);
+  CHECK(draw(b, sb, cb));
+  CHECK(draw(b, sb, cb));
+  /* destroy renderer b, back to the test's own context and default config */
+  project_grease_android_present_reset();
+  project_grease_android_present_config_free(b);
+  project_grease_android_present_config_bind(nullptr);
+  eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx);
+  eglDestroyContext(g_dpy, cb);
+  eglDestroySurface(g_dpy, sb);
+  glViewport(0, 0, W, H);
+}
+
 extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 /* Regression (emulator sweep: cache stored once per run): present_reset() runs when the window and
  * its GL context go away; the cache must not keep its texture id into the next context, or every
@@ -1383,6 +1431,7 @@ int main()
   test_per_renderer_config();
   test_live_stroke_style();
   test_a9_hardness_aspect();
+  test_two_renderers_gl();
   test_annotations();
   project_grease_android_present_reset();
   if (failures) {

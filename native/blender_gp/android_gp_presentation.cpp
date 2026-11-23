@@ -58,9 +58,49 @@ struct Vertex { float x; float y; };
  * canvas, fill / guide / overlay options, stroke colour) lives here, so an export or a second renderer
  * never changes what another one draws. Each JNI entry binds its renderer's config for its thread
  * (project_grease_android_present_config_bind); with none bound (host tests) a default one is used.
- * Not moved, kept per GL context: the programs / textures / FBOs / caches below (one EGL context is
- * current at a time), the engine batch cache and its drawn-state latches, and the per-frame scratch
- * (draw mode, draw parts, ghost / layer tint, line change) that is set and cleared inside one draw call. */
+ * Its GL objects and caches are in PresentGL below. Still global: Blender's draw engine (gles/, one
+ * engine per process) with its batch cache and drawn-state latches, and the per-frame scratch (draw
+ * mode, draw parts, ghost / layer tint, line change) that is set and cleared inside one draw call. */
+// GL objects and caches of one renderer (A4): each renderer has its own EGL context, so its programs,
+// buffers, textures, FBOs and the caches that hold them must never be shared with or freed by another
+// renderer. They live in the renderer's PresentConfig; present_reset / context_lost clear the bound one.
+// Material textures (MaterialGPencilStyle stroke_style / fill_style TEXTURE). Android has no Blender
+// Image datablock: the picked image is uploaded per material slot, key = slot * 2 + (0 stroke, 1 fill).
+struct MatTex { GLuint id=0; int w=0, h=0; };
+struct OpenStrokeCache {
+  GLuint tex=0, program=0, vbo=0;
+  int w=0, h=0, frame=0;
+  const bGPdata* gpd=nullptr;
+  uint64_t rev=0; // data revision the texture was taken at: any edit since then invalidates it
+  float scale=0, ox=0, oy=0, rot=0;
+  bool valid=false;
+};
+struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0,exported=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
+constexpr int kRefSlots=16;
+struct PresentGL {
+  GLuint program=0, vbo=0;
+  GLint position=-1, color=-1;
+  GLuint vc_program=0, vc_mask_program=0;
+  std::map<int,MatTex> mat_tex;
+  GLuint tex_program=0, grad_program=0;
+  // Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
+  // stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
+  // stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
+  int stencil_ref=0;
+  GLint stencil_fbo=-1;
+  GLint stencil_bits=0;     // of stencil_fbo: asked once per target, not per stroke
+  // Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
+  GLuint mask_program=0;
+  GLint mask_color=-1, mask_sampler=-1, mask_size=-1;
+  GLuint mask_fbo=0, mask_tex=0;
+  int mask_w=0, mask_h=0;
+  GLuint soft_program=0;
+  GLint soft_color=-1, soft_hard=-1, soft_aspect=-1;
+  OpenStrokeCache open_cache;
+  RefSlot refs[kRefSlots];
+  int ref_cur=0, ref_count=1;
+  GLuint ref_prog=0, ref_vbo=0;
+};
 struct PresentConfig {
   int weight_group=-1;            // Weight Paint view: vertex group, -1 off
   float vertex_opacity=1.0f;      // Viewport Overlay "Vertex Paint Opacity"
@@ -80,35 +120,16 @@ struct PresentConfig {
   float view_rotation=0.0f;       // two-finger rotation (radians); the engine draws unrotated views only
   int overlay_unselected=1;
   int engine_enabled=1;           // project_grease_android_present_set_engine
+  PresentGL gl;                   // this renderer's GL objects and caches (A4)
 };
 PresentConfig g_default_cfg;
 thread_local PresentConfig* g_cfg=&g_default_cfg;
 
-GLuint g_program=0, g_vbo=0;
-GLint g_position=-1, g_color=-1;
-GLuint g_vc_program=0, g_vc_mask_program=0;
-// Material textures (MaterialGPencilStyle stroke_style / fill_style TEXTURE). Android has no Blender
-// Image datablock: the picked image is uploaded per material slot, key = slot * 2 + (0 stroke, 1 fill).
-struct MatTex { GLuint id=0; int w=0, h=0; };
-std::map<int,MatTex> g_mat_tex;
-GLuint g_tex_program=0;
-GLuint g_grad_program=0;
-// Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
-// stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
-// stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
-int g_stencil_ref=0;
-GLint g_stencil_fbo=-1;
-GLint g_stencil_bits=0;     // of g_stencil_fbo: asked once per target, not per stroke
 long g_frame_gl_queries=0;  // glGet round trips of the last document pass (each one stalls an emulator / remote GL)
 long g_frame_queries_now=0;
 bool g_in_document=false;   // inside present_gp_document: the bound target is known between retarget() calls
 bool g_target_known=false;
 void retarget(){g_target_known=false;} // an offscreen layer / mask pass may have bound another framebuffer
-// Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
-GLuint g_mask_program=0;
-GLint g_mask_color=-1, g_mask_sampler=-1, g_mask_size=-1;
-GLuint g_mask_fbo=0, g_mask_tex=0;
-int g_mask_w=0, g_mask_h=0;
 GLuint g_active_mask_tex=0;   // non-zero while a masked layer is drawn
 int g_active_w=1, g_active_h=1;
 // DRAW_REVEALAGE multiplies the target by (1 - alpha) (mask buffer, Blender's "revealage" buffer);
@@ -185,17 +206,17 @@ GLuint compile_shader(GLenum type,const char *src){
   if(ok==GL_FALSE){glDeleteShader(s);return 0;} return s;
 }
 bool ensure_program(){
-  if(g_program) return true;
+  if(g_cfg->gl.program) return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_program=glCreateProgram(); glAttachShader(g_program,vs); glAttachShader(g_program,fs);
-  glBindAttribLocation(g_program,0,"a_position"); glLinkProgram(g_program);
+  g_cfg->gl.program=glCreateProgram(); glAttachShader(g_cfg->gl.program,vs); glAttachShader(g_cfg->gl.program,fs);
+  glBindAttribLocation(g_cfg->gl.program,0,"a_position"); glLinkProgram(g_cfg->gl.program);
   glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_program);g_program=0;return false;}
-  g_position=glGetAttribLocation(g_program,"a_position"); g_color=glGetUniformLocation(g_program,"u_color");
-  glGenBuffers(1,&g_vbo);
-  return g_position>=0&&g_color>=0&&g_vbo!=0;
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.program);g_cfg->gl.program=0;return false;}
+  g_cfg->gl.position=glGetAttribLocation(g_cfg->gl.program,"a_position"); g_cfg->gl.color=glGetUniformLocation(g_cfg->gl.program,"u_color");
+  glGenBuffers(1,&g_cfg->gl.vbo);
+  return g_cfg->gl.position>=0&&g_cfg->gl.color>=0&&g_cfg->gl.vbo!=0;
 }
 GLuint link_vc(const char* fs_text){
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vc_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_text);
@@ -210,9 +231,9 @@ GLuint link_vc(const char* fs_text){
 }
 // Plain and layer-masked (same mask texture as draw_vertices) per-vertex-colour programs.
 bool ensure_vc_program(){
-  if(!g_vc_program)g_vc_program=link_vc(fs_src());
-  if(!g_vc_mask_program)g_vc_mask_program=link_vc(mask_fs_src());
-  return g_vc_program!=0&&g_vc_mask_program!=0;
+  if(!g_cfg->gl.vc_program)g_cfg->gl.vc_program=link_vc(fs_src());
+  if(!g_cfg->gl.vc_mask_program)g_cfg->gl.vc_mask_program=link_vc(mask_fs_src());
+  return g_cfg->gl.vc_program!=0&&g_cfg->gl.vc_mask_program!=0;
 }
 // gpencil_frag.glsl: col = texture * (1 - mix) + material colour * mix (stroke_texture_mix /
 // fill_texture_mix are 1 - mix_stroke_factor / 1 - mix_factor). fract() repeats the image (GLES2 has
@@ -229,14 +250,14 @@ const char *tex_fs_src(){
          "if(u_use_mask>0.5)c.a*=texture2D(u_mask,gl_FragCoord.xy/u_size).r;gl_FragColor=c;}";
 }
 bool ensure_tex_program(){
-  if(g_tex_program)return true;
+  if(g_cfg->gl.tex_program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,tex_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,tex_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_tex_program=glCreateProgram();glAttachShader(g_tex_program,vs);glAttachShader(g_tex_program,fs);
-  glBindAttribLocation(g_tex_program,0,"a_position");glBindAttribLocation(g_tex_program,1,"a_uv");
-  glLinkProgram(g_tex_program);glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_tex_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_tex_program);g_tex_program=0;return false;}
+  g_cfg->gl.tex_program=glCreateProgram();glAttachShader(g_cfg->gl.tex_program,vs);glAttachShader(g_cfg->gl.tex_program,fs);
+  glBindAttribLocation(g_cfg->gl.tex_program,0,"a_position");glBindAttribLocation(g_cfg->gl.tex_program,1,"a_uv");
+  glLinkProgram(g_cfg->gl.tex_program);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.tex_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.tex_program);g_cfg->gl.tex_program=0;return false;}
   return true;
 }
 // Gradient fill (gpencil_frag.glsl GP_FILL_GRADIENT_USE): fac = radial ? length(uv * 2 - 1) : uv.x,
@@ -251,38 +272,38 @@ const char *grad_fs_src(){
          "if(u_use_mask>0.5)c.a*=texture2D(u_mask,gl_FragCoord.xy/u_size).r;gl_FragColor=c;}";
 }
 bool ensure_grad_program(){
-  if(g_grad_program)return true;
+  if(g_cfg->gl.grad_program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,tex_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,grad_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_grad_program=glCreateProgram();glAttachShader(g_grad_program,vs);glAttachShader(g_grad_program,fs);
-  glBindAttribLocation(g_grad_program,0,"a_position");glBindAttribLocation(g_grad_program,1,"a_uv");
-  glLinkProgram(g_grad_program);glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_grad_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_grad_program);g_grad_program=0;return false;}
+  g_cfg->gl.grad_program=glCreateProgram();glAttachShader(g_cfg->gl.grad_program,vs);glAttachShader(g_cfg->gl.grad_program,fs);
+  glBindAttribLocation(g_cfg->gl.grad_program,0,"a_position");glBindAttribLocation(g_cfg->gl.grad_program,1,"a_uv");
+  glLinkProgram(g_cfg->gl.grad_program);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.grad_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.grad_program);g_cfg->gl.grad_program=0;return false;}
   return true;
 }
 const MatTex* material_texture(int slot,int fill){
-  auto it=g_mat_tex.find(slot*2+(fill?1:0));
-  return it!=g_mat_tex.end()&&it->second.id?&it->second:nullptr;
+  auto it=g_cfg->gl.mat_tex.find(slot*2+(fill?1:0));
+  return it!=g_cfg->gl.mat_tex.end()&&it->second.id?&it->second:nullptr;
 }
 struct UVVertex{float x,y,u,v;};
 void draw_textured(const std::vector<UVVertex>&v,const MatTex&tex,const float color[4],float mix){
   if(v.empty()||!ensure_tex_program())return;
   const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL;
-  glUseProgram(g_tex_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glUseProgram(g_cfg->gl.tex_program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(UVVertex)),v.data(),GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
   glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),nullptr);
   glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),reinterpret_cast<const void*>(2*sizeof(float)));
   glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,tex.id);
-  glUniform1i(glGetUniformLocation(g_tex_program,"u_tex"),1);
+  glUniform1i(glGetUniformLocation(g_cfg->gl.tex_program,"u_tex"),1);
   glActiveTexture(GL_TEXTURE0);
   if(masked)glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
-  glUniform1i(glGetUniformLocation(g_tex_program,"u_mask"),0);
-  glUniform2f(glGetUniformLocation(g_tex_program,"u_size"),float(g_active_w),float(g_active_h));
-  glUniform1f(glGetUniformLocation(g_tex_program,"u_use_mask"),masked?1.0f:0.0f);
-  glUniform4f(glGetUniformLocation(g_tex_program,"u_color"),color[0],color[1],color[2],color[3]);
-  glUniform1f(glGetUniformLocation(g_tex_program,"u_mix"),std::clamp(mix,0.0f,1.0f));
+  glUniform1i(glGetUniformLocation(g_cfg->gl.tex_program,"u_mask"),0);
+  glUniform2f(glGetUniformLocation(g_cfg->gl.tex_program,"u_size"),float(g_active_w),float(g_active_h));
+  glUniform1f(glGetUniformLocation(g_cfg->gl.tex_program,"u_use_mask"),masked?1.0f:0.0f);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.tex_program,"u_color"),color[0],color[1],color[2],color[3]);
+  glUniform1f(glGetUniformLocation(g_cfg->gl.tex_program,"u_mix"),std::clamp(mix,0.0f,1.0f));
   glEnable(GL_BLEND);
   if(g_draw_mode==DRAW_REVEALAGE)glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);
   else glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
@@ -295,21 +316,21 @@ void draw_textured(const std::vector<UVVertex>&v,const MatTex&tex,const float co
 void draw_gradient(const std::vector<UVVertex>&v,const float c1[4],const float c2[4],const float color[4],float mix_tex,bool radial){
   if(v.empty()||!ensure_grad_program())return;
   const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL;
-  glUseProgram(g_grad_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glUseProgram(g_cfg->gl.grad_program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(UVVertex)),v.data(),GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
   glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),nullptr);
   glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),reinterpret_cast<const void*>(2*sizeof(float)));
   glActiveTexture(GL_TEXTURE0);
   if(masked)glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
-  glUniform1i(glGetUniformLocation(g_grad_program,"u_mask"),0);
-  glUniform2f(glGetUniformLocation(g_grad_program,"u_size"),float(g_active_w),float(g_active_h));
-  glUniform1f(glGetUniformLocation(g_grad_program,"u_use_mask"),masked?1.0f:0.0f);
-  glUniform4f(glGetUniformLocation(g_grad_program,"u_c1"),c1[0],c1[1],c1[2],c1[3]);
-  glUniform4f(glGetUniformLocation(g_grad_program,"u_c2"),c2[0],c2[1],c2[2],c2[3]);
-  glUniform4f(glGetUniformLocation(g_grad_program,"u_color"),color[0],color[1],color[2],color[3]);
-  glUniform1f(glGetUniformLocation(g_grad_program,"u_mix"),std::clamp(mix_tex,0.0f,1.0f));
-  glUniform1f(glGetUniformLocation(g_grad_program,"u_radial"),radial?1.0f:0.0f);
+  glUniform1i(glGetUniformLocation(g_cfg->gl.grad_program,"u_mask"),0);
+  glUniform2f(glGetUniformLocation(g_cfg->gl.grad_program,"u_size"),float(g_active_w),float(g_active_h));
+  glUniform1f(glGetUniformLocation(g_cfg->gl.grad_program,"u_use_mask"),masked?1.0f:0.0f);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.grad_program,"u_c1"),c1[0],c1[1],c1[2],c1[3]);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.grad_program,"u_c2"),c2[0],c2[1],c2[2],c2[3]);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.grad_program,"u_color"),color[0],color[1],color[2],color[3]);
+  glUniform1f(glGetUniformLocation(g_cfg->gl.grad_program,"u_mix"),std::clamp(mix_tex,0.0f,1.0f));
+  glUniform1f(glGetUniformLocation(g_cfg->gl.grad_program,"u_radial"),radial?1.0f:0.0f);
   glEnable(GL_BLEND);
   if(g_draw_mode==DRAW_REVEALAGE)glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);
   else glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
@@ -324,50 +345,50 @@ bool coverage_begin(){
   // In the document pass the target is asked again only after a pass that may switch it (retarget()).
   if(!g_target_known){
     GLint fbo=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&fbo);g_frame_queries_now++;
-    if(fbo!=g_stencil_fbo){glGetIntegerv(GL_STENCIL_BITS,&g_stencil_bits);g_frame_queries_now++;g_stencil_fbo=fbo;g_stencil_ref=255;}
+    if(fbo!=g_cfg->gl.stencil_fbo){glGetIntegerv(GL_STENCIL_BITS,&g_cfg->gl.stencil_bits);g_frame_queries_now++;g_cfg->gl.stencil_fbo=fbo;g_cfg->gl.stencil_ref=255;}
     g_target_known=g_in_document;
   }
-  if(g_stencil_bits<=0)return false;
+  if(g_cfg->gl.stencil_bits<=0)return false;
   glStencilMask(0xFF);
-  if(g_stencil_ref>=255){
-    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_stencil_ref=0;
+  if(g_cfg->gl.stencil_ref>=255){
+    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_cfg->gl.stencil_ref=0;
   }
-  ++g_stencil_ref;
+  ++g_cfg->gl.stencil_ref;
   glEnable(GL_STENCIL_TEST);
-  glStencilFunc(GL_NOTEQUAL,g_stencil_ref,0xFF);
+  glStencilFunc(GL_NOTEQUAL,g_cfg->gl.stencil_ref,0xFF);
   glStencilOp(GL_KEEP,GL_KEEP,GL_REPLACE);
   return true;
 }
 void coverage_end(bool on){if(on)glDisable(GL_STENCIL_TEST);}
 bool ensure_mask_program(){
-  if(g_mask_program) return true;
+  if(g_cfg->gl.mask_program) return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,mask_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_mask_program=glCreateProgram(); glAttachShader(g_mask_program,vs); glAttachShader(g_mask_program,fs);
-  glBindAttribLocation(g_mask_program,0,"a_position"); glLinkProgram(g_mask_program);
+  g_cfg->gl.mask_program=glCreateProgram(); glAttachShader(g_cfg->gl.mask_program,vs); glAttachShader(g_cfg->gl.mask_program,fs);
+  glBindAttribLocation(g_cfg->gl.mask_program,0,"a_position"); glLinkProgram(g_cfg->gl.mask_program);
   glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_mask_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_mask_program);g_mask_program=0;return false;}
-  g_mask_color=glGetUniformLocation(g_mask_program,"u_color");
-  g_mask_sampler=glGetUniformLocation(g_mask_program,"u_mask");
-  g_mask_size=glGetUniformLocation(g_mask_program,"u_size");
-  return g_mask_color>=0&&g_mask_sampler>=0&&g_mask_size>=0;
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.mask_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.mask_program);g_cfg->gl.mask_program=0;return false;}
+  g_cfg->gl.mask_color=glGetUniformLocation(g_cfg->gl.mask_program,"u_color");
+  g_cfg->gl.mask_sampler=glGetUniformLocation(g_cfg->gl.mask_program,"u_mask");
+  g_cfg->gl.mask_size=glGetUniformLocation(g_cfg->gl.mask_program,"u_size");
+  return g_cfg->gl.mask_color>=0&&g_cfg->gl.mask_sampler>=0&&g_cfg->gl.mask_size>=0;
 }
 bool ensure_mask_target(int w,int h){
-  if(g_mask_fbo&&g_mask_w==w&&g_mask_h==h) return true;
-  if(g_mask_tex){glDeleteTextures(1,&g_mask_tex);g_mask_tex=0;}
-  if(g_mask_fbo){glDeleteFramebuffers(1,&g_mask_fbo);g_mask_fbo=0;}
-  glGenTextures(1,&g_mask_tex);glBindTexture(GL_TEXTURE_2D,g_mask_tex);
+  if(g_cfg->gl.mask_fbo&&g_cfg->gl.mask_w==w&&g_cfg->gl.mask_h==h) return true;
+  if(g_cfg->gl.mask_tex){glDeleteTextures(1,&g_cfg->gl.mask_tex);g_cfg->gl.mask_tex=0;}
+  if(g_cfg->gl.mask_fbo){glDeleteFramebuffers(1,&g_cfg->gl.mask_fbo);g_cfg->gl.mask_fbo=0;}
+  glGenTextures(1,&g_cfg->gl.mask_tex);glBindTexture(GL_TEXTURE_2D,g_cfg->gl.mask_tex);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-  glGenFramebuffers(1,&g_mask_fbo);
+  glGenFramebuffers(1,&g_cfg->gl.mask_fbo);
   GLint prev=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev);
-  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,g_mask_tex,0);
+  glBindFramebuffer(GL_FRAMEBUFFER,g_cfg->gl.mask_fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,g_cfg->gl.mask_tex,0);
   const bool complete=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
   glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev);glBindTexture(GL_TEXTURE_2D,0);
-  if(complete){g_mask_w=w;g_mask_h=h;}else{g_mask_w=g_mask_h=0;} // do not cache an incomplete target
+  if(complete){g_cfg->gl.mask_w=w;g_cfg->gl.mask_h=h;}else{g_cfg->gl.mask_w=g_cfg->gl.mask_h=0;} // do not cache an incomplete target
   return complete;
 }
 inline Vertex ndc(float x,float y,int w,int h){float sx=g_cfg->map_origin_x+x*g_cfg->map_scale;float sy=g_cfg->map_origin_y+y*g_cfg->map_scale;
@@ -448,17 +469,17 @@ void append_fill(std::vector<Vertex>&v,const bGPDstroke*s,int w,int h){
 }
 void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=true){
   if(v.empty())return;
-  const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL&&g_mask_program!=0;
-  const GLuint program=masked?g_mask_program:g_program;
-  const GLint color_loc=masked?g_mask_color:g_color;
-  glUseProgram(program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL&&g_cfg->gl.mask_program!=0;
+  const GLuint program=masked?g_cfg->gl.mask_program:g_cfg->gl.program;
+  const GLint color_loc=masked?g_cfg->gl.mask_color:g_cfg->gl.color;
+  glUseProgram(program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   if(masked){
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
-    glUniform1i(g_mask_sampler,0);glUniform2f(g_mask_size,float(g_active_w),float(g_active_h));
+    glUniform1i(g_cfg->gl.mask_sampler,0);glUniform2f(g_cfg->gl.mask_size,float(g_active_w),float(g_active_h));
   }
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(Vertex)),v.data(),GL_DYNAMIC_DRAW);
-  glEnableVertexAttribArray((GLuint)g_position);
-  glVertexAttribPointer((GLuint)g_position,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
+  glEnableVertexAttribArray((GLuint)g_cfg->gl.position);
+  glVertexAttribPointer((GLuint)g_cfg->gl.position,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
   glUniform4f(color_loc,color[0],color[1],color[2],color[3]);
   if(g_draw_mode==DRAW_REVEALAGE){glEnable(GL_BLEND);glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);}
   else if(g_draw_mode==DRAW_INVERT){glEnable(GL_BLEND);glBlendFunc(GL_ONE_MINUS_DST_COLOR,GL_ZERO);}
@@ -467,7 +488,7 @@ void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=t
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
   if(blend||g_draw_mode!=DRAW_NORMAL)glDisable(GL_BLEND);
   if(masked){glBindTexture(GL_TEXTURE_2D,0);}
-  glDisableVertexAttribArray((GLuint)g_position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
+  glDisableVertexAttribArray((GLuint)g_cfg->gl.position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
 // One stroke's triangles, blended once per pixel.
 void draw_stroke_once(const std::vector<Vertex>&v,const float color[4]){
@@ -496,8 +517,6 @@ void draw_holdout(const std::vector<Vertex>&v,float alpha,bool overlap){
 // (or dot) is a quad that carries gpencil_vertex()'s sspos / thickness, and the fragment shader is
 // gpencil_stroke_round_cap_mask() (common_gpencil_lib.glsl) verbatim in GLSL ES 1.0. Fragments with
 // alpha < 0.001 are discarded as gpencil_frag.glsl does, so they do not take the stroke's stencil.
-GLuint g_soft_program=0;
-GLint g_soft_color=-1,g_soft_hard=-1,g_soft_aspect=-1;
 const char *soft_vs_src(){
   return "attribute vec2 a_position; attribute vec4 a_sspos; attribute float a_thickness; "
          "varying vec4 v_sspos; varying float v_thickness; "
@@ -524,7 +543,7 @@ const char *soft_fs_src(){
          "  if(a<0.001)discard; gl_FragColor=vec4(u_color.rgb,a);}";
 }
 bool ensure_soft_program(){
-  if(g_soft_program)return true;
+  if(g_cfg->gl.soft_program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,soft_vs_src()),fs=compile_shader(GL_FRAGMENT_SHADER,soft_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
   GLuint p=glCreateProgram();glAttachShader(p,vs);glAttachShader(p,fs);
@@ -532,8 +551,8 @@ bool ensure_soft_program(){
   glLinkProgram(p);glDeleteShader(vs);glDeleteShader(fs);
   GLint ok=GL_FALSE;glGetProgramiv(p,GL_LINK_STATUS,&ok);
   if(ok==GL_FALSE){glDeleteProgram(p);return false;}
-  g_soft_program=p;g_soft_color=glGetUniformLocation(p,"u_color");
-  g_soft_hard=glGetUniformLocation(p,"u_hardness");g_soft_aspect=glGetUniformLocation(p,"u_aspect");
+  g_cfg->gl.soft_program=p;g_cfg->gl.soft_color=glGetUniformLocation(p,"u_color");
+  g_cfg->gl.soft_hard=glGetUniformLocation(p,"u_hardness");g_cfg->gl.soft_aspect=glGetUniformLocation(p,"u_aspect");
   return true;
 }
 struct SoftVertex{float x,y,s1x,s1y,s2x,s2y,thickness;};
@@ -625,15 +644,15 @@ bool draw_soft(const std::vector<SoftVertex>&v,const float color[4],float hardne
   if(g_active_mask_tex!=0||(g_draw_mode!=DRAW_NORMAL&&g_draw_mode!=DRAW_PREMULT)||!ensure_program()||!ensure_soft_program())return false;
   if(v.empty())return true;
   const bool on=overlap?false:coverage_begin();
-  glUseProgram(g_soft_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glUseProgram(g_cfg->gl.soft_program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(SoftVertex)),v.data(),GL_DYNAMIC_DRAW);
   for(GLuint a=0;a<3;a++)glEnableVertexAttribArray(a);
   glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),nullptr);
   glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),(const void*)offsetof(SoftVertex,s1x));
   glVertexAttribPointer(2,1,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),(const void*)offsetof(SoftVertex,thickness));
-  glUniform4f(g_soft_color,color[0],color[1],color[2],color[3]);
-  glUniform1f(g_soft_hard,std::clamp(hardness,0.0f,1.0f));
-  glUniform2f(g_soft_aspect,1.0f/std::max(aspect[0],1e-6f),1.0f/std::max(aspect[1],1e-6f)); // "invert for vertex shader"
+  glUniform4f(g_cfg->gl.soft_color,color[0],color[1],color[2],color[3]);
+  glUniform1f(g_cfg->gl.soft_hard,std::clamp(hardness,0.0f,1.0f));
+  glUniform2f(g_cfg->gl.soft_aspect,1.0f/std::max(aspect[0],1e-6f),1.0f/std::max(aspect[1],1e-6f)); // "invert for vertex shader"
   glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
   glDisable(GL_BLEND);
@@ -979,8 +998,8 @@ void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
     if(verts.empty())continue;
     const bool on=coverage_begin();
     const bool masked=g_active_mask_tex!=0;
-    const GLuint prog=masked?g_vc_mask_program:g_vc_program;
-    glUseProgram(prog);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+    const GLuint prog=masked?g_cfg->gl.vc_mask_program:g_cfg->gl.vc_program;
+    glUseProgram(prog);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
     if(masked){
       glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
       glUniform1i(glGetUniformLocation(prog,"u_mask"),0);
@@ -1029,7 +1048,7 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
   if(!ensure_mask_program()||!ensure_mask_target(w,h))return 0;
   GLint prev_fbo=0,vp[4]={0,0,0,0};
   glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev_fbo);glGetIntegerv(GL_VIEWPORT,vp);
-  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);glViewport(0,0,w,h);retarget();
+  glBindFramebuffer(GL_FRAMEBUFFER,g_cfg->gl.mask_fbo);glViewport(0,0,w,h);retarget();
   bool cleared=false,inverted=false;
   for(const bGPDlayer* m=static_cast<const bGPDlayer*>(gpd->layers.first);m;m=m->next){
     const bGPDlayer_Mask* entry=valid_mask_entry(gpd,layer,m);
@@ -1046,7 +1065,7 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
   }
   if(cleared&&!inverted)draw_invert_pass(w,h);
   glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev_fbo);glViewport(vp[0],vp[1],vp[2],vp[3]);
-  return cleared?g_mask_tex:0;
+  return cleared?g_cfg->gl.mask_tex:0;
 }
 } // namespace
 
@@ -1082,22 +1101,14 @@ void draw_selection_overlay(const bGPDframe*frame,int w,int h){
 // later frame of the gesture redraws only that texture and the open stroke. Blender's draw engine
 // does the same with its cached batches; without it each input sample re-tessellated and redrew
 // every stroke of the frame.
-struct OpenStrokeCache {
-  GLuint tex=0, program=0, vbo=0;
-  int w=0, h=0, frame=0;
-  const bGPdata* gpd=nullptr;
-  uint64_t rev=0; // data revision the texture was taken at: any edit since then invalidates it
-  float scale=0, ox=0, oy=0, rot=0;
-  bool valid=false;
-} g_open_cache;
 long g_open_cache_stores=0, g_open_cache_reuses=0;
 static long g_engine_reuses=0;
 bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
-  const OpenStrokeCache& c=g_open_cache;
+  const OpenStrokeCache& c=g_cfg->gl.open_cache;
   return c.valid&&c.gpd==gpd&&c.rev==rev&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_cfg->map_scale&&c.ox==g_cfg->map_origin_x&&c.oy==g_cfg->map_origin_y&&c.rot==g_cfg->view_rotation;
 }
 bool open_cache_program(){
-  OpenStrokeCache& c=g_open_cache;
+  OpenStrokeCache& c=g_cfg->gl.open_cache;
   if(c.program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec2 a_position; varying vec2 v_uv; "
       "void main(){v_uv=a_position*0.5+0.5;gl_Position=vec4(a_position,0.0,1.0);}");
@@ -1117,7 +1128,7 @@ bool open_cache_program(){
 void clear_gl_errors(){for(int i=0;i<16&&glGetError()!=GL_NO_ERROR;i++){}}
 // Copies the framebuffer as drawn so far (canvas and committed strokes) into the cache texture.
 void open_cache_store(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
-  OpenStrokeCache& c=g_open_cache;
+  OpenStrokeCache& c=g_cfg->gl.open_cache;
   clear_gl_errors();
   if(!c.tex)glGenTextures(1,&c.tex);
   glBindTexture(GL_TEXTURE_2D,c.tex);
@@ -1134,7 +1145,7 @@ void open_cache_store(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
   c.gpd=gpd;c.rev=rev;c.frame=frame;c.w=c.valid?w:0;c.h=c.valid?h:0; /* a failed store must reallocate next time */ c.scale=g_cfg->map_scale;c.ox=g_cfg->map_origin_x;c.oy=g_cfg->map_origin_y;c.rot=g_cfg->view_rotation;
 }
 bool open_cache_draw(){
-  OpenStrokeCache& c=g_open_cache;
+  OpenStrokeCache& c=g_cfg->gl.open_cache;
   if(!open_cache_program())return false;
   clear_gl_errors();
   const float quad[12]={-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1};
@@ -1255,24 +1266,19 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
  * engine to draw each layer in its own pass. */
 // spare: the other texture of a ping-pong pair, so a new video frame never goes into the texture
 // the GPU is still drawing (Mali waited 40-150 ms for it on every frame step)
-struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0,exported=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
-constexpr int kRefSlots=16;
-RefSlot g_refs[kRefSlots];
-int g_ref_cur=0,g_ref_count=1;
-GLuint g_ref_prog=0, g_ref_vbo=0;
 // a reference stays out of exports unless it is part of the animation (an imported video layer)
 bool slot_shown(const RefSlot&r){return r.visible&&r.tex&&r.w>0&&r.h>0&&(!g_cfg->export_mode||r.exported);}
-bool reference_shown(){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))return true;return false;}
+bool reference_shown(){for(int i=0;i<g_cfg->gl.ref_count;i++)if(slot_shown(g_cfg->gl.refs[i]))return true;return false;}
 void draw_reference_slot(const RefSlot&r,int w,int h){
-  if(!g_ref_prog){
+  if(!g_cfg->gl.ref_prog){
     GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec4 a_p; varying vec2 v_uv; void main(){v_uv=a_p.zw;gl_Position=vec4(a_p.xy,0.0,1.0);}");
     GLuint fs=compile_shader(GL_FRAGMENT_SHADER,"precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; uniform float u_a;"
         "void main(){vec4 c=texture2D(u_tex,v_uv);gl_FragColor=vec4(c.rgb,c.a*u_a);}");
     if(!vs||!fs)return;
-    g_ref_prog=glCreateProgram();glAttachShader(g_ref_prog,vs);glAttachShader(g_ref_prog,fs);
-    glBindAttribLocation(g_ref_prog,0,"a_p");glLinkProgram(g_ref_prog);glDeleteShader(vs);glDeleteShader(fs);
+    g_cfg->gl.ref_prog=glCreateProgram();glAttachShader(g_cfg->gl.ref_prog,vs);glAttachShader(g_cfg->gl.ref_prog,fs);
+    glBindAttribLocation(g_cfg->gl.ref_prog,0,"a_p");glLinkProgram(g_cfg->gl.ref_prog);glDeleteShader(vs);glDeleteShader(fs);
   }
-  if(!g_ref_vbo)glGenBuffers(1,&g_ref_vbo);
+  if(!g_cfg->gl.ref_vbo)glGenBuffers(1,&g_cfg->gl.ref_vbo);
   // aspect fit inside the canvas, centred
   const float cw=float(g_cfg->canvas_width),ch=float(g_cfg->canvas_height);
   const float k=std::min(cw/float(r.w),ch/float(r.h));
@@ -1281,17 +1287,17 @@ void draw_reference_slot(const RefSlot&r,int w,int h){
   auto corner=[&](float u,float v){return ndc(mx+cs*u-sn*v,my+sn*u+cs*v,w,h);};
   const Vertex a=corner(-hw,-hh),b=corner(hw,-hh),c=corner(hw,hh),d=corner(-hw,hh);
   const float q[24]={a.x,a.y,0,0, b.x,b.y,1,0, c.x,c.y,1,1, a.x,a.y,0,0, c.x,c.y,1,1, d.x,d.y,0,1};
-  glUseProgram(g_ref_prog);
-  glBindBuffer(GL_ARRAY_BUFFER,g_ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
+  glUseProgram(g_cfg->gl.ref_prog);
+  glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
   glEnableVertexAttribArray(0);glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,0,nullptr);
   glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,r.tex);
-  glUniform1i(glGetUniformLocation(g_ref_prog,"u_tex"),0);
-  glUniform1f(glGetUniformLocation(g_ref_prog,"u_a"),r.opacity);
+  glUniform1i(glGetUniformLocation(g_cfg->gl.ref_prog,"u_tex"),0);
+  glUniform1f(glGetUniformLocation(g_cfg->gl.ref_prog,"u_a"),r.opacity);
   glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
   glDrawArrays(GL_TRIANGLES,0,6);
   glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,0);glUseProgram(0);
 }
-void draw_reference(int w,int h){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))draw_reference_slot(g_refs[i],w,h);}
+void draw_reference(int w,int h){for(int i=0;i<g_cfg->gl.ref_count;i++)if(slot_shown(g_cfg->gl.refs[i]))draw_reference_slot(g_cfg->gl.refs[i],w,h);}
 
 bool engine_wanted(const bGPdata*gpd){
   if(!g_cfg->engine_enabled||g_engine_failed||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
@@ -1581,10 +1587,10 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   if(g_cfg->export_mode==2)glClearColor(0.0f,0.0f,0.0f,0.0f);
   else glClearColor(0.08f,0.08f,0.08f,1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
-  g_stencil_fbo=-1;
+  g_cfg->gl.stencil_fbo=-1;
   update_canvas_map(w,h);
   const bool drawing=!g_cfg->export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
-  if(!drawing)g_open_cache.valid=false;
+  if(!drawing)g_cfg->gl.open_cache.valid=false;
   const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h,g_engine_revision)&&open_cache_draw();
   if(reuse)g_open_cache_reuses++;
   if(!reuse){
@@ -1953,8 +1959,8 @@ extern "C" void project_grease_android_present_set_guide(int type,float cx,float
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_cfg->fill_draw_mode=std::clamp(mode,0,2);}
 extern "C" int project_grease_android_present_set_material_texture(int slot,int fill,const unsigned char*rgba,int w,int h){
   const int key=slot*2+(fill?1:0);
-  auto it=g_mat_tex.find(key);
-  if(it!=g_mat_tex.end()){if(it->second.id)glDeleteTextures(1,&it->second.id);g_mat_tex.erase(it);}
+  auto it=g_cfg->gl.mat_tex.find(key);
+  if(it!=g_cfg->gl.mat_tex.end()){if(it->second.id)glDeleteTextures(1,&it->second.id);g_cfg->gl.mat_tex.erase(it);}
   if(!rgba||w<=0||h<=0||slot<0)return 1;
   MatTex t;glGenTextures(1,&t.id);glBindTexture(GL_TEXTURE_2D,t.id);
   glPixelStorei(GL_UNPACK_ALIGNMENT,1);
@@ -1962,11 +1968,11 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
   glBindTexture(GL_TEXTURE_2D,0);
-  t.w=w;t.h=h;g_mat_tex[key]=t;
+  t.w=w;t.h=h;g_cfg->gl.mat_tex[key]=t;
   return glGetError()==GL_NO_ERROR?1:0;
 }
 extern "C" int project_grease_android_present_set_reference(const unsigned char*rgba,int w,int h){
-  RefSlot&r=g_refs[g_ref_cur];
+  RefSlot&r=g_cfg->gl.refs[g_cfg->gl.ref_cur];
   if(!rgba||w<=0||h<=0){if(r.tex)glDeleteTextures(1,&r.tex);if(r.spare)glDeleteTextures(1,&r.spare);r.tex=r.spare=0;r.w=r.h=r.sw=r.sh=0;return 1;}
   std::swap(r.tex,r.spare);std::swap(r.w,r.sw);std::swap(r.h,r.sh);
   const bool same=r.tex&&r.w==w&&r.h==h;
@@ -1983,17 +1989,17 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char*
 /* Following reference calls go to [slot]; slots at or past [count] are not drawn (their textures
  * are freed). */
 extern "C" void project_grease_android_present_select_reference(int slot,int count){
-  g_ref_count=std::clamp(count,0,kRefSlots);
-  for(int i=g_ref_count;i<kRefSlots;i++)if(g_refs[i].tex||g_refs[i].spare){if(g_refs[i].tex)glDeleteTextures(1,&g_refs[i].tex);if(g_refs[i].spare)glDeleteTextures(1,&g_refs[i].spare);g_refs[i]=RefSlot{};}
-  g_ref_cur=std::clamp(slot,0,kRefSlots-1);
+  g_cfg->gl.ref_count=std::clamp(count,0,kRefSlots);
+  for(int i=g_cfg->gl.ref_count;i<kRefSlots;i++)if(g_cfg->gl.refs[i].tex||g_cfg->gl.refs[i].spare){if(g_cfg->gl.refs[i].tex)glDeleteTextures(1,&g_cfg->gl.refs[i].tex);if(g_cfg->gl.refs[i].spare)glDeleteTextures(1,&g_cfg->gl.refs[i].spare);g_cfg->gl.refs[i]=RefSlot{};}
+  g_cfg->gl.ref_cur=std::clamp(slot,0,kRefSlots-1);
 }
 extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot,float sx,float sy){
   if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(scale)||!std::isfinite(rot)||!std::isfinite(sx)||!std::isfinite(sy))return;
-  RefSlot&r=g_refs[g_ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;
+  RefSlot&r=g_cfg->gl.refs[g_cfg->gl.ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;
   r.sx=std::clamp(sx,0.05f,20.0f);r.sy=std::clamp(sy,0.05f,20.0f);}
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
-  RefSlot&r=g_refs[g_ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
-extern "C" void project_grease_android_present_set_reference_exported(int exported){g_refs[g_ref_cur].exported=exported?1:0;}
+  RefSlot&r=g_cfg->gl.refs[g_cfg->gl.ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
+extern "C" void project_grease_android_present_set_reference_exported(int exported){g_cfg->gl.refs[g_cfg->gl.ref_cur].exported=exported?1:0;}
 extern "C" void project_grease_android_present_set_fill_collide(int collide){g_cfg->fill_collide=collide?1:0;}
 extern "C" void project_grease_android_present_set_fill_modes(int extend_mode,int layer_mode){g_cfg->fill_extend_mode=extend_mode==1?1:0;g_cfg->fill_layer_mode=std::clamp(layer_mode,0,5);}
 extern "C" void project_grease_android_present_set_fill_extend(float factor){g_cfg->fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
@@ -2036,19 +2042,19 @@ static void present_reset_impl(bool alive){
   // shortcut: the old GpencilBatchCache CPU memory leaks once per context; free it with a gpd once one is at hand here
   if(alive){if(pg_gp_engine_reset)pg_gp_engine_reset();}else if(pg_gp_engine_context_lost)pg_gp_engine_context_lost();
   g_engine_batch_cache=nullptr;g_live_batch_cache=nullptr;g_engine_drawn_revision=~0ull;g_engine_drawn_frame=-1;g_engine_drawn_frames.clear();
-if(alive&&g_vbo)glDeleteBuffers(1,&g_vbo);if(alive&&g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
-  if(alive&&g_mask_program)glDeleteProgram(g_mask_program);if(alive&&g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(alive&&g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
-  g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
-  for(auto&kv:g_mat_tex)if(alive&&kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(alive&&g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(alive&&g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;
-  if(alive&&g_vc_program)glDeleteProgram(g_vc_program);if(alive&&g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;if(alive&&g_soft_program)glDeleteProgram(g_soft_program);g_soft_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+if(alive&&g_cfg->gl.vbo)glDeleteBuffers(1,&g_cfg->gl.vbo);if(alive&&g_cfg->gl.program)glDeleteProgram(g_cfg->gl.program);g_cfg->gl.vbo=0;g_cfg->gl.program=0;g_cfg->gl.position=-1;g_cfg->gl.color=-1;
+  if(alive&&g_cfg->gl.mask_program)glDeleteProgram(g_cfg->gl.mask_program);if(alive&&g_cfg->gl.mask_tex)glDeleteTextures(1,&g_cfg->gl.mask_tex);if(alive&&g_cfg->gl.mask_fbo)glDeleteFramebuffers(1,&g_cfg->gl.mask_fbo);
+  g_cfg->gl.mask_program=0;g_cfg->gl.mask_tex=0;g_cfg->gl.mask_fbo=0;g_cfg->gl.mask_w=g_cfg->gl.mask_h=0;g_active_mask_tex=0;
+  for(auto&kv:g_cfg->gl.mat_tex)if(alive&&kv.second.id)glDeleteTextures(1,&kv.second.id);g_cfg->gl.mat_tex.clear();if(alive&&g_cfg->gl.tex_program)glDeleteProgram(g_cfg->gl.tex_program);g_cfg->gl.tex_program=0;if(alive&&g_cfg->gl.grad_program)glDeleteProgram(g_cfg->gl.grad_program);g_cfg->gl.grad_program=0;
+  if(alive&&g_cfg->gl.vc_program)glDeleteProgram(g_cfg->gl.vc_program);if(alive&&g_cfg->gl.vc_mask_program)glDeleteProgram(g_cfg->gl.vc_mask_program);g_cfg->gl.vc_program=0;g_cfg->gl.vc_mask_program=0;if(alive&&g_cfg->gl.soft_program)glDeleteProgram(g_cfg->gl.soft_program);g_cfg->gl.soft_program=0;g_cfg->gl.stencil_ref=0;g_cfg->gl.stencil_fbo=-1;
   // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
   // stale id in the next context has no storage, every later store failed and each input sample
   // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
-  {OpenStrokeCache&c=g_open_cache;if(alive&&c.tex)glDeleteTextures(1,&c.tex);if(alive&&c.program)glDeleteProgram(c.program);if(alive&&c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
+  {OpenStrokeCache&c=g_cfg->gl.open_cache;if(alive&&c.tex)glDeleteTextures(1,&c.tex);if(alive&&c.program)glDeleteProgram(c.program);if(alive&&c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
   // reference program / buffer / textures were never reset: the next context drew with stale ids
   // (GL_INVALID_VALUE at "reference image" every frame and no picture until the app restarted)
-  if(alive&&g_ref_prog)glDeleteProgram(g_ref_prog);if(alive&&g_ref_vbo)glDeleteBuffers(1,&g_ref_vbo);g_ref_prog=0;g_ref_vbo=0;
-  for(auto&r:g_refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
+  if(alive&&g_cfg->gl.ref_prog)glDeleteProgram(g_cfg->gl.ref_prog);if(alive&&g_cfg->gl.ref_vbo)glDeleteBuffers(1,&g_cfg->gl.ref_vbo);g_cfg->gl.ref_prog=0;g_cfg->gl.ref_vbo=0;
+  for(auto&r:g_cfg->gl.refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
   if(alive)project_grease_fx_reset();else project_grease_fx_context_lost();}
 extern "C" void* project_grease_android_present_config_new(){return new PresentConfig();}
 extern "C" void project_grease_android_present_config_free(void*cfg){if(cfg==g_cfg)g_cfg=&g_default_cfg;delete static_cast<PresentConfig*>(cfg);}
@@ -2060,7 +2066,7 @@ extern "C" void project_grease_android_present_reset(){present_reset_impl(true);
  * stroke cache texture. Everything is recreated on demand. Context current. Returns textures freed. */
 extern "C" int project_grease_android_present_trim(int all){
   int n=pg_gp_engine_trim_pool?pg_gp_engine_trim_pool(all):0;
-  OpenStrokeCache&c=g_open_cache;
+  OpenStrokeCache&c=g_cfg->gl.open_cache;
   if(all&&c.tex){glDeleteTextures(1,&c.tex);c=OpenStrokeCache{};n++;}
   return n;}
 /* The EGL context was lost (EGL_CONTEXT_LOST / GPU reset): drop every GL id and cache WITHOUT calling

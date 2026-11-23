@@ -460,6 +460,37 @@ static void test_strength_full()
 
 /* A stroke at half strength that crosses itself is blended once per pixel: the crossing is not
  * darker than the rest of the stroke (Blender draws a stroke as one surface). */
+extern "C" const char *project_grease_android_present_last_frame();
+/* Batch 6, the SLOW render lines: GL state was queried for every stroke (a GL queue stall each, ~2 ms
+ * a stroke on the emulator). 300 strokes (the stencil reference wraps at 255) take a fixed few
+ * queries, and a self-crossing stroke after them is still blended once. */
+static void test_queries_per_frame()
+{
+  Doc d = make_doc();
+  set_color(d, 0.0f, 0.0f, 0.0f);
+  bGPDlayer *l = add_layer(d, "A");
+  for (int i = 0; i < 300; i++) add_bar(l, 5, 15, 5 + (i % 10), 1, 0.5f);
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  const float xy[4][2] = {{20, 30}, {180, 90}, {20, 90}, {180, 30}};
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 4, 12, false);
+  for (int i = 0; i < 4; i++) {
+    s->points[i].x = xy[i][0];
+    s->points[i].y = xy[i][1];
+    s->points[i].pressure = 1.0f;
+    s->points[i].strength = 0.5f;
+  }
+  present(d);
+  const char *info = project_grease_android_present_last_frame();
+  const char *q = std::strstr(info, "stroke GL queries ");
+  CHECK(q != nullptr);
+  const long n = q ? std::strtol(q + std::strlen("stroke GL queries "), nullptr, 10) : -1;
+  if (n < 0 || n > 4) std::printf("FAIL: %ld GL queries for 301 strokes: %s\n", n, info);
+  CHECK(n >= 0 && n <= 4);
+  const Rgba cross = pixel_at_canvas(100, 60), single = pixel_at_canvas(60, 45);
+  CHECK(cross.r < 200);
+  CHECK(std::abs(cross.r - single.r) <= 3);
+}
+
 static void test_self_overlap()
 {
   Doc d = make_doc();
@@ -1295,6 +1326,7 @@ int main()
   test_weight_view();
   test_strength_full();
   test_self_overlap();
+  test_queries_per_frame();
   test_gradient_fill();
   test_holdout_and_overlap();
   test_cyclic_square();

@@ -98,6 +98,12 @@ GLuint g_grad_program=0;
 // stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
 int g_stencil_ref=0;
 GLint g_stencil_fbo=-1;
+GLint g_stencil_bits=0;     // of g_stencil_fbo: asked once per target, not per stroke
+long g_frame_gl_queries=0;  // glGet round trips of the last document pass (each one stalls an emulator / remote GL)
+long g_frame_queries_now=0;
+bool g_in_document=false;   // inside present_gp_document: the bound target is known between retarget() calls
+bool g_target_known=false;
+void retarget(){g_target_known=false;} // an offscreen layer / mask pass may have bound another framebuffer
 // Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
 GLuint g_mask_program=0;
 GLint g_mask_color=-1, g_mask_sampler=-1, g_mask_size=-1;
@@ -313,12 +319,18 @@ void draw_gradient(const std::vector<UVVertex>&v,const float c1[4],const float c
   glDisableVertexAttribArray(1);glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
 bool coverage_begin(){
-  GLint bits=0;glGetIntegerv(GL_STENCIL_BITS,&bits);
-  if(bits<=0)return false;
-  GLint fbo=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&fbo);
+  // The stencil bits were queried for every stroke: a glGet waits for the GL queue, and on the
+  // emulator (GL sent to the host) that wait was ~2 ms a stroke, the whole of the SLOW render time.
+  // In the document pass the target is asked again only after a pass that may switch it (retarget()).
+  if(!g_target_known){
+    GLint fbo=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&fbo);g_frame_queries_now++;
+    if(fbo!=g_stencil_fbo){glGetIntegerv(GL_STENCIL_BITS,&g_stencil_bits);g_frame_queries_now++;g_stencil_fbo=fbo;g_stencil_ref=255;}
+    g_target_known=g_in_document;
+  }
+  if(g_stencil_bits<=0)return false;
   glStencilMask(0xFF);
-  if(fbo!=g_stencil_fbo||g_stencil_ref>=255){
-    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_stencil_ref=0;g_stencil_fbo=fbo;
+  if(g_stencil_ref>=255){
+    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_stencil_ref=0;
   }
   ++g_stencil_ref;
   glEnable(GL_STENCIL_TEST);
@@ -845,7 +857,7 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
   if(!ensure_mask_program()||!ensure_mask_target(w,h))return 0;
   GLint prev_fbo=0,vp[4]={0,0,0,0};
   glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev_fbo);glGetIntegerv(GL_VIEWPORT,vp);
-  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);glViewport(0,0,w,h);
+  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);glViewport(0,0,w,h);retarget();
   bool cleared=false,inverted=false;
   for(const bGPDlayer* m=static_cast<const bGPDlayer*>(gpd->layers.first);m;m=m->next){
     const bGPDlayer_Mask* entry=valid_mask_entry(gpd,layer,m);
@@ -1373,7 +1385,10 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number);
 static double g_last_doc_ms=0.0;
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   const auto t0=std::chrono::steady_clock::now();
+  g_frame_queries_now=0;g_in_document=true;g_target_known=false;
   const int r=present_gp_document_impl(gpd,frame_number);
+  g_in_document=false;g_target_known=false;
+  g_frame_gl_queries=g_frame_queries_now;
   g_last_doc_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
   return r;
 }
@@ -1418,7 +1433,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     // Layers without masks keep the direct path; a masked layer is multiplied by its mask texture.
     if(layer_is_masked(gpd,layer)){
       g_active_mask_tex=render_layer_mask(gpd,layer,frame_number,w,h);
-      g_active_w=w;g_active_h=h;
+      g_active_w=w;g_active_h=h;retarget();
     }
     // Shader effects: a layer with working effects is drawn offscreen (premultiplied), the passes run on
     // it and the result is composited; a layer without effects keeps the direct path.
@@ -1436,6 +1451,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     const bool use_blend=blend_mode!=eGplBlendMode_Regular&&g_cfg->weight_group<0&&project_grease_fx_begin_layer(w,h)!=0;
     const bool use_fx=!use_blend&&want_fx&&project_grease_fx_begin_layer(w,h)!=0;
     if(use_fx||use_blend)g_draw_mode=DRAW_PREMULT;
+    retarget();
     g_layer_tint[0]=layer->tintcolor[0];g_layer_tint[1]=layer->tintcolor[1];g_layer_tint[2]=layer->tintcolor[2];g_layer_tint[3]=layer->tintcolor[3];
     g_line_change=float(layer->line_change);
     // Onion skin: the ghost keyframes of the layer by bGPdata.onion_mode (pg_onion_ghosts: Relative =
@@ -1505,10 +1521,12 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
         const bool pass=!sub.empty()&&project_grease_fx_pass_count(sub.data(),int(sub.size()),&fx_view)>0&&
                         project_grease_fx_begin_layer(w,h)!=0;
         if(pass)g_draw_mode=DRAW_PREMULT;
+        retarget();
         g_draw_parts=part;
         draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
         g_draw_parts=3;
         if(pass){g_draw_mode=DRAW_NORMAL;project_grease_fx_end_layer(sub.data(),int(sub.size()),&fx_view,nullptr,nullptr);}
+        retarget();
       }
     }
     else draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
@@ -1517,6 +1535,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
       g_draw_mode=DRAW_NORMAL;
       project_grease_fx_end_layer_blend(want_fx?fx_entries:nullptr,want_fx?fx_count:0,&fx_view,blend_mode,layer->opacity);
     }
+    retarget();
     g_force_layer_opacity=-1.0f;
     g_layer_tint[3]=0.0f;
     g_line_change=0.0f;
@@ -1871,10 +1890,11 @@ extern "C" void project_grease_android_present_set_overlay_unselected(int show){
 extern "C" const char* project_grease_android_present_last_frame(){
   static char buf[900];
   std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x at %s",g_last_doc_ms,g_last_engine_ms,
-                g_last_engine_rebuilt==2?"reused last image":g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_cfg->view_rotation!=0.0f?", rotated view":"",
+                g_engine_drawn_frame<0?"engine not used, presenter":g_last_engine_rebuilt==2?"reused last image":g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_cfg->view_rotation!=0.0f?", rotated view":"",
                 g_gl_error_frames,g_engine_gl_errors,g_last_gl_error,g_last_gl_where);
   unsigned plast=0;const char*pname="";
   const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;
+  {const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", stroke GL queries %ld",g_frame_gl_queries);}
   if(pn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", %ld in passes (last 0x%x at pass %s)",pn,plast,pname);}
   {long dn=0;const char*dm=pg_gp_engine_gl_debug_message?pg_gp_engine_gl_debug_message(&dn):"";
    if(dn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", driver says (%ld): %.200s",dn,dm);}}

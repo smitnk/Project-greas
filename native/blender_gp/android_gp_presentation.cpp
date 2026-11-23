@@ -1000,6 +1000,7 @@ int g_engine_drawn_weight=-2;       // the overlay's vertex group (its edit batc
 float g_engine_drawn_vopacity=-1.0f;
 PGGpEngineView g_engine_last_view{};
 bool g_engine_have_last=false;
+std::vector<unsigned char> g_engine_last_fx; // effect settings of the last engine image
 
 // Startup self-test (reported: on an ARM Mali phone the engine compiled but drew a black / broken
 // canvas and the app hung): a black line on white paper through the engine, read back. A wrong
@@ -1265,11 +1266,21 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   if(over)for(float&c:view.background)c=0.0f;
   const auto t_engine=std::chrono::steady_clock::now();
   gl_check("canvas paper / reference / masks before the engine");
-  /* Nothing changed since the last engine image (same strokes, frame, view, no effects): present
-   * that image again instead of re-running every engine pass. Effects are left out because their
-   * settings are not part of the data revision. */
+  /* Nothing changed since the last engine image (same strokes, frame, view, effect settings):
+   * present that image again instead of re-running every engine pass. The effect settings are not
+   * part of the data revision, so they are compared here (the pivots also depend on the canvas size). */
+  std::vector<unsigned char> fx_sig;
+  if(g_fx_provider){
+    const int cs[2]={g_cfg->canvas_width,g_cfg->canvas_height};
+    fx_sig.insert(fx_sig.end(),reinterpret_cast<const unsigned char*>(cs),reinterpret_cast<const unsigned char*>(cs+2));
+    for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
+      const PGFxEntry*e=nullptr;const int n=g_fx_provider(g_fx_provider_user,l,&e);
+      if(n>0&&e)fx_sig.insert(fx_sig.end(),reinterpret_cast<const unsigned char*>(e),reinterpret_cast<const unsigned char*>(e+n));
+      fx_sig.push_back(0xFF); // layer boundary
+    }
+  }
   PGGpEngineView&last=g_engine_last_view;
-  const bool same=g_engine_have_last&&!changed&&!g_cfg->export_mode&&!view.rendered&&!last.rendered&&
+  const bool same=g_engine_have_last&&!changed&&!g_cfg->export_mode&&fx_sig==g_engine_last_fx&&
       view.viewport_w==last.viewport_w&&view.viewport_h==last.viewport_h&&view.origin_x==last.origin_x&&
       view.origin_y==last.origin_y&&view.scale==last.scale&&view.rotation==last.rotation&&
       std::memcmp(view.background,last.background,sizeof view.background)==0;
@@ -1279,7 +1290,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
     {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
     glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
   }
-  last=view;g_engine_have_last=ok&&!g_cfg->export_mode;
+  last=view;g_engine_last_fx.swap(fx_sig);g_engine_have_last=ok&&!g_cfg->export_mode;
   g_engine_reuses+=same?1:0;
   g_last_engine_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t_engine).count();
   g_last_engine_rebuilt=same?2:changed?1:0;g_last_w=w;g_last_h=h;

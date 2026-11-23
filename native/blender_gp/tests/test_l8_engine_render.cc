@@ -30,12 +30,17 @@
 #include "MEM_guardedalloc.h"
 
 #include "gles/pg_gpu_gles.h"
+#include "project_grease_shader_fx.h"
 
 extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
 extern "C" int project_grease_android_present_engine_active();
+extern "C" const char *project_grease_android_present_last_frame();
+extern "C" void project_grease_android_set_fx_provider(int (*fn)(void *, const bGPDlayer *, const PGFxEntry **), void *user);
+static PGFxEntry g_test_fx;
+static int test_fx_provider(void *, const bGPDlayer *, const PGFxEntry **out) { *out = &g_test_fx; return 1; }
 extern "C" int project_grease_android_present_set_reference(const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_reference_style(int visible, float opacity);
 
@@ -418,6 +423,31 @@ int main()
     CHECK(c[0] > 200 && c[1] < 60 && c[2] < 60);
     project_grease_android_present_set_view_rotation(0.0f);
     project_grease_android_present_set_reference(nullptr, 0, 0);
+  }
+
+  /* Batch 6: a frame with unchanged effects reuses the last engine image (effects were re-run on
+   * every frame); changing an effect setting draws again. */
+  {
+    std::memset(&g_test_fx, 0, sizeof g_test_fx);
+    g_test_fx.type = PG_FX_COLORIZE; g_test_fx.enabled = 1;
+    g_test_fx.params[PG_FXP_COLORIZE_MODE] = 0; g_test_fx.params[PG_FXP_COLORIZE_FACTOR] = 1.0f;
+    project_grease_android_set_fx_provider(test_fx_provider, nullptr);
+    auto draw = [&](std::vector<unsigned char> &px) {
+      glBindFramebuffer(GL_FRAMEBUFFER, 0); glViewport(0, 0, W, H);
+      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+      px.resize((size_t)W * H * 4); glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+      return std::strstr(project_grease_android_present_last_frame(), "reused last image") != nullptr;
+    };
+    std::vector<unsigned char> a, b, c;
+    draw(a);
+    std::printf("  effects drawn: %s\n", project_grease_android_present_last_frame());
+    const bool reused = draw(b);
+    std::printf("  unchanged effects: %s\n", project_grease_android_present_last_frame());
+    CHECK(reused);
+    CHECK(a == b);
+    g_test_fx.params[PG_FXP_COLORIZE_FACTOR] = 0.0f;
+    CHECK(!draw(c));
+    project_grease_android_set_fx_provider(nullptr, nullptr);
   }
 
   /* A9: the stroke being drawn looks like the stroke it is committed as (hardness, flat caps, aspect),

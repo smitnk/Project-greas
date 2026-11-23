@@ -20,6 +20,7 @@ class SweepL9Batch3Test : SweepBase() {
     /** B2: an open shape / curve / polyline belongs to the frame it was drawn on. */
     @Test fun frameChangeCancelsOpenSessions() {
         onUi { controller.createFrame(3) }
+        onUi { controller.animation.setFrame(1) } // createFrame leaves the playhead on the new frame; draw on frame 1
         onUi { controller.selectTool(GreaseTool.RECTANGLE) }
         drag(300f to 200f, 900f to 500f)
         assertTrue(onUi { controller.shapeEditing })

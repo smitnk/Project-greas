@@ -387,7 +387,7 @@ internal fun decodeGifFrames(context: Context, uri: Uri, fps: Int): List<String>
             var sample = 1
             while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
             val still = context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }
-                ?: return@runCatching emptyList<String>()
+                ?: error("undecodable image")
             return@runCatching listOf(save(still, 1))
         }
         val dur = movie.duration().coerceAtLeast(1)

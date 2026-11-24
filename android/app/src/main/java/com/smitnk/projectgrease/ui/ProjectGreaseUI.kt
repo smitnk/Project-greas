@@ -51,7 +51,7 @@ private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
 /** The 3D reference / Line Art screen (OBJ + camera): off until it's wanted again. */
 private const val SHOW_3D_REFERENCE = false
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS, AUDIO, IMPORT_PHOTO, IMPORT_VIDEO, IMPORT_AUDIO }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS, AUDIO, IMPORT_PHOTO, IMPORT_VIDEO, IMPORT_AUDIO, RIG }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 
@@ -479,6 +479,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.DRAW_SETTINGS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Properties(controller,::redraw)}
         Sheet.EFFECTS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){LayerEffectsSection(controller,::redraw)}}
         Sheet.TIMELINE->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Timeline(controller,::redraw,{fpsDialog=true},{sheet=Sheet.AUDIO})}
+        Sheet.RIG->RigSheet(controller,{sheet=Sheet.NONE},::redraw)
         Sheet.NONE->Unit
     }
 }
@@ -903,6 +904,7 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                     }
                 }
             }
+            BoneKeyRows(controller,redraw)
         }
     }
 }
@@ -1604,7 +1606,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
                 modifier=Modifier.clickable{popup=if(popup==StudioPopup.MODE)StudioPopup.NONE else StudioPopup.MODE}.semantics{contentDescription="Mode"}.testTag("studioMode")){
                 Row(Modifier.heightIn(min=48.dp).padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
                     Icon(modeIcon(controller.mode),null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                    Text(StudioMode.entries.firstOrNull{it.name==controller.mode.name}?.label?:controller.mode.name,fontSize=13.sp,fontWeight=FontWeight.Bold)
+                    Text(StudioMode.entries.firstOrNull{it.name==controller.studioModeName}?.label?:controller.studioModeName,fontSize=13.sp,fontWeight=FontWeight.Bold)
                     Icon(PgIcons.ArrowDropDown,null,Modifier.size(18.dp))
                 }
             }
@@ -1733,9 +1735,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
                 TextButton(onClick={popup=StudioPopup.NONE;onSheet(Sheet.MATERIALS)}){Text("Materials…")}
             }
             StudioPopup.MODE->StudioCard({popup=StudioPopup.NONE}){
-                ModeSwitcher(controller.mode.name,{m->
-                    // Blender's mode operators; Object / Pose answer once the controller supports them
-                    if(controller.mode.name!=m.name){ if(controller.modeToggle(m.op)) redraw() else toast(context,"${m.label} mode is not ready yet") }
+                ModeSwitcher(controller.studioModeName,{m->
+                    // Blender's mode operators; Pose needs an armature (Menu > Rig > Add Armature)
+                    if(controller.studioModeName!=m.name){ if(controller.modeToggle(m.op)) redraw() else toast(context,"${m.label}: add an armature first") }
                     popup=StudioPopup.NONE},Modifier.padding(horizontal=8.dp))
             }
             StudioPopup.BRUSH->StudioCard({popup=StudioPopup.NONE}){
@@ -1951,6 +1953,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             item(PgIcons.Layers,"Layers (all settings)","Merge, isolate, lock all, transform options","layers"){onSheet(Sheet.LAYERS)}
             item(PgIcons.AutoAwesome,"Effects (whole drawing)","Blur, colorize, glow, shadow, … shown in the Rendered view","effects"){onSheet(Sheet.EFFECTS)}
             item(PgIcons.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
+            item(PgIcons.Animation,"Rig","Armature, bones, constraints, pose, swaps, sliders","rig"){onSheet(Sheet.RIG)}
             item(PgIcons.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
             item(PgIcons.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
             item(PgIcons.Image,"Import photo","A picture to draw over: then resize, squash, rotate it with the box","importPhoto"){onSheet(Sheet.IMPORT_PHOTO)}

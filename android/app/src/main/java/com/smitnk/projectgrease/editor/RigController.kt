@@ -19,7 +19,7 @@ class RigController(private val native: NativeEditorBridge) {
         const val CMD_POSE_SCALE = 18; const val CMD_POSE_SET = 19; const val CMD_POSE_CLEAR = 20
         const val CMD_POSE_COPY = 21; const val CMD_POSE_PASTE = 22; const val CMD_KEY_INSERT = 23
         const val CMD_KEY_DELETE = 24; const val CMD_KEY_INTERPOLATION = 25; const val CMD_BIND = 26
-        const val CMD_EVALUATE = 27; const val CMD_DISPLAY = 28; const val CMD_PICK = 29
+        const val CMD_EVALUATE = 27; const val CMD_DISPLAY = 28; const val CMD_PICK = 29; const val CMD_KEY_MOVE = 30
         // PG_ARM_Q_*
         const val Q_SUMMARY = 0; const val Q_BONE = 1; const val Q_POSE = 2; const val Q_KEYS = 3
         const val Q_KEY_INTERPOLATION = 4; const val Q_ENVELOPE = 5; const val Q_SELECTED = 6
@@ -63,6 +63,8 @@ class RigController(private val native: NativeEditorBridge) {
     val mode get() = native.armatureQuery(Q_SUMMARY).getOrNull(2)?.toInt() ?: MODE_OBJECT
 
     fun create() = cmd(CMD_CREATE) == 1
+    /** The rig as saved (project_grease_armature_io.cc): names of bones / properties live here. */
+    fun json(): String = native.armatureJson()
     fun remove() = cmd(CMD_REMOVE) == 1
     /** Object / Edit / Pose (the armature skips deforming in Edit, as in Blender). */
     fun setMode(mode: Int) = cmd(CMD_SET_MODE, -1, mode.toFloat()) == 1
@@ -120,6 +122,8 @@ class RigController(private val native: NativeEditorBridge) {
     fun deleteKey(bone: Int, frame: Int) = cmd(CMD_KEY_DELETE, bone, frame.toFloat())
     fun setInterpolation(bone: Int, frame: Int, ipo: Int) = cmd(CMD_KEY_INTERPOLATION, bone, frame.toFloat(), ipo.toFloat())
     fun interpolation(bone: Int, frame: Int) = native.armatureQuery(Q_KEY_INTERPOLATION, bone, frame.toFloat()).getOrNull(0)?.toInt() ?: -1
+    /** Dope sheet Grab: the bone's keys at [frame] go to [to] (a key already there is replaced). */
+    fun moveKey(bone: Int, frame: Int, to: Int) = cmd(CMD_KEY_MOVE, bone, frame.toFloat(), to.toFloat())
     fun keys(bone: Int): FloatArray = native.armatureQuery(Q_KEYS, bone)
     /** Evaluates the action at [frame] (the backend also does it whenever the scene frame changes). */
     fun evaluate(frame: Float) = cmd(CMD_EVALUATE, -1, frame)
@@ -256,4 +260,67 @@ class RigController(private val native: NativeEditorBridge) {
     val driverCount get() = native.armatureQuery(RigIds.Q_DRIVERS).getOrNull(0)?.toInt() ?: 0
     /** array index, type, flag (1 invalid), driver value, F-Curve value, variable count, keys, generator, then per variable type, value, flag. */
     fun driver(index: Int): FloatArray = native.armatureQuery(RigIds.Q_DRIVER, -1, index.toFloat())
+
+    // ---- drawing swap / master slider (built only from Blender features) ----
+    /**
+     * Swap: the layer's Time Offset modifier in Fixed Frame mode shows drawing number "offset"; a driver
+     * sets offset = round(swap) where swap is Loc X of the control bone "Swap.<layer>" (1 unit = one
+     * drawing). Keys on that bone key the swap; [linkSlider] adds custom properties to the same driver.
+     * Returns the driver index or -1. The caller adds the TIME modifier ([modifier] is its index) and sets
+     * mode Fixed Frame (param 0 = 2).
+     */
+    fun addSwap(layer: String, modifier: Int, headX: Float, headY: Float): Int {
+        val bone = "Swap." + layer
+        if (findBone(bone) < 0) {
+            val m = mode
+            if (m != MODE_EDIT) setMode(MODE_EDIT)
+            if (addBone(headX, headY, headX, headY - 60f, bone) < 0) return -1
+            setMode(m)
+        }
+        val d = addDriver(timeOffsetPath(layer, modifier))
+        if (d < 0) return -1
+        if (driver(d).getOrNull(5)?.toInt() == 0) {
+            val v = addDriverVariable(d, "swap", RigIds.VAR_TRANSFORM_CHANNEL)
+            setDriverVariableTransform(d, v, bone, RigIds.CHAN_LOC_X, 0, RigIds.LOCAL_SPACE)
+            setDriverExpression(d, "round(swap)")
+        }
+        return d
+    }
+
+    /** Swap bone Loc X for drawing [index] (pose units; 1 unit per drawing). */
+    fun setSwap(layer: String, index: Int): Boolean {
+        val b = findBone("Swap." + layer)
+        if (b < 0) return false
+        val p = pose(b).takeIf { it.size >= 10 } ?: return false
+        p[0] = index.toFloat()
+        return setPose(b, p) >= 0
+    }
+
+    /**
+     * Links the object property [prop] (master slider) to [path]/[index] with value = prop * [factor]
+     * (added to an existing driver's expression, so a swap keeps its own key). Rotation of a 2D bone is a
+     * pair of drivers on rotation_quaternion w / z (bone Z is the screen normal): pass [rotation] true and
+     * [factor] in radians at prop 1. Returns the number of drivers written.
+     */
+    fun linkSlider(prop: String, path: String, index: Int, factor: Float, rotation: Boolean = false): Int {
+        val v = prop.replace(Regex("[^A-Za-z0-9_]"), "_").let { if (it.firstOrNull()?.isDigit() != false) "p_$it" else it }
+        fun one(p: String, i: Int, term: (String) -> String): Boolean {
+            val d = addDriver(p, i)
+            if (d < 0) return false
+            val info = driver(d)
+            val vars = info.getOrNull(5)?.toInt() ?: 0
+            val k = addDriverVariable(d, v)
+            if (k < 0 || !setDriverVariablePath(d, k, objectPropertyPath(prop))) return false
+            // the existing expression is kept as a term (a swap's round(swap)); a fresh driver is the term alone
+            val old = if (vars == 0) null else runCatching {
+                org.json.JSONObject(json()).getJSONArray("drivers").getJSONObject(d).getString("expression") }.getOrNull()
+            val e = if (old == null) term(v) else old.replace("round(swap)", "round(swap + ${term(v)})").takeIf { it != old } ?: "$old + ${term(v)}"
+            return setDriverExpression(d, e)
+        }
+        if (!rotation) return if (one(path, index) { "$it*$factor" }) 1 else 0
+        var n = 0
+        if (one(path, 0) { "cos($it*${factor / 2f})" }) n++
+        if (one(path, 3) { "sin($it*${factor / 2f})" }) n++
+        return n
+    }
 }

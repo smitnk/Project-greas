@@ -1400,6 +1400,33 @@ class EditorController {
     }
     /** GPENCIL_OT_editmode_toggle / paintmode_toggle / sculptmode_toggle / vertexmode_toggle /
      *  weightmode_toggle: the mode switch (back to Draw when that mode is on already). */
+    /** Object mode (no data editing) and which object is active: the GP object or the armature. */
+    var objectMode by androidx.compose.runtime.mutableStateOf(false)
+    var rigActive by androidx.compose.runtime.mutableStateOf(false)
+    /** The studio mode chip name: Object / Edit (armature) / Pose, else the GP mode. */
+    val studioModeName:String get() = when {
+        objectMode -> "OBJECT"
+        rigActive && rig.mode == RigController.MODE_POSE -> "POSE"
+        rigActive && rig.mode == RigController.MODE_EDIT -> "EDIT"
+        else -> mode.name
+    }
+    /** Edit / Pose touches go to the rig, not the strokes. */
+    val rigTouch:Boolean get() = !objectMode && rigActive && rig.exists && rig.mode != RigController.MODE_OBJECT
+    /** object.mode_set / posemode_toggle / armature editmode: Pose and armature Edit need a rig. */
+    private fun rigModeToggle(idname:String):Boolean {
+        com.smitnk.projectgrease.CrashLog.event("OP $idname")
+        when (idname) {
+            "OBJECT_OT_mode_set" -> { if (rig.exists) rig.setMode(RigController.MODE_OBJECT); objectMode = true }
+            "OBJECT_OT_posemode_toggle" -> { if (!rig.exists || !rig.setMode(RigController.MODE_POSE)) return false; objectMode = false; rigActive = true }
+            else -> { if (!rig.setMode(RigController.MODE_EDIT)) return false; objectMode = false; rigActive = true }
+        }
+        render(); return true
+    }
+    /** Object mode: make the armature (true) or the GP object active. */
+    fun setActiveObject(armature:Boolean):Boolean {
+        if (armature && !rig.exists) return false
+        rigActive = armature; render(); return true
+    }
     fun modeToggle(idname:String):Boolean {
         val target = when (idname) {
             "GPENCIL_OT_editmode_toggle" -> GreaseMode.EDIT
@@ -1407,9 +1434,17 @@ class EditorController {
             "GPENCIL_OT_sculptmode_toggle" -> GreaseMode.SCULPT
             "GPENCIL_OT_vertexmode_toggle" -> GreaseMode.VERTEX_PAINT
             "GPENCIL_OT_weightmode_toggle" -> GreaseMode.WEIGHT_PAINT
+            "OBJECT_OT_mode_set", "OBJECT_OT_posemode_toggle" -> return rigModeToggle(idname)
             else -> return false
         }
         com.smitnk.projectgrease.CrashLog.event("OP $idname")
+        // Edit with the armature active is armature Edit mode (object.mode_set on the active object)
+        if (target == GreaseMode.EDIT && rigActive && rig.exists) return rigModeToggle(idname)
+        if (rig.exists) rig.setMode(RigController.MODE_OBJECT)
+        objectMode = false; rigActive = false
+        // Weight Paint on the bound GP object paints the active bone's group (Blender's bone-select in weight paint)
+        if (target == GreaseMode.WEIGHT_PAINT && rig.activeBone >= 0) rig.bone(rig.activeBone)?.name?.let { n ->
+            vertexGroups().indexOf(n).takeIf { it >= 0 }?.let(::selectVertexGroup) }
         return setMode(if (mode == target && target != GreaseMode.DRAW) GreaseMode.DRAW else target)
     }
     // ---- curve edit mode (Blender's Edit-mode "Curve Editing": strokes edited as bezier curves) ----

@@ -1,5 +1,6 @@
 package com.smitnk.projectgrease.nativebridge
 
+import com.smitnk.projectgrease.editor.RigController
 import android.util.Log
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -98,6 +99,7 @@ fun ProjectGreaseEglViewport(
         }
     }
     TransformOverlay(controller, Modifier.matchParentSize())
+    com.smitnk.projectgrease.ui.RigHandleOverlay(controller, Modifier.matchParentSize())
     View3DBar(controller, Modifier.align(androidx.compose.ui.Alignment.BottomEnd)) // Camera / 3D switch
   }
 }
@@ -138,6 +140,9 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var rendererHandle = 0L
     // the platform slop scales with screen density; a fixed 24 px was 24 dp on mdpi phones and 6 dp on xxxhdpi
     private val tapSlopPx = android.view.ViewConfiguration.get(context).scaledTouchSlop * 1.5f
+    // Object / armature Edit / Pose touches (RigTouch.kt), Camera view only
+    private val rigTouch = RigTouch(controller, ::canvasPoint) {
+        RigController.SELECT_DIST_PX * resources.displayMetrics.density / pixelsPerUnit().coerceAtLeast(1e-3f) }
     // the 3D view's navigation / object touches (View3D.kt); the Camera view never reaches it
     private val view3dTouch = View3DTouch(context.resources.displayMetrics.density, tapSlopPx, { controller.render() }) { e ->
         val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
@@ -235,6 +240,7 @@ internal class ProjectGreaseDrawingSurfaceView(
     private fun handleTouch(event: MotionEvent): Boolean {
         if (rendererHandle == 0L) return true
         if (View3DUi.active && view3dTouch.handle(event)) return true
+        if (!View3DUi.active && rigTouch.handle(event)) return true
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {

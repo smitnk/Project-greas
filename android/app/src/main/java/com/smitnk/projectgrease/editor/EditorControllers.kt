@@ -689,7 +689,6 @@ class SelectionController(private val native: NativeEditorBridge) {
     }
 }
 
-class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
 enum class EraserMode { HARD, SOFT, STROKE }
 enum class SculptBrush {
     SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE, CLONE
@@ -836,7 +835,6 @@ class EditorController {
         // the playback tick never moves the native frame while a stroke / session / batch is open
         animation.canAdvance = { !gestureActive() }
     }
-    val modifiers=ModifierController()
     val sculpt=SculptController()
     val onion=OnionSkinController()
     private var rendererHandle=0L

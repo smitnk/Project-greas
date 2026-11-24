@@ -588,6 +588,59 @@ static void test_dispatch(void)
   CHECK(pg_gp_select_dispatch(NULL, layer, PG_SELECT_CMD_ALL, all, 1) == 0, "null document rejected");
 }
 
+/* #14: the lasso is tested in region pixels through the view (gpencil_point_to_xy with the region
+ * view), so the same on-screen lasso selects the same strokes at 1x, 4x and 4x turned 30 degrees. */
+typedef struct { float scale, ox, oy, rot; } TestView;
+static void screen_to_canvas(const TestView *v, float sx, float sy, float r[2])
+{
+  const float c = cosf(-v->rot), s = sinf(-v->rot), dx = sx - 400.0f, dy = sy - 300.0f;
+  const float ux = 400.0f + c * dx - s * dy, uy = 300.0f + s * dx + c * dy;
+  r[0] = (ux - v->ox) / v->scale;
+  r[1] = (uy - v->oy) / v->scale;
+}
+static void test_lasso_region_view(void)
+{
+  /* conversion: region = rotate(origin + canvas * scale) about the region centre */
+  pg_gp_select_set_region_view(4.0f, 10.0f, 20.0f, 0.5235988f, 800, 600);
+  const float co[2] = {100.0f, 70.0f};
+  float r[2];
+  pg_gp_select_canvas_to_region(co, r);
+  const float dx = 10.0f + 400.0f - 400.0f, dy = 20.0f + 280.0f - 300.0f; /* (410, 300) - centre */
+  const float ex = 400.0f + cosf(0.5235988f) * dx - sinf(0.5235988f) * dy;
+  const float ey = 300.0f + sinf(0.5235988f) * dx + cosf(0.5235988f) * dy;
+  CHECK(fabsf(r[0] - ex) < 1e-3f && fabsf(r[1] - ey) < 1e-3f, "canvas_to_region applies zoom, pan and rotation");
+  const TestView back = {4.0f, 10.0f, 20.0f, 0.5235988f};
+  float c2[2];
+  screen_to_canvas(&back, r[0], r[1], c2);
+  CHECK(fabsf(c2[0] - co[0]) < 1e-3f && fabsf(c2[1] - co[1]) < 1e-3f, "canvas_to_region inverts the screen mapping");
+
+  /* one on-screen lasso and on-screen stroke spots; 1.6 px either side of the left edge (x = 300) */
+  const float lasso_s[4][2] = {{300, 200}, {500, 200}, {500, 400}, {300, 400}};
+  const float spots[5][2] = {{301.6f, 300}, {298.4f, 300}, {400, 300}, {520, 300}, {400, 401.6f}};
+  const bool expect[5] = {true, false, true, false, false};
+  const TestView views[3] = {{1.0f, 0.0f, 0.0f, 0.0f}, {4.0f, -900.0f, -700.0f, 0.0f}, {4.0f, -900.0f, -700.0f, 0.5235988f}};
+  for (int v = 0; v < 3; v++) {
+    pg_gp_select_set_region_view(views[v].scale, views[v].ox, views[v].oy, views[v].rot, 800, 600);
+    bGPdata *gpd = make_gpd();
+    bGPDframe *gpf = add_frame(add_layer(gpd, 0), 1, true);
+    bGPDstroke *st[5];
+    for (int i = 0; i < 5; i++) {
+      float c[2];
+      screen_to_canvas(&views[v], spots[i][0], spots[i][1], c);
+      st[i] = add_stroke(gpf, 1, 0, c[0], c[1], 0, 0);
+    }
+    float path[8];
+    for (int i = 0; i < 4; i++) screen_to_canvas(&views[v], lasso_s[i][0], lasso_s[i][1], &path[i * 2]);
+    pg_gp_select_lasso_canvas(gpd, path, 4, PG_SEL_OP_SET, PG_SELECTMODE_STROKE, NULL);
+    for (int i = 0; i < 5; i++) {
+      char msg[96];
+      snprintf(msg, sizeof msg, "view %d: spot %d %s the on-screen lasso", v, i, expect[i] ? "inside" : "outside");
+      CHECK(stroke_sel(st[i]) == expect[i], msg);
+    }
+  }
+  pg_gp_select_set_region_view(1.0f, 0.0f, 0.0f, 0.0f, 0, 0); /* identity again for the other tests */
+}
+
 int main(void)
 {
   test_select_op_tables();
@@ -602,6 +655,7 @@ int main(void)
   test_box();
   test_circle();
   test_dispatch();
+  test_lasso_region_view();
   printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

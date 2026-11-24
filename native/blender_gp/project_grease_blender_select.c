@@ -22,7 +22,8 @@
  *    GP_EDITABLE_STROKES_BEGIN. Multi-frame editing is keyed off the data flag alone because
  *    Project Grease has no object mode flags.
  *  - Screen space is the canvas: gpencil_point_to_xy() is an identity projection rounded to
- *    int, and the layer/object transform is the identity.
+ *    int, and the layer/object transform is the identity. The lasso is the exception: it projects
+ *    through the region view on screen (pg_gp_select_set_region_view), as Blender's region does.
  *  - Evaluated vs. original strokes do not exist (no depsgraph), so gps_orig/pt_orig stay NULL.
  *  - Curve edit mode, segment select mode, select random and vertex-color select are not
  *    ported. The curve/segment calls inside copied code are bound to no-op macros below and
@@ -181,7 +182,34 @@ static bool pg_rcti_isect_pt(const rcti *rect, const int x, const int y)
   return true;
 }
 
-/* Identity "projection": canvas pixels are screen pixels. */
+/* Region view (pg_gp_select_set_region_view); applied while g_region_view_on (the lasso). */
+static float g_rv_scale = 1.0f, g_rv_ox = 0.0f, g_rv_oy = 0.0f, g_rv_cos = 1.0f, g_rv_sin = 0.0f;
+static float g_rv_cx = 0.0f, g_rv_cy = 0.0f;
+static bool g_region_view_on = false;
+
+void pg_gp_select_set_region_view(float scale, float origin_x, float origin_y, float rotation, int width, int height)
+{
+  if (!isfinite(scale) || scale <= 0.0f || !isfinite(origin_x) || !isfinite(origin_y) || !isfinite(rotation)) {
+    return;
+  }
+  g_rv_scale = scale;
+  g_rv_ox = origin_x;
+  g_rv_oy = origin_y;
+  g_rv_cos = cosf(rotation);
+  g_rv_sin = sinf(rotation);
+  g_rv_cx = 0.5f * (float)width;
+  g_rv_cy = 0.5f * (float)height;
+}
+
+void pg_gp_select_canvas_to_region(const float co[2], float r_co[2])
+{
+  const float dx = g_rv_ox + co[0] * g_rv_scale - g_rv_cx;
+  const float dy = g_rv_oy + co[1] * g_rv_scale - g_rv_cy;
+  r_co[0] = g_rv_cx + g_rv_cos * dx - g_rv_sin * dy;
+  r_co[1] = g_rv_cy + g_rv_sin * dx + g_rv_cos * dy;
+}
+
+/* gpencil_point_to_xy(): canvas pixels are screen pixels, or the region view during the lasso. */
 static void pg_point_to_xy(const bGPDspoint *pt, int *r_x, int *r_y)
 {
   if (!isfinite(pt->x) || !isfinite(pt->y) || fabsf(pt->x) > 1.0e6f || fabsf(pt->y) > 1.0e6f) {
@@ -189,8 +217,13 @@ static void pg_point_to_xy(const bGPDspoint *pt, int *r_x, int *r_y)
     *r_y = V2D_IS_CLIPPED;
     return;
   }
-  *r_x = (int)lroundf(pt->x);
-  *r_y = (int)lroundf(pt->y);
+  float co[2] = {pt->x, pt->y};
+  if (g_region_view_on) {
+    const float c[2] = {pt->x, pt->y};
+    pg_gp_select_canvas_to_region(c, co);
+  }
+  *r_x = (int)lroundf(co[0]);
+  *r_y = (int)lroundf(co[1]);
 }
 
 static void pg_point_copy(const bGPDspoint *pt, bGPDspoint *r_pt)
@@ -1383,6 +1416,39 @@ int pg_gp_select_lasso(bGPdata *gpd,
   return pg_generic_select_exec(gpd, only_layer, pg_test_lasso, rect, &data, sel_op, selectmode);
 }
 
+/* The lasso path in canvas units: converted to region pixels (WM_gesture_lasso_path_to_array gives
+ * Blender region ints) and the strokes projected through the same region view. */
+int pg_gp_select_lasso_canvas(bGPdata *gpd,
+                              const float *xy,
+                              int count,
+                              int sel_op,
+                              int selectmode,
+                              const bGPDlayer *only_layer)
+{
+  if (gpd == NULL || xy == NULL || count < 3) {
+    return 0;
+  }
+  int(*coords)[2] = malloc(sizeof(int[2]) * (size_t)count);
+  if (coords == NULL) {
+    return 0;
+  }
+  for (int i = 0; i < count; i++) {
+    float r[2];
+    pg_gp_select_canvas_to_region(&xy[i * 2], r);
+    if (!isfinite(r[0]) || !isfinite(r[1]) || fabsf(r[0]) > 1.0e8f || fabsf(r[1]) > 1.0e8f) {
+      free(coords);
+      return 0;
+    }
+    coords[i][0] = (int)lroundf(r[0]);
+    coords[i][1] = (int)lroundf(r[1]);
+  }
+  g_region_view_on = true;
+  const int changed = pg_gp_select_lasso(gpd, (const int(*)[2])coords, count, sel_op, selectmode, only_layer);
+  g_region_view_on = false;
+  free(coords);
+  return changed;
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -1461,18 +1527,8 @@ int pg_gp_select_dispatch(bGPdata *gpd,
       if (arg_count < 2 + 3 * 2) {
         return 0;
       }
-      const int count = (arg_count - 2) / 2;
-      int(*coords)[2] = malloc(sizeof(int[2]) * (size_t)count);
-      if (coords == NULL) {
-        return 0;
-      }
-      for (int i = 0; i < count; i++) {
-        coords[i][0] = (int)lroundf(args[2 + i * 2]);
-        coords[i][1] = (int)lroundf(args[2 + i * 2 + 1]);
-      }
-      changed = pg_gp_select_lasso(
-          gpd, (const int(*)[2])coords, count, (int)lroundf(args[0]), (int)lroundf(args[1]), scope);
-      free(coords);
+      changed = pg_gp_select_lasso_canvas(
+          gpd, &args[2], (arg_count - 2) / 2, (int)lroundf(args[0]), (int)lroundf(args[1]), scope);
       break;
     }
     case PG_SELECT_CMD_BOX:

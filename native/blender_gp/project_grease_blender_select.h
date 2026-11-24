@@ -89,6 +89,17 @@ int pg_gp_select_lasso(struct bGPdata *gpd,
                        int sel_op,
                        int selectmode,
                        const struct bGPDlayer *only_layer);
+/* The lasso in region pixels as Blender's (gpencil_point_to_xy through the region view): the canvas
+ * path and the stroke points both go through region = rotate(origin + canvas * scale) about the
+ * region centre (width/2, height/2), the presenter's canvas map, then round to int. */
+void pg_gp_select_set_region_view(float scale, float origin_x, float origin_y, float rotation, int width, int height);
+void pg_gp_select_canvas_to_region(const float co[2], float r_co[2]);
+int pg_gp_select_lasso_canvas(struct bGPdata *gpd,
+                              const float *xy,
+                              int count,
+                              int sel_op,
+                              int selectmode,
+                              const struct bGPDlayer *only_layer);
 int pg_gp_select_box(struct bGPdata *gpd,
                      int xmin,
                      int ymin,

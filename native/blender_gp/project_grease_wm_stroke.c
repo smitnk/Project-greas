@@ -495,14 +495,8 @@ static int exec_select_lasso(PGOpContext *C, const float *p, int n)
   const int count = (n - 2) / 2;
   const int op = prop_i(p, n, 0, 0);
   if (count < 3 || !valid_sel_op(op)) return PG_OPERATOR_CANCELLED; /* Blender: no path, nothing done */
-  int(*coords)[2] = malloc(sizeof(int[2]) * (size_t)count);
-  if (coords == NULL) return PG_OPERATOR_CANCELLED;
-  for (int i = 0; i < count; i++) {
-    coords[i][0] = prop_i(p, n, 2 + i * 2, 0);
-    coords[i][1] = prop_i(p, n, 3 + i * 2, 0);
-  }
-  pg_gp_select_lasso(C->gpd, (const int(*)[2])coords, count, op, prop_i(p, n, 1, 0), NULL);
-  free(coords);
+  /* the path is in canvas units: projected to region pixels with the strokes (gpencil_point_to_xy) */
+  pg_gp_select_lasso_canvas(C->gpd, &p[2], count, op, prop_i(p, n, 1, 0), NULL);
   return PG_OPERATOR_FINISHED;
 }
 /* GPENCIL_OT_select_circle: x, y, radius, mode, is_first (ED_select_op_modal), selectmode */

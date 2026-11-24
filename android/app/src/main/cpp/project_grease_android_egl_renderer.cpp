@@ -55,6 +55,7 @@ extern "C" void project_grease_android_present_set_fill_modes(int extend_mode, i
 extern "C" int project_grease_android_present_set_material_texture(int slot, int fill, const unsigned char *rgba, int w, int h);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
 extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy, float *rotation);
+extern "C" void pg_gp_select_set_region_view(float scale, float origin_x, float origin_y, float rotation, int width, int height);
 extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 extern "C" void project_grease_android_present_get_view_transform(float *zoom, float *pan_x, float *pan_y);
@@ -523,6 +524,10 @@ static bool render_now(Renderer *renderer)
     if (!project_grease_gp_render_external_context(renderer->gp_handle)) {
       return false;
     }
+    // the lasso selects in the region pixels of the view on screen (Blender's gpencil_point_to_xy)
+    float map_s = 1.0f, map_x = 0.0f, map_y = 0.0f, map_r = 0.0f;
+    project_grease_android_present_get_canvas_map(renderer->width, renderer->height, &map_s, &map_x, &map_y, &map_r);
+    pg_gp_select_set_region_view(map_s, map_x, map_y, map_r, renderer->width, renderer->height);
     if (!renderer->preview_points.empty()) {
       std::vector<project_grease::gp::StrokePoint> preview_points;
       preview_points.reserve(renderer->preview_points.size());

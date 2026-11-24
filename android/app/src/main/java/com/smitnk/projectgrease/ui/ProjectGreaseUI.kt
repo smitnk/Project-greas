@@ -17,8 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
@@ -86,27 +84,27 @@ private val presets=listOf(
     Preset("Instagram 1:1",1080,1080,30),Preset("TikTok 1080p",1080,1920,30),Preset("Vimeo 1080p",1920,1080,30)
 )
 private val tools=listOf(
-    ToolEntry(GreaseTool.DRAW,Icons.Default.Edit,"Draw",FeatureId.FREEHAND),
-    ToolEntry(GreaseTool.ERASE,Icons.Default.Clear,"Erase",FeatureId.ERASER),
-    ToolEntry(GreaseTool.SELECT,Icons.Default.TouchApp,"Select",FeatureId.SELECT),
-    ToolEntry(GreaseTool.LASSO,Icons.Default.Gesture,"Lasso",FeatureId.LASSO),
-    ToolEntry(GreaseTool.FILL,Icons.Default.FormatColorFill,"Fill",FeatureId.FILL),
-    ToolEntry(GreaseTool.EYEDROPPER,Icons.Default.Colorize,"Pick",FeatureId.STROKE_COLOR),
-    ToolEntry(GreaseTool.LINE,Icons.Default.Remove,"Line",FeatureId.LINE),
-    ToolEntry(GreaseTool.RECTANGLE,Icons.Default.CropSquare,"Rect",FeatureId.RECTANGLE),
-    ToolEntry(GreaseTool.CIRCLE,Icons.Default.RadioButtonUnchecked,"Circle",FeatureId.CIRCLE),
-    ToolEntry(GreaseTool.ARC,Icons.Default.Timeline,"Arc",FeatureId.ARC),
-    ToolEntry(GreaseTool.POLYLINE,Icons.Default.Timeline,"Polyline",FeatureId.POLYLINE),
-    ToolEntry(GreaseTool.CURVE,Icons.Default.ShowChart,"Curve",FeatureId.CURVE),
-    ToolEntry(GreaseTool.ANNOTATE,Icons.Default.EditNote,"Annotate",FeatureId.ANNOTATIONS),
-    ToolEntry(GreaseTool.MOVE,Icons.Default.OpenWith,"Move",FeatureId.MOVE),
-    ToolEntry(GreaseTool.ROTATE,Icons.Default.RotateRight,"Rotate",FeatureId.ROTATE),
-    ToolEntry(GreaseTool.SCALE,Icons.Default.ZoomIn,"Scale",FeatureId.SCALE),
-    ToolEntry(GreaseTool.MIRROR,Icons.Default.Flip,"Mirror",FeatureId.MIRROR),
-    ToolEntry(GreaseTool.PAN,Icons.Default.PanTool,"Pan",FeatureId.PAN),
-    ToolEntry(GreaseTool.SCULPT,Icons.Default.AutoFixHigh,"Sculpt",FeatureId.SCULPT),
-    ToolEntry(GreaseTool.BOX_SELECT,Icons.Default.SelectAll,"Box",FeatureId.SELECT_BOX),
-    ToolEntry(GreaseTool.CIRCLE_SELECT,Icons.Default.TripOrigin,"Circle sel",FeatureId.SELECT_CIRCLE)
+    ToolEntry(GreaseTool.DRAW,PgIcons.Edit,"Draw",FeatureId.FREEHAND),
+    ToolEntry(GreaseTool.ERASE,PgIcons.Clear,"Erase",FeatureId.ERASER),
+    ToolEntry(GreaseTool.SELECT,PgIcons.TouchApp,"Select",FeatureId.SELECT),
+    ToolEntry(GreaseTool.LASSO,PgIcons.Gesture,"Lasso",FeatureId.LASSO),
+    ToolEntry(GreaseTool.FILL,PgIcons.FormatColorFill,"Fill",FeatureId.FILL),
+    ToolEntry(GreaseTool.EYEDROPPER,PgIcons.Colorize,"Pick",FeatureId.STROKE_COLOR),
+    ToolEntry(GreaseTool.LINE,PgIcons.Remove,"Line",FeatureId.LINE),
+    ToolEntry(GreaseTool.RECTANGLE,PgIcons.CropSquare,"Rect",FeatureId.RECTANGLE),
+    ToolEntry(GreaseTool.CIRCLE,PgIcons.RadioButtonUnchecked,"Circle",FeatureId.CIRCLE),
+    ToolEntry(GreaseTool.ARC,PgIcons.Timeline,"Arc",FeatureId.ARC),
+    ToolEntry(GreaseTool.POLYLINE,PgIcons.Timeline,"Polyline",FeatureId.POLYLINE),
+    ToolEntry(GreaseTool.CURVE,PgIcons.ShowChart,"Curve",FeatureId.CURVE),
+    ToolEntry(GreaseTool.ANNOTATE,PgIcons.EditNote,"Annotate",FeatureId.ANNOTATIONS),
+    ToolEntry(GreaseTool.MOVE,PgIcons.OpenWith,"Move",FeatureId.MOVE),
+    ToolEntry(GreaseTool.ROTATE,PgIcons.RotateRight,"Rotate",FeatureId.ROTATE),
+    ToolEntry(GreaseTool.SCALE,PgIcons.ZoomIn,"Scale",FeatureId.SCALE),
+    ToolEntry(GreaseTool.MIRROR,PgIcons.Flip,"Mirror",FeatureId.MIRROR),
+    ToolEntry(GreaseTool.PAN,PgIcons.PanTool,"Pan",FeatureId.PAN),
+    ToolEntry(GreaseTool.SCULPT,PgIcons.AutoFixHigh,"Sculpt",FeatureId.SCULPT),
+    ToolEntry(GreaseTool.BOX_SELECT,PgIcons.SelectAll,"Box",FeatureId.SELECT_BOX),
+    ToolEntry(GreaseTool.CIRCLE_SELECT,PgIcons.TripOrigin,"Circle sel",FeatureId.SELECT_CIRCLE)
 )
 data class GreaseUiState(
     val projectName:String="Project Grease",val canvasFocus:Boolean=false,
@@ -341,15 +339,15 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     Scaffold(
         topBar={
             Row(Modifier.fillMaxWidth().height(64.dp),verticalAlignment=Alignment.CenterVertically){
-                IconButton(onClick=onSettings){Icon(Icons.Default.Menu,"Menu")}
+                IconButton(onClick=onSettings){Icon(PgIcons.Menu,"Menu")}
                 Spacer(Modifier.weight(1f))
                 Text("PROJECT GREASE",fontWeight=FontWeight.Bold,letterSpacing=1.sp)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick={}){Icon(Icons.Default.Search,"Search")}
+                IconButton(onClick={}){Icon(PgIcons.Search,"Search")}
             }
         },
         floatingActionButton={
-            FloatingActionButton(onClick=onNew,containerColor=Accent){Icon(Icons.Default.Add,"New")}
+            FloatingActionButton(onClick=onNew,containerColor=Accent){Icon(PgIcons.Add,"New")}
         }
     ){pad->
         Column(
@@ -381,7 +379,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                                     color=MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Icon(Icons.Default.ChevronRight,"Open")
+                            Icon(PgIcons.ChevronRight,"Open")
                         }
                     }
                 }
@@ -391,17 +389,17 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 }
 
 @Composable private fun NewProject(name:String,onName:(String)->Unit,preset:Preset,onPreset:(Preset)->Unit,templateId:String,onTemplate:(String)->Unit,controller:EditorController,onBack:()->Unit,onCreate:()->Unit){
-    Scaffold(topBar={TopAppBar(title={Text("New Project")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}})}){pad->
+    Scaffold(topBar={TopAppBar(title={Text("New Project")},navigationIcon={IconButton(onClick=onBack){Icon(PgIcons.ArrowBack,"Back")}})}){pad->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp)){
             OutlinedTextField(name,onName,Modifier.fillMaxWidth(),label={Text("Project name")});Spacer(Modifier.height(16.dp))
             Text("Template",color=Accent,fontWeight=FontWeight.Bold)
             GreaseTemplates.ALL.forEach{t->ListItem(headlineContent={Text(t.title)},
                 supportingContent={Text(t.layers.joinToString(" · ")+" • "+t.materials.size+" materials • "+t.fps+" FPS • end "+t.endFrame)},
-                trailingContent={if(t.id==templateId)Icon(Icons.Default.Check,null,tint=Accent)},modifier=Modifier.clickable{onTemplate(t.id)})}
+                trailingContent={if(t.id==templateId)Icon(PgIcons.Check,null,tint=Accent)},modifier=Modifier.clickable{onTemplate(t.id)})}
             Spacer(Modifier.height(16.dp))
             Text("Canvas presets",color=Accent,fontWeight=FontWeight.Bold)
             presets.forEach{p->ListItem(headlineContent={Text(p.name)},supportingContent={Text(p.width.toString()+" × "+p.height+" • "+p.fps+" FPS")},
-                trailingContent={if(p==preset)Icon(Icons.Default.Check,null,tint=Accent)},modifier=Modifier.clickable{onPreset(p);controller.animation.setFps(p.fps)})}
+                trailingContent={if(p==preset)Icon(PgIcons.Check,null,tint=Accent)},modifier=Modifier.clickable{onPreset(p);controller.animation.setFps(p.fps)})}
             Button(onClick=onCreate,Modifier.fillMaxWidth()){Text("Create Project")}
         }
     }
@@ -820,14 +818,14 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
                 Modifier.fillMaxWidth().padding(horizontal=4.dp),
                 verticalArrangement=Arrangement.Center
             ){
-                IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
-                IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
-                IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
+                IconButton(onClick={controller.selectFrame(controller.animation.currentFrame-1);redraw()}){Icon(PgIcons.SkipPrevious,"Previous")}
+                IconButton(onClick={controller.animation.togglePlayback();redraw()}){Icon(if(controller.animation.playing)PgIcons.Pause else PgIcons.PlayArrow,"Play")}
+                IconButton(onClick={controller.selectFrame(controller.animation.currentFrame+1);redraw()}){Icon(PgIcons.SkipNext,"Next")}
                 Text("Frame "+controller.animation.currentFrame+" / "+controller.animation.timelineEnd,
                     Modifier.align(Alignment.CenterVertically).padding(horizontal=4.dp))
                 TextButton(onClick=onFps){Text(controller.animation.fps.toString()+" FPS")}
                 // the audio timeline, next to the frame rate
-                IconButton(onClick=onAudio,Modifier.testTag("timelineAudio")){Icon(Icons.Default.MusicNote,"Audio")}
+                IconButton(onClick=onAudio,Modifier.testTag("timelineAudio")){Icon(PgIcons.MusicNote,"Audio")}
                 TextButton(
                     enabled=controller.animation.currentFrame > 1 && controller.animation.currentFrame < controller.animation.timelineEnd,
                     onClick={if(controller.interpolateFrameAt(controller.animation.currentFrame)){redraw()}}
@@ -1448,12 +1446,12 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
     var loop by remember { mutableStateOf(controller.animation.loop) }
     var fps by remember { mutableFloatStateOf(controller.animation.fps.toFloat()) }
 
-    Scaffold(topBar={TopAppBar(title={Text("Settings")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}})}){pad->
+    Scaffold(topBar={TopAppBar(title={Text("Settings")},navigationIcon={IconButton(onClick=onBack){Icon(PgIcons.ArrowBack,"Back")}})}){pad->
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())){
             Text("Theme",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
             ProjectGreaseThemeMode.entries.forEach{mode->
                 ListItem(headlineContent={Text(mode.name.lowercase().replaceFirstChar{it.uppercase()})},
-                    trailingContent={if(current==mode)Icon(Icons.Default.Check,null,tint=Accent)},
+                    trailingContent={if(current==mode)Icon(PgIcons.Check,null,tint=Accent)},
                     modifier=Modifier.clickable{onTheme(mode)})
             }
             Text("Renderer",Modifier.padding(16.dp),color=Accent,fontWeight=FontWeight.Bold)
@@ -1596,42 +1594,42 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
         // top: project menu, mode, more
         Row(Modifier.align(Alignment.TopCenter).padding(6.dp),verticalAlignment=Alignment.CenterVertically){
-            FloatingIcon(Icons.Default.Menu,"Menu"){onSheet(Sheet.MENU)}
+            FloatingIcon(PgIcons.Menu,"Menu"){onSheet(Sheet.MENU)}
             Spacer(Modifier.width(6.dp))
             Surface(shape=RoundedCornerShape(16.dp),tonalElevation=4.dp,shadowElevation=2.dp,
                 modifier=Modifier.clickable{popup=StudioPopup.MODE}.testTag("studioMode")){
                 Row(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
                     Icon(modeIcon(controller.mode),null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                     Text(controller.mode.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()},fontSize=13.sp)
-                    Icon(Icons.Default.ArrowDropDown,null,Modifier.size(18.dp))
+                    Icon(PgIcons.ArrowDropDown,null,Modifier.size(18.dp))
                 }
             }
             Spacer(Modifier.width(6.dp))
-            FloatingIcon(Icons.Default.FitScreen,"Fit canvas"){controller.fitCanvas();redraw()}
-            FloatingIcon(Icons.Default.Apps,"All tools"){onSheet(Sheet.TOOLS)}
+            FloatingIcon(PgIcons.FitScreen,"Fit canvas"){controller.fitCanvas();redraw()}
+            FloatingIcon(PgIcons.Apps,"All tools"){onSheet(Sheet.TOOLS)}
         }
 
         // floating toolbar (hide / show: more room to draw)
         val tool=controller.tools.activeTool
         if(toolbarHidden) Box(Modifier.align(Alignment.CenterStart).padding(start=2.dp).testTag("toolbarShow")){
-            FloatingIcon(Icons.Default.ChevronRight,"Show tools"){toolbarHidden=false}
+            FloatingIcon(PgIcons.ChevronRight,"Show tools"){toolbarHidden=false}
         }
         if(!toolbarHidden) Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp).testTag("studioToolbar"),
             shape=RoundedCornerShape(24.dp),tonalElevation=6.dp,shadowElevation=4.dp){
             Column(Modifier.padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                IconButton(onClick={toolbarHidden=true},Modifier.size(32.dp).testTag("toolbarHide")){Icon(Icons.Default.ChevronLeft,"Hide tools")}
+                IconButton(onClick={toolbarHidden=true},Modifier.size(32.dp).testTag("toolbarHide")){Icon(PgIcons.ChevronLeft,"Hide tools")}
                 // Tap a tool to use it; tap the active tool again for its options.
                 fun pick(t:GreaseTool){ if(tool==t) popup=StudioPopup.OPTIONS else { controller.selectTool(t); popup=StudioPopup.NONE }; redraw() }
-                ToolbarButton(Icons.Default.Brush,"Brush",tool==GreaseTool.DRAW||tool==GreaseTool.SCULPT){pick(if(controller.mode==GreaseMode.SCULPT)GreaseTool.SCULPT else GreaseTool.DRAW)}
-                ToolbarButton(Icons.Default.Clear,"Eraser",tool==GreaseTool.ERASE){pick(GreaseTool.ERASE)}
-                ToolbarButton(Icons.Default.Gesture,"Lasso",tool==GreaseTool.LASSO){pick(GreaseTool.LASSO)}
-                ToolbarButton(Icons.Default.FormatColorFill,"Fill",tool==GreaseTool.FILL){pick(GreaseTool.FILL)}
+                ToolbarButton(PgIcons.Brush,"Brush",tool==GreaseTool.DRAW||tool==GreaseTool.SCULPT){pick(if(controller.mode==GreaseMode.SCULPT)GreaseTool.SCULPT else GreaseTool.DRAW)}
+                ToolbarButton(PgIcons.Clear,"Eraser",tool==GreaseTool.ERASE){pick(GreaseTool.ERASE)}
+                ToolbarButton(PgIcons.Gesture,"Lasso",tool==GreaseTool.LASSO){pick(GreaseTool.LASSO)}
+                ToolbarButton(PgIcons.FormatColorFill,"Fill",tool==GreaseTool.FILL){pick(GreaseTool.FILL)}
                 Box(Modifier.padding(6.dp).size(30.dp).background(Color(controller.materials.colorArgb),CircleShape)
                     .border(2.dp,MaterialTheme.colorScheme.outline,CircleShape)
                     .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
-                ToolbarButton(Icons.Default.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
+                ToolbarButton(PgIcons.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
                 // one-point perspective: Blender's radial guide on/off, its vanishing point at the canvas centre at first
-                ToolbarButton(Icons.Default.Architecture,"Perspective",controller.view.guideType==1){
+                ToolbarButton(PgIcons.Architecture,"Perspective",controller.view.guideType==1){
                     val v=controller.view
                     if(v.guideType==1) v.setDrawingGuide(-1)
                     else {
@@ -1641,12 +1639,12 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     }
                     com.smitnk.projectgrease.CrashLog.event("PERSPECTIVE guide ${if(v.guideType==1) "on" else "off"} at ${v.guideCenterX.toInt()},${v.guideCenterY.toInt()}")
                     controller.render();redraw()}
-                IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(Icons.Default.Undo,"Undo")}
-                IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(Icons.Default.Redo,"Redo")}
+                IconButton(enabled=controller.history.canUndo,onClick={controller.undo();redraw()}){Icon(PgIcons.Undo,"Undo")}
+                IconButton(enabled=controller.history.canRedo,onClick={controller.redo();redraw()}){Icon(PgIcons.Redo,"Redo")}
                 // quick Copy / Paste: the selection, or the whole frame when nothing is selected
-                IconButton(onClick={val ok=controller.quickCopy();com.smitnk.projectgrease.CrashLog.event("QUICK COPY -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy on this frame")},Modifier.testTag("quickCopy")){Icon(Icons.Default.ContentCopy,"Copy")}
-                IconButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("QUICK PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame}" else "Nothing to paste (copy first)");redraw()},Modifier.testTag("quickPaste")){Icon(Icons.Default.ContentPaste,"Paste")}
-                ToolbarButton(Icons.Default.Tune,"Options",popup==StudioPopup.OPTIONS){popup=if(popup==StudioPopup.OPTIONS)StudioPopup.NONE else StudioPopup.OPTIONS}
+                IconButton(onClick={val ok=controller.quickCopy();com.smitnk.projectgrease.CrashLog.event("QUICK COPY -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy on this frame")},Modifier.testTag("quickCopy")){Icon(PgIcons.ContentCopy,"Copy")}
+                IconButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("QUICK PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame}" else "Nothing to paste (copy first)");redraw()},Modifier.testTag("quickPaste")){Icon(PgIcons.ContentPaste,"Paste")}
+                ToolbarButton(PgIcons.Tune,"Options",popup==StudioPopup.OPTIONS){popup=if(popup==StudioPopup.OPTIONS)StudioPopup.NONE else StudioPopup.OPTIONS}
             }
         }
 
@@ -1657,11 +1655,11 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             var cutTick by remember{mutableIntStateOf(0)};@Suppress("UNUSED_VARIABLE") val seenCut=cutTick
             Row(Modifier.align(Alignment.TopStart).padding(top=108.dp,start=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 FilterChip(controller.lassoCut,{controller.lassoCut=!controller.lassoCut;controller.lassoCutInside=false;controller.lassoPhotos=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoCut)"Cutter: on (Blender)" else "Cutter")},
-                    Modifier.testTag("lassoCut"),leadingIcon={Icon(Icons.Default.ContentCut,null,Modifier.size(18.dp))})
+                    Modifier.testTag("lassoCut"),leadingIcon={Icon(PgIcons.ContentCut,null,Modifier.size(18.dp))})
                 FilterChip(controller.lassoCutInside,{controller.lassoCutInside=!controller.lassoCutInside;controller.lassoCut=false;controller.lassoPhotos=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoCutInside)"Cut inside: on" else "Cut inside")},
-                    Modifier.testTag("lassoCutInside"),leadingIcon={Icon(Icons.Default.CropFree,null,Modifier.size(18.dp))})
+                    Modifier.testTag("lassoCutInside"),leadingIcon={Icon(PgIcons.CropFree,null,Modifier.size(18.dp))})
                 FilterChip(controller.lassoPhotos,{controller.lassoPhotos=!controller.lassoPhotos;controller.lassoCut=false;controller.lassoCutInside=false;controller.photoLasso=null;cutTick++},{Text(if(controller.lassoPhotos)"Photo: on" else "Photo")},
-                    Modifier.testTag("lassoPhotos"),leadingIcon={Icon(Icons.Default.Photo,null,Modifier.size(18.dp))})
+                    Modifier.testTag("lassoPhotos"),leadingIcon={Icon(PgIcons.Photo,null,Modifier.size(18.dp))})
             }
         }
         // a loop drawn over a photo: what to do with that part of the picture
@@ -1669,31 +1667,31 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             // drawn in the canvas area like the other overlays (it sat 68 dp off once the canvas moved right of the toolbar)
             Box(Modifier.fillMaxSize().padding(start=if(toolbarHidden)0.dp else 68.dp)){ PhotoLassoOverlay(controller) }
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("photoLassoBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                Button(onClick={controller.applyPhotoLasso(0);redraw()},Modifier.testTag("photoCut")){BtnLabel(Icons.Default.ContentCut,"Cut out")}
-                OutlinedButton(onClick={controller.applyPhotoLasso(1);redraw()}){BtnLabel(Icons.Default.FileCopy,"Copy out")}
-                OutlinedButton(onClick={controller.applyPhotoLasso(2);redraw()}){BtnLabel(Icons.Default.AutoFixNormal,"Erase")}
-                OutlinedButton(onClick={controller.photoLasso=null;controller.render();redraw()}){BtnLabel(Icons.Default.Close,"Cancel")}
+                Button(onClick={controller.applyPhotoLasso(0);redraw()},Modifier.testTag("photoCut")){BtnLabel(PgIcons.ContentCut,"Cut out")}
+                OutlinedButton(onClick={controller.applyPhotoLasso(1);redraw()}){BtnLabel(PgIcons.FileCopy,"Copy out")}
+                OutlinedButton(onClick={controller.applyPhotoLasso(2);redraw()}){BtnLabel(PgIcons.AutoFixNormal,"Erase")}
+                OutlinedButton(onClick={controller.photoLasso=null;controller.render();redraw()}){BtnLabel(PgIcons.Close,"Cancel")}
             }
         }
         // after a lasso selection: its transforms right away (no second tap on the tool)
         if(tool==GreaseTool.LASSO&&!controller.warpActive&&!controller.referenceAdjusting&&!controller.bezierEditing&&controller.photoLasso==null&&overlayTick+refresh>=0&&controller.selectionBounds()!=null)
             Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top=52.dp).horizontalScroll(rememberScrollState()).padding(horizontal=8.dp).testTag("lassoQuickBar"),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){BtnLabel(Icons.Default.Transform,"Warp")}
-                OutlinedButton(onClick={controller.beginBezierEdit();redraw()},Modifier.testTag("lassoCurveEdit")){BtnLabel(Icons.Default.Timeline,"Curve edit")}
-                OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){BtnLabel(Icons.Default.GridOn,"Warp mesh")}
+                Button(onClick={if(!controller.beginWarp(2,2))toast(context,"Warp: select points first (Lasso around them)");redraw()},Modifier.testTag("lassoWarp")){BtnLabel(PgIcons.Transform,"Warp")}
+                OutlinedButton(onClick={controller.beginBezierEdit();redraw()},Modifier.testTag("lassoCurveEdit")){BtnLabel(PgIcons.Timeline,"Curve edit")}
+                OutlinedButton(onClick={if(!controller.beginWarp(3,3))toast(context,"Warp: select points first (Lasso around them)");redraw()}){BtnLabel(PgIcons.GridOn,"Warp mesh")}
                 // Blender Ctrl+C / Ctrl+V / X on the lasso selection (points, strokes or segments by select mode)
-                OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){BtnLabel(Icons.Default.ContentCopy,"Copy")}
-                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){BtnLabel(Icons.Default.ContentPaste,"Paste")}
-                OutlinedButton(onClick={controller.mergeShapes();redraw()},Modifier.testTag("lassoMerge")){BtnLabel(Icons.Default.CallMerge,"Merge")}
-                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){BtnLabel(Icons.Default.Delete,"Delete")}
-                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){BtnLabel(Icons.Default.MoreHoriz,"More…")}
+                OutlinedButton(onClick={val ok=controller.copySelection();com.smitnk.projectgrease.CrashLog.event("COPY selection -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy")}){BtnLabel(PgIcons.ContentCopy,"Copy")}
+                OutlinedButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame} (in place, selected: drag with Move)" else "Nothing to paste (copy first, or the layer is locked)");redraw()}){BtnLabel(PgIcons.ContentPaste,"Paste")}
+                OutlinedButton(onClick={controller.mergeShapes();redraw()},Modifier.testTag("lassoMerge")){BtnLabel(PgIcons.CallMerge,"Merge")}
+                OutlinedButton(onClick={controller.deleteSelectedPoints();redraw()}){BtnLabel(PgIcons.Delete,"Delete")}
+                OutlinedButton(onClick={popup=StudioPopup.OPTIONS}){BtnLabel(PgIcons.MoreHoriz,"More…")}
             }
         if(layersOpen) StudioLayerPanel(controller,Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=6.dp),redraw,{onSheet(Sheet.LAYERS)},
             {onSheet(Sheet.LAYER_ADVANCED)},{onSheet(Sheet.ROTOSCOPE)})
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()){
             Row(Modifier.align(Alignment.End).padding(end=6.dp)){
-                FloatingIcon(if(stripOpen)Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                FloatingIcon(if(stripOpen)PgIcons.KeyboardArrowDown else PgIcons.KeyboardArrowUp,
                     if(stripOpen)"Hide timeline" else "Show timeline"){stripOpen=!stripOpen}
             }
             if(stripOpen) StudioFrameStrip(controller,redraw,{onSheet(Sheet.TIMELINE)})
@@ -1791,9 +1789,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         Column(Modifier.padding(8.dp)){
             Row(verticalAlignment=Alignment.CenterVertically){
                 Text("Layers",fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
-                IconButton(onClick={controller.createLayer("Layer "+(controller.layerCount()+1));redraw()},Modifier.size(36.dp).testTag("layerAdd")){Icon(Icons.Default.Add,"Add layer")}
-                IconButton(onClick={controller.duplicateLayer();redraw()},Modifier.size(36.dp)){Icon(Icons.Default.ContentCopy,"Duplicate layer")}
-                IconButton(onClick={controller.deleteLayer();redraw()},enabled=controller.layerCount()>1,modifier=Modifier.size(36.dp)){Icon(Icons.Default.Delete,"Delete layer")}
+                IconButton(onClick={controller.createLayer("Layer "+(controller.layerCount()+1));redraw()},Modifier.size(36.dp).testTag("layerAdd")){Icon(PgIcons.Add,"Add layer")}
+                IconButton(onClick={controller.duplicateLayer();redraw()},Modifier.size(36.dp)){Icon(PgIcons.ContentCopy,"Duplicate layer")}
+                IconButton(onClick={controller.deleteLayer();redraw()},enabled=controller.layerCount()>1,modifier=Modifier.size(36.dp)){Icon(PgIcons.Delete,"Delete layer")}
             }
             Column(Modifier.weight(1f,fill=false).verticalScroll(rememberScrollState())){
                 for(i in controller.layerCount()-1 downTo 0){
@@ -1805,16 +1803,16 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                         border=if(active)androidx.compose.foundation.BorderStroke(2.dp,Accent) else null){
                         Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.padding(horizontal=4.dp)){
                             IconButton(onClick={controller.setLayerVisibility(i,!(st?.visible?:true));redraw()},Modifier.size(34.dp)){
-                                Icon(if(st?.visible!=false)Icons.Default.Visibility else Icons.Default.VisibilityOff,"Visible")
+                                Icon(if(st?.visible!=false)PgIcons.Visibility else PgIcons.VisibilityOff,"Visible")
                             }
                             Text((if(active)"● " else "")+(st?.name?.takeIf{it.isNotBlank()}?:"Layer "+(i+1)),
                                 Modifier.weight(1f),maxLines=1,fontWeight=if(active)FontWeight.Bold else FontWeight.Normal,fontSize=13.sp)
                             IconButton(onClick={controller.setLayerLocked(i,!(st?.locked?:false));redraw()},Modifier.size(34.dp)){
-                                Icon(if(st?.locked==true)Icons.Default.Lock else Icons.Default.LockOpen,"Lock")
+                                Icon(if(st?.locked==true)PgIcons.Lock else PgIcons.LockOpen,"Lock")
                             }
                             // the layer's Advanced panel: modifiers, effects, onion skin, masks, look
                             IconButton(onClick={controller.selectLayer(i);redraw();onAdvanced()},Modifier.size(34.dp).testTag("layerAdvanced_$i")){
-                                Icon(Icons.Default.Tune,"Advanced")
+                                Icon(PgIcons.Tune,"Advanced")
                             }
                         }
                     }
@@ -1826,7 +1824,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 TextButton(onClick=onMore){Text("More…")}
             }
             OutlinedButton(onClick=onReference,Modifier.fillMaxWidth().testTag("rotoscopeOpen")){
-                Icon(Icons.Default.Image,null);Spacer(Modifier.width(6.dp))
+                Icon(PgIcons.Image,null);Spacer(Modifier.width(6.dp))
                 Text(if(controller.rotoscope.isEmpty)"Import photo / video…" else "Reference: "+controller.rotoscope.kind.name.lowercase())
             }
         }
@@ -1839,9 +1837,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
     val anim=controller.animation
     Surface(Modifier.fillMaxWidth().testTag("studioFrames"),tonalElevation=6.dp){
         Row(verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick={anim.togglePlayback();redraw()}){Icon(if(anim.playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}
-            IconButton(onClick={controller.selectFrame(anim.currentFrame-1);redraw()}){Icon(Icons.Default.SkipPrevious,"Previous")}
-            IconButton(onClick={controller.selectFrame(anim.currentFrame+1);redraw()}){Icon(Icons.Default.SkipNext,"Next")}
+            IconButton(onClick={anim.togglePlayback();redraw()}){Icon(if(anim.playing)PgIcons.Pause else PgIcons.PlayArrow,"Play")}
+            IconButton(onClick={controller.selectFrame(anim.currentFrame-1);redraw()}){Icon(PgIcons.SkipPrevious,"Previous")}
+            IconButton(onClick={controller.selectFrame(anim.currentFrame+1);redraw()}){Icon(PgIcons.SkipNext,"Next")}
             val keys=remember(anim.keyframes){anim.keyframes.toSet()}
             val state=androidx.compose.foundation.lazy.rememberLazyListState()
             // the current frame stays in view (playback, + frame, jumps from the timeline)
@@ -1865,8 +1863,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     }
                 }
             }
-            IconButton(onClick={val f=anim.currentFrame+1;controller.createFrame(f);controller.selectFrame(f);redraw()},Modifier.testTag("stripAdd")){Icon(Icons.Default.Add,"New frame")}
-            IconButton(onClick=onTimeline,Modifier.testTag("stripMore")){Icon(Icons.Default.MoreHoriz,"Timeline tools")}
+            IconButton(onClick={val f=anim.currentFrame+1;controller.createFrame(f);controller.selectFrame(f);redraw()},Modifier.testTag("stripAdd")){Icon(PgIcons.Add,"New frame")}
+            IconButton(onClick=onTimeline,Modifier.testTag("stripMore")){Icon(PgIcons.MoreHoriz,"Timeline tools")}
         }
     }
 }
@@ -1933,28 +1931,28 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             @Composable fun item(icon:ImageVector,label:String,detail:String,tag:String,action:()->Unit)=
                 ListItem(headlineContent={Text(label)},supportingContent={Text(detail)},leadingContent={Icon(icon,null)},
                     modifier=Modifier.clickable(onClick=action).testTag("menu_$tag"))
-            item(Icons.Default.Save,"Save","Save the project now","save",onSave)
-            item(Icons.Default.Folder,"Project","Export, import, project settings, close","project"){onSheet(Sheet.PROJECT)}
-            item(Icons.Default.Apps,"All tools","Primitives, select, transform, annotate, pan","tools"){onSheet(Sheet.TOOLS)}
-            item(Icons.Default.Palette,"Materials","Material slots, fill, textures","materials"){onSheet(Sheet.MATERIALS)}
-            item(Icons.Default.Brush,"Drawing settings","Thickness, opacity, stabilizer, spacing, grid, snapping","draw"){onSheet(Sheet.DRAW_SETTINGS)}
-            item(Icons.Default.Tune,"Advanced drawing","Stabilization, brush curves, guides, sculpt brushes","advanced"){onSheet(Sheet.ADVANCED)}
-            item(Icons.Default.Layers,"Layers (all settings)","Merge, isolate, lock all, transform options","layers"){onSheet(Sheet.LAYERS)}
-            item(Icons.Default.AutoAwesome,"Effects (whole drawing)","Blur, colorize, glow, shadow, … shown in the Rendered view","effects"){onSheet(Sheet.EFFECTS)}
-            item(Icons.Default.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
-            item(Icons.Default.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
-            item(Icons.Default.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
-            item(Icons.Default.Image,"Import photo","A picture to draw over: then resize, squash, rotate it with the box","importPhoto"){onSheet(Sheet.IMPORT_PHOTO)}
-            item(Icons.Default.Movie,"Import video","Pick a video, trim it, place it on the timeline","importVideo"){onSheet(Sheet.IMPORT_VIDEO)}
-            item(Icons.Default.MusicNote,"Import audio","Pick audio files, trim them, place them on the timeline","importAudio"){onSheet(Sheet.IMPORT_AUDIO)}
-            item(Icons.Default.PhotoLibrary,"Photos & videos","The imported photos and videos: box, frames, opacity, copy / paste","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
-            item(Icons.Default.GraphicEq,"Audio tracks","Tracks with waveforms: move, trim, split, duplicate, volume, mute, lock","audio"){onSheet(Sheet.AUDIO)}
+            item(PgIcons.Save,"Save","Save the project now","save",onSave)
+            item(PgIcons.Folder,"Project","Export, import, project settings, close","project"){onSheet(Sheet.PROJECT)}
+            item(PgIcons.Apps,"All tools","Primitives, select, transform, annotate, pan","tools"){onSheet(Sheet.TOOLS)}
+            item(PgIcons.Palette,"Materials","Material slots, fill, textures","materials"){onSheet(Sheet.MATERIALS)}
+            item(PgIcons.Brush,"Drawing settings","Thickness, opacity, stabilizer, spacing, grid, snapping","draw"){onSheet(Sheet.DRAW_SETTINGS)}
+            item(PgIcons.Tune,"Advanced drawing","Stabilization, brush curves, guides, sculpt brushes","advanced"){onSheet(Sheet.ADVANCED)}
+            item(PgIcons.Layers,"Layers (all settings)","Merge, isolate, lock all, transform options","layers"){onSheet(Sheet.LAYERS)}
+            item(PgIcons.AutoAwesome,"Effects (whole drawing)","Blur, colorize, glow, shadow, … shown in the Rendered view","effects"){onSheet(Sheet.EFFECTS)}
+            item(PgIcons.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
+            item(PgIcons.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
+            item(PgIcons.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
+            item(PgIcons.Image,"Import photo","A picture to draw over: then resize, squash, rotate it with the box","importPhoto"){onSheet(Sheet.IMPORT_PHOTO)}
+            item(PgIcons.Movie,"Import video","Pick a video, trim it, place it on the timeline","importVideo"){onSheet(Sheet.IMPORT_VIDEO)}
+            item(PgIcons.MusicNote,"Import audio","Pick audio files, trim them, place them on the timeline","importAudio"){onSheet(Sheet.IMPORT_AUDIO)}
+            item(PgIcons.PhotoLibrary,"Photos & videos","The imported photos and videos: box, frames, opacity, copy / paste","rotoscope"){onSheet(Sheet.ROTOSCOPE)}
+            item(PgIcons.GraphicEq,"Audio tracks","Tracks with waveforms: move, trim, split, duplicate, volume, mute, lock","audio"){onSheet(Sheet.AUDIO)}
             // 3D reference (Line Art) is switched off for now: set SHOW_3D_REFERENCE to bring it back
-            if(SHOW_3D_REFERENCE) item(Icons.Default.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
-            item(Icons.Default.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
+            if(SHOW_3D_REFERENCE) item(PgIcons.ViewInAr,"3D reference (Line Art)","OBJ meshes and the Line Art camera","reference"){onSheet(Sheet.REFERENCE)}
+            item(PgIcons.Settings,"Settings","App settings","settings"){onDismiss();onSettings()}
             val context=LocalContext.current
             var crash by remember{mutableStateOf<String?>(null)}
-            item(Icons.Default.BugReport,"Last crash report","The error of the last crash, to share","crash"){crash="Renderer: "+controller.rendererInfo()+"\n\n"+(com.smitnk.projectgrease.CrashLog.read(context)?:"No crash recorded.")}
+            item(PgIcons.BugReport,"Last crash report","The error of the last crash, to share","crash"){crash="Renderer: "+controller.rendererInfo()+"\n\n"+(com.smitnk.projectgrease.CrashLog.read(context)?:"No crash recorded.")}
             crash?.let{text->
                 AlertDialog(onDismissRequest={crash=null},title={Text("Last crash report")},
                     text={Text(text,fontSize=11.sp,modifier=Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState()))},
@@ -1970,7 +1968,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                     toast(context,if(ok)"Activity log saved" else "Couldn't save the activity log")
                 }
             }
-            item(Icons.Default.BugReport,"Activity log","Every option you use and what it did, to share","activity"){
+            item(PgIcons.BugReport,"Activity log","Every option you use and what it did, to share","activity"){
                 activity="Renderer: "+controller.rendererInfo()+"\n\n"+com.smitnk.projectgrease.CrashLog.readLog()}
             activity?.let{text->
                 AlertDialog(onDismissRequest={activity=null},title={Text("Activity log")},
@@ -2055,6 +2053,6 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
     Icon(icon,null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(label,maxLines=1)
 }
 private fun modeIcon(m:GreaseMode):ImageVector=when(m){
-    GreaseMode.DRAW->Icons.Default.Brush; GreaseMode.EDIT->Icons.Default.Edit; GreaseMode.SCULPT->Icons.Default.PanTool
-    GreaseMode.VERTEX_PAINT->Icons.Default.FormatPaint; GreaseMode.WEIGHT_PAINT->Icons.Default.LineWeight
+    GreaseMode.DRAW->PgIcons.Brush; GreaseMode.EDIT->PgIcons.Edit; GreaseMode.SCULPT->PgIcons.PanTool
+    GreaseMode.VERTEX_PAINT->PgIcons.FormatPaint; GreaseMode.WEIGHT_PAINT->PgIcons.LineWeight
 }

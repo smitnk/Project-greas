@@ -17,8 +17,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -151,13 +149,13 @@ private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Con
                 var playing by remember(uri) { mutableStateOf(false) }
                 LaunchedEffect(frames) { if (frames > 0) { a = 1; b = frames; pos = 1 } }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = done) { Icon(Icons.Default.Close, "Cancel") }
+                    IconButton(onClick = done) { Icon(PgIcons.Close, "Cancel") }
                     Text("Video import", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                     IconButton(enabled = state == VideoImportState.READY, onClick = {
                         state = VideoImportState.IMPORTING; playing = false
                         addVideoLayer(controller, context, uri, frames, a, b)
                         done()
-                    }, modifier = Modifier.testTag("videoAdd")) { Icon(Icons.Default.Check, "Import", tint = if (state == VideoImportState.READY) pink else Color.Gray) }
+                    }, modifier = Modifier.testTag("videoAdd")) { Icon(PgIcons.Check, "Import", tint = if (state == VideoImportState.READY) pink else Color.Gray) }
                 }
                 when {
                     state == VideoImportState.LOADING -> { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = pink) }; return@Column }
@@ -180,13 +178,13 @@ private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Con
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { pos = a }) { Icon(Icons.Default.SkipPrevious, "To the start") }
-                    IconButton(onClick = { pos = (pos - 1).coerceAtLeast(a) }) { Icon(Icons.Default.ChevronLeft, "Previous frame") }
+                    IconButton(onClick = { pos = a }) { Icon(PgIcons.SkipPrevious, "To the start") }
+                    IconButton(onClick = { pos = (pos - 1).coerceAtLeast(a) }) { Icon(PgIcons.ChevronLeft, "Previous frame") }
                     IconButton(onClick = { if (!playing && pos >= b) pos = a; playing = !playing }, Modifier.testTag("videoPlay")) {
-                        Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play")
+                        Icon(if (playing) PgIcons.Pause else PgIcons.PlayArrow, "Play")
                     }
-                    IconButton(onClick = { pos = (pos + 1).coerceAtMost(b) }) { Icon(Icons.Default.ChevronRight, "Next frame") }
-                    IconButton(onClick = { pos = b }) { Icon(Icons.Default.SkipNext, "To the end") }
+                    IconButton(onClick = { pos = (pos + 1).coerceAtMost(b) }) { Icon(PgIcons.ChevronRight, "Next frame") }
+                    IconButton(onClick = { pos = b }) { Icon(PgIcons.SkipNext, "To the end") }
                 }
                 // the strip: thumbnails, the kept part bright between the pink handles, the playhead
                 Canvas(Modifier.fillMaxWidth().height(84.dp).padding(horizontal = 8.dp).testTag("videoTrim").pointerInput(frames) {
@@ -272,7 +270,7 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = done) { Icon(Icons.Default.Close, "Cancel") }
+                    IconButton(onClick = done) { Icon(PgIcons.Close, "Cancel") }
                     Text(name, maxLines = 1, style = MaterialTheme.typography.titleSmall)
                 }
                 if (durationMs < 0 || (durationMs > 0 && peaks == null)) {
@@ -328,15 +326,15 @@ private fun AudioTrimDialog(uri: Uri, controller: EditorController, context: Con
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(clock(a), fontSize = 11.sp, color = pink)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { pos = a }) { Icon(Icons.Default.SkipPrevious, "To the start") }
+                    IconButton(onClick = { pos = a }) { Icon(PgIcons.SkipPrevious, "To the start") }
                     IconButton(onClick = {
                         val p = player.value ?: runCatching { MediaPlayer().apply { setDataSource(context, uri); prepare() } }.getOrNull()?.also { player.value = it }
                         if (p != null) {
                             if (playing) { p.pause(); playing = false }
                             else { p.seekTo((if (pos in a until b) pos else a).toInt()); p.start(); playing = true }
                         }
-                    }, Modifier.testTag("audioPreview")) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play") }
-                    IconButton(onClick = { pos = b }) { Icon(Icons.Default.SkipNext, "To the end") }
+                    }, Modifier.testTag("audioPreview")) { Icon(if (playing) PgIcons.Pause else PgIcons.PlayArrow, "Play") }
+                    IconButton(onClick = { pos = b }) { Icon(PgIcons.SkipNext, "To the end") }
                     Spacer(Modifier.weight(1f))
                     Text(clock(b), fontSize = 11.sp, color = pink)
                 }

@@ -13,8 +13,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,7 +92,7 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { anim.playing.let { if (it) anim.togglePlayback() }; onClose(); redraw() }, Modifier.testTag("audioClose")) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Close")
+                        Icon(PgIcons.KeyboardArrowDown, "Close")
                     }
                     Text("Audio", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     Text(clock((anim.currentFrame - 1).toLong() * 1000L / fps), fontSize = 12.sp)
@@ -103,16 +101,16 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     val allMuted = controller.audioStrips.isNotEmpty() && controller.audioStrips.all { it.muted }
                     IconButton(onClick = { val m2 = !allMuted; controller.audioStrips.forEach { it.muted = m2 }; controller.audioChanged(record = true); tick++ }) {
-                        Icon(if (allMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp, "Mute all")
+                        Icon(if (allMuted) PgIcons.VolumeOff else PgIcons.VolumeUp, "Mute all")
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { controller.selectFrame(1); redraw() }) { Icon(Icons.Default.SkipPrevious, "Start") }
-                    IconButton(onClick = { anim.togglePlayback(); redraw() }) { Icon(if (anim.playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play") }
-                    IconButton(onClick = { controller.selectFrame(maxOf(anim.sceneEnd, 1)); redraw() }) { Icon(Icons.Default.SkipNext, "End") }
+                    IconButton(onClick = { controller.selectFrame(1); redraw() }) { Icon(PgIcons.SkipPrevious, "Start") }
+                    IconButton(onClick = { anim.togglePlayback(); redraw() }) { Icon(if (anim.playing) PgIcons.Pause else PgIcons.PlayArrow, "Play") }
+                    IconButton(onClick = { controller.selectFrame(maxOf(anim.sceneEnd, 1)); redraw() }) { Icon(PgIcons.SkipNext, "End") }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { zoom = (zoom / 1.5f).coerceAtLeast(0.05f) }) { Icon(Icons.Default.ZoomOut, "Zoom out") }
-                    IconButton(onClick = { zoom = (zoom * 1.5f).coerceAtMost(3f) }) { Icon(Icons.Default.ZoomIn, "Zoom in") }
-                    IconButton(onClick = { m.importAudio() }, Modifier.testTag("audioAdd")) { Icon(Icons.Default.Add, "Add audio", tint = Pink) }
+                    IconButton(onClick = { zoom = (zoom / 1.5f).coerceAtLeast(0.05f) }) { Icon(PgIcons.ZoomOut, "Zoom out") }
+                    IconButton(onClick = { zoom = (zoom * 1.5f).coerceAtMost(3f) }) { Icon(PgIcons.ZoomIn, "Zoom in") }
+                    IconButton(onClick = { m.importAudio() }, Modifier.testTag("audioAdd")) { Icon(PgIcons.Add, "Add audio", tint = Pink) }
                 }
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     @Suppress("UNUSED_VARIABLE") val t = tick
@@ -243,12 +241,12 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                             Column(Modifier.height(with(density) { trackH.toDp() }).width(36.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
                                 verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                                 val muted = clips.isNotEmpty() && clips.all { it.muted }
-                                Icon(if (muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp, "Mute track ${tr + 1}",
+                                Icon(if (muted) PgIcons.VolumeOff else PgIcons.VolumeUp, "Mute track ${tr + 1}",
                                     Modifier.size(20.dp).pointerInput(tr, muted) { awaitEachGesture { awaitFirstDown().consume(); clips.forEach { it.muted = !muted }; controller.audioChanged(record = true); tick++ } },
                                     tint = Color.Gray)
                                 Spacer(Modifier.height(6.dp))
                                 val locked = controller.audioTrackLocked(tr)
-                                Icon(if (locked) Icons.Default.Lock else Icons.Default.LockOpen, "Lock track ${tr + 1}",
+                                Icon(if (locked) PgIcons.Lock else PgIcons.LockOpen, "Lock track ${tr + 1}",
                                     Modifier.size(18.dp).pointerInput(tr, locked) { awaitEachGesture { awaitFirstDown().consume(); controller.setAudioTrackLocked(tr, !locked); tick++ } },
                                     tint = Color.Gray)
                             }
@@ -261,12 +259,12 @@ fun AudioEditor(controller: EditorController, m: MediaImport, onClose: () -> Uni
                     if (sel != null) {
                         Surface(Modifier.align(Alignment.TopCenter).graphicsLayer { scaleX = pop; scaleY = pop; alpha = pop }, shape = RoundedCornerShape(20.dp), tonalElevation = 6.dp, shadowElevation = 6.dp) {
                             Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { sel?.let { controller.duplicateAudio(it) }?.let { selected = it }; tick++ }, Modifier.testTag("audioDuplicate")) { Icon(Icons.Default.ContentCopy, "Duplicate") }
-                                IconButton(onClick = { volumeOpen = !volumeOpen }, Modifier.testTag("audioVolume")) { Icon(Icons.Default.Edit, "Volume") }
-                                IconButton(onClick = { sel?.let { controller.removeAudio(it) }; selected = null; tick++; redraw() }, Modifier.testTag("audioDelete")) { Icon(Icons.Default.Delete, "Delete") }
-                                IconButton(onClick = { sel?.let { controller.splitAudio(it) }; tick++ }, Modifier.testTag("audioSplit")) { Icon(Icons.Default.ContentCut, "Split at the playhead") }
-                                IconButton(onClick = { sel?.let { controller.trimAudioToPlayhead(it, true) }; tick++ }, Modifier.testTag("audioTrimStart")) { Icon(Icons.Default.FirstPage, "Trim the start to the playhead") }
-                                IconButton(onClick = { sel?.let { controller.trimAudioToPlayhead(it, false) }; tick++ }, Modifier.testTag("audioTrimEnd")) { Icon(Icons.Default.LastPage, "Trim the end to the playhead") }
+                                IconButton(onClick = { sel?.let { controller.duplicateAudio(it) }?.let { selected = it }; tick++ }, Modifier.testTag("audioDuplicate")) { Icon(PgIcons.ContentCopy, "Duplicate") }
+                                IconButton(onClick = { volumeOpen = !volumeOpen }, Modifier.testTag("audioVolume")) { Icon(PgIcons.Edit, "Volume") }
+                                IconButton(onClick = { sel?.let { controller.removeAudio(it) }; selected = null; tick++; redraw() }, Modifier.testTag("audioDelete")) { Icon(PgIcons.Delete, "Delete") }
+                                IconButton(onClick = { sel?.let { controller.splitAudio(it) }; tick++ }, Modifier.testTag("audioSplit")) { Icon(PgIcons.ContentCut, "Split at the playhead") }
+                                IconButton(onClick = { sel?.let { controller.trimAudioToPlayhead(it, true) }; tick++ }, Modifier.testTag("audioTrimStart")) { Icon(PgIcons.FirstPage, "Trim the start to the playhead") }
+                                IconButton(onClick = { sel?.let { controller.trimAudioToPlayhead(it, false) }; tick++ }, Modifier.testTag("audioTrimEnd")) { Icon(PgIcons.LastPage, "Trim the end to the playhead") }
                             }
                         }
                     }

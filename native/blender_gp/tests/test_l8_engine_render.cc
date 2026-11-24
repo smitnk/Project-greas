@@ -38,6 +38,8 @@ extern "C" void project_grease_android_present_set_canvas_size(int width, int he
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
 extern "C" int project_grease_android_present_engine_active();
 extern "C" const char *project_grease_android_present_last_frame();
+extern "C" int project_grease_android_present_selftest_runs();
+extern "C" void project_grease_android_present_engine_reset();
 extern "C" void project_grease_android_set_fx_provider(int (*fn)(void *, const bGPDlayer *, const PGFxEntry **), void *user);
 static PGFxEntry g_test_fx;
 static int test_fx_provider(void *, const bGPDlayer *, const PGFxEntry **out) { *out = &g_test_fx; return 1; }
@@ -423,6 +425,18 @@ int main()
     CHECK(c[0] > 200 && c[1] < 60 && c[2] < 60);
     project_grease_android_present_set_view_rotation(0.0f);
     project_grease_android_present_set_reference(nullptr, 0, 0);
+  }
+
+  /* The engine self-test runs once per GPU per process: a latch reset (context recovery on the same
+   * GPU) reuses its verdict instead of drawing and reading back again on the next first frame. */
+  {
+    CHECK(project_grease_android_present_selftest_runs() == 1);
+    project_grease_android_present_engine_reset();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); glViewport(0, 0, W, H);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    CHECK(project_grease_android_present_engine_active() == 1);
+    std::printf("  self-test runs after a reset: %d (expected 1)\n", project_grease_android_present_selftest_runs());
+    CHECK(project_grease_android_present_selftest_runs() == 1);
   }
 
   /* Batch 6: a frame with unchanged effects reuses the last engine image (effects were re-run on

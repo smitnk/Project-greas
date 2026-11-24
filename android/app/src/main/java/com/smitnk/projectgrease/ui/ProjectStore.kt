@@ -59,7 +59,7 @@ class ProjectStore(context: Context) {
     }
 
     /** Saves an existing project to its own file (overwrites it atomically). */
-    fun saveDocument(name:String, json:String) = files.write(name, json)
+    fun saveDocument(name:String, json:String, seq:Long = 0L) = files.write(name, json, seq)
 
     fun loadDocument(name:String):String? = files.read(name)
 

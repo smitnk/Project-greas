@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <string>
 #include <cmath>
 #include <vector>
 
@@ -1189,6 +1190,8 @@ std::vector<unsigned char> g_engine_last_fx; // effect settings of the last engi
 // canvas and the app hung): a black line on white paper through the engine, read back. A wrong
 // picture keeps the presenter, with what was seen in the renderer report.
 char g_selftest_msg[256]="not run";
+std::string g_selftest_gpu; // GL_RENDERER|GL_VERSION the cached verdict belongs to
+bool g_selftest_verdict=false;int g_selftest_runs=0;double g_selftest_frame_ms=0.0;
 extern "C" __attribute__((weak)) void DRW_gpencil_batch_cache_free(bGPdata *gpd);
 static Material *selftest_material(){
   Material*ma=static_cast<Material*>(MEM_callocN(sizeof(Material),"pg selftest ma"));
@@ -1248,7 +1251,18 @@ bool engine_context_ok(){
     if(!v)return false; // no current context yet: ask again next frame instead of keeping "off"
     // OpenGL ES 3.2, or 3.1 with the texture buffer / base vertex / implicit conversion extensions
     ok=(pg_gles_api&&pg_gles_api()!=0)?1:0;
-    if(ok&&!engine_self_test()){ok=0;g_engine_failed=1;}
+    if(ok){
+      // The self-test (a 64x64 engine draw + float readback) is slow: run it once per GPU/driver per
+      // process, so a context recovery on the same GPU reuses the verdict; its time is not document time.
+      const char*r=reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+      const std::string gpu=std::string(r?r:"?")+"|"+v;
+      if(gpu!=g_selftest_gpu){
+        const auto t=std::chrono::steady_clock::now();
+        g_selftest_verdict=engine_self_test();g_selftest_gpu=gpu;g_selftest_runs++;
+        g_selftest_frame_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t).count();
+      }
+      if(!g_selftest_verdict){ok=0;g_engine_failed=1;}
+    }
 #ifdef PG_HAVE_ANDROID_LOG
     __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","GL_VERSION %s: Blender GP draw engine %s (API %d)",v?v:"?",ok?"on":"off (needs OpenGL ES 3.2, or 3.1 with texture buffers)",pg_gles_api?pg_gles_api():0);
 #endif
@@ -1574,11 +1588,11 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number);
 static double g_last_doc_ms=0.0;
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   const auto t0=std::chrono::steady_clock::now();
-  g_frame_queries_now=0;g_in_document=true;g_target_known=false;
+  g_frame_queries_now=0;g_in_document=true;g_target_known=false;g_selftest_frame_ms=0.0;
   const int r=present_gp_document_impl(gpd,frame_number);
   g_in_document=false;g_target_known=false;
   g_frame_gl_queries=g_frame_queries_now;
-  g_last_doc_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+  g_last_doc_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count()-g_selftest_frame_ms;
   return r;
 }
 static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
@@ -2036,6 +2050,7 @@ static void engine_clear_latch(){
 }
 extern "C" int project_grease_android_present_engine_healthy(){return g_engine_failed?0:1;}
 extern "C" void project_grease_android_present_engine_reset(){engine_clear_latch();}
+extern "C" int project_grease_android_present_selftest_runs(){return g_selftest_runs;}
 static void present_reset_impl(bool alive){
   engine_clear_latch();
   // the engine and its stroke cache belong to this context too: a new context rebuilds them

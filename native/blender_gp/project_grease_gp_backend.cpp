@@ -233,6 +233,7 @@ struct HistorySnapshot {
   bGPdata *data = nullptr;
   ModifierStacks stacks; /* the live modifier stack of every layer, by layer index */
   FxStacks fx_stacks;    /* the shader effect list of every layer, by layer index */
+  size_t points = 0;     /* stroke points stored in data, for the history memory budget */
 };
 
 /* One evaluated copy of a layer's current frame (see pg_mod_eval_frame). */
@@ -542,6 +543,13 @@ static HistorySnapshot *history_snapshot_create(const bGPdata *source,
   }
 
   snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
+  LISTBASE_FOREACH (const bGPDlayer *, gpl, &snapshot->data->layers) {
+    LISTBASE_FOREACH (const bGPDframe *, gpf, &gpl->frames) {
+      LISTBASE_FOREACH (const bGPDstroke *, gps, &gpf->strokes) {
+        snapshot->points += static_cast<size_t>(gps->totpoints);
+      }
+    }
+  }
   snapshot->stacks = stacks;
   snapshot->fx_stacks = fx_stacks;
   return snapshot;
@@ -719,8 +727,18 @@ bool Backend::history_record()
   history_snapshot_clear(impl_->redo_history);
   impl_->undo_history.push_back(snapshot);
 
-  constexpr size_t kMaxHistory = 64;
-  if (impl_->undo_history.size() > kMaxHistory) {
+  // Blender's default U.undosteps.
+  constexpr size_t kMaxHistory = 32;
+  // Each snapshot is a full document copy (~60 bytes per bGPDspoint plus weights), so 4M points keeps
+  // the undo stack near 250 MB on a phone however large the drawing; the newest step is always kept.
+  constexpr size_t kMaxHistoryPoints = 4000000;
+  size_t total_points = 0;
+  for (const HistorySnapshot *s : impl_->undo_history) {
+    total_points += s->points;
+  }
+  while (impl_->undo_history.size() > 1 &&
+         (impl_->undo_history.size() > kMaxHistory || total_points > kMaxHistoryPoints)) {
+    total_points -= impl_->undo_history.front()->points;
     history_snapshot_free(impl_->undo_history.front());
     impl_->undo_history.erase(impl_->undo_history.begin());
   }

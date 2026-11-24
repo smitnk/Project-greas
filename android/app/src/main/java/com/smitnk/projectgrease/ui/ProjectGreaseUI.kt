@@ -127,7 +127,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
 
     fun saveCurrentProject(tree: org.json.JSONObject? = controller.saveDocumentTree(), write: Boolean = true, savedRevision: Int = controller.document.revision) {
         try {
-            if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString()) }
+            if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString(), ProjectFiles.nextSeq()) }
             projectStore.upsert(ProjectRecord(
                 controller.document.projectName,
                 controller.document.canvasWidth,
@@ -159,7 +159,8 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     // Build the tree here (native reads); text + file write on IO so the UI never stalls.
                     val tree = controller.saveDocumentTree() ?: continue
                     val projectName = controller.document.projectName
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString()) }
+                    val seq = ProjectFiles.nextSeq()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString(), seq) }
                     saveCurrentProject(tree, write = false, savedRevision = revision)
                     failureShown = false
                 } catch (e: kotlinx.coroutines.CancellationException) {

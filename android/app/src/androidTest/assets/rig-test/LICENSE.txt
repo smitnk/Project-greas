@@ -1,0 +1,6 @@
+License: Creative Commons Zero 1.0 Universal (CC0 1.0, public domain dedication)
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+Source page: https://kenney.nl/assets/toon-characters (CC0 verified there)
+Downloaded from mirror: https://opengameart.org/content/toon-characters-1 (kenney_toonCharacters1.zip, CC0 verified there; pack License.txt also CC0)
+Author: Kenney (www.kenney.nl)
+Date: 2026-11-24

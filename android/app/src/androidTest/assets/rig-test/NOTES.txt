@@ -1,0 +1,12 @@
+Source: Kenney 'Toon Characters 1', Male person / PNG / Parts (non-HD).
+Files and alpha bounding boxes (x0,y0,x1,y1 exclusive; image WxH):
+
+head.png  1228 bytes  image 53x48  bbox (0, 0, 53, 48)
+body.png  1057 bytes  image 38x39  bbox (0, 0, 38, 39)
+arm_l.png  545 bytes  image 21x30  bbox (0, 0, 21, 30)
+arm_r.png  545 bytes  image 21x30  bbox (0, 0, 21, 30)
+leg_l.png  289 bytes  image 18x29  bbox (0, 0, 18, 29)
+leg_r.png  289 bytes  image 18x29  bbox (0, 0, 18, 29)
+
+arm_l/arm_r are identical copies of the source arm.png; leg_l/leg_r of leg.png (pack has one sprite per limb).
+No mouth sprites in this pack (mouth is drawn on head.png).

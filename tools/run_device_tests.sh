@@ -16,14 +16,30 @@ dismiss() { adb shell settings put global window_animation_scale 0 >/dev/null 2>
 adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
 dismiss
 # PG_DEVICE_TESTS=all runs every instrumented test class (the full emulator QA sweep)
-if [ "${PG_DEVICE_TESTS:-}" = "all" ]; then SEL="-e package com.smitnk.projectgrease"; else SEL="-e class $CLASSES"; fi
+# RigCharacterTest then runs on its own, under adb screenrecord (the video goes into qa-results)
+RIG=RigCharacterTest
+if [ "${PG_DEVICE_TESTS:-}" = "all" ]; then SEL="-e package com.smitnk.projectgrease -e notClass com.smitnk.projectgrease.$RIG"; else SEL="-e class $CLASSES"; RIG=; fi
 run() { adb shell am instrument -w -r $SEL \
   com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee device-tests.txt; }
 # the whole run's log: the ring buffer kept only the last ~35 tests
 mkdir -p android/device-shots; adb logcat -c; adb logcat -v time > android/device-shots/logcat-full.txt 2>/dev/null & LOGPID=$!
 run
 if grep -q "INJECT_EVENTS" device-tests.txt; then echo "::warning title=device tests::system dialog blocked input, rerunning"; dismiss; run; fi
+rm -f rig-tests.txt
+if [ -n "$RIG" ]; then
+  # the recorder stops at 180 s or on SIGINT; the mp4 is pulled whether the test passed or not
+  adb shell rm -f /data/local/tmp/rig-character.mp4
+  adb shell screenrecord --time-limit 180 --bit-rate 1000000 /data/local/tmp/rig-character.mp4 & RECPID=$!
+  sleep 1
+  adb shell am instrument -w -r -e class com.smitnk.projectgrease.$RIG \
+    com.smitnk.projectgrease.test/androidx.test.runner.AndroidJUnitRunner | tee rig-tests.txt
+  adb shell pkill -INT screenrecord >/dev/null 2>&1; wait $RECPID 2>/dev/null; sleep 2
+  mkdir -p android/device-shots
+  adb pull /data/local/tmp/rig-character.mp4 android/device-shots/rig-character-screenrecord.mp4 >/dev/null 2>&1 \
+    || echo "::warning title=rig video::screenrecord produced no file"
+fi
 mkdir -p android/device-shots; cp device-tests.txt android/device-shots/ 2>/dev/null || true
+cp rig-tests.txt android/device-shots/ 2>/dev/null || true
 kill $LOGPID 2>/dev/null; grep -E 'PGLog|TestRunner|FATAL|AndroidRuntime' android/device-shots/logcat-full.txt > android/device-shots/app-log.txt 2>/dev/null
 adb logcat -d > android/device-shots/logcat.txt 2>/dev/null || true
 # app crashes: the first FATAL EXCEPTION with its stack, as one annotation
@@ -36,13 +52,15 @@ grep -iE "GL_VERSION|PGErase|ProjectGrease|FATAL|AndroidRuntime|libc  " android/
 adb pull /data/local/tmp/pg_screenshots/sweep android/device-shots/ >/dev/null 2>&1 || true
 python3 - <<'PY'
 import re,sys
-t=open("device-tests.txt",errors="replace").read()
+import os
+runs=[f for f in ("device-tests.txt","rig-tests.txt") if os.path.exists(f)]
+t="\n".join(open(f,errors="replace").read() for f in runs)
 fails=re.findall(r"INSTRUMENTATION_STATUS: class=(\S+)\nINSTRUMENTATION_STATUS: current=\d+\nINSTRUMENTATION_STATUS: id=\S+\nINSTRUMENTATION_STATUS: numtests=\d+\nINSTRUMENTATION_STATUS: stack=(.*?)\nINSTRUMENTATION_STATUS: stream=",t,re.S)
 for cls,stack in fails:
     print("::error title=device test %s::%s" % (cls.split('.')[-1], stack.strip().splitlines()[0][:1500]))
 for m in re.finditer(r"INSTRUMENTATION_STATUS: test=(\S+)\nINSTRUMENTATION_STATUS_CODE: (-?\d)",t):
     print("::notice title=device::%s %s" % (m.group(1), {"0":"PASS","-2":"FAIL","-1":"ERROR"}.get(m.group(2),m.group(2))))
-ok=re.search(r"^OK \(\d+ tests?\)",t,re.M) is not None
+ok=len(re.findall(r"^OK \(\d+ tests?\)",t,re.M))==len(runs)
 print("device tests", "passed" if ok else "FAILED")
 sys.exit(0 if ok else 1)
 PY

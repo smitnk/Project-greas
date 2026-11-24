@@ -180,3 +180,14 @@ C|native/blender_gp/project_grease_armature_bke.c
 C|native/blender_gp/project_grease_armature.c
 CXX|native/blender_gp/project_grease_armature_io.cc
 CXX|native/blender_gp/project_grease_armature_bridge.cpp
+# L10 part 1 items 7-8: bone constraints + Standard IK solver, drivers + custom properties.
+C|native/blender_gp/project_grease_constraint.c
+C|native/blender_gp/project_grease_driver.c
+CXX|native/blender_gp/project_grease_rig_bridge.cpp
+C|third_party/blender/source/blender/ikplugin/intern/iksolver_plugin.c
+C|third_party/blender/source/blender/blenlib/intern/expr_pylike_eval.c
+CXX|third_party/blender/intern/iksolver/intern/IK_QJacobian.cpp
+CXX|third_party/blender/intern/iksolver/intern/IK_QJacobianSolver.cpp
+CXX|third_party/blender/intern/iksolver/intern/IK_QSegment.cpp
+CXX|third_party/blender/intern/iksolver/intern/IK_QTask.cpp
+CXX|third_party/blender/intern/iksolver/intern/IK_Solver.cpp

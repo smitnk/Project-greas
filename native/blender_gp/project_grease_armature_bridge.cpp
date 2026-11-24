@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Rig commands and queries of the bridge (PG_ARM_CMD_* / PG_ARM_Q_* in project_grease_gp_bridge.h):
  * canvas pixels in, canvas pixels out, pg_arm_* (project_grease_armature.h) in between. */
+#include <climits>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -10,6 +11,11 @@
 #include "BLI_math_matrix.h"
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_bridge.h"
+
+/* project_grease_rig_bridge.cpp */
+int pg_arm_rig_command(project_grease::gp::Backend &backend, PGArmature *a, int cmd, int bone,
+                       const float *args, int n, const char *name);
+int pg_arm_rig_query(const PGArmature *a, int what, int bone, float x, float *out, int cap);
 
 namespace {
 
@@ -35,6 +41,10 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
   if (cmd == PG_ARM_CMD_BIND) return backend.armature_bind((int)arg(args, n, 0));
   PGArmature *a = backend.armature(false);
   if (!a) return -1;
+  if (const int rig = pg_arm_rig_command(backend, a, cmd, bone, args, n, name); rig != INT_MIN) {
+    backend.armature_changed();
+    return rig;
+  }
   int r = 0;
   float v0[3], v1[3];
   switch (cmd) {
@@ -154,7 +164,7 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
       break;
     }
     case PG_ARM_CMD_EVALUATE:
-      pg_arm_evaluate(a, arg(args, n, 0, 1.0f));
+      backend.armature_evaluate(arg(args, n, 0, 1.0f));
       r = 1;
       break;
     default:
@@ -174,6 +184,7 @@ int pg_arm_bridge_query(Backend &backend, int what, int bone, float x, float *ou
     std::memcpy(out, none, sizeof(none));
     return 4;
   }
+  if (const int rig = pg_arm_rig_query(a, what, bone, x, out, cap); rig >= 0) return rig;
   int n = 0;
   switch (what) {
     case PG_ARM_Q_SUMMARY: /* bone count, active bone, mode, fcurve count */

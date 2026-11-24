@@ -30,6 +30,8 @@
 #include "project_grease_armature.h"
 #include "project_grease_armature_bke.h"
 #include "project_grease_armature_intern.h"
+#include "project_grease_constraint.h"
+#include "project_grease_driver.h"
 
 
 static const char *const channel_prop[PG_ARM_CHANNELS] = {
@@ -43,7 +45,7 @@ static const int channel_index[PG_ARM_CHANNELS] = {0, 1, 2, 0, 1, 2, 3, 0, 1, 2}
 static void arm_update(PGArmature *a)
 {
   pg_bke_armature_from_edit(&a->arm, &a->pose);
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
 }
 
 PGArmature *pg_arm_new(void)
@@ -55,6 +57,20 @@ PGArmature *pg_arm_new(void)
   a->arm.layer = 1;
   a->arm.drawtype = ARM_OCTA;
   a->arm.edbo = &a->edbo;
+  /* the rig object: _DNA_DEFAULT_Object transform at the origin */
+  Object *ob = &a->ob;
+  STRNCPY(ob->id.name, "OBArmature");
+  ob->type = OB_ARMATURE;
+  ob->data = &a->arm;
+  ob->pose = &a->pose;
+  ob->rotmode = ROT_MODE_EUL;
+  copy_v3_fl(ob->scale, 1.0f);
+  copy_v3_fl(ob->dscale, 1.0f);
+  unit_qt(ob->quat);
+  unit_m4(ob->object_to_world);
+  unit_m4(ob->world_to_object);
+  unit_m4(ob->constinv);
+  unit_m4(ob->parentinv);
   return a;
 }
 
@@ -73,6 +89,7 @@ void pg_arm_free(PGArmature *a)
   pg_bke_pose_free(&a->pose);
   BLI_freelistN(&a->copybuf);
   LISTBASE_FOREACH_MUTABLE (FCurve *, fcu, &a->curves) fcurve_free(fcu);
+  pg_drv_free_all(a);
   MEM_freeN(a);
 }
 
@@ -103,6 +120,8 @@ PGArmature *pg_arm_dup(const PGArmature *src)
     c->next = c->prev = NULL;
     c->bone = NULL;
     c->parent = c->child = NULL;
+    BLI_listbase_clear(&c->iktree);
+    pg_con_list_copy(&c->constraints, &pc->constraints, &a->ob);
     BLI_addtail(&a->pose.chanbase, c);
   }
   LISTBASE_FOREACH (const bPoseChannel *, pc, &src->copybuf) {
@@ -110,8 +129,10 @@ PGArmature *pg_arm_dup(const PGArmature *src)
     c->next = c->prev = NULL;
     c->bone = NULL;
     c->parent = c->child = NULL;
+    BLI_listbase_clear(&c->constraints); /* the buffer holds transforms only */
     BLI_addtail(&a->copybuf, c);
   }
+  pg_drv_copy_all(a, src);
   LISTBASE_FOREACH (const FCurve *, fcu, &src->curves) {
     FCurve *c = MEM_dupallocN(fcu);
     c->next = c->prev = NULL;
@@ -585,13 +606,13 @@ int pg_arm_delete_selected(PGArmature *a)
 }
 
 /* BKE_animdata_fix_paths_rename for pose.bones["old"] prefixes */
-static void fcurves_rename_bone(PGArmature *a, const char *oldname, const char *newname)
+static void fcurves_rename_bone(ListBase *curves, const char *oldname, const char *newname)
 {
   char oldp[MAXBONENAME + 16], newp[MAXBONENAME + 16];
   BLI_snprintf(oldp, sizeof(oldp), "pose.bones[\"%s\"]", oldname);
   BLI_snprintf(newp, sizeof(newp), "pose.bones[\"%s\"]", newname);
   const size_t ol = strlen(oldp);
-  LISTBASE_FOREACH (FCurve *, fcu, &a->curves) {
+  LISTBASE_FOREACH (FCurve *, fcu, curves) {
     if (fcu->rna_path && strncmp(fcu->rna_path, oldp, ol) == 0) {
       const size_t len = strlen(newp) + strlen(fcu->rna_path + ol) + 1;
       char *s = MEM_mallocN(len, "rna_path");
@@ -615,7 +636,10 @@ int pg_arm_bone_rename(PGArmature *a, int bone, const char *name, char *r_old, c
   STRNCPY(eb->name, newname);
   bPoseChannel *pchan = BKE_pose_channel_find_name(&a->pose, oldname);
   if (pchan) STRNCPY(pchan->name, newname);
-  fcurves_rename_bone(a, oldname, newname);
+  fcurves_rename_bone(&a->curves, oldname, newname);
+  fcurves_rename_bone(&a->drivers, oldname, newname);
+  pg_con_rename_subtargets(a, oldname, newname);
+  pg_drv_rename_bone(a, oldname, newname);
   if (r_old) BLI_strncpy(r_old, oldname, MAXBONENAME);
   if (r_new) BLI_strncpy(r_new, newname, MAXBONENAME);
   arm_update(a);
@@ -664,7 +688,7 @@ int pg_arm_pose_set(PGArmature *a, int bone, const float v[10])
   copy_v3_v3(pc->loc, v);
   copy_qt_qt(pc->quat, v + 3);
   copy_v3_v3(pc->size, v + 7);
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
   return 1;
 }
 
@@ -694,7 +718,7 @@ int pg_arm_pose_translate(PGArmature *a, const float delta[3])
     add_v3_v3(pc->loc, d);
     n++;
   }
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
@@ -721,7 +745,7 @@ int pg_arm_pose_rotate(PGArmature *a, float angle)
     if (dot_qtqt(oldq, pc->quat) < 0.0f) mul_qt_fl(pc->quat, -1.0f); /* keep keys interpolating the short way */
     n++;
   }
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
@@ -734,7 +758,7 @@ int pg_arm_pose_scale(PGArmature *a, float factor)
     mul_v3_fl(pc->size, factor);
     n++;
   }
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
@@ -749,7 +773,7 @@ int pg_arm_pose_clear(PGArmature *a, int what)
     if (what & 4) pg_bke_pchan_clear_scale(pc);
     n++;
   }
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
@@ -771,6 +795,7 @@ int pg_arm_pose_copy(PGArmature *a)
     c->next = c->prev = NULL;
     c->bone = NULL;
     c->parent = c->child = NULL;
+    BLI_listbase_clear(&c->constraints); /* the buffer holds transforms only */
     BLI_addtail(&a->copybuf, c);
   }
   return n;
@@ -794,7 +819,7 @@ int pg_arm_pose_paste(PGArmature *a, bool flipped, bool selected_mask)
       if (pg_bke_pose_bone_do_paste(&a->pose, chan, selOnly, flipped)) n++;
     }
   }
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
@@ -961,7 +986,9 @@ FCurve *pg_arm_fcurve_at(const PGArmature *a, int index)
   return a && index >= 0 ? BLI_findlink(&a->curves, index) : NULL;
 }
 
-void pg_arm_evaluate(PGArmature *a, float frame)
+void pg_arm_evaluate(PGArmature *a, float frame) { pg_arm_evaluate_ex(a, frame, NULL); }
+
+void pg_arm_evaluate_ex(PGArmature *a, float frame, const PGArmExternal *ext)
 {
   if (!a) return;
   /* animsys_evaluate_fcurves on the pose channels the action drives */
@@ -973,7 +1000,8 @@ void pg_arm_evaluate(PGArmature *a, float frame)
       }
     }
   }
-  pg_bke_pose_where_is(&a->arm, &a->pose);
+  /* then the drivers (BKE_animsys_eval_driver), which end with the pose evaluation */
+  pg_drv_evaluate(a, frame, ext);
 }
 
 void pg_arm_update(PGArmature *a)

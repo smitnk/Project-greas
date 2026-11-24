@@ -12,7 +12,8 @@ INC=(-I"$BL/draw" -I"$BL/draw/intern" -I"$BL/draw/engines/gpencil" -I"$BL/gpu" -
      -I"$BL/gpencil_modifiers_legacy" -I"$BL/blentranslation" -I"$BL/blentranslation/intern"
      -I"$BL/imbuf" -I"$BL/blenloader" -I"$BL/gpu" -I"$BL/gpu/intern" -I"$BL/draw" -I"$BL/bmesh" -I"$BL/editors/include" -I"$BL/windowmanager" -I"$BL/render"
      -I"$B/extern/curve_fit_nd" -I"$B/extern/wcwidth" -I"$B/intern/guardedalloc" -I"$B/intern/atomic"
-     -I"$B/intern/clog" -I"$B/intern/eigen" -I"$ROOT/build/blender-dna")
+     -I"$B/intern/clog" -I"$B/intern/eigen" -I"$ROOT/build/blender-dna"
+     -I"$BL/ikplugin" -I"$B/intern/iksolver/extern" -I"$B/extern/Eigen3")
 CF=(-std=gnu11 -DNDEBUG -DMATH_STANDALONE -w -DMALLOC_USABLE_SIZE_DISABLED -ffunction-sections -fdata-sections)
 XF=(-std=gnu++17 -DNDEBUG -w -ffunction-sections -fdata-sections)
 C_SRC=(
@@ -46,8 +47,8 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_tool_weight_paint.c"
   "$ROOT/native/blender_gp/project_grease_annotations.c"
   "$ROOT/native/blender_gp/android_legacy_runtime_compat.c"
+  "$BL/blenlib/intern/math_matrix.c"
   "$ROOT/native/blender_gp/android_blender_math_vector_compat.c"
-  "$ROOT/native/blender_gp/android_blender_math_matrix_compat.c"
   "$ROOT/native/blender_gp/android_blender_math_rotation_compat.c"
   "$ROOT/native/blender_gp/android_blender_string_compat.c"
   "$ROOT/native/blender_gp/android_blender_string_utf8_compat.c"
@@ -69,13 +70,22 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_blender_lattice.c"
   "$ROOT/native/blender_gp/project_grease_armature_bke.c" "$ROOT/native/blender_gp/project_grease_armature.c"
   "$BL/blenlib/intern/math_solvers.c"
+  "$ROOT/native/blender_gp/project_grease_constraint.c" "$ROOT/native/blender_gp/project_grease_driver.c"
+  "$BL/ikplugin/intern/iksolver_plugin.c" "$BL/blenlib/intern/expr_pylike_eval.c"
 )
 CXX_SRC=(
   "$BL/blenkernel/intern/gpencil_geom_legacy.cc" "$BL/blenkernel/intern/deform.cc"
   "$BL/blenlib/intern/listbase.cc" "$BL/blenlib/intern/rand.cc"
   "$BL/blenkernel/intern/curve.cc" "$ROOT/native/blender_gp/project_grease_armature_io.cc"
   "$B/intern/guardedalloc/intern/leak_detector.cc" "$B/intern/guardedalloc/intern/memory_usage.cc"
+  "$B/intern/iksolver/intern/IK_QJacobian.cpp" "$B/intern/iksolver/intern/IK_QJacobianSolver.cpp"
+  "$B/intern/iksolver/intern/IK_QSegment.cpp" "$B/intern/iksolver/intern/IK_QTask.cpp"
+  "$B/intern/iksolver/intern/IK_Solver.cpp"
+  "$B/intern/eigen/intern/matrix.cc" "$B/intern/eigen/intern/svd.cc" "$B/intern/eigen/intern/eigenvalues.cc"
 )
 OBJS=()
-for s in "${C_SRC[@]}"; do o="$OUT/$(basename "$s").o"; gcc "${CF[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
+# math_matrix.c is built as Android builds it (no MATH_STANDALONE: interp_m4_m4m4 and the polar
+# decomposition through intern/eigen, used by the constraint stack's influence blending).
+for s in "${C_SRC[@]}"; do o="$OUT/$(basename "$s").o"; X=(); [[ "$s" == */math_matrix.c ]] && X=(-UMATH_STANDALONE)
+  gcc "${CF[@]}" "${X[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
 for s in "${CXX_SRC[@]}"; do o="$OUT/$(basename "$s").o"; g++ "${XF[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done

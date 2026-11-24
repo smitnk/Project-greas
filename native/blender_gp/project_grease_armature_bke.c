@@ -43,6 +43,7 @@
 #include "ED_armature.h"
 
 #include "project_grease_armature_bke.h"
+#include "project_grease_constraint.h"
 
 /* armature_deform.c / armature_utils.c / gpencil_armature.c / pose_transform.c context the regions
  * below rely on. */
@@ -2945,6 +2946,7 @@ void pg_bke_armature_bonelist_free(ListBase *lb)
 
 void pg_bke_pose_free(bPose *pose)
 {
+  LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) pg_con_list_free(&pchan->constraints);
   BLI_freelistN(&pose->chanbase);
 }
 
@@ -3083,45 +3085,13 @@ void pg_bke_armature_from_edit(bArmature *arm, bPose *pose)
   for (bPoseChannel *pchan = pose->chanbase.first, *next; pchan; pchan = next) {
     next = pchan->next;
     if (pchan->bone == NULL) {
+      pg_con_list_free(&pchan->constraints);
       BLI_freelinkN(&pose->chanbase, pchan);
     }
   }
 }
 
-/* BKE_pose_where_is (armature.c) + BKE_pose_bone_done (armature_update.c) for an armature object
- * at the origin, without IK, constraints and the cyclic offset. */
-void pg_bke_pose_where_is(bArmature *arm, bPose *pose)
-{
-  float imat[4][4];
-  if (arm->flag & ARM_RESTPOS) {
-    LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) {
-      Bone *bone = pchan->bone;
-      if (bone) {
-        copy_m4_m4(pchan->pose_mat, bone->arm_mat);
-        copy_v3_v3(pchan->pose_head, bone->arm_head);
-        copy_v3_v3(pchan->pose_tail, bone->arm_tail);
-      }
-    }
-  }
-  else {
-    LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) {
-      /* BKE_pose_where_is_bone(..., do_extra = true) without constraints */
-      BKE_pchan_calc_mat(pchan);
-      BKE_armature_mat_bone_to_pose(pchan, pchan->chan_mat, pchan->pose_mat);
-      copy_v3_v3(pchan->pose_head, pchan->pose_mat[3]);
-      BKE_pose_where_is_bone_tail(pchan);
-    }
-  }
-  LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) {
-    if (pchan->bone) {
-      invert_m4_m4(imat, pchan->bone->arm_mat);
-      mul_m4_m4m4(pchan->chan_mat, pchan->pose_mat, imat);
-      if (!(pchan->bone->flag & BONE_NO_DEFORM)) {
-        mat4_to_dquat(&pchan->runtime.deform_dual_quat, pchan->bone->arm_mat, pchan->chan_mat);
-      }
-    }
-  }
-}
+/* BKE_pose_where_is is in project_grease_constraint.c (with constraints and IK). */
 
 /* armature_deform_coords_impl (armature_deform.c), the gps_target branch, single-threaded. The
  * armature object is at the origin; the GP object's matrix is target_to_world. */

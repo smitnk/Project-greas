@@ -73,6 +73,8 @@ INCLUDES=(
   "$BLENDER/intern/clog"
   "$BLENDER/intern/eigen"
   "$BLENDER/extern/Eigen3"
+  "$BLENDER/source/blender/ikplugin"
+  "$BLENDER/intern/iksolver/extern"
   "$ROOT/build/blender-dna"
 )
 

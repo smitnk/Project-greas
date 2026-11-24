@@ -267,6 +267,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_armature_tests.sh
 
+      - name: Run native constraint / IK / driver tests (rig, Blender 3.6.23 constraint.c / iksolver / fcurve_driver.c)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_constraints_tests.sh
+
       - name: Run native modifier stack tests
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

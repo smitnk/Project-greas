@@ -207,6 +207,9 @@ class Backend {
   // armature_changed() so the Armature modifiers re-evaluate. The pose follows the scene frame.
   PGArmature* armature(bool create);
   void armature_changed();
+  // The action (action false: not, as after a property edit) and the drivers (layer opacity /
+  // hide and Time Offset modifiers included) at `frame` (< 0: the scene frame), then the pose.
+  void armature_evaluate(float frame = -1.0f, bool action = true);
   void armature_remove();
   // Parent with ... (pg_arm_bind_frame mode 0..3) on every layer's frame at the scene frame; adds
   // an Armature modifier to the layers without one (ED_gpencil_add_armature). Groups added or -1.

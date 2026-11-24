@@ -22,6 +22,7 @@
 #include "project_grease_tool_brushes.h"
 #include "project_grease_shader_fx.h"
 #include "project_grease_armature.h"
+#include "project_grease_driver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -614,13 +615,117 @@ static void arm_sync(Backend::Impl *impl)
   impl->stack_revision = next_revision();
 }
 
-/* Scene frame changed: the action drives the pose (animsys). */
-static void arm_frame_changed(Backend::Impl *impl)
+/* Driver paths outside the rig (project_grease_driver.h): layers["L"].opacity / hide and
+ * layers["L"].modifiers[N].offset / frame_scale (the Time Offset modifier N of layer L). Values are
+ * coerced as BKE_animsys_write_to_rna_path does with the RNA ranges of rna_gpencil_legacy.c and
+ * rna_gpencil_legacy_modifier.c. */
+static float *arm_external_value(Backend::Impl *impl, const char *path, bool *r_bool, float *r_min,
+                                 float *r_max, bool *r_int)
+{
+  if (!impl->gpd || std::strncmp(path, "layers[\"", 8) != 0) return nullptr;
+  const char *p = path + 8;
+  std::string name;
+  while (*p && *p != '"') {
+    if (*p == '\\' && p[1]) p++;
+    name += *p++;
+  }
+  if (std::strncmp(p, "\"]", 2) != 0) return nullptr;
+  p += 2;
+  int index = 0;
+  bGPDlayer *gpl = nullptr;
+  LISTBASE_FOREACH_INDEX (bGPDlayer *, l, &impl->gpd->layers, index) {
+    if (name == l->info) { gpl = l; break; }
+  }
+  if (!gpl) return nullptr;
+  *r_bool = *r_int = false;
+  if (std::strcmp(p, ".opacity") == 0) { *r_min = 0.0f; *r_max = 1.0f; return &gpl->opacity; }
+  if (std::strcmp(p, ".hide") == 0) { *r_bool = true; return nullptr; }
+  int mod = -1, used = 0;
+  char prop[32] = "";
+  if (std::sscanf(p, ".modifiers[%d].%31s%n", &mod, prop, &used) != 2 || p[used] != '\0') return nullptr;
+  std::vector<PGModEntry> *stack = layer_stack(impl, index);
+  if (!stack || mod < 0 || mod >= (int)stack->size() || (*stack)[(size_t)mod].type != PG_MOD_TIME) return nullptr;
+  float *params = (*stack)[(size_t)mod].params;
+  if (std::strcmp(prop, "offset") == 0) { *r_int = true; *r_min = -32768.0f; *r_max = 32767.0f; return &params[PG_P_TIME_OFFSET]; }
+  if (std::strcmp(prop, "frame_scale") == 0) { *r_min = 0.001f; *r_max = 100.0f; return &params[PG_P_TIME_SCALE]; }
+  return nullptr;
+}
+
+static bGPDlayer *arm_external_layer(Backend::Impl *impl, const char *path)
+{
+  bool b, i;
+  float lo, hi;
+  if (!arm_external_value(impl, path, &b, &lo, &hi, &i) && !b) return nullptr;
+  std::string name;
+  for (const char *p = path + 8; *p && *p != '"'; p++) {
+    if (*p == '\\' && p[1]) p++;
+    name += *p;
+  }
+  return static_cast<bGPDlayer *>(BLI_findstring(&impl->gpd->layers, name.c_str(), offsetof(bGPDlayer, info)));
+}
+
+struct ArmExternalCtx {
+  Backend::Impl *impl;
+  bool changed; /* a layer or modifier value changed: the document is tagged */
+};
+
+static bool arm_external_get(void *user, const char *path, int index, float *r_value)
+{
+  Backend::Impl *impl = static_cast<ArmExternalCtx *>(user)->impl;
+  bool is_bool, is_int;
+  float lo, hi;
+  float *v = arm_external_value(impl, path, &is_bool, &lo, &hi, &is_int);
+  if (index > 0) return false;
+  if (is_bool) {
+    bGPDlayer *gpl = arm_external_layer(impl, path);
+    if (!gpl) return false;
+    *r_value = (gpl->flag & GP_LAYER_HIDE) ? 1.0f : 0.0f;
+    return true;
+  }
+  if (!v) return false;
+  *r_value = *v;
+  return true;
+}
+
+static bool arm_external_set(void *user, const char *path, int index, float value)
+{
+  ArmExternalCtx *ctx = static_cast<ArmExternalCtx *>(user);
+  Backend::Impl *impl = ctx->impl;
+  bool is_bool, is_int;
+  float lo, hi;
+  float *v = arm_external_value(impl, path, &is_bool, &lo, &hi, &is_int);
+  if (index > 0) return false;
+  if (is_bool) {
+    bGPDlayer *gpl = arm_external_layer(impl, path);
+    if (!gpl) return false;
+    /* ANIMSYS_FLOAT_AS_BOOL */
+    const int flag = value > (1.0f - FLT_EPSILON) ? (gpl->flag | GP_LAYER_HIDE) : (gpl->flag & ~GP_LAYER_HIDE);
+    ctx->changed |= flag != gpl->flag;
+    gpl->flag = (short)flag;
+    return true;
+  }
+  if (!v) return false;
+  if (is_int) value = (float)(int)value; /* (int)value, then RNA_property_int_clamp */
+  value = std::min(std::max(value, lo), hi);
+  ctx->changed |= *v != value;
+  *v = value;
+  return true;
+}
+
+/* The action (unless only the drivers are wanted) and the drivers at `frame`, then the pose. */
+static void arm_evaluate(Backend::Impl *impl, float frame, bool action = true)
 {
   if (!impl->armature) return;
-  pg_arm_evaluate(impl->armature.get(), static_cast<float>(impl->cfra));
+  ArmExternalCtx ctx = {impl, false};
+  const PGArmExternal ext = {&ctx, arm_external_get, arm_external_set};
+  if (action) pg_arm_evaluate_ex(impl->armature.get(), frame, &ext);
+  else pg_drv_evaluate(impl->armature.get(), frame, &ext);
   impl->stack_revision = next_revision();
+  if (ctx.changed && impl->gpd) project_grease_gp_tag(impl->gpd);
 }
+
+/* Scene frame changed: the action drives the pose (animsys). */
+static void arm_frame_changed(Backend::Impl *impl) { arm_evaluate(impl, static_cast<float>(impl->cfra)); }
 
 static void stroke_discard(Backend::Impl *impl)
 {
@@ -5311,6 +5416,11 @@ PGArmature *Backend::armature(bool create)
   return impl_->armature.get();
 }
 
+void Backend::armature_evaluate(float frame, bool action)
+{
+  arm_evaluate(impl_, frame < 0.0f ? static_cast<float>(impl_->cfra) : frame, action);
+}
+
 void Backend::armature_changed()
 {
   arm_sync(impl_);
@@ -5387,8 +5497,8 @@ bool Backend::armature_load_json(const char *json)
     return false;
   }
   impl_->armature = arm_share(a);
-  pg_arm_evaluate(a, static_cast<float>(impl_->cfra));
   armature_changed();
+  arm_evaluate(impl_, static_cast<float>(impl_->cfra));
   return true;
 }
 

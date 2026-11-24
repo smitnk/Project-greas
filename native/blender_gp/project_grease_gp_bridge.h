@@ -379,6 +379,43 @@ enum {
   PG_ARM_Q_SELECTED = 6, /* 1 / 0 */
   PG_ARM_Q_DISPLAY = 7,  /* drawtype, show in front */
 };
+/* Constraints, custom properties and drivers (project_grease_constraint.h / project_grease_driver.h,
+ * project_grease_rig_bridge.cpp). Strings go in `name`; constraint / property / driver names, paths
+ * and expressions are read from the rig JSON. Each command re-evaluates the drivers and the pose at
+ * the scene frame. */
+enum {
+  PG_ARM_CMD_CON_ADD = 40,          /* bone; type (CONSTRAINT_TYPE_*); name. Returns the index */
+  PG_ARM_CMD_CON_REMOVE = 41,       /* bone; index */
+  PG_ARM_CMD_CON_MOVE = 42,         /* bone; index, to */
+  PG_ARM_CMD_CON_TARGET = 43,       /* bone; index, which (0 target / 1 pole), clear; name = bone
+                                       ("" the rig object) */
+  PG_ARM_CMD_CON_SET = 44,          /* bone; index, then pg_arm_con_set values */
+  PG_ARM_CMD_CON_CHILDOF_INVERSE = 45, /* bone; index, set (1) / clear (0) */
+  PG_ARM_CMD_PROP_ADD = 46,         /* bone (-1 object); value, min, max, default; name. Index */
+  PG_ARM_CMD_PROP_REMOVE = 47,      /* index */
+  PG_ARM_CMD_PROP_SET = 48,         /* index, value */
+  PG_ARM_CMD_DRIVER_ADD = 49,       /* array index, type (DRIVER_TYPE_*), generator; name = path */
+  PG_ARM_CMD_DRIVER_REMOVE = 50,    /* driver */
+  PG_ARM_CMD_DRIVER_TYPE = 51,      /* driver, type */
+  PG_ARM_CMD_DRIVER_EXPRESSION = 52, /* driver; name = expression */
+  PG_ARM_CMD_DRIVER_VAR_ADD = 53,   /* driver, type (DVAR_TYPE_SINGLE_PROP 0 / TRANSFORM_CHAN 3);
+                                       name. Returns the variable index */
+  PG_ARM_CMD_DRIVER_VAR_REMOVE = 54, /* driver, var */
+  PG_ARM_CMD_DRIVER_VAR_RENAME = 55, /* driver, var; name */
+  PG_ARM_CMD_DRIVER_VAR_PATH = 56,  /* driver, var; name = RNA path (Single Property) */
+  PG_ARM_CMD_DRIVER_VAR_TRANSFORM = 57, /* driver, var, channel, rotation mode, space flags; name =
+                                           bone (Transform Channel) */
+  PG_ARM_CMD_DRIVER_KEYS = 58,      /* driver, extend, then (x, y, ipo) triples */
+  PG_ARM_CMD_DRIVER_GENERATOR = 59, /* driver, mode, additive, coefficients (none: removes) */
+};
+enum {
+  PG_ARM_Q_CONSTRAINTS = 20, /* bone: constraint count */
+  PG_ARM_Q_CONSTRAINT = 21,  /* bone, x = index: pg_arm_con_get values */
+  PG_ARM_Q_PROPS = 22,       /* property count */
+  PG_ARM_Q_PROP = 23,        /* x = index: bone, value, min, max, default */
+  PG_ARM_Q_DRIVERS = 24,     /* driver count */
+  PG_ARM_Q_DRIVER = 25,      /* x = index: pg_arm_driver_get values */
+};
 int project_grease_gp_armature_command(ProjectGreaseGPHandle *handle, int command, int bone,
                                        const float *args, int arg_count, const char *name);
 /* Fills out (capacity floats) and returns the number of values (may exceed capacity: nothing written). */

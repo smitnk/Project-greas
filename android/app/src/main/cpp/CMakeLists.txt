@@ -71,6 +71,8 @@ set(BLENDER_INCLUDE_DIRS
     "${BLENDER_SOURCE_DIR}/intern/clog"
     "${BLENDER_SOURCE_DIR}/intern/eigen"
     "${BLENDER_SOURCE_DIR}/extern/Eigen3"
+    "${BLENDER_SOURCE_DIR}/source/blender/ikplugin"
+    "${BLENDER_SOURCE_DIR}/intern/iksolver/extern"
     "${GENERATED_DNA_DIR}"
 )
 

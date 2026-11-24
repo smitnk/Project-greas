@@ -198,7 +198,7 @@ object GPNative {
     /** Fill help lines of the current frame: [segments, circles, (x0,y0,x1,y1,kind)..., (cx,cy,r,contact)...]. */
     external fun nativeFillHelpLines(handle: Long, extend: Float, extendMode: Int, collide: Boolean, layerMode: Int,
                                      pxPerUnit: Float, canvasW: Float, canvasH: Float): FloatArray?
-    external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean): Int
+    external fun nativeLassoSelect(handle: Long, pointsXY: FloatArray, count: Int, additive: Boolean, pxPerUnit: Float): Int
     external fun nativeGetPoint(handle: Long, strokeIndex: Int, pointIndex: Int): FloatArray?
     external fun nativeSetPoint(
         handle: Long, strokeIndex: Int, pointIndex: Int,
@@ -289,6 +289,7 @@ object GPNative {
     external fun nativeHistoryUndo(handle: Long): Boolean
     external fun nativeHistoryRedo(handle: Long): Boolean
     external fun nativeHistoryCanUndo(handle: Long): Boolean
+    external fun nativeHistoryUndoCount(handle: Long): Int
     external fun nativeHistoryCanRedo(handle: Long): Boolean
 
     /** Ends any open tool session on the current document; true when it changed the document (record an undo step). */

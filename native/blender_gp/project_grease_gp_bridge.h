@@ -127,6 +127,7 @@ int project_grease_gp_history_record(ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_undo(ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_redo(ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle);
+int project_grease_gp_history_undo_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, int material_index, float thickness);
 int project_grease_gp_generate_primitive_preview(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, float *xy, int capacity, int *count);
@@ -166,7 +167,8 @@ int project_grease_gp_fill_help_lines(ProjectGreaseGPHandle *handle, float exten
                                       int layer_mode, float px_per_unit, float canvas_w, float canvas_h,
                                       float *out_seg, int max_seg, float *out_circ, int max_circ, int *r_circles);
 void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle);
-int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive);
+int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive,
+                                  float px_per_unit);
 /* Blender operator by idname (project_grease_wm.h): returns the WM status (FINISHED 4 /
  * CANCELLED 2) in the low byte, the operator type flags (OPTYPE_UNDO 2) shifted by 8 and the
  * active material slot afterwards (actcol, 1-based; material operators change it) shifted by 16. */

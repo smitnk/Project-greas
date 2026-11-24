@@ -570,7 +570,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeClearSelection(
 extern "C" JNIEXPORT jint JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLassoSelect(
     JNIEnv *env, jobject, jlong handle, jfloatArray points_xy, jint count,
-    jboolean additive)
+    jboolean additive, jfloat px_per_unit)
 {
   if (!points_xy || count < 3 || env->GetArrayLength(points_xy) < count * 2) {
     return 0;
@@ -578,7 +578,7 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeLassoSelect(
   std::vector<jfloat> xy(static_cast<size_t>(count) * 2u);
   env->GetFloatArrayRegion(points_xy, 0, count * 2, xy.data());
   return project_grease_gp_lasso_select(
-      from_handle(handle), xy.data(), count, additive ? 1 : 0);
+      from_handle(handle), xy.data(), count, additive ? 1 : 0, px_per_unit);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -1346,6 +1346,13 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryCanUndo(
     JNIEnv *, jobject, jlong handle)
 {
   return project_grease_gp_history_can_undo(from_handle(handle)) != 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryUndoCount(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_undo_count(from_handle(handle));
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

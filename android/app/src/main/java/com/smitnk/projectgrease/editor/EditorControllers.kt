@@ -24,6 +24,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun historyRedo() = handle != 0L && GPNative.nativeHistoryRedo(handle)
     fun historyCanUndo() = handle != 0L && GPNative.nativeHistoryCanUndo(handle)
     fun historyCanRedo() = handle != 0L && GPNative.nativeHistoryCanRedo(handle)
+    fun historyUndoCount() = if (handle != 0L) GPNative.nativeHistoryUndoCount(handle) else 0
     fun detach() { handle = 0L }
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
     fun activeLayer() = if (handle != 0L) GPNative.nativeActiveLayer(handle) else -1
@@ -180,7 +181,9 @@ class HistoryController(private val native: NativeEditorBridge) {
         if (ok) {
             while (steps.size > at + 1) steps.removeAt(steps.size - 1) // a new step drops the redo tail
             steps += captureExtras(); at = steps.size - 1
-            while (steps.size > MAX_STEPS) { steps.removeAt(0); at-- }
+            // native drops its oldest snapshots past 32 steps or its point budget: drop the same ones here
+            val kept = native.historyUndoCount()
+            while (at + 1 > kept && at > 0) { steps.removeAt(0); at-- }
         }
         return ok
     }
@@ -225,7 +228,7 @@ class HistoryController(private val native: NativeEditorBridge) {
         if (at < steps.size - 1) restoreExtras(steps[++at])
         return true
     }
-    companion object { const val MAX_STEPS = 64 } // kMaxHistory of the native history
+    companion object { const val MAX_STEPS = 32 } // kMaxHistory of the native history
 }
 
 class DocumentController {

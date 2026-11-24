@@ -131,6 +131,7 @@ class Backend {
   bool history_undo();
   bool history_redo();
   bool history_can_undo() const;
+  int history_undo_count() const; // snapshots kept, current state included
   bool history_can_redo() const;
   bool split_stroke(int index, int before_index);
   bool create_primitive(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, const StrokeStyle& style);

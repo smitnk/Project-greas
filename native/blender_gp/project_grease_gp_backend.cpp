@@ -784,6 +784,11 @@ bool Backend::history_redo()
   return true;
 }
 
+int Backend::history_undo_count() const
+{
+  return static_cast<int>(impl_->undo_history.size());
+}
+
 bool Backend::history_can_undo() const
 {
   return impl_->undo_history.size() >= 2;

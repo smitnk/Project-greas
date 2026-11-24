@@ -438,6 +438,11 @@ int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.history_can_undo() ? 1 : 0;
 }
+int project_grease_gp_history_undo_count(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.history_undo_count();
+}
 int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
@@ -629,10 +634,11 @@ void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle)
   if (ensure_ready(handle)) handle->backend.clear_selection();
 }
 
-int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive)
+int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive,
+                                  float px_per_unit)
 {
   if (!ensure_ready(handle) || !xy) return 0;
-  return handle->backend.lasso_select(xy, count, additive != 0);
+  return handle->backend.lasso_select(xy, count, additive != 0, px_per_unit);
 }
 
 

@@ -29,6 +29,8 @@ class SweepRigCoreTest : SweepBase() {
         // a vertical stroke along where the bone will be
         drag(600f to 600f, 600f to 500f, 600f to 400f, 600f to 300f)
         val before = firstPoint()
+        // the tip: the root's head (600, 600) is the rotation pivot and does not move
+        val tipBefore = points(strokes(document())[0]).last()
 
         // armature with a bone along the stroke and an extruded, connected child
         onUi {
@@ -87,8 +89,12 @@ class SweepRigCoreTest : SweepBase() {
 
         // the Armature modifier deforms the stroke: bake it and compare, then undo the bake
         onUi { assertTrue(controller.applyLayerModifier(armIndex)) }
-        val baked = firstPoint()
-        assertTrue("stroke deformed: $before -> ${baked.toList()}", abs(baked[0] - before[0]) > 1.0 || abs(baked[1] - before[1]) > 1.0)
+        val pivot = firstPoint()
+        val tip = points(strokes(document())[0]).last()
+        assertEquals("pivot stays: ${before.toList()} -> ${pivot.toList()}", before[0], pivot[0], 0.5)
+        assertEquals("pivot stays: ${before.toList()} -> ${pivot.toList()}", before[1], pivot[1], 0.5)
+        // a quarter turn about the head: the tip (600, 300) swings to (300, 600)
+        assertTrue("stroke deformed: ${tipBefore.toList()} -> ${tip.toList()}", abs(tip[0] - tipBefore[0]) > 100.0 || abs(tip[1] - tipBefore[1]) > 100.0)
         onUi { assertTrue(controller.undo()) }
         assertEquals(before[0], firstPoint()[0], 0.01)
 

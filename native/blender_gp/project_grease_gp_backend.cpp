@@ -2103,7 +2103,7 @@ void Backend::clear_selection()
   project_grease_gp_tag(impl_->gpd);
 }
 
-int Backend::lasso_select(const float *xy, int count, bool additive)
+int Backend::lasso_select(const float *xy, int count, bool additive, float px_per_unit)
 {
   if (!impl_->frame || !xy || count < 3) {
     impl_->last_error = "invalid lasso";
@@ -2124,9 +2124,12 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
    * and its BLI_lasso_boundbox once, then tests the box before BLI_lasso_is_point_inside.
    * The Android lasso and GP points share the canvas space here.
    */
+  // Round in view pixels, not canvas units, so points under 1 unit apart at high zoom stay distinct
+  // (as the eraser's px_per_unit).
+  const float px = px_per_unit > 0.0f ? px_per_unit : 1.0f;
   std::vector<int> lasso_coords(static_cast<size_t>(count) * 2u);
   for (int i = 0; i < count * 2; ++i) {
-    lasso_coords[static_cast<size_t>(i)] = static_cast<int>(std::lround(xy[i]));
+    lasso_coords[static_cast<size_t>(i)] = static_cast<int>(std::lround(xy[i] * px));
   }
   const int(*mcoords)[2] = reinterpret_cast<const int(*)[2]>(lasso_coords.data());
   rcti rect;
@@ -2147,8 +2150,8 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
 
     for (int i = 0; i < original_points; ++i) {
       bGPDspoint &point = stroke->points[i];
-      const int x0 = static_cast<int>(std::lround(point.x));
-      const int y0 = static_cast<int>(std::lround(point.y));
+      const int x0 = static_cast<int>(std::lround(point.x * px));
+      const int y0 = static_cast<int>(std::lround(point.y * px));
       // BLI_rcti_isect_pt inline: rct.c is not in the Android blenlib build.
       if (x0 >= rect.xmin && x0 <= rect.xmax && y0 >= rect.ymin && y0 <= rect.ymax &&
           BLI_lasso_is_point_inside(mcoords, count, x0, y0, INT_MAX)) {

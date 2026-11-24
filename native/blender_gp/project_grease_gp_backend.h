@@ -144,7 +144,8 @@ class Backend {
   // the brush vertex factor), applied to strokes drawn, primitives and fills.
   void set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor, int mode = 2);
   void clear_selection();
-  int lasso_select(const float* xy, int count, bool additive);
+  // px_per_unit: view pixels per canvas unit; the lasso test is in whole pixels as in Blender.
+  int lasso_select(const float* xy, int count, bool additive, float px_per_unit = 1.0f);
   // Bulk Legacy GP edit commands: selection, point editing and stroke ordering.
   bool select_all(int mode); // 0=set/select, 1=select, 2=invert, 3=deselect
   int select_circle(float x, float y, float radius, int mode); // 0=set, 1=add, 2=sub

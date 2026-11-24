@@ -1085,6 +1085,26 @@ int main()
     l.shutdown();
   }
 
+  /* --- lasso at high zoom: points 0.4 units apart stay distinct in px_per_unit rounding --- */
+  {
+    Backend z;
+    CHECK(z.initialize() && z.create_document() && z.create_layer("Z") && z.create_frame(1));
+    StrokePoint pts[8];
+    for (int i = 0; i < 8; i++) pts[i] = StrokePoint{10.0f + 0.4f * i, 10.0f, 0.0f, 0.5f, 1.0f, 0.0f};
+    PGStrokeInfo info{};
+    info.thickness = 4.0f;
+    CHECK(z.add_stroke(pts, 8, info));
+    /* x in [10.6, 11.4] holds points 2 (10.8) and 3 (11.2) only */
+    const float lasso[] = {10.6f, 9.8f, 11.4f, 9.8f, 11.4f, 10.2f, 10.6f, 10.2f};
+    CHECK(z.lasso_select(lasso, 4, false, 20.0f) == 1);
+    const bGPDstroke *s0 = static_cast<const bGPDstroke *>(
+        static_cast<const bGPDframe *>(z.active_layer_data()->frames.first)->strokes.first);
+    int mask = 0;
+    for (int i = 0; i < s0->totpoints; i++) mask |= (s0->points[i].flag & GP_SPOINT_SELECT) ? 1 << i : 0;
+    CHECK(mask == 0b00001100);
+    z.shutdown();
+  }
+
   /* --- undo history bounds: 32 steps (U.undosteps) and a 4M stored-point budget --- */
   {
     Backend h;

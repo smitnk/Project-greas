@@ -992,6 +992,38 @@ static void test_shader_fx_gl() {
                               fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})});
 }
 
+/* GLES 3 runs each effect pass as one draw into both planes (glDrawBuffers); the GLES 2 path
+ * (PG_FX_GLES2=1) draws twice. Both must give the same bytes. */
+extern "C" int project_grease_fx_last_draws();
+extern "C" void project_grease_fx_reset();
+static void test_fx_mrt_matches_gles2() {
+  const std::vector<std::vector<PGFxEntry>> cases = {
+      {fxe(PG_FX_BLUR, {{PG_FXP_BLUR_RADIUS_X, 4}, {PG_FXP_BLUR_RADIUS_Y, 4}, {PG_FXP_BLUR_SAMPLES, 3}}),
+       fxe(PG_FX_COLORIZE, {{PG_FXP_COLORIZE_MODE, 1}, {PG_FXP_COLORIZE_FACTOR, 1.0f}}), fxe(PG_FX_FLIP)},
+      {fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_BLUR_X, 2}, {PG_FXP_SHADOW_BLUR_Y, 2}}),
+       fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})},
+      {fxe(PG_FX_RIM, {{PG_FXP_RIM_MODE, 2}, {PG_FXP_RIM_OFFSET_X, 4}, {PG_FXP_RIM_BLUR_X, 2}, {PG_FXP_RIM_BLUR_Y, 2}})},
+      {fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLEND, 4}, {PG_FXP_GLOW_BLUR_X, 4}, {PG_FXP_GLOW_BLUR_Y, 4}, {PG_FXP_GLOW_SAMPLES, 3}})},
+  };
+  const char *ver = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+  const bool es3 = ver && std::strncmp(ver, "OpenGL ES 3", 11) == 0;
+  for (const auto &e : cases) {
+    std::vector<unsigned char> mrt, two;
+    project_grease_fx_reset();
+    fx_max_diff(e, "mrt", &mrt);
+    const int d_mrt = project_grease_fx_last_draws();
+    setenv("PG_FX_GLES2", "1", 1);
+    project_grease_fx_reset();
+    fx_max_diff(e, "gles2", &two);
+    const int d_two = project_grease_fx_last_draws();
+    unsetenv("PG_FX_GLES2");
+    printf("  fx draws: GLES 3 path %d, GLES 2 path %d (%s)\n", d_mrt, d_two, ver ? ver : "?");
+    CHECK(mrt == two);
+    if (es3) CHECK(d_mrt < d_two);
+  }
+  project_grease_fx_reset();
+}
+
 /* ---- Batch 21: layer tint / line change / blend modes, dots & squares, onion filter + loop, guide ---- */
 static void test_batch21_layer_state()
 {
@@ -1432,6 +1464,7 @@ int main()
   test_weight_view_smooth();
   test_weight_view_masked();
   test_shader_fx_gl();
+  test_fx_mrt_matches_gles2();
   test_fx_through_presenter();
   test_fx_targets();
   test_batch21_layer_state();

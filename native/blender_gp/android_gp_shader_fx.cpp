@@ -4,13 +4,15 @@
 // composited onto the frame as frame = frame * R + C (gpencil_vfx_frag.glsl COMPOSITE).
 //
 // GLES2 has no multiple render targets, so every pass runs twice (once for the colour buffer, once
-// for the revealage buffer) and the GL blend state of Blender's passes is evaluated in the shader
+// for the revealage buffer; on GLES 3 one draw writes both through glDrawBuffers) and the GL blend state of Blender's passes is evaluated in the shader
 // from a copy of the buffer it blends onto. The shader math is the same as the C executor of
 // project_grease_shader_fx.c, which the host tests compare against.
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
+#include <cstdlib>
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -20,7 +22,7 @@ namespace {
 
 // rb: stencil renderbuffer of the layer plane (strokes are drawn into it with per-stroke coverage).
 struct Plane { GLuint tex = 0, fbo = 0, rb = 0; };
-struct Buffer { Plane color, reveal; };
+struct Buffer { Plane color, reveal; GLuint mrt = 0; }; // mrt: both planes, GLES 3 only
 
 int g_w = 0, g_h = 0;
 Plane g_layer;            // the layer as drawn: premultiplied rgba
@@ -182,6 +184,7 @@ struct Program {
   GLint u_size = -1, u_out = -1, u_blend = -1;
 };
 Program g_prog[8];       // by pass kind
+Program g_prog_mrt[8];   // the same passes writing colour and revealage in one draw (GLES 3)
 Program g_convert, g_composite;
 
 GLuint compile(GLenum type, const std::string& src) {
@@ -195,8 +198,8 @@ GLuint compile(GLenum type, const std::string& src) {
   return s;
 }
 
-bool link(Program& p, const std::string& fs) {
-  GLuint vs = compile(GL_VERTEX_SHADER, vs_src());
+bool link(Program& p, const std::string& fs, const char* vsrc = vs_src()) {
+  GLuint vs = compile(GL_VERTEX_SHADER, vsrc);
   GLuint f = compile(GL_FRAGMENT_SHADER, fs);
   if (!vs || !f) { if (vs) glDeleteShader(vs); if (f) glDeleteShader(f); return false; }
   p.id = glCreateProgram();
@@ -213,19 +216,23 @@ bool link(Program& p, const std::string& fs) {
   return true;
 }
 
-Program* program_for(int kind) {
+Program* program_for(int kind, bool mrt = false) {
   if (kind < 0 || kind > 7) return nullptr;
-  Program& p = g_prog[kind];
+  Program& p = (mrt ? g_prog_mrt : g_prog)[kind];
   if (!p.id) {
-    std::string fs = std::string(fs_header()) + kind_body(kind);
+    // ESSL 3.00 for two outputs: the ESSL 1.00 source with texture2D renamed
+    std::string fs = std::string(mrt ? "#version 300 es\n#define texture2D texture\n" : "") + fs_header() +
+                     (mrt ? "layout(location = 0) out vec4 pgColor;\nlayout(location = 1) out vec4 pgReveal;\n" : "") + kind_body(kind);
     // the body ends inside main(): close it with the shared tail; uv0 is its first local
     fs += "  vec2 uvF = gl_FragCoord.xy / uSize;\n";
-    std::string tail = fs_tail();
+    std::string tail = mrt ? "  vec4 c = fragColor, r = fragRevealage;\n"
+                             "  if (uBlend != 0) { c = doBlend(c, texture2D(dstColor, uv0Final())); r = doBlend(r, texture2D(dstReveal, uv0Final())); }\n"
+                             "  pgColor = c; pgReveal = r; }\n" : fs_tail();
     // uv0Final() is replaced by the pixel coordinate computed above
     size_t at;
     while ((at = tail.find("uv0Final()")) != std::string::npos) tail.replace(at, 10, "uvF");
     fs += tail;
-    if (!link(p, fs)) return nullptr;
+    if (!link(p, fs, mrt ? "#version 300 es\nin vec2 a_position; void main(){gl_Position=vec4(a_position,0.0,1.0);}" : vs_src())) return nullptr;
   }
   return &p;
 }
@@ -289,6 +296,22 @@ bool ensure_targets(int w, int h) {
   if (g_layer.fbo && g_w == w && g_h == h) return true;
   bool ok = make_plane(g_layer, w, h, true);
   for (Buffer& b : g_bufs) ok = make_plane(b.color, w, h) && make_plane(b.reveal, w, h) && ok;
+  // GLES 3: one FBO with both planes, so a pass is one draw (PG_FX_GLES2=1 forces the GLES 2 path)
+  const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  const char* force2 = std::getenv("PG_FX_GLES2");
+  const bool es3 = ok && ver && std::strncmp(ver, "OpenGL ES ", 10) == 0 && ver[10] >= '3' && !(force2 && force2[0] == '1');
+  for (Buffer& b : g_bufs) {
+    if (b.mrt) glDeleteFramebuffers(1, &b.mrt);
+    b.mrt = 0;
+    if (!es3) continue;
+    glGenFramebuffers(1, &b.mrt);
+    glBindFramebuffer(GL_FRAMEBUFFER, b.mrt);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, b.color.tex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, b.reveal.tex, 0);
+    const GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(2, bufs);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) { glDeleteFramebuffers(1, &b.mrt); b.mrt = 0; }
+  }
   glBindTexture(GL_TEXTURE_2D, 0);
   /* Cache the size only when every plane is complete; otherwise retry (and fail again) next call. */
   g_w = ok ? w : 0; g_h = ok ? h : 0;
@@ -307,7 +330,9 @@ void set4(GLuint prog, const char* n, const float* v) { glUniform4f(glGetUniform
 void seti(GLuint prog, const char* n, int v) { glUniform1i(glGetUniformLocation(prog, n), v); }
 void setf(GLuint prog, const char* n, float v) { glUniform1f(glGetUniformLocation(prog, n), v); }
 
+int g_draws = 0;  // draws of the last fx_run, for the host test
 void draw_triangle() {
+  g_draws++;
   glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
@@ -371,6 +396,7 @@ namespace {
 // Converts the layer buffer to colour / revealage and runs the effect passes; returns the buffer index.
 int fx_run(const PGFxEntry* entries, int count, const PGFxView* view) {
   const int w = g_w, h = g_h;
+  g_draws = 0;
   glDisable(GL_BLEND);
   glBindFramebuffer(GL_FRAMEBUFFER, g_bufs[0].color.fbo);
   // layer (premultiplied) -> C0, R0
@@ -394,12 +420,13 @@ int fx_run(const PGFxEntry* entries, int count, const PGFxView* view) {
     int prev_src = cur;
     for (int k = 0; k < n; k++) {
       const PGFxPass& p = passes[k];
-      Program* pr = program_for(p.kind);
-      if (!pr) continue;
       const int src = (p.src == PGFX_SRC_PREV_SRC) ? prev_src : cur;
       const int dst = (p.dst == PGFX_DST_START) ? start : (p.dst == PGFX_DST_PREV ? cur : -1);
       int target = 0;
       while (target == src || target == dst) target++;
+      Program* mrt = g_bufs[target].mrt ? program_for(p.kind, true) : nullptr;
+      Program* pr = mrt ? mrt : program_for(p.kind);
+      if (!pr) continue;
       glUseProgram(pr->id);
       bind_tex(0, g_bufs[src].color.tex, *pr, "colorBuf");
       bind_tex(1, g_bufs[src].reveal.tex, *pr, "revealBuf");
@@ -408,7 +435,12 @@ int fx_run(const PGFxEntry* entries, int count, const PGFxView* view) {
       glUniform2f(pr->u_size, float(w), float(h));
       glUniform1i(pr->u_blend, dst >= 0 ? p.blend : 0);
       set_pass_uniforms(*pr, p);
-      for (int out = 0; out < 2; out++) {
+      if (mrt) {
+        glBindFramebuffer(GL_FRAMEBUFFER, g_bufs[target].mrt);
+        glViewport(0, 0, w, h);
+        draw_triangle();
+      }
+      else for (int out = 0; out < 2; out++) {
         glBindFramebuffer(GL_FRAMEBUFFER, out == 0 ? g_bufs[target].color.fbo : g_bufs[target].reveal.fbo);
         glViewport(0, 0, w, h);
         glUniform1i(pr->u_out, out);
@@ -542,6 +574,7 @@ static void fx_reset_impl(bool alive) {
   if (alive && g_blend.id) glDeleteProgram(g_blend.id);
   g_blend = Program();
   for (Program& p : g_prog) { if (alive && p.id) glDeleteProgram(p.id); p = Program(); }
+  for (Program& p : g_prog_mrt) { if (alive && p.id) glDeleteProgram(p.id); p = Program(); }
   if (alive && g_convert.id) glDeleteProgram(g_convert.id);
   if (alive && g_composite.id) glDeleteProgram(g_composite.id);
   g_convert = Program(); g_composite = Program();
@@ -555,11 +588,14 @@ static void fx_reset_impl(bool alive) {
       if (alive && pl->fbo) glDeleteFramebuffers(1, &pl->fbo);
       *pl = Plane();
     }
+    if (alive && b.mrt) glDeleteFramebuffers(1, &b.mrt);
+    b.mrt = 0;
   }
   if (alive && g_vbo) glDeleteBuffers(1, &g_vbo);
   g_vbo = 0; g_w = g_h = 0;
 }
 
+extern "C" int project_grease_fx_last_draws() { return g_draws; }
 extern "C" void project_grease_fx_reset() { fx_reset_impl(true); }
 /* EGL context lost: forget every GL name without calling GL. */
 extern "C" void project_grease_fx_context_lost() { fx_reset_impl(false); }

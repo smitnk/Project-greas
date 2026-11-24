@@ -70,6 +70,7 @@ int pg_mod_own_param_count(int type)
     case PG_MOD_ARRAY: return PG_P_ARRAY_COUNT;
     case PG_MOD_MULTIPLY: return PG_P_MULTIPLY_COUNT;
     case PG_MOD_TEXTURE: return PG_P_TEXTURE_COUNT;
+    case PG_MOD_ARMATURE: return PG_P_ARMATURE_COUNT;
     case PG_MOD_THICKNESS: return PG_P_THICK_COUNT;
     case PG_MOD_OPACITY: return PG_P_OPACITY_COUNT;
     case PG_MOD_TINT: return PG_P_TINT_COUNT;
@@ -108,6 +109,7 @@ const char *pg_mod_name(int type)
     case PG_MOD_ARRAY: return "Array";
     case PG_MOD_MULTIPLY: return "MultipleStrokes";
     case PG_MOD_TEXTURE: return "TextureMapping";
+    case PG_MOD_ARMATURE: return "Armature";
     default: return "";
   }
 }

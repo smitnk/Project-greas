@@ -25,6 +25,7 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "DNA_armature_types.h"
 #include "DNA_gpencil_legacy_types.h"
 #include "DNA_gpencil_modifier_types.h"
 #include "DNA_material_types.h"
@@ -43,6 +44,7 @@
 #include "project_grease_curvemap.h"
 #include "project_grease_modifier_stack.h"
 #include "project_grease_modifier_gen.h"
+#include "project_grease_armature.h"
 
 static float m2_clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static float m2_int(float v, float lo, float hi) { return m2_clamp(floorf(v + 0.5f), lo, hi); }
@@ -118,6 +120,9 @@ void pg_mod2_defaults(int type, float p[PG_MOD_MAX_PARAMS])
       p[PG_P_TEXTURE_FILL_SCALE] = 1.0f;
       p[PG_P_TEXTURE_FIT] = GP_TEX_CONSTANT_LENGTH;
       break;
+    case PG_MOD_ARMATURE: /* deformflag ARM_DEF_VGROUP, vgname "" */
+      p[PG_P_ARMATURE_USE_VGROUPS] = 1.0f;
+      break;
     default:
       break;
   }
@@ -145,6 +150,11 @@ void pg_mod2_sanitize(int type, float p[PG_MOD_MAX_PARAMS])
       }
       break;
     case PG_MOD_ENVELOPE:
+      break;
+    case PG_MOD_ARMATURE:
+      for (int i = PG_P_ARMATURE_USE_VGROUPS; i <= PG_P_ARMATURE_PRESERVE_VOLUME; i++) p[i] = m2_flag(p[i]);
+      p[PG_P_ARMATURE_INVERT_VGROUP] = m2_flag(p[PG_P_ARMATURE_INVERT_VGROUP]);
+      p[PG_P_ARMATURE_VGROUP] = m2_int(p[PG_P_ARMATURE_VGROUP], 0, 255);
       break;
     case PG_MOD_WEIGHT_ANGLE:
       p[PG_P_WANGLE_TARGET] = m2_int(p[PG_P_WANGLE_TARGET], 0, 255);
@@ -981,6 +991,15 @@ int pg_mod2_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstro
       return m2_weight_modifier(ctx, e, gps);
     case PG_MOD_TEXTURE:
       return m2_texture(ctx, p, gps);
+    case PG_MOD_ARMATURE: {
+      const int vg = (int)p[PG_P_ARMATURE_VGROUP] - 1;
+      const bDeformGroup *dg = vg >= 0 ? BLI_findlink(&ctx->gpd->vertex_group_names, vg) : NULL;
+      const int flag = (p[PG_P_ARMATURE_USE_VGROUPS] != 0.0f ? ARM_DEF_VGROUP : 0) |
+                       (p[PG_P_ARMATURE_USE_ENVELOPE] != 0.0f ? ARM_DEF_ENVELOPE : 0) |
+                       (p[PG_P_ARMATURE_PRESERVE_VOLUME] != 0.0f ? ARM_DEF_QUATERNION : 0) |
+                       (p[PG_P_ARMATURE_INVERT_VGROUP] != 0.0f ? ARM_DEF_INVERT_VGROUP : 0);
+      return pg_arm_deform_stroke(pg_arm_for_gpd(ctx->gpd), ctx->gpd, gps, flag, dg ? dg->name : NULL);
+    }
     default:
       return 0;
   }

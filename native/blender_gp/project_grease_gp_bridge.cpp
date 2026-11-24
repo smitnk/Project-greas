@@ -23,6 +23,8 @@
 #include "project_grease_blender_edit7.h"
 #include "project_grease_tool_session.h"
 #include "project_grease_annotations.h"
+#include "project_grease_armature.h"
+#include <cstring>
 #include <cstdio>
 #include "DNA_gpencil_legacy_types.h"
 #include "project_grease_wm.h"
@@ -1485,4 +1487,46 @@ int project_grease_gp_cancel_tool_session(ProjectGreaseGPHandle *handle)
   const int result = tool_abort(handle, !stale);
   handle->backend.lattice_end(false); // an open Lasso Warp is a modal too: revert it
   return (result & PG_TOOL_RESULT_ENDED) != 0 ? 1 : 0;
+}
+
+/* Rig (project_grease_armature_bridge.cpp) */
+int pg_arm_bridge_command(project_grease::gp::Backend &backend, int cmd, int bone, const float *args, int n,
+                          const char *name);
+int pg_arm_bridge_query(project_grease::gp::Backend &backend, int what, int bone, float x, float *out, int cap);
+
+int project_grease_gp_armature_command(ProjectGreaseGPHandle *handle, int command, int bone,
+                                       const float *args, int arg_count, const char *name)
+{
+  return ensure_operator(handle) ? pg_arm_bridge_command(handle->backend, command, bone, args, arg_count, name) : -1;
+}
+
+int project_grease_gp_armature_query(const ProjectGreaseGPHandle *handle, int what, int bone, float x,
+                                     float *out, int capacity)
+{
+  ProjectGreaseGPHandle *h = const_cast<ProjectGreaseGPHandle *>(handle);
+  return ensure_ready(h) ? pg_arm_bridge_query(h->backend, what, bone, x, out, capacity) : 0;
+}
+
+int project_grease_gp_armature_bone_name(const ProjectGreaseGPHandle *handle, int bone, char *name, int capacity)
+{
+  ProjectGreaseGPHandle *h = const_cast<ProjectGreaseGPHandle *>(handle);
+  const PGArmature *a = ensure_ready(h) ? h->backend.armature(false) : nullptr;
+  const char *n = a ? pg_arm_bone_name(a, bone) : nullptr;
+  if (!n || !name || capacity <= 0) return 0;
+  std::snprintf(name, static_cast<size_t>(capacity), "%s", n);
+  return 1;
+}
+
+int project_grease_gp_armature_json(const ProjectGreaseGPHandle *handle, char *out, int capacity)
+{
+  ProjectGreaseGPHandle *h = const_cast<ProjectGreaseGPHandle *>(handle);
+  if (!ensure_ready(h)) return 0;
+  const std::string json = h->backend.armature_json();
+  if (out && capacity > static_cast<int>(json.size())) std::memcpy(out, json.c_str(), json.size() + 1);
+  return static_cast<int>(json.size());
+}
+
+int project_grease_gp_armature_load_json(ProjectGreaseGPHandle *handle, const char *json)
+{
+  return ensure_operator(handle) && handle->backend.armature_load_json(json) ? 1 : 0;
 }

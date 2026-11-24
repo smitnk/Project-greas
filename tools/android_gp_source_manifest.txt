@@ -175,3 +175,8 @@ C|third_party/blender/source/blender/blenlib/intern/bitmap.c
 C|native/blender_gp/gles/pg_gp_engine_glue.c
 CXX|native/blender_gp/gles/pg_gpu_gles.cc
 CXX|native/blender_gp/gles/pg_drw_gles.cc
+# L10 part 1a: Grease Pencil armature rig (Blender 3.6.23 armature / pose / action / armature modifier / bind).
+C|native/blender_gp/project_grease_armature_bke.c
+C|native/blender_gp/project_grease_armature.c
+CXX|native/blender_gp/project_grease_armature_io.cc
+CXX|native/blender_gp/project_grease_armature_bridge.cpp

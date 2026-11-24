@@ -102,6 +102,10 @@ interface DocumentNative {
     fun activeVertexGroup(): Int = -1
     fun restoreVertexGroups(names: List<String>, active: Int): Boolean = true
 
+    /** The rig (key "armature", project_grease_armature_io.cc's JSON object); "" when there is none. */
+    fun armatureJson(): String = ""
+    fun restoreArmature(json: String): Boolean = true
+
     /** Keyframe types (bGPDframe.key_type, BEZT_KEYTYPE_*) of the selected layer's frames by frame number. */
     fun frameKeyTypes(): Map<Int, Int> = emptyMap()
     /** Sets the key type of the selected layer's frame [frame]. */
@@ -139,6 +143,8 @@ class ParsedDocument(
     val activeVertexGroup: Int = -1,
     /** Scene markers and preview range ("markers" / "previewRange"); empty for older files. */
     val timeline: TimelineState = TimelineState(),
+    /** The rig's JSON object as text, "" for none (files before the rig). */
+    val armature: String = "",
     /** null when the file has no "layers" key at all. */
     val layers: List<ParsedLayer>?
 )
@@ -227,6 +233,7 @@ object ProjectDocumentCodec {
             layers.put(layerJson)
         }
         root.put("layers", layers)
+        native.armatureJson().takeIf { it.isNotEmpty() }?.let { root.put("armature", JSONObject(it)) }
         return root
     }
 
@@ -255,6 +262,7 @@ object ProjectDocumentCodec {
             } ?: emptyList(),
             activeVertexGroup = root.optInt("activeVertexGroup", -1),
             timeline = TimelineRules.fromJson(root.optJSONArray("markers"), root.optJSONObject("previewRange")),
+            armature = root.optJSONObject("armature")?.toString() ?: "",
             layers = layers
         )
     }
@@ -273,6 +281,7 @@ object ProjectDocumentCodec {
         // Groups first: the weights of the strokes refer to them by number.
         if (parsed.vertexGroups.isNotEmpty() &&
             !native.restoreVertexGroups(parsed.vertexGroups, parsed.activeVertexGroup)) return false
+        if (parsed.armature.isNotEmpty() && !native.restoreArmature(parsed.armature)) return false
         val layers = parsed.layers ?: return true
         for ((layerIndex, layer) in layers.withIndex()) {
             if (layerIndex > 0 && !native.createLayer("Layer " + (layerIndex + 1))) return false

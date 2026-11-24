@@ -12,6 +12,7 @@ struct bGPdata;
 struct bGPDlayer;
 struct bGPDframe;
 struct PGFxEntry;
+struct PGArmature;
 
 namespace project_grease::gp {
 
@@ -200,6 +201,20 @@ class Backend {
   // Name of the mask entry (empty when out of range) and its flags (bit 0 hidden, bit 1 inverted).
   bool mask_get(int layer_index, int mask_index, char* name, int name_capacity, int* flags) const;
   bool mask_set_flags(int layer_index, int mask_index, int flags);
+
+  // Rig (project_grease_armature.h): the document's armature, part of undo snapshots and the saved
+  // document. armature(true) creates an empty one. After editing it with pg_arm_* call
+  // armature_changed() so the Armature modifiers re-evaluate. The pose follows the scene frame.
+  PGArmature* armature(bool create);
+  void armature_changed();
+  void armature_remove();
+  // Parent with ... (pg_arm_bind_frame mode 0..3) on every layer's frame at the scene frame; adds
+  // an Armature modifier to the layers without one (ED_gpencil_add_armature). Groups added or -1.
+  int armature_bind(int mode);
+  // Bone renamed in the rig: the vertex group of the old name follows (ED_armature_bone_rename).
+  void armature_bone_renamed(const char* old_name, const char* new_name);
+  std::string armature_json() const;        // "" when there is no rig
+  bool armature_load_json(const char* json); // "" or null removes the rig
 
   // Live (non-destructive) per-layer modifier stack, see project_grease_modifier_stack.h. The stack
   // is document state: strokes are never modified until modifier_apply().

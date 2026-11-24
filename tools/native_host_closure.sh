@@ -12,7 +12,7 @@ INC=(-I"$BL/draw" -I"$BL/draw/intern" -I"$BL/draw/engines/gpencil" -I"$BL/gpu" -
      -I"$BL/gpencil_modifiers_legacy" -I"$BL/blentranslation" -I"$BL/blentranslation/intern"
      -I"$BL/imbuf" -I"$BL/blenloader" -I"$BL/gpu" -I"$BL/gpu/intern" -I"$BL/draw" -I"$BL/bmesh" -I"$BL/editors/include" -I"$BL/windowmanager" -I"$BL/render"
      -I"$B/extern/curve_fit_nd" -I"$B/extern/wcwidth" -I"$B/intern/guardedalloc" -I"$B/intern/atomic"
-     -I"$B/intern/clog" -I"$ROOT/build/blender-dna")
+     -I"$B/intern/clog" -I"$B/intern/eigen" -I"$ROOT/build/blender-dna")
 CF=(-std=gnu11 -DNDEBUG -DMATH_STANDALONE -w -DMALLOC_USABLE_SIZE_DISABLED -ffunction-sections -fdata-sections)
 XF=(-std=gnu++17 -DNDEBUG -w -ffunction-sections -fdata-sections)
 C_SRC=(
@@ -67,11 +67,13 @@ C_SRC=(
   "$BL/blenkernel/intern/colortools.c" "$BL/blenkernel/intern/colorband.c"
   "$ROOT/native/blender_gp/project_grease_key_extract.c"
   "$ROOT/native/blender_gp/project_grease_blender_lattice.c"
+  "$ROOT/native/blender_gp/project_grease_armature_bke.c" "$ROOT/native/blender_gp/project_grease_armature.c"
+  "$BL/blenlib/intern/math_solvers.c"
 )
 CXX_SRC=(
   "$BL/blenkernel/intern/gpencil_geom_legacy.cc" "$BL/blenkernel/intern/deform.cc"
   "$BL/blenlib/intern/listbase.cc" "$BL/blenlib/intern/rand.cc"
-  "$BL/blenkernel/intern/curve.cc"
+  "$BL/blenkernel/intern/curve.cc" "$ROOT/native/blender_gp/project_grease_armature_io.cc"
   "$B/intern/guardedalloc/intern/leak_detector.cc" "$B/intern/guardedalloc/intern/memory_usage.cc"
 )
 OBJS=()

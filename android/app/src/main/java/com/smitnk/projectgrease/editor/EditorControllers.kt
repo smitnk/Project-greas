@@ -123,6 +123,14 @@ class NativeEditorBridge : ModifierNative, FxNative {
     override fun fxSetTarget(layer: Int, index: Int, target: Int) = handle != 0L && GPNative.nativeFxSetTarget(handle, layer, index, target)
     override fun fxTarget(layer: Int, index: Int) = if (handle != 0L) GPNative.nativeFxGetTarget(handle, layer, index) else FxTarget.LAYER
     fun materialInfo(index: Int) = if (handle != 0L) GPNative.nativeGetMaterialInfo(handle, index) else null
+    /** Rig (RigController): PG_ARM_CMD_* commands and PG_ARM_Q_* queries. */
+    fun armatureCommand(command: Int, bone: Int = -1, args: FloatArray? = null, name: String? = null) =
+        if (handle != 0L) GPNative.nativeArmatureCommand(handle, command, bone, args, name) else -1
+    fun armatureQuery(what: Int, bone: Int = -1, x: Float = 0f): FloatArray =
+        (if (handle != 0L) GPNative.nativeArmatureQuery(handle, what, bone, x) else null) ?: FloatArray(0)
+    fun armatureBoneName(bone: Int) = if (handle != 0L) GPNative.nativeArmatureBoneName(handle, bone) else null
+    fun armatureJson() = (if (handle != 0L) GPNative.nativeArmatureJson(handle) else null) ?: ""
+    fun armatureLoadJson(json: String) = handle != 0L && GPNative.nativeArmatureLoadJson(handle, json)
     /** Batch 21 document query (PG_DOC_Q_*: 0 frames, 1 layer, 2 material, 3 onion). */
     fun docQuery(what: Int, vararg args: Float) = if (handle != 0L) GPNative.nativeDocQuery(handle, what, args) else null
     fun materialName(slot: Int) = if (handle != 0L) GPNative.nativeMaterialName(handle, slot) else null
@@ -263,6 +271,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     /** bGPDframe.key_type and GP_FRAME_SELECT of the active layer's keyframes, by frame number. */
     var keyTypes by androidx.compose.runtime.mutableStateOf(emptyMap<Int, Int>()); private set
     var selectedFrames by androidx.compose.runtime.mutableStateOf(emptySet<Int>()); private set
+    /** Key frames of a rig bone (its LocRotScale F-Curves) for the dope sheet row; empty without a rig. */
+    fun boneKeys(bone: Int): FloatArray = native.armatureQuery(RigController.Q_KEYS, bone)
     fun refreshKeyInfo() {
         val q = native.docQuery(0, -1f) ?: FloatArray(0)
         val types = LinkedHashMap<Int, Int>(); val sel = HashSet<Int>()
@@ -822,6 +832,8 @@ class EditorController {
         } }
     }
     val animation=AnimationController(native) { render() }
+    /** Grease Pencil rig (armature, pose, bone keys, Armature modifier, bind); edits then history.markEdit(). */
+    val rig=RigController(native)
     val materials=MaterialController()
     val brushes=BrushController(materials)
     /** The mode set by setMode; never Sculpt (the Sculpt tool is Sculpt mode). */

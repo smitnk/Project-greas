@@ -31,7 +31,9 @@ object ModifierType {
     const val ARRAY = 21
     const val MULTIPLY = 22
     const val TEXTURE = 23
-    const val LAST = 23
+    /** Armature (MOD_gpencil_legacy_armature.c): deforms by the document's rig, see RigController. */
+    const val ARMATURE = 24
+    const val LAST = 24
     const val MAX_PARAMS = 120
     const val MAX_STACK = 32
     /** PG_P_CURVE_BASE / PG_P_FILTER_BASE: the custom curve and influence filter blocks of every entry. */
@@ -63,6 +65,7 @@ object ModifierType {
         ARRAY -> "Array"
         MULTIPLY -> "Multiple Strokes"
         TEXTURE -> "Texture Mapping"
+        ARMATURE -> "Armature"
         else -> "Modifier"
     }
 
@@ -117,6 +120,7 @@ object ModifierSpecs {
         ModifierType.SMOOTH -> 7
         ModifierType.SIMPLIFY -> 6
         ModifierType.TEXTURE -> 9
+        ModifierType.ARMATURE -> 5
         ModifierType.SUBDIV -> 2
         ModifierType.OFFSET -> 23
         ModifierType.NOISE -> 10
@@ -174,6 +178,10 @@ object ModifierSpecs {
             f(0, "Position", 0f, 1f), f(1, "Strength", 0f, 1f), f(2, "Thickness", 0f, 1f), f(3, "UV", 0f, 1f),
             f(4, "Noise scale", 0f, 1f), f(5, "Noise offset", 0f, 20f), n(6, "Seed", 0f, 1000f),
             n(7, "Step", 1f, 30f), b(8, "Randomize"), e(9, "Mode", "Steps", "Keyframes")
+        )
+        ModifierType.ARMATURE -> listOf(
+            b(0, "Bind to vertex groups"), b(1, "Bind to bone envelopes"), b(2, "Preserve volume"),
+            n(3, "Vertex group", 0f, 255f), b(4, "Invert vertex group")
         )
         ModifierType.TEXTURE -> listOf(
             e(0, "Mode", "Stroke", "Fill", "Stroke and Fill"), e(1, "Fit method", "Fit stroke", "Constant length"),

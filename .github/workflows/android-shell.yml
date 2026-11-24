@@ -262,6 +262,11 @@ jobs:
       - name: Run native lattice tests (lasso warp, Blender 3.6.23 lattice_deform.c verbatim)
         run: bash tools/run_native_lattice_tests.sh
 
+      - name: Run native armature tests (rig, Blender 3.6.23 armature / pose / F-Curve / armature modifier / bind)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_armature_tests.sh
+
       - name: Run native modifier stack tests
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

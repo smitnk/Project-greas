@@ -1463,3 +1463,65 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetMaterialStrokeEnabl
 {
   return project_grease_gp_set_material_stroke_enabled(from_handle(handle), index, enabled ? 1 : 0) != 0;
 }
+
+/* Rig (PG_ARM_CMD_* / PG_ARM_Q_* in project_grease_gp_bridge.h) */
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeArmatureCommand(
+    JNIEnv *env, jobject, jlong handle, jint command, jint bone, jfloatArray args, jstring name)
+{
+  std::vector<float> values;
+  if (args) {
+    const jsize n = env->GetArrayLength(args);
+    values.resize(static_cast<size_t>(n));
+    if (n > 0) env->GetFloatArrayRegion(args, 0, n, values.data());
+  }
+  const char *chars = name ? env->GetStringUTFChars(name, nullptr) : nullptr;
+  const int result = project_grease_gp_armature_command(from_handle(handle), command, bone,
+                                                        values.empty() ? nullptr : values.data(),
+                                                        static_cast<int>(values.size()), chars);
+  if (chars) env->ReleaseStringUTFChars(name, chars);
+  return result;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeArmatureQuery(
+    JNIEnv *env, jobject, jlong handle, jint what, jint bone, jfloat x)
+{
+  ProjectGreaseGPHandle *h = from_handle(handle);
+  const int n = project_grease_gp_armature_query(h, what, bone, x, nullptr, 0);
+  if (n <= 0) return env->NewFloatArray(0);
+  std::vector<float> out(static_cast<size_t>(n));
+  project_grease_gp_armature_query(h, what, bone, x, out.data(), n);
+  jfloatArray result = env->NewFloatArray(n);
+  if (result) env->SetFloatArrayRegion(result, 0, n, out.data());
+  return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeArmatureBoneName(
+    JNIEnv *env, jobject, jlong handle, jint bone)
+{
+  char name[64];
+  if (!project_grease_gp_armature_bone_name(from_handle(handle), bone, name, sizeof(name))) return nullptr;
+  return env->NewStringUTF(name);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeArmatureJson(JNIEnv *env, jobject, jlong handle)
+{
+  ProjectGreaseGPHandle *h = from_handle(handle);
+  const int n = project_grease_gp_armature_json(h, nullptr, 0);
+  std::vector<char> out(static_cast<size_t>(n) + 1, '\0');
+  if (n > 0) project_grease_gp_armature_json(h, out.data(), n + 1);
+  return env->NewStringUTF(out.data());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeArmatureLoadJson(
+    JNIEnv *env, jobject, jlong handle, jstring json)
+{
+  const char *chars = json ? env->GetStringUTFChars(json, nullptr) : nullptr;
+  const int ok = project_grease_gp_armature_load_json(from_handle(handle), chars ? chars : "");
+  if (chars) env->ReleaseStringUTFChars(json, chars);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}

@@ -158,8 +158,9 @@ static PGModEntry tuned(int type)
 /* Types whose effect is not a change of the evaluated points at cfra 1 (checked on their own). */
 static bool point_changing(int t)
 {
-  /* Texture Mapping only changes uv data (test_texture_modifier) */
-  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_ANGLE && t != PG_MOD_TEXTURE;
+  /* Texture Mapping only changes uv data (test_texture_modifier); Armature needs the document's rig
+   * (test_armature.cc) */
+  return t != PG_MOD_TIME && t != PG_MOD_WEIGHT_ANGLE && t != PG_MOD_TEXTURE && t != PG_MOD_ARMATURE;
 }
 
 static void test_type_info()

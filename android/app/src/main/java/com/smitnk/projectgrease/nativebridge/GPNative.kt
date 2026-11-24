@@ -158,6 +158,15 @@ object GPNative {
     external fun nativeAnnotationStyle(handle: Long): FloatArray?
     external fun nativeAnnotationDump(handle: Long): FloatArray?
     external fun nativeAnnotationLoad(handle: Long, data: FloatArray): Boolean
+    // Rig (project_grease_armature.h): command / query ids PG_ARM_CMD_* / PG_ARM_Q_* of project_grease_gp_bridge.h
+    // (mirrored in editor/RigController.kt). Canvas px in and out.
+    external fun nativeArmatureCommand(handle: Long, command: Int, bone: Int, args: FloatArray?, name: String?): Int
+    external fun nativeArmatureQuery(handle: Long, what: Int, bone: Int, x: Float): FloatArray?
+    external fun nativeArmatureBoneName(handle: Long, bone: Int): String?
+    /** The rig as project document JSON, "" when there is none. */
+    external fun nativeArmatureJson(handle: Long): String?
+    /** "" removes the rig. */
+    external fun nativeArmatureLoadJson(handle: Long, json: String): Boolean
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean

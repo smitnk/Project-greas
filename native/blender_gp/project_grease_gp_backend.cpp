@@ -21,6 +21,7 @@
 #include "project_grease_modifier_stack.h"
 #include "project_grease_tool_brushes.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_armature.h"
 
 #include <algorithm>
 #include <cmath>
@@ -233,6 +234,7 @@ struct HistorySnapshot {
   bGPdata *data = nullptr;
   ModifierStacks stacks; /* the live modifier stack of every layer, by layer index */
   FxStacks fx_stacks;    /* the shader effect list of every layer, by layer index */
+  std::shared_ptr<PGArmature> armature; /* the rig (copy), or null */
   size_t points = 0;     /* stroke points stored in data, for the history memory budget */
 };
 
@@ -305,6 +307,9 @@ struct Backend::Impl {
   ModifierStacks stacks;
   // Shader effect lists (2D post-pass, see project_grease_shader_fx.h), same indexing and lifetime.
   FxStacks fx_stacks;
+  // The rig (project_grease_armature.h), null until one is created. Registered for gpd so the
+  // Armature modifier (PG_MOD_ARMATURE) finds it.
+  std::shared_ptr<PGArmature> armature;
   std::atomic<uint64_t> stack_revision{next_revision()};
   // Bumped whenever the document's strokes/layers are replaced or freed (undo/redo restore, reset,
   // create, shutdown): sessions that hold stroke pointers compare it instead of the gpd pointer,
@@ -597,6 +602,26 @@ static bGPDframe *held_key_at(const bGPDlayer *layer, int cfra)
 
 /* One exit for an open stroke: clears Backend's flag, pending input and Blender's paint buffer
  * together, so no ghost (sbuffer_used > 0 with stroke_open == false) can be drawn or cached. */
+static std::shared_ptr<PGArmature> arm_share(PGArmature *a)
+{
+  return std::shared_ptr<PGArmature>(a, pg_arm_free);
+}
+
+/* The rig changed (or was replaced): register it for the document and re-evaluate modifiers. */
+static void arm_sync(Backend::Impl *impl)
+{
+  if (impl->gpd) pg_arm_register(impl->gpd, impl->armature.get());
+  impl->stack_revision = next_revision();
+}
+
+/* Scene frame changed: the action drives the pose (animsys). */
+static void arm_frame_changed(Backend::Impl *impl)
+{
+  if (!impl->armature) return;
+  pg_arm_evaluate(impl->armature.get(), static_cast<float>(impl->cfra));
+  impl->stack_revision = next_revision();
+}
+
 static void stroke_discard(Backend::Impl *impl)
 {
   impl->stroke_open = false;
@@ -685,6 +710,8 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   impl->doc_generation = next_revision();
   impl->stacks = snapshot->stacks;
   impl->fx_stacks = snapshot->fx_stacks;
+  impl->armature = snapshot->armature ? arm_share(pg_arm_dup(snapshot->armature.get())) : nullptr;
+  arm_sync(impl);
   impl->stack_revision = next_revision();
   eval_cache_clear(impl);
   project_grease_gp_tag(impl->gpd);
@@ -724,6 +751,7 @@ bool Backend::history_record()
     return false;
   }
 
+  if (impl_->armature) snapshot->armature = arm_share(pg_arm_dup(impl_->armature.get()));
   history_snapshot_clear(impl_->redo_history);
   impl_->undo_history.push_back(snapshot);
 
@@ -842,6 +870,8 @@ void Backend::shutdown()
   eval_cache_clear(impl_);
   impl_->stacks.clear();
   impl_->fx_stacks.clear();
+  if (impl_->gpd) pg_arm_register(impl_->gpd, nullptr);
+  impl_->armature.reset();
 
   // Android does not create a Blender Main/ID database. Free the minimal
   // legacy GP containers directly after releasing their GPU cache.
@@ -945,6 +975,8 @@ bool Backend::reset_document()
   eval_cache_clear(impl_);
   impl_->stacks.clear();
   impl_->fx_stacks.clear();
+  if (impl_->gpd) pg_arm_register(impl_->gpd, nullptr);
+  impl_->armature.reset(); /* a new document starts without a rig */
   impl_->stack_revision = next_revision();
   pg_annot_free(impl_->annotations); /* a new document starts without annotations */
   impl_->annotations = nullptr;
@@ -1437,6 +1469,7 @@ bool Backend::select_frame(int frame_number) {
       if (frame != impl_->frame) editing_ctx_changing(impl_);
       impl_->frame = frame;
       impl_->cfra = frame_number;
+      arm_frame_changed(impl_);
       impl_->stroke = nullptr;
       impl_->frame_created = true;
       impl_->last_error.clear();
@@ -1463,6 +1496,7 @@ bool Backend::select_frame_or_hold(int frame_number)
   if (frame != impl_->frame) editing_ctx_changing(impl_);
   impl_->frame = frame;
   impl_->cfra = frame_number;
+  arm_frame_changed(impl_);
   impl_->layer->actframe = frame;
   impl_->stroke = nullptr;
   impl_->frame_created = true;
@@ -5264,6 +5298,98 @@ void Backend::sync_active_frame()
   set_frame(impl_, impl_->layer ? impl_->layer->actframe : nullptr);
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
+}
+
+// ---- Rig (project_grease_armature.h) ----
+
+PGArmature *Backend::armature(bool create)
+{
+  if (!impl_->armature && create && impl_->gpd) {
+    impl_->armature = arm_share(pg_arm_new());
+    arm_sync(impl_);
+  }
+  return impl_->armature.get();
+}
+
+void Backend::armature_changed()
+{
+  arm_sync(impl_);
+  if (impl_->gpd) project_grease_gp_tag(impl_->gpd);
+}
+
+void Backend::armature_remove()
+{
+  if (impl_->gpd) pg_arm_register(impl_->gpd, nullptr);
+  impl_->armature.reset();
+  armature_changed();
+}
+
+int Backend::armature_bind(int mode)
+{
+  PGArmature *a = impl_->armature.get();
+  if (!a || !impl_->gpd || mode < 0 || mode > 3) {
+    impl_->last_error = "no armature to bind";
+    return -1;
+  }
+  int added = 0;
+  int index = 0;
+  LISTBASE_FOREACH_INDEX (bGPDlayer *, gpl, &impl_->gpd->layers, index) {
+    /* ED_gpencil_add_armature: an Armature modifier when there is none (per layer here) */
+    std::vector<PGModEntry> *stack = layer_stack(impl_, index);
+    bool has = false;
+    for (const PGModEntry &e : *stack) has |= e.type == PG_MOD_ARMATURE;
+    if (!has && modifier_add(index, PG_MOD_ARMATURE) < 0) return -1;
+    if (mode > 0) {
+      bGPDframe *gpf = held_key_at(gpl, impl_->cfra);
+      /* groups are created once (the first frame); later frames only get weights */
+      const int n = pg_arm_bind_frame(a, impl_->gpd, gpf, mode);
+      if (n < 0) return -1;
+      added += n;
+      if (gpf) {
+        LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) BKE_gpencil_stroke_geometry_update(impl_->gpd, gps);
+      }
+    }
+  }
+  armature_changed();
+  impl_->last_error.clear();
+  return added;
+}
+
+void Backend::armature_bone_renamed(const char *old_name, const char *new_name)
+{
+  if (!impl_->gpd || !old_name || !new_name) return;
+  bDeformGroup *dg = static_cast<bDeformGroup *>(
+      BLI_findstring(&impl_->gpd->vertex_group_names, old_name, offsetof(bDeformGroup, name)));
+  if (dg && !BLI_findstring(&impl_->gpd->vertex_group_names, new_name, offsetof(bDeformGroup, name))) {
+    BLI_strncpy(dg->name, new_name, sizeof(dg->name));
+  }
+  armature_changed();
+}
+
+std::string Backend::armature_json() const
+{
+  if (!impl_->armature) return std::string();
+  char *json = pg_arm_to_json(impl_->armature.get());
+  std::string out = json ? json : "";
+  std::free(json);
+  return out;
+}
+
+bool Backend::armature_load_json(const char *json)
+{
+  if (!json || !json[0]) {
+    armature_remove();
+    return true;
+  }
+  PGArmature *a = pg_arm_from_json(json);
+  if (!a) {
+    impl_->last_error = "invalid armature";
+    return false;
+  }
+  impl_->armature = arm_share(a);
+  pg_arm_evaluate(a, static_cast<float>(impl_->cfra));
+  armature_changed();
+  return true;
 }
 
 }  // namespace project_grease::gp

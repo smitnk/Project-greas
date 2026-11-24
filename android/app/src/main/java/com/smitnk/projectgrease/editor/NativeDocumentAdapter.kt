@@ -162,6 +162,9 @@ class NativeDocumentAdapter(private val native: NativeEditorBridge) : DocumentNa
 
     override fun activeVertexGroup() = native.vertexGroupActive()
 
+    override fun armatureJson() = native.armatureJson()
+    override fun restoreArmature(json: String) = native.armatureLoadJson(json)
+
     override fun restoreVertexGroups(names: List<String>, active: Int): Boolean {
         for (name in names) if (native.vertexGroupAdd(name) < 0) return false
         return active < 0 || active >= names.size || native.setVertexGroupActive(active)

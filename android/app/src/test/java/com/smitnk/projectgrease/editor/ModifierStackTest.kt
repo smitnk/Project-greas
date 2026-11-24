@@ -79,7 +79,7 @@ class ModifierStackTest {
             ModifierType.ENVELOPE to "ENVELOPE",
             ModifierType.WEIGHT_ANGLE to "WANGLE", ModifierType.DASH to "DASH", ModifierType.OUTLINE to "OUTLINE",
             ModifierType.MIRROR to "MIRROR", ModifierType.ARRAY to "ARRAY", ModifierType.MULTIPLY to "MULTIPLY",
-            ModifierType.TEXTURE to "TEXTURE"
+            ModifierType.TEXTURE to "TEXTURE", ModifierType.ARMATURE to "ARMATURE"
         )
         assertEquals(ModifierType.all.size, byType.size)
         for ((type, key) in byType) {

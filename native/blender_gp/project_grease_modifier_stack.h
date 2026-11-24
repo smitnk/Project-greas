@@ -70,7 +70,8 @@ enum {
   PG_MOD_ARRAY = 21,
   PG_MOD_MULTIPLY = 22,
   PG_MOD_TEXTURE = 23, /* Texture Mapping (MOD_gpencil_legacy_texture.c) */
-  PG_MOD_TYPE_LAST = 23,
+  PG_MOD_ARMATURE = 24, /* Armature (MOD_gpencil_legacy_armature.c, project_grease_armature.h) */
+  PG_MOD_TYPE_LAST = 24,
 };
 
 /* Every entry stores PG_MOD_MAX_PARAMS floats: the type's own parameters from index 0 (PG_P_*_COUNT
@@ -175,6 +176,12 @@ enum { /* TEXTURE: mode STROKE 0 / FILL 1 / STROKE_AND_FILL 2, fit GP_TEX_FIT_ST
   PG_P_TEXTURE_MODE = 0, PG_P_TEXTURE_FIT = 1, PG_P_TEXTURE_UV_OFFSET = 2, PG_P_TEXTURE_UV_SCALE = 3,
   PG_P_TEXTURE_ALIGN_ROT = 4, PG_P_TEXTURE_FILL_ROT = 5, PG_P_TEXTURE_FILL_OFFSET_X = 6,
   PG_P_TEXTURE_FILL_OFFSET_Y = 7, PG_P_TEXTURE_FILL_SCALE = 8, PG_P_TEXTURE_COUNT = 9 };
+
+enum { /* ARMATURE: deformflag bits ARM_DEF_VGROUP / ARM_DEF_ENVELOPE / ARM_DEF_QUATERNION (Preserve
+        * Volume), vertex group (+1, 0 = none) with invert (ARM_DEF_INVERT_VGROUP). The armature is the
+        * document's rig (pg_arm_for_gpd). */
+  PG_P_ARMATURE_USE_VGROUPS = 0, PG_P_ARMATURE_USE_ENVELOPE = 1, PG_P_ARMATURE_PRESERVE_VOLUME = 2,
+  PG_P_ARMATURE_VGROUP = 3, PG_P_ARMATURE_INVERT_VGROUP = 4, PG_P_ARMATURE_COUNT = 5 };
 
 /* Custom curve (use_custom_curve / curve_intensity): point i of n gets factor curve(i / (n - 1)). */
 #define PG_P_CURVE_BASE 96

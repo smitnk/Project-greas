@@ -333,6 +333,59 @@ int project_grease_gp_annotation_style(const ProjectGreaseGPHandle *handle, floa
 int project_grease_gp_annotation_dump(const ProjectGreaseGPHandle *handle, float *out, int capacity);
 int project_grease_gp_annotation_load(ProjectGreaseGPHandle *handle, const float *data, int count);
 
+/* Rig (project_grease_armature.h; project_grease_armature_bridge.cpp). Points and distances are
+ * canvas px; angles radians counter-clockwise on screen; bones are indices (creation order).
+ * command returns the operator's result (count / new bone index) or -1 when there is no rig. */
+enum {
+  PG_ARM_CMD_CREATE = 0,          /* - */
+  PG_ARM_CMD_REMOVE = 1,          /* - */
+  PG_ARM_CMD_SET_MODE = 2,        /* mode: 0 object, 1 edit, 2 pose */
+  PG_ARM_CMD_BONE_ADD = 3,        /* head x, y, tail x, y; name */
+  PG_ARM_CMD_EXTRUDE = 4,         /* dx, dy of the new tips */
+  PG_ARM_CMD_EDIT_SELECT = 5,     /* bone; flags (BONE_SELECTED 1 / ROOTSEL 2 / TIPSEL 4), extend */
+  PG_ARM_CMD_EDIT_TRANSLATE = 6,  /* dx, dy */
+  PG_ARM_CMD_EDIT_ROTATE = 7,     /* angle, pivot x, y */
+  PG_ARM_CMD_EDIT_SCALE = 8,      /* factor, pivot x, y */
+  PG_ARM_CMD_BONE_SET = 9,        /* bone; head x, y, tail x, y, roll */
+  PG_ARM_CMD_PARENT_SET = 10,     /* mode 1 connected / 2 keep offset (active bone is the parent) */
+  PG_ARM_CMD_PARENT_CLEAR = 11,   /* mode 1 clear / 2 disconnect */
+  PG_ARM_CMD_DELETE = 12,         /* - (selected bones) */
+  PG_ARM_CMD_RENAME = 13,         /* bone; name */
+  PG_ARM_CMD_ENVELOPE = 14,       /* bone; dist px, weight, rad head px, rad tail px, deform, mult vg */
+  PG_ARM_CMD_POSE_SELECT = 15,    /* bone (-1 none); extend */
+  PG_ARM_CMD_POSE_TRANSLATE = 16, /* dx, dy */
+  PG_ARM_CMD_POSE_ROTATE = 17,    /* angle */
+  PG_ARM_CMD_POSE_SCALE = 18,     /* factor */
+  PG_ARM_CMD_POSE_SET = 19,       /* bone; loc[3], quat[4], scale[3] (bone space, Blender units) */
+  PG_ARM_CMD_POSE_CLEAR = 20,     /* what: 1 loc, 2 rot, 4 scale */
+  PG_ARM_CMD_POSE_COPY = 21,      /* - */
+  PG_ARM_CMD_POSE_PASTE = 22,     /* flipped, selected only */
+  PG_ARM_CMD_KEY_INSERT = 23,     /* frame (LocRotScale on the selected bones) */
+  PG_ARM_CMD_KEY_DELETE = 24,     /* bone; frame */
+  PG_ARM_CMD_KEY_INTERPOLATION = 25, /* bone; frame, ipo (0 constant, 1 linear, 2 bezier) */
+  PG_ARM_CMD_BIND = 26,           /* mode 0 armature, 1 empty groups, 2 automatic, 3 envelope */
+  PG_ARM_CMD_EVALUATE = 27,       /* frame */
+};
+enum {
+  PG_ARM_Q_SUMMARY = 0,  /* bone count (-1 no rig), active bone, mode, F-Curve count */
+  PG_ARM_Q_BONE = 1,     /* PG_ARM_BONE_INFO floats, positions in canvas px */
+  PG_ARM_Q_POSE = 2,     /* loc[3], quat[4], scale[3] */
+  PG_ARM_Q_KEYS = 3,     /* sorted key frames of the bone; returns the total */
+  PG_ARM_Q_KEY_INTERPOLATION = 4, /* ipo of the bone's key at frame x, -1 none */
+  PG_ARM_Q_ENVELOPE = 5, /* dist px, weight, rad head px, rad tail px */
+  PG_ARM_Q_SELECTED = 6, /* 1 / 0 */
+};
+int project_grease_gp_armature_command(ProjectGreaseGPHandle *handle, int command, int bone,
+                                       const float *args, int arg_count, const char *name);
+/* Fills out (capacity floats) and returns the number of values (may exceed capacity: nothing written). */
+int project_grease_gp_armature_query(const ProjectGreaseGPHandle *handle, int what, int bone, float x,
+                                     float *out, int capacity);
+/* Bone name into name (capacity bytes); 0 when out of range. */
+int project_grease_gp_armature_bone_name(const ProjectGreaseGPHandle *handle, int bone, char *name, int capacity);
+/* Project document JSON of the rig ("" none): returns the length; copies when capacity > length. */
+int project_grease_gp_armature_json(const ProjectGreaseGPHandle *handle, char *out, int capacity);
+int project_grease_gp_armature_load_json(ProjectGreaseGPHandle *handle, const char *json);
+
 const char *project_grease_gp_last_error(
     const ProjectGreaseGPHandle *handle);
 

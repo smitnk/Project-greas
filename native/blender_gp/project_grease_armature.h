@@ -146,6 +146,21 @@ int pg_arm_deform_stroke(const PGArmature *a, const struct bGPdata *gpd, struct 
  * Returns the number of vertex groups added, or -1. */
 int pg_arm_bind_frame(const PGArmature *a, struct bGPdata *gpd, struct bGPDframe *gpf, int mode);
 
+/* ---- viewport display ---- */
+/* bArmature.drawtype (ARM_OCTA 0 default / ARM_LINE 1 stick / B-Bone 2 / Envelope 3 / Wire 4; only
+ * Octahedral and Stick are drawn, the others draw as Octahedral) and the rig object's In Front
+ * (Object.dtx OB_DRAW_IN_FRONT, DNA default off). Both are saved with the rig. */
+int pg_arm_display_type(const PGArmature *a);
+bool pg_arm_show_in_front(const PGArmature *a);
+void pg_arm_set_display(PGArmature *a, int drawtype, bool in_front);
+/* Click select of a bone (ed_armature_pick_bone / ED_armature_edit_select_pick_bone, VIEW3D_SELECT_
+ * PICK_NEAREST): the bone nearest to mval within dist (window units of arm_to_win, a homogeneous
+ * armature space -> window matrix; ED_view3d_select_dist_px is 75 px * U.pixelsize). Pose mode
+ * selects the bone (pose head .. tail); edit mode the head / tail joint or the whole bone. A miss
+ * deselects all unless extend. Object mode does nothing. Returns the bone or -1. */
+int pg_arm_pick(PGArmature *a, const float arm_to_win[4][4], const float mval[2], float dist,
+                bool extend);
+
 /* Project document form (project_grease_armature_io.cc): a JSON object with the edit bones, the pose
  * channel values, the F-Curves and the mode. pg_arm_to_json returns a malloc'd string (free()). */
 char *pg_arm_to_json(const PGArmature *a);

@@ -2,6 +2,7 @@
  * Project Grease rig state and operators (see project_grease_armature.h). The Blender code they call
  * is in project_grease_armature_bke.c; the operator bodies here follow the named Blender 3.6.23
  * operators with the context (bContext, RNA, notifiers, X-mirror editing) removed. */
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,6 +83,8 @@ PGArmature *pg_arm_dup(const PGArmature *src)
   a->arm.deformflag = src->arm.deformflag;
   a->arm.layer = src->arm.layer;
   a->mode = src->mode;
+  a->arm.drawtype = src->arm.drawtype;
+  a->show_in_front = src->show_in_front;
   /* edit bones: copy, then remap the parent / active pointers by index */
   LISTBASE_FOREACH (const EditBone *, eb, &src->edbo) {
     EditBone *n = MEM_dupallocN(eb);
@@ -1040,4 +1043,88 @@ const PGArmature *pg_arm_for_gpd(const bGPdata *gpd)
     if (gpd && g_registry[i].gpd == gpd) return g_registry[i].arm;
   }
   return NULL;
+}
+
+/* ---- viewport display (overlay_armature.cc reads these) ---- */
+int pg_arm_display_type(const PGArmature *a) { return a ? a->arm.drawtype : ARM_OCTA; }
+bool pg_arm_show_in_front(const PGArmature *a) { return a && a->show_in_front; }
+void pg_arm_set_display(PGArmature *a, int drawtype, bool in_front)
+{
+  if (!a) return;
+  /* rna_armature.c display_type: Octahedral / Stick / B-Bone / Envelope / Wire */
+  if (drawtype >= ARM_OCTA && drawtype <= ARM_WIRE) a->arm.drawtype = (char)drawtype;
+  a->show_in_front = in_front ? 1 : 0;
+}
+
+static float dist_to_seg_v2(const float p[2], const float a[2], const float b[2])
+{
+  float ab[2] = {b[0] - a[0], b[1] - a[1]}, ap[2] = {p[0] - a[0], p[1] - a[1]};
+  const float l2 = ab[0] * ab[0] + ab[1] * ab[1];
+  float t = l2 > 0.0f ? (ap[0] * ab[0] + ap[1] * ab[1]) / l2 : 0.0f;
+  t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+  return hypotf(p[0] - a[0] - t * ab[0], p[1] - a[1] - t * ab[1]);
+}
+static bool project_win(const float m[4][4], const float co[3], float r[2])
+{
+  float v[4] = {co[0], co[1], co[2], 1.0f};
+  mul_m4_v4(m, v);
+  if (v[3] <= 0.0f) return false;
+  r[0] = v[0] / v[3];
+  r[1] = v[1] / v[3];
+  return true;
+}
+
+int pg_arm_pick(PGArmature *a, const float arm_to_win[4][4], const float mval[2], float dist,
+                bool extend)
+{
+  if (!a || a->mode == PG_ARM_MODE_OBJECT) return -1;
+  const bool edit = a->mode == PG_ARM_MODE_EDIT;
+  int best = -1, best_part = BONE_SELECTED, i = 0;
+  float best_d = dist;
+  LISTBASE_FOREACH (EditBone *, eb, &a->edbo) {
+    float h[3], t[3];
+    const bPoseChannel *pc = edit ? NULL : BKE_pose_channel_find_name(&a->pose, eb->name);
+    copy_v3_v3(h, pc ? pc->pose_head : eb->head);
+    copy_v3_v3(t, pc ? pc->pose_tail : eb->tail);
+    float sh[2], st[2], sj[2];
+    if (project_win(arm_to_win, h, sh) && project_win(arm_to_win, t, st)) {
+      /* joint radius: the octahedral point sphere (PT_DEFAULT_RAD 0.05 of the length) or the
+       * stick's 10 px circles (2 * 5 px * U.pixelsize, with dist = 75 px * U.pixelsize) */
+      float r = dist * (10.0f / 75.0f);
+      if (a->arm.drawtype != ARM_LINE) {
+        float off[3];
+        madd_v3_v3v3fl(off, t, (float[3]){1.0f, 0.0f, 0.0f}, 0.05f * len_v3v3(h, t));
+        if (project_win(arm_to_win, off, sj)) r = len_v2v2(sj, st);
+      }
+      /* edit mode: head / tail spheres are BONESEL_ROOT / BONESEL_TIP (the head only when it is
+       * drawn: not connected), win a tie with the body */
+      const float d_body = dist_to_seg_v2(mval, sh, st);
+      float d_head = len_v2v2(mval, sh) - r, d_tail = len_v2v2(mval, st) - r;
+      if (!edit || (eb->parent && (eb->flag & BONE_CONNECTED))) d_head = FLT_MAX;
+      if (!edit) d_tail = FLT_MAX;
+      d_head = MAX2(d_head, 0.0f);
+      d_tail = MAX2(d_tail, 0.0f);
+      if (d_tail <= best_d && d_tail <= d_head && d_tail <= d_body) {
+        best_d = d_tail, best = i, best_part = BONE_TIPSEL;
+      }
+      else if (d_head <= best_d && d_head <= d_body) {
+        best_d = d_head, best = i, best_part = BONE_ROOTSEL;
+      }
+      else if (d_body < best_d) {
+        best_d = d_body, best = i, best_part = BONE_SELECTED;
+      }
+    }
+    i++;
+  }
+  /* a tap on nothing deselects all (deselect_all of view3d_select_exec) */
+  if (best < 0) {
+    if (!extend) {
+      if (edit) pg_arm_edit_select(a, -1, 0, false);
+      else pg_arm_pose_select(a, -1, false);
+    }
+    return -1;
+  }
+  if (edit) pg_arm_edit_select(a, best, best_part, extend);
+  else pg_arm_pose_select(a, best, extend);
+  return best;
 }

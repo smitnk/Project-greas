@@ -489,6 +489,83 @@ static void test_edit_ops_and_io()
   pg_arm_free(d);
 }
 
+/* L10 9: display settings saved with the rig; click select (pg_arm_pick, overlay picking). */
+static void test_display_and_pick()
+{
+  PGArmature *a = pg_arm_new();
+  CHECK(pg_arm_display_type(a) == ARM_OCTA && !pg_arm_show_in_front(a)); /* DNA defaults */
+  const float ys[3] = {100, 200, 300};
+  for (float y : ys) {
+    float hp[3] = {100, y, 0}, tp[3] = {300, y, 0}, h3[3], t3[3];
+    pg_arm_canvas_to_arm(hp, h3);
+    pg_arm_canvas_to_arm(tp, t3);
+    pg_arm_bone_add(a, "Bone", h3, t3);
+  }
+  pg_arm_set_display(a, ARM_LINE, true);
+  char *json = pg_arm_to_json(a);
+  PGArmature *b = pg_arm_from_json(json);
+  CHECK(b && pg_arm_display_type(b) == ARM_LINE && pg_arm_show_in_front(b));
+  PGArmature *c = pg_arm_dup(a);
+  CHECK(pg_arm_display_type(c) == ARM_LINE && pg_arm_show_in_front(c));
+  free(json);
+  pg_arm_free(b);
+  pg_arm_free(c);
+  {
+    PGArmature *old = pg_arm_from_json("{\"version\":1,\"bones\":[]}");
+    CHECK(pg_arm_display_type(old) == ARM_OCTA && !pg_arm_show_in_front(old));
+    pg_arm_free(old);
+  }
+  /* armature space -> canvas px (as PG_ARM_CMD_PICK without a view matrix) */
+  float m[4][4];
+  unit_m4(m);
+  m[0][0] = PG_ARM_PIXELS_PER_UNIT;
+  m[1][1] = -PG_ARM_PIXELS_PER_UNIT;
+  m[2][2] = PG_ARM_PIXELS_PER_UNIT;
+  const float dist = 75.0f;
+  pg_arm_set_mode(a, PG_ARM_MODE_OBJECT);
+  const float mid1[2] = {200, 210};
+  CHECK(pg_arm_pick(a, m, mid1, dist, false) == -1); /* object mode: no bone select */
+  pg_arm_set_mode(a, PG_ARM_MODE_EDIT);
+  CHECK(pg_arm_pick(a, m, mid1, dist, false) == 1);
+  CHECK(pg_arm_active_bone(a) == 1);
+  float info[PG_ARM_BONE_INFO];
+  pg_arm_bone_info(a, 1, info);
+  CHECK(((int)info[8] & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) == (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL));
+  pg_arm_bone_info(a, 0, info);
+  CHECK(((int)info[8] & BONE_SELECTED) == 0);
+  /* near the tail of bone 2: the tip only (BONESEL_TIP) */
+  const float tip2[2] = {303, 302};
+  CHECK(pg_arm_pick(a, m, tip2, dist, false) == 2);
+  pg_arm_bone_info(a, 2, info);
+  CHECK(((int)info[8] & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) == BONE_TIPSEL);
+  pg_arm_bone_info(a, 1, info);
+  CHECK(((int)info[8] & BONE_SELECTED) == 0);
+  /* extend keeps the others */
+  const float mid0[2] = {150, 95};
+  CHECK(pg_arm_pick(a, m, mid0, dist, true) == 0);
+  CHECK(pg_arm_bone_selected(a, 0));
+  pg_arm_bone_info(a, 2, info);
+  CHECK(((int)info[8] & BONE_TIPSEL) != 0);
+  /* beyond ED_view3d_select_dist_px of every bone: deselect all */
+  const float far[2] = {200, 500};
+  CHECK(pg_arm_pick(a, m, far, dist, false) == -1);
+  for (int i = 0; i < 3; i++) {
+    pg_arm_bone_info(a, i, info);
+    CHECK(((int)info[8] & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) == 0);
+  }
+  /* nearest wins: between bone 0 (y 100) and bone 1 (y 200), closer to bone 1 */
+  pg_arm_set_mode(a, PG_ARM_MODE_POSE);
+  const float between[2] = {200, 160};
+  CHECK(pg_arm_pick(a, m, between, dist, false) == 1);
+  CHECK(pg_arm_bone_selected(a, 1) && !pg_arm_bone_selected(a, 0));
+  /* pose mode follows the posed bone: rotate bone 0 by 90 degrees about its head */
+  pg_arm_pose_select(a, 0, false);
+  pg_arm_pose_rotate(a, float(M_PI_2));
+  const float posed[2] = {100, 0}; /* the tail swung up the canvas (-y) */
+  CHECK(pg_arm_pick(a, m, posed, 10.0f, false) == 0);
+  pg_arm_free(a);
+}
+
 int main()
 {
   test_bone_matrices();
@@ -496,6 +573,7 @@ int main()
   test_fcurves();
   test_deform_and_bind();
   test_edit_ops_and_io();
+  test_display_and_pick();
   printf("armature: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

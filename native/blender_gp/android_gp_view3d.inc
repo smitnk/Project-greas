@@ -338,6 +338,7 @@ void v3d_draw_overlays(float px)
 }  // namespace
 
 bool engine_wanted(const bGPdata *gpd);
+static void arm_overlay(const bGPdata *gpd, int w, int h, bool front, bool view3d); /* android_gp_armature_overlay.inc */
 bool engine_draw_canvas(const bGPdata *gpd, int frame_number, int w, int h);
 
 /* The 3D frame; false leaves the frame to the 2D path (Camera view, exports, no GLES 3 engine). */
@@ -358,9 +359,11 @@ static bool view3d_present(const bGPdata *gpd, int frame_number, int w, int h)
   glClearColor(V3D_BACK[0], V3D_BACK[1], V3D_BACK[2], 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   v3d_draw_grid();
+  arm_overlay(gpd, w, h, false, true);
   const bool ok = engine_draw_canvas(gpd, frame_number, w, h);
   glViewport(0, 0, w, h);
   v3d_draw_overlays(std::max(1.0f, float(std::min(w, h)) / 400.0f));
+  arm_overlay(gpd, w, h, true, true);
   draw_sbuffer(gpd, 1.0f, w, h);
   gl_check("3D viewport");
   g_v3d.last_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();

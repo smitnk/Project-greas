@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Project document JSON of the rig (see pg_arm_to_json in project_grease_armature.h):
- * {"version":1,"mode":0,"active":-1,
+ * {"version":1,"mode":0,"active":-1,"drawtype":0,"in_front":0,
  *  "bones":[{"name","parent","head":[3],"tail":[3],"roll","flag","inherit","dist","weight",
  *            "radHead","radTail","segments","layer"}],           (EditBone, list order)
  *  "pose":[{"name","loc":[3],"quat":[4],"scale":[3]}],
@@ -196,6 +196,10 @@ char *pg_arm_to_json(const PGArmature *a)
   put_num(s, a->mode);
   s += ",\"active\":";
   put_num(s, pg_arm_active_bone(a));
+  s += ",\"drawtype\":";
+  put_num(s, a->arm.drawtype);
+  s += ",\"in_front\":";
+  put_num(s, a->show_in_front);
   s += ",\"bones\":[";
   bool first = true;
   LISTBASE_FOREACH (const EditBone *, eb, &a->edbo) {
@@ -293,6 +297,7 @@ PGArmature *pg_arm_from_json(const char *json)
   }
   const int active = (int)root.n("active", -1);
   a->arm.act_edbone = active >= 0 && active < (int)list.size() ? list[active] : nullptr;
+  pg_arm_set_display(a, (int)root.n("drawtype", ARM_OCTA), root.n("in_front", 0) != 0);
   const int mode = (int)root.n("mode", 0);
   pg_arm_set_mode(a, mode);
   pg_arm_update(a);

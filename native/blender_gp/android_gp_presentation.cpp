@@ -1385,6 +1385,7 @@ static void build_engine_fx(const bGPdata*gpd,EngineFx&out){
 }
 
 #include "android_gp_view3d.inc"
+#include "android_gp_armature_overlay.inc"
 bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   /* Shallow copies (DNA structs are copied as bytes; strokes stay shared). */
   bGPdata&copy=*static_cast<bGPdata*>(MEM_mallocN(sizeof(bGPdata),"pg engine gpd"));
@@ -1628,6 +1629,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   gl_check("canvas paper");
   if(reference_shown())draw_reference(w,h);
   gl_check("reference image");
+  arm_overlay(gpd,w,h,false,false); // bones under the strokes (In Front off)
   (void)x0; (void)y0; (void)x1; (void)y1;
   const bool by_engine=engine_wanted(gpd)&&engine_draw_canvas(gpd,frame_number,w,h);
   if(by_engine){
@@ -1755,6 +1757,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   }
   if(drawing)open_cache_store(gpd,frame_number,w,h,g_engine_revision);
   }
+  arm_overlay(gpd,w,h,true,false); // In Front: bones over the strokes
   // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
   // active guide in the theme's guide colour, over the canvas, not exported.
   if(!g_cfg->export_mode&&g_cfg->guide_type>=0){

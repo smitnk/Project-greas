@@ -68,6 +68,8 @@ object View3DNative {
     /** type, location xyz, selected */
     external fun nativeObject(index: Int): FloatArray?
     external fun nativeCanvasToScreen(x: Float, y: Float, z: Float): FloatArray?
+    /** Canvas px -> view px (y down), 4x4 column major homogeneous: RigController.pick in the 3D view. */
+    external fun nativeCanvasMatrix(): FloatArray
     external fun nativeReset()
 }
 

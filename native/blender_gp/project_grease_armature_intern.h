@@ -12,4 +12,5 @@ struct PGArmature {
   ListBase curves;  /* FCurve of the action */
   ListBase copybuf; /* POSE_OT_copy buffer: bPoseChannel copies (POSE_KEY on the copied ones) */
   int mode;
+  int show_in_front; /* Object.dtx OB_DRAW_IN_FRONT of the rig object (DNA default off) */
 };

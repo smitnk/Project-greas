@@ -19,10 +19,15 @@ class RigController(private val native: NativeEditorBridge) {
         const val CMD_POSE_SCALE = 18; const val CMD_POSE_SET = 19; const val CMD_POSE_CLEAR = 20
         const val CMD_POSE_COPY = 21; const val CMD_POSE_PASTE = 22; const val CMD_KEY_INSERT = 23
         const val CMD_KEY_DELETE = 24; const val CMD_KEY_INTERPOLATION = 25; const val CMD_BIND = 26
-        const val CMD_EVALUATE = 27
+        const val CMD_EVALUATE = 27; const val CMD_DISPLAY = 28; const val CMD_PICK = 29
         // PG_ARM_Q_*
         const val Q_SUMMARY = 0; const val Q_BONE = 1; const val Q_POSE = 2; const val Q_KEYS = 3
         const val Q_KEY_INTERPOLATION = 4; const val Q_ENVELOPE = 5; const val Q_SELECTED = 6
+        const val Q_DISPLAY = 7
+        // bArmature.drawtype (ARM_OCTA / ARM_LINE): the overlay draws Octahedral and Stick
+        const val DISPLAY_OCTAHEDRAL = 0; const val DISPLAY_STICK = 1
+        /** ED_view3d_select_dist_px: 75 px * U.pixelsize */
+        const val SELECT_DIST_PX = 75f
 
         const val MODE_OBJECT = 0; const val MODE_EDIT = 1; const val MODE_POSE = 2
         // BONE_SELECTED / BONE_ROOTSEL / BONE_TIPSEL (DNA_armature_types.h)
@@ -118,6 +123,22 @@ class RigController(private val native: NativeEditorBridge) {
     fun keys(bone: Int): FloatArray = native.armatureQuery(Q_KEYS, bone)
     /** Evaluates the action at [frame] (the backend also does it whenever the scene frame changes). */
     fun evaluate(frame: Float) = cmd(CMD_EVALUATE, -1, frame)
+
+    // ---- viewport display (saved with the rig) ----
+    /** Octahedral / Stick, and In Front (bones over the strokes). */
+    fun setDisplay(type: Int, inFront: Boolean) = cmd(CMD_DISPLAY, -1, type.toFloat(), if (inFront) 1f else 0f) == 1
+    val displayType get() = native.armatureQuery(Q_DISPLAY).getOrNull(0)?.toInt() ?: DISPLAY_OCTAHEDRAL
+    val showInFront get() = native.armatureQuery(Q_DISPLAY).getOrNull(1) == 1f
+    /**
+     * Tap select in Edit / Pose mode: the bone nearest to (x, y) within [dist] (Blender's
+     * ED_view3d_select_dist_px); in Edit mode a head / tail joint selects that end only. A tap on
+     * nothing deselects all unless [extend]. Camera view: x, y, dist in canvas px. 3D view: x, y,
+     * dist in view px and [canvasToWindow] = View3DNative.nativeCanvasMatrix(). Returns the bone or -1.
+     */
+    fun pick(x: Float, y: Float, dist: Float, extend: Boolean = false, canvasToWindow: FloatArray? = null): Int {
+        val head = floatArrayOf(x, y, dist, if (extend) 1f else 0f)
+        return cmd(CMD_PICK, -1, *(if (canvasToWindow != null && canvasToWindow.size == 16) head + canvasToWindow else head))
+    }
 
     /** Parent with Armature / Empty Groups / Automatic Weights / Envelope Weights; adds the Armature modifier. */
     fun bind(mode: Int) = cmd(CMD_BIND, -1, mode.toFloat())

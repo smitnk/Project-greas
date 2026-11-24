@@ -23,6 +23,7 @@ int project_grease_view3d_object_count();
 int project_grease_view3d_object_get(int i, float *out);
 int project_grease_view3d_canvas_to_screen(float x, float y, float z, float *out);
 void project_grease_view3d_reset();
+void project_grease_view3d_canvas_matrix(float *out);
 }
 
 #define V3D_JNI(ret, name) extern "C" JNIEXPORT ret JNICALL Java_com_smitnk_projectgrease_nativebridge_View3DNative_##name
@@ -66,5 +67,11 @@ V3D_JNI(jfloatArray, nativeCanvasToScreen)(JNIEnv *env, jobject, jfloat x, jfloa
 {
   float s[2];
   return project_grease_view3d_canvas_to_screen(x, y, z, s) ? to_array(env, s, 2) : nullptr;
+}
+V3D_JNI(jfloatArray, nativeCanvasMatrix)(JNIEnv *env, jobject)
+{
+  float m[16];
+  project_grease_view3d_canvas_matrix(m);
+  return to_array(env, m, 16);
 }
 V3D_JNI(void, nativeReset)(JNIEnv *, jobject) { project_grease_view3d_reset(); }

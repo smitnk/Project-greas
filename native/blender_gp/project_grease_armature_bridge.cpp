@@ -7,6 +7,7 @@
 
 #include "project_grease_armature.h"
 #include "project_grease_armature_bke.h"
+#include "BLI_math_matrix.h"
 #include "project_grease_gp_backend.h"
 #include "project_grease_gp_bridge.h"
 
@@ -135,6 +136,23 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
     case PG_ARM_CMD_KEY_INTERPOLATION:
       r = pg_arm_key_set_interpolation(a, bone, arg(args, n, 0, 1.0f), (int)arg(args, n, 1, 2));
       break;
+    case PG_ARM_CMD_DISPLAY:
+      pg_arm_set_display(a, (int)arg(args, n, 0), arg(args, n, 1) != 0.0f);
+      r = 1;
+      break;
+    case PG_ARM_CMD_PICK: {
+      if (n < 3) return -1;
+      float c2w[4][4], a2c[4][4], a2w[4][4];
+      unit_m4(c2w);
+      if (n >= 20) std::memcpy(c2w, args + 4, sizeof(c2w));
+      unit_m4(a2c); /* pg_arm_arm_to_canvas */
+      a2c[0][0] = PG_ARM_PIXELS_PER_UNIT;
+      a2c[1][1] = -PG_ARM_PIXELS_PER_UNIT;
+      a2c[2][2] = PG_ARM_PIXELS_PER_UNIT;
+      mul_m4_m4m4(a2w, c2w, a2c);
+      r = pg_arm_pick(a, a2w, args, args[2], arg(args, n, 3) != 0.0f);
+      break;
+    }
     case PG_ARM_CMD_EVALUATE:
       pg_arm_evaluate(a, arg(args, n, 0, 1.0f));
       r = 1;
@@ -199,6 +217,11 @@ int pg_arm_bridge_query(Backend &backend, int what, int bone, float x, float *ou
       tmp[2] *= PG_ARM_PIXELS_PER_UNIT;
       tmp[3] *= PG_ARM_PIXELS_PER_UNIT;
       n = 4;
+      break;
+    case PG_ARM_Q_DISPLAY:
+      tmp[0] = (float)pg_arm_display_type(a);
+      tmp[1] = pg_arm_show_in_front(a) ? 1.0f : 0.0f;
+      n = 2;
       break;
     case PG_ARM_Q_SELECTED:
       tmp[0] = pg_arm_bone_selected(a, bone) ? 1.0f : 0.0f;

@@ -31,6 +31,8 @@
 
 #include "gles/pg_gpu_gles.h"
 #include "project_grease_shader_fx.h"
+#include "project_grease_armature.h"
+#include "DNA_armature_types.h"
 
 extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
@@ -463,6 +465,142 @@ int main()
     CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
     glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam1.data());
     CHECK(std::memcmp(cam0.data(), cam1.data(), cam0.size()) == 0);
+  }
+
+  /* L10 9. Armature overlay (android_gp_armature_overlay.inc, overlay_armature.cc): a 3-bone rig in
+   * Octahedral and Stick display, 2D Camera view and 3D view. Bone 2 is active + selected, bone 1
+   * selected, bone 0 neither and lies on the black stroke (y 30) for In Front. Colours are the
+   * default theme's (DRW_globals_update). */
+  {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, W, H);
+    PGArmature *a = pg_arm_new();
+    const float ys[3] = {30, 60, 90};
+    for (float y : ys) {
+      float hp[3] = {60, y, 0}, tp[3] = {140, y, 0}, h3[3], t3[3];
+      pg_arm_canvas_to_arm(hp, h3);
+      pg_arm_canvas_to_arm(tp, t3);
+      pg_arm_bone_add(a, "Bone", h3, t3);
+    }
+    pg_arm_register(gpd, a);
+    std::vector<unsigned char> img((size_t)W * H * 4);
+    float ox = 0, oy = 0, sc = 1;
+    bool v3d = false;
+    auto frame = [&]() {
+      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
+      int pw, ph;
+      if (const char *dir = std::getenv("PG_RIG_DUMP"); dir && *dir) {
+        static int k = 0;
+        char path[512];
+        std::snprintf(path, sizeof path, "%s/rig%02d.ppm", dir, k++);
+        if (FILE *fp = std::fopen(path, "wb")) {
+          std::fprintf(fp, "P6 %d %d 255\n", W, H);
+          for (int y = H - 1; y >= 0; y--)
+            for (int x = 0; x < W; x++) std::fwrite(&img[((size_t)y * W + x) * 4], 1, 3, fp);
+          std::fclose(fp);
+        }
+      }
+      if (!v3d) CHECK(std::sscanf(std::strstr(project_grease_android_present_last_frame(), "paper "), "paper %dx%d at %f,%f x%f", &pw, &ph, &ox, &oy, &sc) == 5);
+    };
+    auto screen = [&](float cx, float cy, float r[2]) { /* canvas px -> window px, y down */
+      if (v3d) CHECK(project_grease_view3d_canvas_to_screen(cx, cy, 0, r) == 1);
+      else r[0] = ox + cx * sc, r[1] = oy + cy * sc;
+    };
+    /* pixels near colour c (tolerance 14) within 9 px of bone b */
+    auto count = [&](int b, const int c[3]) {
+      float s0[2], s1[2];
+      screen(60, ys[b], s0);
+      screen(140, ys[b], s1);
+      int n = 0;
+      for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+          const float dx = s1[0] - s0[0], dy = s1[1] - s0[1], l2 = dx * dx + dy * dy;
+          float t = ((x - s0[0]) * dx + (y - s0[1]) * dy) / l2;
+          t = std::clamp(t, 0.0f, 1.0f);
+          if (std::hypot(x - s0[0] - t * dx, y - s0[1] - t * dy) > 9.0f) continue;
+          const unsigned char *p = &img[((size_t)(H - 1 - y) * W + x) * 4];
+          if (std::abs(p[0] - c[0]) <= 14 && std::abs(p[1] - c[1]) <= 14 && std::abs(p[2] - c[2]) <= 14) n++;
+        }
+      return n;
+    };
+    auto centre = [&](int b) { /* the pixel at the bone's widest point (local y 0.1) */
+      float s[2];
+      screen(68, ys[b], s);
+      return &img[((size_t)(H - 1 - int(s[1] + 0.5f)) * W + int(s[0] + 0.5f)) * 4];
+    };
+    const int C_ACT[3] = {255, 220, 60}, C_SEL[3] = {235, 140, 0}, C_VSEL[3] = {255, 122, 0};
+    const int C_PACT[3] = {140, 255, 255}, C_PSEL[3] = {80, 200, 255};
+    auto select_rig = [&]() {
+      if (pg_arm_mode(a) == PG_ARM_MODE_EDIT) {
+        pg_arm_edit_select(a, 1, BONE_SELECTED, false);
+        pg_arm_edit_select(a, 2, BONE_SELECTED, true);
+      }
+      else {
+        pg_arm_pose_select(a, 1, false);
+        pg_arm_pose_select(a, 2, true);
+      }
+      CHECK(pg_arm_active_bone(a) == 2);
+    };
+    for (int pass = 0; pass < 2; pass++) {
+      v3d = pass == 1;
+      if (v3d) {
+        project_grease_view3d_set_active(1);
+        CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+        project_grease_view3d_set_axis_view(1); /* Front */
+        project_grease_view3d_zoom(0.4f, W * 0.5f, H * 0.5f);
+      }
+      for (int drawtype : {ARM_OCTA, ARM_LINE}) {
+        pg_arm_set_display(a, drawtype, true); /* over the earlier tests' strokes */
+        /* edit mode */
+        pg_arm_set_mode(a, PG_ARM_MODE_EDIT);
+        select_rig();
+        frame();
+        const int e_act[3] = {count(0, C_ACT), count(1, C_ACT), count(2, C_ACT)};
+        const int e_sel[3] = {count(0, C_SEL), count(1, C_SEL), count(2, C_SEL)};
+        const int e_vs[3] = {count(0, C_VSEL), count(1, C_VSEL), count(2, C_VSEL)};
+        std::printf("  rig %s %s edit: active %d %d %d, select %d %d %d, joint select %d %d %d\n", v3d ? "3D" : "2D",
+                    drawtype == ARM_OCTA ? "octahedral" : "stick", e_act[0], e_act[1], e_act[2], e_sel[0], e_sel[1],
+                    e_sel[2], e_vs[0], e_vs[1], e_vs[2]);
+        CHECK(e_act[0] == 0 && e_sel[0] == 0 && e_vs[0] == 0); /* the normal bone: black wire, grey solid */
+        CHECK(e_vs[1] > 3 && e_vs[2] > 3);                     /* selected head / tail joints */
+        if (drawtype == ARM_OCTA) {
+          CHECK(e_act[2] > 10 && e_act[1] == 0); /* active outline */
+          CHECK(e_sel[1] > 10 && e_sel[2] == 0); /* selected outline */
+          const unsigned char *c = centre(1);
+          std::printf("    solid at bone 1: %d %d %d\n", c[0], c[1], c[2]);
+          CHECK(std::abs(c[0] - c[1]) < 6 && std::abs(c[1] - c[2]) < 6 && c[0] > 60 && c[0] < 200); /* lit bone_solid */
+        }
+        else {
+          CHECK(e_act[1] > 10 && e_act[2] > 10); /* draw_bone_line: a selected edit bone is color_bone_active */
+        }
+        /* pose mode */
+        pg_arm_set_mode(a, PG_ARM_MODE_POSE);
+        select_rig();
+        frame();
+        const int p_act[3] = {count(0, C_PACT), count(1, C_PACT), count(2, C_PACT)};
+        const int p_sel[3] = {count(0, C_PSEL), count(1, C_PSEL), count(2, C_PSEL)};
+        std::printf("  rig %s %s pose: active %d %d %d, select %d %d %d\n", v3d ? "3D" : "2D",
+                    drawtype == ARM_OCTA ? "octahedral" : "stick", p_act[0], p_act[1], p_act[2], p_sel[0], p_sel[1], p_sel[2]);
+        CHECK(p_act[2] > 10 && p_act[0] == 0 && p_act[1] == 0);
+        CHECK(p_sel[1] > 10 && p_sel[0] == 0 && p_sel[2] == 0);
+      }
+      /* In Front: bone 0 lies under the black stroke unless it is drawn in front */
+      pg_arm_set_display(a, ARM_OCTA, false);
+      frame();
+      const unsigned char *c = centre(0);
+      std::printf("  rig %s in front off: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
+      CHECK(c[0] < 40);
+      pg_arm_set_display(a, ARM_OCTA, true);
+      frame();
+      c = centre(0);
+      std::printf("  rig %s in front on: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
+      CHECK(c[0] > 60);
+    }
+    project_grease_view3d_set_active(0);
+    pg_arm_register(gpd, nullptr);
+    pg_arm_free(a);
+    CHECK(glGetError() == GL_NO_ERROR);
   }
 
   /* 9. A photo reference on the engine path (reported: imported photos never showed): a red image

@@ -294,6 +294,37 @@ static void test_vertex_smear_keeps_colour(PGToolSession *ts)
   free_doc(&d);
 }
 
+/* SweepPaintTest.vertexPaintSmear on the host: line y=300 200..1000, red 300->600, blue 600->1000,
+ * then smear 500->900 (13 samples each, as SweepBase.drag), brush 60 dp at the device density. */
+static int device_vpaint(PGToolSession *ts, bGPdata *gpd, int b, float x0, float x1, float r, float g, float bl,
+                         float px_per_unit, float density)
+{
+  float *p = (float *)brush(b, fminf(60.0f * density, 500.0f) / px_per_unit, 1.0f);
+  p[PG_TOOL_P_PX_PER_UNIT] = px_per_unit; p[PG_TOOL_P_UI_SCALE] = density;
+  p[PG_TOOL_P_R] = r; p[PG_TOOL_P_G] = g; p[PG_TOOL_P_B] = bl; p[PG_TOOL_P_TARGET] = GPPAINT_MODE_STROKE;
+  float xy[13][2];
+  for (int i = 0; i < 13; i++) { xy[i][0] = x0 + (x1 - x0) * i / 12.0f; xy[i][1] = 300; }
+  return gesture(ts, gpd, PG_TOOL_VERTEX_PAINT, p, (const float (*)[2])xy, 13);
+}
+static void test_vertex_smear_device_gesture(PGToolSession *ts)
+{
+  const float zooms[] = {1.0f, 0.75f, 0.6f, 0.5f, 0.4f};
+  for (int z = 0; z < 5; z++) {
+    Doc d = doc();
+    bGPDstroke *s = stroke(&d, 26, 200, 300, 32, 0);
+    memset(s->boundbox_min, 0, sizeof s->boundbox_min); memset(s->boundbox_max, 0, sizeof s->boundbox_max);
+    device_vpaint(ts, d.gpd, GPVERTEX_TOOL_DRAW, 300, 600, 1, 0, 0, zooms[z], 2.75f);
+    device_vpaint(ts, d.gpd, GPVERTEX_TOOL_DRAW, 600, 1000, 0, 0, 1, zooms[z], 2.75f);
+    float before[26][4];
+    for (int i = 0; i < 26; i++) memcpy(before[i], s->points[i].vert_color, sizeof before[i]);
+    device_vpaint(ts, d.gpd, GPVERTEX_TOOL_SMEAR, 500, 900, 0, 0, 1, zooms[z], 2.75f);
+    int changed = 0;
+    for (int i = 0; i < 26; i++) changed += memcmp(before[i], s->points[i].vert_color, sizeof before[i]) != 0;
+    CHECK(changed > 0, "device smear at zoom %g changed nothing", zooms[z]);
+    free_doc(&d);
+  }
+}
+
 static void test_weight_paint(PGToolSession *ts)
 {
   /* Draw: weight = interpf(brush weight, weight, inf), inf = alpha * pressure * falloff. */
@@ -647,6 +678,7 @@ int main(void)
   test_automask_and_select_mask(ts);
   test_vertex_paint(ts);
   test_vertex_smear_keeps_colour(ts);
+  test_vertex_smear_device_gesture(ts);
   test_vertex_select_mask(ts);
   test_vertex_paint_app_canvas(ts);
   test_weight_paint(ts);

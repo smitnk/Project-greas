@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write   # publishes the APK to the public "Latest build" release
+      actions: read     # reads the feature/l8-implementation debug APK for the size diff (#18)
     steps:
       - name: Checkout Project Grease
         uses: actions/checkout@v4
@@ -107,6 +108,9 @@ jobs:
 
       - name: Run native selection tests
         run: bash tools/run_native_select_tests.sh
+
+      - name: Run native 3D viewport tests
+        run: bash tools/run_native_view3d_tests.sh
 
       - name: Run native eraser tests
         run: bash tools/run_native_eraser_tests.sh
@@ -420,6 +424,23 @@ jobs:
           for f in android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/release/app-release-unsigned.apk; do
             echo "$(stat -c %s "$f") $(basename "$f") $(unzip -l "$f" | grep -o 'lib/[^ ]*\.so' | tr '\n' ' ')"
           done | tee build/qa/apk-sizes.txt
+
+      # #18: every entry of the debug APK against the feature/l8-implementation one, so growth is
+      # attributed to files (dex, .so per ABI, resources) in qa-results, not guessed
+      - name: Diff debug APK entries against feature/l8-implementation
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/qa build/l8apk
+          unzip -lv android/app/build/outputs/apk/debug/app-debug.apk | awk 'NR>3 && $8 {print $8, $1, $3}' | sort > build/qa/apk-entries-debug.txt
+          run=$(gh run list -R "$GITHUB_REPOSITORY" -b feature/l8-implementation -s success -L 1 --json databaseId -q '.[0].databaseId')
+          gh run download "$run" -R "$GITHUB_REPOSITORY" -n project-grease-debug-apk -D build/l8apk
+          unzip -lv build/l8apk/app-debug.apk | awk 'NR>3 && $8 {print $8, $1, $3}' | sort > build/qa/apk-entries-l8-debug.txt
+          echo "l8 $(stat -c %s build/l8apk/app-debug.apk) now $(stat -c %s android/app/build/outputs/apk/debug/app-debug.apk) bytes" | tee build/qa/apk-size-diff.txt
+          # name, l8 size / stored, now size / stored, growth: the 40 largest changes
+          join -a1 -a2 -e 0 -o 0,1.2,1.3,2.2,2.3 build/qa/apk-entries-l8-debug.txt build/qa/apk-entries-debug.txt |
+            awk '{d=$4-$2; if (d) print d, $0}' | sort -k1,1nr | head -40 | tee -a build/qa/apk-size-diff.txt
 
       # The APKs carry stripped .so files: keep the unstripped ones to symbolicate native crashes.
       - name: Upload unstripped native libraries

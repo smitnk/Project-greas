@@ -1068,6 +1068,23 @@ int main()
   }
   CHECK(b.document_generation() < Backend().document_generation());
 
+  /* --- lasso select: a fixed lasso over a zigzag picks the same points (bounding-box prefilter) --- */
+  {
+    Backend l;
+    CHECK(l.initialize() && l.create_document() && l.create_layer("L") && l.create_frame(1));
+    add_line(l, 100.0f, 100.0f); /* (100,100) (120,106) (140,100) (160,106) (180,100) */
+    add_line(l, 100.0f, 300.0f);
+    const float lasso[] = {110.0f, 90.0f, 170.0f, 90.0f, 170.0f, 110.0f, 110.0f, 110.0f};
+    CHECK(l.lasso_select(lasso, 4, false) == 1);
+    const bGPDstroke *s0 = static_cast<const bGPDstroke *>(
+        static_cast<const bGPDframe *>(l.active_layer_data()->frames.first)->strokes.first);
+    int mask = 0;
+    for (int i = 0; i < s0->totpoints; i++) mask |= (s0->points[i].flag & GP_SPOINT_SELECT) ? 1 << i : 0;
+    CHECK(mask == 0b01110);
+    CHECK(l.frame_selected_point_count() == 3);
+    l.shutdown();
+  }
+
   /* --- undo history bounds: 32 steps (U.undosteps) and a 4M stored-point budget --- */
   {
     Backend h;

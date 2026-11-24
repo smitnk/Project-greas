@@ -2103,31 +2103,6 @@ void Backend::clear_selection()
   project_grease_gp_tag(impl_->gpd);
 }
 
-static bool project_grease_point_in_polygon(float x, float y, const float *xy, int count)
-{
-  if (!xy || count < 3) {
-    return false;
-  }
-
-  /*
-   * Blender 3.6.23 Legacy GP lasso selection uses BLI_lasso_is_point_inside()
-   * after converting GP points to the selection space. Project Grease owns
-   * the Android canvas coordinate space, so the Android lasso coordinates and
-   * GP point coordinates are already in the same 2D space here.
-   */
-  std::vector<int> lasso_coords(static_cast<size_t>(count) * 2u);
-  for (int i = 0; i < count; ++i) {
-    lasso_coords[static_cast<size_t>(i) * 2u] = static_cast<int>(std::lround(xy[i * 2]));
-    lasso_coords[static_cast<size_t>(i) * 2u + 1u] = static_cast<int>(std::lround(xy[i * 2 + 1]));
-  }
-
-  return BLI_lasso_is_point_inside(reinterpret_cast<const int (*)[2]>(lasso_coords.data()),
-                                    count,
-                                    static_cast<int>(std::lround(x)),
-                                    static_cast<int>(std::lround(y)),
-                                    INT_MAX);
-}
-
 int Backend::lasso_select(const float *xy, int count, bool additive)
 {
   if (!impl_->frame || !xy || count < 3) {
@@ -2144,6 +2119,19 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
     clear_selection();
   }
 
+  /*
+   * Blender 3.6.23 Legacy GP lasso selection (gpencil_generic_select_lasso) builds the integer lasso
+   * and its BLI_lasso_boundbox once, then tests the box before BLI_lasso_is_point_inside.
+   * The Android lasso and GP points share the canvas space here.
+   */
+  std::vector<int> lasso_coords(static_cast<size_t>(count) * 2u);
+  for (int i = 0; i < count * 2; ++i) {
+    lasso_coords[static_cast<size_t>(i)] = static_cast<int>(std::lround(xy[i]));
+  }
+  const int(*mcoords)[2] = reinterpret_cast<const int(*)[2]>(lasso_coords.data());
+  rcti rect;
+  BLI_lasso_boundbox(&rect, mcoords, count);
+
   int selected = 0;
   for (bGPDstroke *stroke =
            static_cast<bGPDstroke *>(impl_->frame->strokes.first);
@@ -2159,7 +2147,11 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
 
     for (int i = 0; i < original_points; ++i) {
       bGPDspoint &point = stroke->points[i];
-      if (project_grease_point_in_polygon(point.x, point.y, xy, count)) {
+      const int x0 = static_cast<int>(std::lround(point.x));
+      const int y0 = static_cast<int>(std::lround(point.y));
+      // BLI_rcti_isect_pt inline: rct.c is not in the Android blenlib build.
+      if (x0 >= rect.xmin && x0 <= rect.xmax && y0 >= rect.ymin && y0 <= rect.ymax &&
+          BLI_lasso_is_point_inside(mcoords, count, x0, y0, INT_MAX)) {
         point.flag |= GP_SPOINT_SELECT;
         stroke_hit = true;
         ++inside_points;

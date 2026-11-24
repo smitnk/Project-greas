@@ -1620,7 +1620,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
         if(toolbarHidden) Box(Modifier.align(Alignment.CenterStart).padding(start=2.dp).testTag("toolbarShow")){
             FloatingIcon(PgIcons.ChevronRight,"Show tools"){toolbarHidden=false}
         }
-        if(!toolbarHidden) Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp,top=60.dp,bottom=60.dp).testTag("studioToolbar"),
+        if(!toolbarHidden) Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp,top=60.dp,bottom=if(stripOpen&&!timelineFull)116.dp else 60.dp).testTag("studioToolbar"),
             shape=RoundedCornerShape(24.dp),tonalElevation=6.dp,shadowElevation=4.dp){
             // scrolls on short screens and at large text sizes, so no tool is ever cut off
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){

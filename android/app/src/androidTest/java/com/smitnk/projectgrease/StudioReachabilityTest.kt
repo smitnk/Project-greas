@@ -32,7 +32,7 @@ class StudioReachabilityTest : SweepBase() {
         listOf("Brush", "Eraser", "Lasso", "Fill", "Brush size", "Layers", "Perspective", "Options")
             .forEach { rule.onNodeWithTag("studioTool_$it").performScrollTo().assertHasClickAction() }
         rule.onNodeWithTag("studioColor").performScrollTo().assertHasClickAction()
-        rule.onNodeWithTag("toolbarHide").performClick(); rule.onNodeWithTag("toolbarShow").assertExists()
+        rule.onNodeWithTag("toolbarHide").performScrollTo().performClick(); rule.onNodeWithTag("toolbarShow").assertExists()
     }
 
     @Test fun popupsReachable() {

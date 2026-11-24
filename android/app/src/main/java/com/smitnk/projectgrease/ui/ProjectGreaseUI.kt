@@ -446,9 +446,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         controller.onUiChanged={redraw()}
         controller.onMessage={toast(context,it)}
         controller.useBlenderRenderer=context.getSharedPreferences("project_grease_settings",android.content.Context.MODE_PRIVATE).getBoolean("blender_renderer",true)
-        controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
+        val rotoscopeLoader=RotoscopeLoader(context.applicationContext)
+        controller.rotoscopeLoader=rotoscopeLoader
         controller.audioPlayback=AudioPlayback(context.applicationContext)
-        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null;controller.audioPlayback?.release();controller.audioPlayback=null}
+        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null;rotoscopeLoader.release();controller.audioPlayback?.release();controller.audioPlayback=null}
     }
     // One UI: the full-screen canvas with the floating toolbar, option popups, the layer panel with
     // each layer's Advanced panel, the frame strip, and one menu for everything else.

@@ -35,6 +35,8 @@ class RotoscopeLoader(private val context: Context) {
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "pg-roto-decode").apply { isDaemon = true } }
     /** Names of the threads that decoded: one only, since the retrievers and the decoder are not shared across threads. */
     internal val decodeThreads: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet<String>())
+    /** Stops the worker and frees the decoders; call when the editor is left. */
+    fun release() { worker.shutdownNow(); retriever?.release(); exportRetriever?.release() }
     /** Runs a decode on the one worker thread and waits (the sync entry points used to decode on the caller's thread, racing the worker). */
     private fun <T> onWorker(block: () -> T): T =
         try { worker.submit(java.util.concurrent.Callable { block() }).get() } catch (e: java.util.concurrent.ExecutionException) { throw e.cause ?: e }

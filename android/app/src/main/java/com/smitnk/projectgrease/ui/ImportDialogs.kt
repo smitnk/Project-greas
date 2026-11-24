@@ -23,6 +23,7 @@ fun rememberSvgImport(controller: EditorController, context: Context, onDone: ()
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             // read off the main thread; a file over the cap is refused before it is held in memory
+            var tooBig = false
             val text = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openInputStream(uri)?.use { s ->
@@ -32,13 +33,13 @@ fun rememberSvgImport(controller: EditorController, context: Context, onDone: ()
                             val n = s.read(chunk)
                             if (n < 0) break
                             out.write(chunk, 0, n)
-                            if (out.size() > MAX_SVG_BYTES) return@runCatching ""
+                            if (out.size() > MAX_SVG_BYTES) { tooBig = true; return@runCatching null }
                         }
                         out.toString(Charsets.UTF_8.name())
                     }
                 }.getOrNull()
             }
-            if (text != null && text.isEmpty()) toast(context, "SVG is too large (limit 20 MB)")
+            if (tooBig) toast(context, "SVG is too large (limit 20 MB)")
             else {
                 val count = if (text == null) 0 else controller.importSvg(text)
                 toast(context, if (count > 0) "Imported $count strokes" else "Nothing imported")

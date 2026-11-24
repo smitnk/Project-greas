@@ -120,6 +120,8 @@ int pg_gles_api(void)
   if (!v) return 0;
   if (std::sscanf(v, "OpenGL ES %d.%d", &maj, &min) != 2) return g_api = 0;
   const char *force = std::getenv("PG_FORCE_GLES31");
+  // PG_FORCE_GLES30=1: Mesa hands out 3.2 for a 3.0 request; the host test of the emulator's path
+  if (const char *f30 = std::getenv("PG_FORCE_GLES30"); f30 && f30[0] == '1') return g_api = 0;
   const bool es32 = (maj > 3 || (maj == 3 && min >= 2)) && !(force && force[0] == '1');
   if (es32) {
     // core ES 3.2 entry points, linked from libGLESv3 as before the 3.1 path; some drivers return

@@ -100,7 +100,7 @@ fun ProjectGreaseEglViewport(
     }
     TransformOverlay(controller, Modifier.matchParentSize())
     com.smitnk.projectgrease.ui.RigHandleOverlay(controller, Modifier.matchParentSize())
-    View3DBar(controller, Modifier.align(androidx.compose.ui.Alignment.BottomEnd)) // Camera / 3D switch
+    View3DBar(controller, Modifier.align(androidx.compose.ui.Alignment.TopEnd)) // Camera / 3D switch
   }
 }
 

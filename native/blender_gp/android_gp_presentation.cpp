@@ -2083,6 +2083,10 @@ if(alive&&g_cfg->gl.vbo)glDeleteBuffers(1,&g_cfg->gl.vbo);if(alive&&g_cfg->gl.pr
   if(alive&&g_cfg->gl.ref_prog)glDeleteProgram(g_cfg->gl.ref_prog);if(alive&&g_cfg->gl.ref_vbo)glDeleteBuffers(1,&g_cfg->gl.ref_vbo);g_cfg->gl.ref_prog=0;g_cfg->gl.ref_vbo=0;
   for(auto&r:g_cfg->gl.refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
   if(alive&&g_v3d.grid_prog)glDeleteProgram(g_v3d.grid_prog);if(alive&&g_v3d.grid_vbo)glDeleteBuffers(1,&g_v3d.grid_vbo);g_v3d.grid_prog=0;g_v3d.grid_vbo=0;
+  // bone programs / buffers (android_gp_armature_overlay.inc) were kept: the next context drew no bones
+  if(alive){const GLuint p[3]={g_arm.solid,g_arm.outline,g_arm.stick};for(GLuint q:p)if(q)glDeleteProgram(q);
+    const GLuint vb[3]={g_arm.solid_vbo,g_arm.outline_vbo,g_arm.stick_vbo};glDeleteBuffers(3,vb);}
+  g_arm=ArmGL{};
   if(alive)project_grease_fx_reset();else project_grease_fx_context_lost();}
 extern "C" void* project_grease_android_present_config_new(){return new PresentConfig();}
 extern "C" void project_grease_android_present_config_free(void*cfg){if(cfg==g_cfg)g_cfg=&g_default_cfg;delete static_cast<PresentConfig*>(cfg);}

@@ -35,8 +35,10 @@
 #include "DNA_armature_types.h"
 
 extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
+extern "C" void project_grease_android_present_reset();
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_view3d_set_active(int active);
+extern "C" void project_grease_view3d_reset();
 extern "C" void project_grease_view3d_set_axis_view(int view);
 extern "C" void project_grease_view3d_orbit(float dx, float dy, float ui_scale);
 extern "C" void project_grease_view3d_zoom(float dfac, float sx, float sy);
@@ -81,7 +83,9 @@ static bool init_gl()
   if (!eglChooseConfig(d, ca, &cfg, 1, &n) || n == 0) return false;
   const EGLint pa[] = {EGL_WIDTH, W, EGL_HEIGHT, H, EGL_NONE};
   EGLSurface s = eglCreatePbufferSurface(d, cfg, pa);
-  const EGLint xa[] = {EGL_CONTEXT_MAJOR_VERSION_KHR, 3, EGL_CONTEXT_MINOR_VERSION_KHR, 2, EGL_NONE};
+  const char *es30 = std::getenv("PG_FORCE_GLES30");
+  const EGLint minor = (es30 && es30[0] == '1') ? 0 : 2;
+  const EGLint xa[] = {EGL_CONTEXT_MAJOR_VERSION_KHR, 3, EGL_CONTEXT_MINOR_VERSION_KHR, minor, EGL_NONE};
   EGLContext c = eglCreateContext(d, cfg, EGL_NO_CONTEXT, xa);
   if (s == EGL_NO_SURFACE || c == EGL_NO_CONTEXT) return false;
   if (!eglMakeCurrent(d, s, s, c)) return false;
@@ -172,11 +176,245 @@ static void dump(const char *what, int x, int y)
   std::printf("  %s (%d,%d) = %.3f %.3f %.3f %.3f\n", what, x, y, c[0], c[1], c[2], c[3]);
 }
 
+/* 8b + L10 9: the 3D view and the bone overlay; run on the engine path (GLES 3.2 / 3.1) and on the
+ * presenter path (PG_FORCE_GLES30: a GLES 3.0 context, engine off, as on the CI emulator). */
+static void view3d_and_rig(bGPdata *gpd)
+{
+  /* 8b. The 3D viewport (android_gp_view3d.inc): the Camera view is the 2D frame, pixel for pixel;
+   * the 3D view draws the grid and the strokes through the view matrices; a stroke drawn in 3D is
+   * placed on its drawing plane. */
+  {
+    std::vector<unsigned char> cam0((size_t)W * H * 4), cam1((size_t)W * H * 4), v3((size_t)W * H * 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); glViewport(0, 0, W, H);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam0.data());
+    project_grease_view3d_set_active(1);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1); /* sizes the region */
+    project_grease_view3d_zoom(0.15f, W * 0.5f, H * 0.5f); /* the 0.2 unit wide canvas fills the view */
+    for (int view : {1 /* Front */, 0 /* user perspective */}) {
+      if (view) project_grease_view3d_set_axis_view(view); else project_grease_view3d_orbit(40.0f, 25.0f, 1.0f);
+      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, v3.data());
+      float s[2] = {0, 0};
+      CHECK(project_grease_view3d_canvas_to_screen(50, 30, 0, s) == 1); /* on the line, off the cursor */
+      const int sx = int(s[0]), sy = H - 1 - int(s[1]);
+      unsigned char c[4] = {};
+      int darkest = 255;
+      for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++) {
+          if (sx + dx < 0 || sx + dx >= W || sy + dy < 0 || sy + dy >= H) continue;
+          glReadPixels(sx + dx, sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+          darkest = std::min(darkest, int(c[0]));
+        }
+      std::printf("  3D view %d: line at %.1f %.1f darkest %d (background 61)\n", view, s[0], s[1], darkest);
+      CHECK(darkest < 40);
+      CHECK(std::memcmp(v3.data(), cam0.data(), v3.size()) != 0);
+      /* the grid's X axis line (red, colorGridAxisX) */
+      int red = 0;
+      for (size_t i = 0; i < v3.size(); i += 4) red += (v3[i] > v3[i + 1] + 30 && v3[i] > v3[i + 2] + 30) ? 1 : 0;
+      std::printf("  3D view %d: %d red axis pixels\n", view, red);
+      CHECK(red > 20);
+    }
+    /* Front X-Z / Top X-Y planes through the origin (Origin placement): a stroke sampled through the
+     * 2D map lands under the same screen points, on the plane. */
+    {
+      bGPDstroke s3{};
+      bGPDspoint pts[2] = {};
+      pts[0].x = 60; pts[0].y = 40; pts[1].x = 140; pts[1].y = 90;
+      s3.points = pts; s3.totpoints = 2;
+      for (int lock : {2 /* Y: Front */, 3 /* Z: Top */}) {
+        pts[0].x = 60; pts[0].y = 40; pts[0].z = 0; pts[1].x = 140; pts[1].y = 90; pts[1].z = 0;
+        project_grease_view3d_set_placement(1 /* GP_PROJECT_VIEWSPACE */, lock);
+        project_grease_view3d_stroke_done(gpd, &s3);
+        std::printf("  plane %d: %.2f %.2f %.2f / %.2f %.2f %.2f\n", lock, pts[0].x, pts[0].y, pts[0].z, pts[1].x, pts[1].y, pts[1].z);
+        if (lock == 2) CHECK(std::fabs(pts[0].z) < 1e-2f && std::fabs(pts[1].z) < 1e-2f);
+        if (lock == 3) CHECK(std::fabs(pts[0].y - H * 0.5f) < 1e-2f && std::fabs(pts[1].y - H * 0.5f) < 1e-2f);
+      }
+      s3.points = nullptr;
+    }
+    project_grease_view3d_set_active(0);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam1.data());
+    CHECK(std::memcmp(cam0.data(), cam1.data(), cam0.size()) == 0);
+  }
+
+  /* L10 9. Armature overlay (android_gp_armature_overlay.inc, overlay_armature.cc): a 3-bone rig in
+   * Octahedral and Stick display, 2D Camera view and 3D view. Bone 2 is active + selected, bone 1
+   * selected, bone 0 neither and lies on the black stroke (y 30) for In Front. Colours are the
+   * default theme's (DRW_globals_update). */
+  {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, W, H);
+    PGArmature *a = pg_arm_new();
+    const float ys[3] = {30, 60, 90};
+    for (float y : ys) {
+      float hp[3] = {60, y, 0}, tp[3] = {140, y, 0}, h3[3], t3[3];
+      pg_arm_canvas_to_arm(hp, h3);
+      pg_arm_canvas_to_arm(tp, t3);
+      pg_arm_bone_add(a, "Bone", h3, t3);
+    }
+    pg_arm_register(gpd, a);
+    std::vector<unsigned char> img((size_t)W * H * 4);
+    float ox = 0, oy = 0, sc = 1;
+    bool v3d = false;
+    auto frame = [&]() {
+      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
+      int pw, ph;
+      if (const char *dir = std::getenv("PG_RIG_DUMP"); dir && *dir) {
+        static int k = 0;
+        char path[512];
+        std::snprintf(path, sizeof path, "%s/rig%02d.ppm", dir, k++);
+        if (FILE *fp = std::fopen(path, "wb")) {
+          std::fprintf(fp, "P6 %d %d 255\n", W, H);
+          for (int y = H - 1; y >= 0; y--)
+            for (int x = 0; x < W; x++) std::fwrite(&img[((size_t)y * W + x) * 4], 1, 3, fp);
+          std::fclose(fp);
+        }
+      }
+      if (!v3d) CHECK(std::sscanf(std::strstr(project_grease_android_present_last_frame(), "paper "), "paper %dx%d at %f,%f x%f", &pw, &ph, &ox, &oy, &sc) == 5);
+    };
+    auto screen = [&](float cx, float cy, float r[2]) { /* canvas px -> window px, y down */
+      if (v3d) CHECK(project_grease_view3d_canvas_to_screen(cx, cy, 0, r) == 1);
+      else r[0] = ox + cx * sc, r[1] = oy + cy * sc;
+    };
+    /* pixels near colour c (tolerance 14) within 9 px of bone b */
+    auto count = [&](int b, const int c[3]) {
+      float s0[2], s1[2];
+      screen(60, ys[b], s0);
+      screen(140, ys[b], s1);
+      int n = 0;
+      for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+          const float dx = s1[0] - s0[0], dy = s1[1] - s0[1], l2 = dx * dx + dy * dy;
+          float t = ((x - s0[0]) * dx + (y - s0[1]) * dy) / l2;
+          t = std::clamp(t, 0.0f, 1.0f);
+          if (std::hypot(x - s0[0] - t * dx, y - s0[1] - t * dy) > 9.0f) continue;
+          const unsigned char *p = &img[((size_t)(H - 1 - y) * W + x) * 4];
+          if (std::abs(p[0] - c[0]) <= 14 && std::abs(p[1] - c[1]) <= 14 && std::abs(p[2] - c[2]) <= 14) n++;
+        }
+      return n;
+    };
+    auto centre = [&](int b) { /* the pixel at the bone's widest point (local y 0.1) */
+      float s[2];
+      screen(68, ys[b], s);
+      return &img[((size_t)(H - 1 - int(s[1] + 0.5f)) * W + int(s[0] + 0.5f)) * 4];
+    };
+    const int C_ACT[3] = {255, 220, 60}, C_SEL[3] = {235, 140, 0}, C_VSEL[3] = {255, 122, 0};
+    const int C_PACT[3] = {140, 255, 255}, C_PSEL[3] = {80, 200, 255};
+    auto select_rig = [&]() {
+      if (pg_arm_mode(a) == PG_ARM_MODE_EDIT) {
+        pg_arm_edit_select(a, 1, BONE_SELECTED, false);
+        pg_arm_edit_select(a, 2, BONE_SELECTED, true);
+      }
+      else {
+        pg_arm_pose_select(a, 1, false);
+        pg_arm_pose_select(a, 2, true);
+      }
+      CHECK(pg_arm_active_bone(a) == 2);
+    };
+    for (int pass = 0; pass < 2; pass++) {
+      v3d = pass == 1;
+      if (v3d) {
+        project_grease_view3d_set_active(1);
+        CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+        project_grease_view3d_set_axis_view(1); /* Front */
+        project_grease_view3d_zoom(0.4f, W * 0.5f, H * 0.5f);
+      }
+      for (int drawtype : {ARM_OCTA, ARM_LINE}) {
+        pg_arm_set_display(a, drawtype, true); /* over the earlier tests' strokes */
+        /* edit mode */
+        pg_arm_set_mode(a, PG_ARM_MODE_EDIT);
+        select_rig();
+        frame();
+        const int e_act[3] = {count(0, C_ACT), count(1, C_ACT), count(2, C_ACT)};
+        const int e_sel[3] = {count(0, C_SEL), count(1, C_SEL), count(2, C_SEL)};
+        const int e_vs[3] = {count(0, C_VSEL), count(1, C_VSEL), count(2, C_VSEL)};
+        std::printf("  rig %s %s edit: active %d %d %d, select %d %d %d, joint select %d %d %d\n", v3d ? "3D" : "2D",
+                    drawtype == ARM_OCTA ? "octahedral" : "stick", e_act[0], e_act[1], e_act[2], e_sel[0], e_sel[1],
+                    e_sel[2], e_vs[0], e_vs[1], e_vs[2]);
+        CHECK(e_act[0] == 0 && e_sel[0] == 0 && e_vs[0] == 0); /* the normal bone: black wire, grey solid */
+        CHECK(e_vs[1] > 3 && e_vs[2] > 3);                     /* selected head / tail joints */
+        if (drawtype == ARM_OCTA) {
+          CHECK(e_act[2] > 10 && e_act[1] == 0); /* active outline */
+          CHECK(e_sel[1] > 10 && e_sel[2] == 0); /* selected outline */
+          const unsigned char *c = centre(1);
+          std::printf("    solid at bone 1: %d %d %d\n", c[0], c[1], c[2]);
+          CHECK(std::abs(c[0] - c[1]) < 6 && std::abs(c[1] - c[2]) < 6 && c[0] > 60 && c[0] < 200); /* lit bone_solid */
+        }
+        else {
+          CHECK(e_act[1] > 10 && e_act[2] > 10); /* draw_bone_line: a selected edit bone is color_bone_active */
+        }
+        /* pose mode */
+        pg_arm_set_mode(a, PG_ARM_MODE_POSE);
+        select_rig();
+        frame();
+        const int p_act[3] = {count(0, C_PACT), count(1, C_PACT), count(2, C_PACT)};
+        const int p_sel[3] = {count(0, C_PSEL), count(1, C_PSEL), count(2, C_PSEL)};
+        std::printf("  rig %s %s pose: active %d %d %d, select %d %d %d\n", v3d ? "3D" : "2D",
+                    drawtype == ARM_OCTA ? "octahedral" : "stick", p_act[0], p_act[1], p_act[2], p_sel[0], p_sel[1], p_sel[2]);
+        CHECK(p_act[2] > 10 && p_act[0] == 0 && p_act[1] == 0);
+        CHECK(p_sel[1] > 10 && p_sel[0] == 0 && p_sel[2] == 0);
+      }
+      /* In Front: bone 0 lies under the black stroke unless it is drawn in front */
+      pg_arm_set_display(a, ARM_OCTA, false);
+      frame();
+      const unsigned char *c = centre(0);
+      std::printf("  rig %s in front off: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
+      CHECK(c[0] < 40);
+      pg_arm_set_display(a, ARM_OCTA, true);
+      frame();
+      c = centre(0);
+      std::printf("  rig %s in front on: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
+      CHECK(c[0] > 60);
+    }
+    project_grease_view3d_set_active(0);
+    pg_arm_register(gpd, nullptr);
+    pg_arm_free(a);
+    CHECK(glGetError() == GL_NO_ERROR);
+  }
+}
+
 int main()
 {
   if (!init_gl()) {
     std::printf("FAIL: no OpenGL ES 3.2 context (EGL surfaceless)\n");
     return 1;
+  }
+  if (const char *es30 = std::getenv("PG_FORCE_GLES30"); es30 && es30[0] == '1') {
+    /* GLES 3.0 (SwiftShader on the CI emulator): no engine, the presenter draws the 3D view and bones */
+    CHECK(pg_gles_api() == 0);
+    bGPdata *gpd = make_doc();
+    bGPDframe *f = BKE_gpencil_frame_addnew(BKE_gpencil_layer_addnew(gpd, "Lines", true, false), 1);
+    const float line[2][2] = {{20, 30}, {180, 30}};
+    add_stroke(gpd, f, 0, line, 2, 20, false);
+    project_grease_android_present_set_canvas_size(W, H);
+    glViewport(0, 0, W, H);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    CHECK(project_grease_android_present_engine_active() == 0);
+    view3d_and_rig(gpd);
+    /* the editor surface comes back with a new context (every activity on the emulator): the bones and
+     * the 3D view must draw again (stale bone programs drew nothing) */
+    project_grease_android_present_reset();
+    EGLDisplay d = eglGetCurrentDisplay();
+    EGLContext old_ctx = eglGetCurrentContext();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    EGLConfig cfg;
+    EGLint n = 0;
+    const EGLint ca[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT_KHR,
+                         EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+                         EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8, EGL_NONE};
+    eglChooseConfig(d, ca, &cfg, 1, &n);
+    const EGLint xa[] = {EGL_CONTEXT_MAJOR_VERSION_KHR, 3, EGL_CONTEXT_MINOR_VERSION_KHR, 0, EGL_NONE};
+    EGLContext fresh = eglCreateContext(d, cfg, EGL_NO_CONTEXT, xa);
+    CHECK(fresh != EGL_NO_CONTEXT && eglMakeCurrent(d, surf, surf, fresh));
+    eglDestroyContext(d, old_ctx);
+    glViewport(0, 0, W, H);
+    std::printf("  after a new context:\n");
+    project_grease_view3d_reset(); /* the view of the first pass (zoom / orbit) as the app's nativeReset */
+    view3d_and_rig(gpd);
+    std::printf(failures ? "%d FAILURES (GLES 3.0 presenter)\n" : "OK (GLES 3.0 presenter)\n", failures);
+    return failures ? 1 : 0;
   }
   {
     const char *force = std::getenv("PG_FORCE_GLES31");
@@ -409,199 +647,7 @@ int main()
     CHECK(std::abs(c[0] - 245) <= 3);
   }
 
-  /* 8b. The 3D viewport (android_gp_view3d.inc): the Camera view is the 2D frame, pixel for pixel;
-   * the 3D view draws the grid and the strokes through the view matrices; a stroke drawn in 3D is
-   * placed on its drawing plane. */
-  {
-    std::vector<unsigned char> cam0((size_t)W * H * 4), cam1((size_t)W * H * 4), v3((size_t)W * H * 4);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0); glViewport(0, 0, W, H);
-    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
-    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam0.data());
-    project_grease_view3d_set_active(1);
-    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1); /* sizes the region */
-    project_grease_view3d_zoom(0.15f, W * 0.5f, H * 0.5f); /* the 0.2 unit wide canvas fills the view */
-    for (int view : {1 /* Front */, 0 /* user perspective */}) {
-      if (view) project_grease_view3d_set_axis_view(view); else project_grease_view3d_orbit(40.0f, 25.0f, 1.0f);
-      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
-      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, v3.data());
-      float s[2] = {0, 0};
-      CHECK(project_grease_view3d_canvas_to_screen(50, 30, 0, s) == 1); /* on the line, off the cursor */
-      const int sx = int(s[0]), sy = H - 1 - int(s[1]);
-      unsigned char c[4] = {};
-      int darkest = 255;
-      for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++) {
-          if (sx + dx < 0 || sx + dx >= W || sy + dy < 0 || sy + dy >= H) continue;
-          glReadPixels(sx + dx, sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
-          darkest = std::min(darkest, int(c[0]));
-        }
-      std::printf("  3D view %d: line at %.1f %.1f darkest %d (background 61)\n", view, s[0], s[1], darkest);
-      CHECK(darkest < 40);
-      CHECK(std::memcmp(v3.data(), cam0.data(), v3.size()) != 0);
-      /* the grid's X axis line (red, colorGridAxisX) */
-      int red = 0;
-      for (size_t i = 0; i < v3.size(); i += 4) red += (v3[i] > v3[i + 1] + 30 && v3[i] > v3[i + 2] + 30) ? 1 : 0;
-      std::printf("  3D view %d: %d red axis pixels\n", view, red);
-      CHECK(red > 20);
-    }
-    /* Front X-Z / Top X-Y planes through the origin (Origin placement): a stroke sampled through the
-     * 2D map lands under the same screen points, on the plane. */
-    {
-      bGPDstroke s3{};
-      bGPDspoint pts[2] = {};
-      pts[0].x = 60; pts[0].y = 40; pts[1].x = 140; pts[1].y = 90;
-      s3.points = pts; s3.totpoints = 2;
-      for (int lock : {2 /* Y: Front */, 3 /* Z: Top */}) {
-        pts[0].x = 60; pts[0].y = 40; pts[0].z = 0; pts[1].x = 140; pts[1].y = 90; pts[1].z = 0;
-        project_grease_view3d_set_placement(1 /* GP_PROJECT_VIEWSPACE */, lock);
-        project_grease_view3d_stroke_done(gpd, &s3);
-        std::printf("  plane %d: %.2f %.2f %.2f / %.2f %.2f %.2f\n", lock, pts[0].x, pts[0].y, pts[0].z, pts[1].x, pts[1].y, pts[1].z);
-        if (lock == 2) CHECK(std::fabs(pts[0].z) < 1e-2f && std::fabs(pts[1].z) < 1e-2f);
-        if (lock == 3) CHECK(std::fabs(pts[0].y - H * 0.5f) < 1e-2f && std::fabs(pts[1].y - H * 0.5f) < 1e-2f);
-      }
-      s3.points = nullptr;
-    }
-    project_grease_view3d_set_active(0);
-    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
-    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam1.data());
-    CHECK(std::memcmp(cam0.data(), cam1.data(), cam0.size()) == 0);
-  }
-
-  /* L10 9. Armature overlay (android_gp_armature_overlay.inc, overlay_armature.cc): a 3-bone rig in
-   * Octahedral and Stick display, 2D Camera view and 3D view. Bone 2 is active + selected, bone 1
-   * selected, bone 0 neither and lies on the black stroke (y 30) for In Front. Colours are the
-   * default theme's (DRW_globals_update). */
-  {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, W, H);
-    PGArmature *a = pg_arm_new();
-    const float ys[3] = {30, 60, 90};
-    for (float y : ys) {
-      float hp[3] = {60, y, 0}, tp[3] = {140, y, 0}, h3[3], t3[3];
-      pg_arm_canvas_to_arm(hp, h3);
-      pg_arm_canvas_to_arm(tp, t3);
-      pg_arm_bone_add(a, "Bone", h3, t3);
-    }
-    pg_arm_register(gpd, a);
-    std::vector<unsigned char> img((size_t)W * H * 4);
-    float ox = 0, oy = 0, sc = 1;
-    bool v3d = false;
-    auto frame = [&]() {
-      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
-      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
-      int pw, ph;
-      if (const char *dir = std::getenv("PG_RIG_DUMP"); dir && *dir) {
-        static int k = 0;
-        char path[512];
-        std::snprintf(path, sizeof path, "%s/rig%02d.ppm", dir, k++);
-        if (FILE *fp = std::fopen(path, "wb")) {
-          std::fprintf(fp, "P6 %d %d 255\n", W, H);
-          for (int y = H - 1; y >= 0; y--)
-            for (int x = 0; x < W; x++) std::fwrite(&img[((size_t)y * W + x) * 4], 1, 3, fp);
-          std::fclose(fp);
-        }
-      }
-      if (!v3d) CHECK(std::sscanf(std::strstr(project_grease_android_present_last_frame(), "paper "), "paper %dx%d at %f,%f x%f", &pw, &ph, &ox, &oy, &sc) == 5);
-    };
-    auto screen = [&](float cx, float cy, float r[2]) { /* canvas px -> window px, y down */
-      if (v3d) CHECK(project_grease_view3d_canvas_to_screen(cx, cy, 0, r) == 1);
-      else r[0] = ox + cx * sc, r[1] = oy + cy * sc;
-    };
-    /* pixels near colour c (tolerance 14) within 9 px of bone b */
-    auto count = [&](int b, const int c[3]) {
-      float s0[2], s1[2];
-      screen(60, ys[b], s0);
-      screen(140, ys[b], s1);
-      int n = 0;
-      for (int y = 0; y < H; y++)
-        for (int x = 0; x < W; x++) {
-          const float dx = s1[0] - s0[0], dy = s1[1] - s0[1], l2 = dx * dx + dy * dy;
-          float t = ((x - s0[0]) * dx + (y - s0[1]) * dy) / l2;
-          t = std::clamp(t, 0.0f, 1.0f);
-          if (std::hypot(x - s0[0] - t * dx, y - s0[1] - t * dy) > 9.0f) continue;
-          const unsigned char *p = &img[((size_t)(H - 1 - y) * W + x) * 4];
-          if (std::abs(p[0] - c[0]) <= 14 && std::abs(p[1] - c[1]) <= 14 && std::abs(p[2] - c[2]) <= 14) n++;
-        }
-      return n;
-    };
-    auto centre = [&](int b) { /* the pixel at the bone's widest point (local y 0.1) */
-      float s[2];
-      screen(68, ys[b], s);
-      return &img[((size_t)(H - 1 - int(s[1] + 0.5f)) * W + int(s[0] + 0.5f)) * 4];
-    };
-    const int C_ACT[3] = {255, 220, 60}, C_SEL[3] = {235, 140, 0}, C_VSEL[3] = {255, 122, 0};
-    const int C_PACT[3] = {140, 255, 255}, C_PSEL[3] = {80, 200, 255};
-    auto select_rig = [&]() {
-      if (pg_arm_mode(a) == PG_ARM_MODE_EDIT) {
-        pg_arm_edit_select(a, 1, BONE_SELECTED, false);
-        pg_arm_edit_select(a, 2, BONE_SELECTED, true);
-      }
-      else {
-        pg_arm_pose_select(a, 1, false);
-        pg_arm_pose_select(a, 2, true);
-      }
-      CHECK(pg_arm_active_bone(a) == 2);
-    };
-    for (int pass = 0; pass < 2; pass++) {
-      v3d = pass == 1;
-      if (v3d) {
-        project_grease_view3d_set_active(1);
-        CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
-        project_grease_view3d_set_axis_view(1); /* Front */
-        project_grease_view3d_zoom(0.4f, W * 0.5f, H * 0.5f);
-      }
-      for (int drawtype : {ARM_OCTA, ARM_LINE}) {
-        pg_arm_set_display(a, drawtype, true); /* over the earlier tests' strokes */
-        /* edit mode */
-        pg_arm_set_mode(a, PG_ARM_MODE_EDIT);
-        select_rig();
-        frame();
-        const int e_act[3] = {count(0, C_ACT), count(1, C_ACT), count(2, C_ACT)};
-        const int e_sel[3] = {count(0, C_SEL), count(1, C_SEL), count(2, C_SEL)};
-        const int e_vs[3] = {count(0, C_VSEL), count(1, C_VSEL), count(2, C_VSEL)};
-        std::printf("  rig %s %s edit: active %d %d %d, select %d %d %d, joint select %d %d %d\n", v3d ? "3D" : "2D",
-                    drawtype == ARM_OCTA ? "octahedral" : "stick", e_act[0], e_act[1], e_act[2], e_sel[0], e_sel[1],
-                    e_sel[2], e_vs[0], e_vs[1], e_vs[2]);
-        CHECK(e_act[0] == 0 && e_sel[0] == 0 && e_vs[0] == 0); /* the normal bone: black wire, grey solid */
-        CHECK(e_vs[1] > 3 && e_vs[2] > 3);                     /* selected head / tail joints */
-        if (drawtype == ARM_OCTA) {
-          CHECK(e_act[2] > 10 && e_act[1] == 0); /* active outline */
-          CHECK(e_sel[1] > 10 && e_sel[2] == 0); /* selected outline */
-          const unsigned char *c = centre(1);
-          std::printf("    solid at bone 1: %d %d %d\n", c[0], c[1], c[2]);
-          CHECK(std::abs(c[0] - c[1]) < 6 && std::abs(c[1] - c[2]) < 6 && c[0] > 60 && c[0] < 200); /* lit bone_solid */
-        }
-        else {
-          CHECK(e_act[1] > 10 && e_act[2] > 10); /* draw_bone_line: a selected edit bone is color_bone_active */
-        }
-        /* pose mode */
-        pg_arm_set_mode(a, PG_ARM_MODE_POSE);
-        select_rig();
-        frame();
-        const int p_act[3] = {count(0, C_PACT), count(1, C_PACT), count(2, C_PACT)};
-        const int p_sel[3] = {count(0, C_PSEL), count(1, C_PSEL), count(2, C_PSEL)};
-        std::printf("  rig %s %s pose: active %d %d %d, select %d %d %d\n", v3d ? "3D" : "2D",
-                    drawtype == ARM_OCTA ? "octahedral" : "stick", p_act[0], p_act[1], p_act[2], p_sel[0], p_sel[1], p_sel[2]);
-        CHECK(p_act[2] > 10 && p_act[0] == 0 && p_act[1] == 0);
-        CHECK(p_sel[1] > 10 && p_sel[0] == 0 && p_sel[2] == 0);
-      }
-      /* In Front: bone 0 lies under the black stroke unless it is drawn in front */
-      pg_arm_set_display(a, ARM_OCTA, false);
-      frame();
-      const unsigned char *c = centre(0);
-      std::printf("  rig %s in front off: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
-      CHECK(c[0] < 40);
-      pg_arm_set_display(a, ARM_OCTA, true);
-      frame();
-      c = centre(0);
-      std::printf("  rig %s in front on: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
-      CHECK(c[0] > 60);
-    }
-    project_grease_view3d_set_active(0);
-    pg_arm_register(gpd, nullptr);
-    pg_arm_free(a);
-    CHECK(glGetError() == GL_NO_ERROR);
-  }
+  view3d_and_rig(gpd);
 
   /* 9. A photo reference on the engine path (reported: imported photos never showed): a red image
    * at full opacity covers the paper, the engine drawing (clear background) stays on top. */

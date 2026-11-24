@@ -2,9 +2,9 @@ package com.smitnk.projectgrease.nativebridge
 
 import android.view.MotionEvent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -188,13 +188,14 @@ fun View3DBar(controller: EditorController, modifier: Modifier = Modifier) {
     @Composable
     fun B(label: String, tag: String, onClick: () -> Unit) =
         TextButton(onClick = { onClick(); controller.render() }, modifier = Modifier.testTag(tag)) { Text(label, fontSize = 12.sp, color = Color.White) }
-    Row(
-        modifier.padding(6.dp).background(Color(0xAA303030), RoundedCornerShape(8.dp)).horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(0.dp)
+    // a column from the top right: at the bottom the bar lay under the timeline, so taps never reached it
+    Column(
+        modifier.padding(6.dp).background(Color(0xAA303030), RoundedCornerShape(8.dp)).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         if (!View3DUi.active) {
             B("3D", "view3dToggle") { View3DUi.setActive(true, controller) }
-            return@Row
+            return@Column
         }
         B("0 Camera", "view3dToggle") { View3DUi.setActive(false, controller) }
         B("1 Front", "view3dFront") { View3DNative.nativeSetAxisView(View3DNative.VIEW_FRONT); View3DUi.persp = false }

@@ -40,3 +40,6 @@ PG_DRW_TRACE=1 EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$O
 # the OpenGL ES 3.1 path (3.1 context features through extensions, ESSL 3.10 shaders) on the same driver
 echo "--- OpenGL ES 3.1 path (PG_FORCE_GLES31) ---"
 PG_FORCE_GLES31=1 EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$OUT/test_l8_render"
+# GLES 3.0 (the CI emulator's SwiftShader): engine off, the 3D view and the bone overlay through the presenter
+echo "--- OpenGL ES 3.0 presenter path (PG_FORCE_GLES30) ---"
+PG_FORCE_GLES30=1 EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 timeout 300s "$OUT/test_l8_render"

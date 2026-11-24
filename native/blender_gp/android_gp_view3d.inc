@@ -341,13 +341,81 @@ bool engine_wanted(const bGPdata *gpd);
 static void arm_overlay(const bGPdata *gpd, int w, int h, bool front, bool view3d); /* android_gp_armature_overlay.inc */
 bool engine_draw_canvas(const bGPdata *gpd, int frame_number, int w, int h);
 
-/* The 3D frame; false leaves the frame to the 2D path (Camera view, exports, no GLES 3 engine). */
+/* The presenter's strokes in the 3D view (no engine: GLES 3.0): every point goes through the view's
+ * persmat to window pixels on the CPU and the 2D presenter draws the projected frame with an identity
+ * canvas map, as gpencil_vertex() expands strokes in screen space. Thickness follows the depth
+ * (gpencil_vertex: thickness * winmat[0][0] * winx / 2 / w).
+ * shortcut: no onion skin, layer effects or blend modes here; a stroke with a point behind the camera
+ * is skipped. Upgrade when the 3D view needs them without the engine. */
+static void v3d_presenter_strokes(const bGPdata *gpd, int frame_number, int w, int h)
+{
+  float c2w[4][4], m[4][4];
+  v3d_canvas_to_world_m4(c2w);
+  mul_m4_m4m4(m, g_v3d.v.persmat, c2w);
+  const float wsc = g_v3d.v.winmat[0][0] * 0.5f * float(g_v3d.v.winx) / PG_MOD_PIXELS_PER_UNIT;
+  const float ox = g_cfg->map_origin_x, oy = g_cfg->map_origin_y, sc = g_cfg->map_scale, rot = g_cfg->view_rotation;
+  g_cfg->map_origin_x = g_cfg->map_origin_y = 0.0f;
+  g_cfg->map_scale = 1.0f;
+  g_cfg->view_rotation = 0.0f;
+  for (const bGPDlayer *layer = static_cast<const bGPDlayer *>(gpd->layers.first); layer; layer = layer->next) {
+    if (layer->flag & GP_LAYER_HIDE) continue;
+    const bGPDframe *cur = BKE_gpencil_layer_frame_get(const_cast<bGPDlayer *>(layer), frame_number, GP_GETFRAME_USE_PREV);
+    if (!cur) continue;
+    size_t n = 0;
+    for (const bGPDstroke *s = static_cast<const bGPDstroke *>(cur->strokes.first); s; s = s->next) n++;
+    if (!n) continue;
+    /* DNA structs are not copyable in C++: plain byte copies, as Blender's MEM_dupallocN */
+    std::unique_ptr<bGPDstroke[]> strokes(new bGPDstroke[n]);
+    std::vector<std::unique_ptr<bGPDspoint[]>> points(n);
+    size_t k = 0;
+    for (const bGPDstroke *s = static_cast<const bGPDstroke *>(cur->strokes.first); s; s = s->next) {
+      bool behind = false;
+      const int np = std::max(0, s->totpoints);
+      points[k].reset(new bGPDspoint[size_t(np)]);
+      std::memcpy(static_cast<void *>(points[k].get()), s->points, sizeof(bGPDspoint) * size_t(np));
+      for (int i = 0; i < np; i++) {
+        bGPDspoint &p = points[k][i];
+        float co[4] = {p.x, p.y, p.z, 1.0f};
+        mul_m4_v4(m, co);
+        if (co[3] <= 1e-6f) { behind = true; break; }
+        p.x = (co[0] / co[3] * 0.5f + 0.5f) * float(w);
+        p.y = (0.5f - co[1] / co[3] * 0.5f) * float(h);
+        p.z = 0.0f;
+        p.pressure *= wsc / co[3];
+      }
+      if (behind) continue;
+      std::memcpy(static_cast<void *>(&strokes[k]), s, sizeof(bGPDstroke));
+      strokes[k].points = points[k].get();
+      strokes[k].prev = k ? &strokes[k - 1] : nullptr;
+      strokes[k].next = nullptr;
+      if (k) strokes[k - 1].next = &strokes[k];
+      k++;
+    }
+    if (!k) continue;
+    bGPDframe f;
+    std::memcpy(static_cast<void *>(&f), cur, sizeof f);
+    f.strokes.first = &strokes[0];
+    f.strokes.last = &strokes[k - 1];
+    for (int c = 0; c < 4; c++) g_layer_tint[c] = layer->tintcolor[c];
+    g_line_change = float(layer->line_change);
+    draw_frame(gpd, layer, &f, w, h, 1.0f);
+    g_layer_tint[3] = 0.0f;
+    g_line_change = 0.0f;
+  }
+  g_cfg->map_origin_x = ox;
+  g_cfg->map_origin_y = oy;
+  g_cfg->map_scale = sc;
+  g_cfg->view_rotation = rot;
+}
+
+/* The 3D frame; false leaves the frame to the 2D path (Camera view, exports). With the GLES 3.2 / 3.1
+ * engine its strokes come from the engine, otherwise from the presenter (GLES 3.0); the grid and the
+ * bones are ES 3.00 shaders. Only a GLES 2 context shows the Camera view instead. */
 static bool view3d_present(const bGPdata *gpd, int frame_number, int w, int h)
 {
   if (!g_v3d.active || g_cfg->export_mode) return false;
-  /* shortcut: the 3D view draws strokes with the GLES 3 engine only; on a GLES 2 device the
-   * Camera view is shown instead, until the presenter gets a 3D path. */
-  if (!engine_wanted(gpd)) return false;
+  const char *ver = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+  if (!ver || std::strncmp(ver, "OpenGL ES 3", 11) != 0) return false; /* GLES 2: no ES 3.00 shaders */
   const auto t0 = std::chrono::steady_clock::now();
   v3d_ensure(w, h);
   g_v3d.map_ox = g_cfg->map_origin_x;
@@ -360,7 +428,11 @@ static bool view3d_present(const bGPdata *gpd, int frame_number, int w, int h)
   glClear(GL_COLOR_BUFFER_BIT);
   v3d_draw_grid();
   arm_overlay(gpd, w, h, false, true);
-  const bool ok = engine_draw_canvas(gpd, frame_number, w, h);
+  bool ok = engine_wanted(gpd) && engine_draw_canvas(gpd, frame_number, w, h);
+  if (!ok) {
+    v3d_presenter_strokes(gpd, frame_number, w, h);
+    ok = true;
+  }
   glViewport(0, 0, w, h);
   v3d_draw_overlays(std::max(1.0f, float(std::min(w, h)) / 400.0f));
   arm_overlay(gpd, w, h, true, true);

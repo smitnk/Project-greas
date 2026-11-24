@@ -113,17 +113,19 @@ class SweepView3DTest : SweepBase() {
         val (w, h) = surfaceSize()
         val a = onScreen(w * 0.4f, h * 0.5f); val b = onScreen(w * 0.6f, h * 0.5f)
         val down = SystemClock.uptimeMillis()
-        fun two(action: Int, d: Float, dy: Float): MotionEvent {
-            val props = Array(2) { i -> MotionEvent.PointerProperties().apply { id = i; toolType = MotionEvent.TOOL_TYPE_FINGER } }
+        // every event of the gesture from one obtain() form (same device, source and tool type): the mixed
+        // single-pointer DOWN / FINGER POINTER_DOWN stream never reached the view (no POINTER_DOWN in the log)
+        fun two(action: Int, d: Float, dy: Float, n: Int = 2): MotionEvent {
+            val props = Array(n) { i -> MotionEvent.PointerProperties().apply { id = i; toolType = MotionEvent.TOOL_TYPE_FINGER } }
             val coords = arrayOf(MotionEvent.PointerCoords().apply { x = a.first - d; y = a.second + dy; pressure = 1f; size = 1f },
-                MotionEvent.PointerCoords().apply { x = b.first + d; y = b.second + dy; pressure = 1f; size = 1f })
-            return MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+                MotionEvent.PointerCoords().apply { x = b.first + d; y = b.second + dy; pressure = 1f; size = 1f }).copyOf(n).requireNoNulls()
+            return MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, n, props, coords, 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
         }
-        instrumentation.sendPointerSync(event(MotionEvent.ACTION_DOWN, down, a.first, a.second))
+        instrumentation.sendPointerSync(two(MotionEvent.ACTION_DOWN, 0f, 0f, 1))
         instrumentation.sendPointerSync(two(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 0f, 0f))
         for (i in 1..20) { SystemClock.sleep(16); instrumentation.sendPointerSync(two(MotionEvent.ACTION_MOVE, i * 5f, i * 4f)) }
         instrumentation.sendPointerSync(two(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 100f, 80f))
-        instrumentation.sendPointerSync(event(MotionEvent.ACTION_UP, down, a.first - 100f, a.second + 80f))
+        instrumentation.sendPointerSync(two(MotionEvent.ACTION_UP, 100f, 80f, 1))
         rule.waitForIdle()
         val s1 = state()
         assertTrue("pinch apart zooms in: dist ${s0[2]} -> ${s1[2]}", s1[2] < s0[2])

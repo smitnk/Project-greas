@@ -1,2 +1,4 @@
 # Gradle cache
 .gradle/
+__pycache__/
+*.pyc

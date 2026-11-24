@@ -26,6 +26,7 @@ public final class SvgImport {
     public static final int CIRCLE_SEGMENTS = 32;
 
     private static final Pattern ELEMENT = Pattern.compile("<(path|polyline|polygon|line|rect|circle|ellipse)\\b([^>]*)>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern GROUP = Pattern.compile("<g\\b([^>]*)>|</g\\s*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern ATTR = Pattern.compile("([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*\"([^\"]*)\"");
     private static final Pattern NUMBER = Pattern.compile("[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?");
 
@@ -34,7 +35,16 @@ public final class SvgImport {
     public static List<Stroke> parse(String svg) {
         List<Stroke> out = new ArrayList<>();
         Matcher m0 = ELEMENT.matcher(svg);
+        // one pass over the <g> / </g> tags, in step with the elements: the open groups' transforms form a stack
+        Matcher groups = GROUP.matcher(svg);
+        boolean haveGroup = groups.find();
+        java.util.ArrayDeque<double[]> stack = new java.util.ArrayDeque<>();
         while (m0.find()) {
+            while (haveGroup && groups.end() <= m0.start()) {
+                if (groups.group().startsWith("</")) { if (!stack.isEmpty()) stack.pop(); }
+                else stack.push(transform(attrs(groups.group(1)).get("transform")));
+                haveGroup = groups.find();
+            }
             String tag = m0.group(1).toLowerCase(Locale.ROOT);
             java.util.Map<String, String> a = attrs(m0.group(2));
             List<Stroke> made = new ArrayList<>();
@@ -79,7 +89,7 @@ public final class SvgImport {
                 }
                 default: break;
             }
-            double[] m = mul(groupTransform(svg, m_start(m0)), transform(a.get("transform")));
+            double[] m = mul(composed(stack), transform(a.get("transform")));
             for (Stroke st : made) for (float[] q : st.points) {
                 float qx = q[0], qy = q[1];
                 q[0] = (float) (m[0] * qx + m[2] * qy + m[4]);
@@ -105,18 +115,10 @@ public final class SvgImport {
         return out;
     }
 
-    private static int m_start(Matcher m) { return m.start(); }
-
-    /** Composed transform of the <g> elements that are open at `pos` (nested groups supported). */
-    static double[] groupTransform(String svg, int pos) {
-        Matcher g = Pattern.compile("<g\\b([^>]*)>|</g\\s*>", Pattern.CASE_INSENSITIVE).matcher(svg.substring(0, pos));
-        java.util.ArrayDeque<double[]> stack = new java.util.ArrayDeque<>();
-        while (g.find()) {
-            if (g.group().startsWith("</")) { if (!stack.isEmpty()) stack.pop(); }
-            else stack.push(transform(attrs(g.group(1)).get("transform")));
-        }
+    /** Composed transform of the open groups on [stack] (outermost first when composing). */
+    private static double[] composed(java.util.ArrayDeque<double[]> stack) {
         double[] m = {1, 0, 0, 1, 0, 0};
-        java.util.Iterator<double[]> it = stack.descendingIterator(); // outermost first
+        java.util.Iterator<double[]> it = stack.descendingIterator();
         while (it.hasNext()) m = mul(m, it.next());
         return m;
     }

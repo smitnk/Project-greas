@@ -32,7 +32,14 @@ class RotoscopeLoader(private val context: Context) {
     private var exportRetriever: MediaMetadataRetriever? = null
     private var exportUri: String? = null
 
-    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "pg-roto-decode").apply { isDaemon = true } }
+    /** Names of the threads that decoded: one only, since the retrievers and the decoder are not shared across threads. */
+    internal val decodeThreads: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet<String>())
+    /** Stops the worker and frees the decoders; call when the editor is left. */
+    fun release() { worker.shutdownNow(); retriever?.release(); exportRetriever?.release() }
+    /** Runs a decode on the one worker thread and waits (the sync entry points used to decode on the caller's thread, racing the worker). */
+    private fun <T> onWorker(block: () -> T): T =
+        try { worker.submit(java.util.concurrent.Callable { block() }).get() } catch (e: java.util.concurrent.ExecutionException) { throw e.cause ?: e }
     private val MOVIE_SIZE = 640f
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val pending = java.util.Collections.synchronizedSet(HashSet<String>())
@@ -108,27 +115,28 @@ class RotoscopeLoader(private val context: Context) {
         return Triple(px, b.width, b.height)
     }
 
-    fun frame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? = decode(r.kind, r.uris.toList(), n)
+    fun frame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? { val kind = r.kind; val uris = r.uris.toList(); return onWorker { decode(kind, uris, n) } }
     /** For export: a video frame at up to 1280 px, not from (or into) the small playback cache. */
     fun exportFrame(r: Rotoscope, n: Int): Triple<IntArray, Int, Int>? {
         if (r.kind != Rotoscope.Kind.MOVIE) return frame(r, n)
         val uri = r.uris.firstOrNull() ?: return null
-        return runCatching {
+        return onWorker { runCatching {
             // its own retriever: the playback one belongs to the background worker
             val mr = exportRetriever?.takeIf { exportUri == uri } ?: MediaMetadataRetriever().also {
                 exportRetriever?.release(); it.setDataSource(context, Uri.parse(uri)); exportRetriever = it; exportUri = uri
             }
             val bmp = (if (Build.VERSION.SDK_INT >= 28) runCatching { mr.getFrameAtIndex(n - 1) }.getOrNull() else null)
-                ?: mr.getFrameAtTime((n - 1) * 1_000_000L / movieFps(mr), MediaMetadataRetriever.OPTION_CLOSEST) ?: return null
+                ?: mr.getFrameAtTime((n - 1) * 1_000_000L / movieFps(mr), MediaMetadataRetriever.OPTION_CLOSEST) ?: return@runCatching null
             val s = minOf(1f, 1280f / maxOf(bmp.width, bmp.height))
             val b = if (s < 1f) Bitmap.createScaledBitmap(bmp, maxOf(1, (bmp.width * s).toInt()), maxOf(1, (bmp.height * s).toInt()), true) else bmp
             val px = IntArray(b.width * b.height); b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
             Triple(px, b.width, b.height)
-        }.getOrNull()
+        }.getOrNull() }
     }
 
     private fun decode(kind: Rotoscope.Kind, uris: List<String>, n: Int): Triple<IntArray, Int, Int>? {
         if (n < 1 || uris.isEmpty()) return null
+        decodeThreads.add(Thread.currentThread().name)
         val key = key(kind, uris, n)
         synchronized(cache) { cache[key] }?.let { return it }
         val img = when (kind) {
@@ -161,20 +169,20 @@ class RotoscopeLoader(private val context: Context) {
     }
 
     /** Frame rate of a movie (frames per second, 24 when unknown). */
-    fun movieFps(uri: Uri): Int = runCatching {
+    fun movieFps(uri: Uri): Int = onWorker { runCatching {
         val mr = MediaMetadataRetriever()
         try { mr.setDataSource(context, uri); movieFps(mr).toInt() } finally { mr.release() }
-    }.getOrDefault(24)
+    }.getOrDefault(24) }
 
     /** Frame count of a movie (ImageUser frames). */
-    fun movieFrames(uri: Uri): Int = runCatching {
+    fun movieFrames(uri: Uri): Int = onWorker { runCatching {
         val mr = MediaMetadataRetriever()
         try {
             mr.setDataSource(context, uri)
             val count = if (Build.VERSION.SDK_INT >= 28) mr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull() else null
             count ?: ((mr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) * movieFps(mr) / 1000).toInt()
         } finally { mr.release() }
-    }.getOrDefault(0)
+    }.getOrDefault(0) }
 
     fun clearCache() { synchronized(cache) { cache.clear() } }
 

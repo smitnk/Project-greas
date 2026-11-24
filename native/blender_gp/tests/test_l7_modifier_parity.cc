@@ -9,6 +9,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <functional>
+#include <map>
+#include <string>
 #include <vector>
 
 #include "BKE_gpencil_geom_legacy.h"
@@ -116,8 +118,60 @@ static double compare(const bGPDframe *a, const bGPDframe *b, const char *name)
   return worst;
 }
 
+/* Output of the real Blender 3.6.23 binary (tools/modifier_reference): case name -> strokes of
+ * {point count, line width, then x y z pressure strength per point, object space}. */
+struct RefStroke { int thickness; std::vector<double> v; };
+static std::map<std::string, std::vector<RefStroke>> blender_run;
+static int run_failures = 0, run_cases = 0;
+static void load_blender_run(const char *path)
+{
+  FILE *f = std::fopen(path, "r");
+  if (!f) { std::printf("FAIL cannot read Blender run output %s\n", path); run_failures++; return; }
+  char line[256];
+  std::vector<RefStroke> *cur = nullptr;
+  while (std::fgets(line, sizeof(line), f)) {
+    line[std::strcspn(line, "\n")] = 0;
+    int n, w;
+    double x, y, z, pr, st;
+    if (!std::strncmp(line, "case ", 5)) cur = &blender_run[line + 5];
+    else if (cur && std::sscanf(line, "stroke %d %d", &n, &w) == 2) cur->push_back({w, {}});
+    else if (cur && !cur->empty() && std::sscanf(line, "%lf %lf %lf %lf %lf", &x, &y, &z, &pr, &st) == 5)
+      cur->back().v.insert(cur->back().v.end(), {x, y, z, pr, st});
+  }
+  std::fclose(f);
+}
+/* Tolerances: 0.01 canvas px (1e-5 Blender units) for positions, 1e-4 for pressure / strength,
+ * exact for point counts and line width. */
+static void compare_blender_run(const bGPDframe *pg, const char *name)
+{
+  auto it = blender_run.find(name);
+  if (it == blender_run.end()) return;
+  run_cases++;
+  double worst_pos = 0, worst_val = 0;
+  size_t k = 0;
+  bool structure = BLI_listbase_count(&pg->strokes) == (int)it->second.size();
+  LISTBASE_FOREACH (const bGPDstroke *, s, &pg->strokes) {
+    if (!structure) break;
+    const RefStroke &r = it->second[k++];
+    if ((size_t)s->totpoints * 5 != r.v.size() || s->thickness != r.thickness) { structure = false; break; }
+    for (int i = 0; i < s->totpoints; i++) {
+      const bGPDspoint &p = s->points[i];
+      const double *q = &r.v[5 * i];
+      worst_pos = fmax(worst_pos, fmax(fabs(p.x - q[0] * PG_MOD_PIXELS_PER_UNIT),
+                                       fmax(fabs(p.y + q[1] * PG_MOD_PIXELS_PER_UNIT), fabs(p.z - q[2] * PG_MOD_PIXELS_PER_UNIT))));
+      worst_val = fmax(worst_val, fmax(fabs(p.pressure - q[3]), fabs(p.strength - q[4])));
+    }
+  }
+  const bool ok = structure && worst_pos <= 0.01 && worst_val <= 1e-4;
+  std::printf("%s BLENDER-RUN %s: %s, max position diff %.3g px, max pressure/strength diff %.3g\n", ok ? "  ok" : "FAIL", name,
+              structure ? "same strokes / point counts / line widths" : "STRUCTURE DIFFERS", worst_pos, worst_val);
+  if (!ok) run_failures++;
+}
+
 int main()
 {
+  const char *run_path = std::getenv("L7_BLENDER_RUN");
+  if (run_path) load_blender_run(run_path);
   bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
   bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "Layer", true, false);
   gpd->pixfactor = GP_DEFAULT_PIX_FACTOR; /* as BKE_gpencil_data_addnew and PG's document */
@@ -279,6 +333,7 @@ int main()
         BKE_gpencil_stroke_geometry_update(gpd, gps);
         for (size_t i = 0; i < uv.size() / 2; i++) { gps->points[i].uv_fac = uv[2 * i]; gps->points[i].uv_rot = uv[2 * i + 1]; }
       }
+      if (cfra == 1.0f) compare_blender_run(&pg, c.name);
       char name[96];
       std::snprintf(name, sizeof(name), "%s @frame %g", c.name, cfra);
       const double d = compare(&pg, bl, name);
@@ -309,6 +364,12 @@ int main()
     }
   }
   std::printf("%d modifier cases compared with Blender 3.6.23 MOD_gpencil_legacy_*.c, %d known differences listed\n", cases, known_count);
+  if (run_path) {
+    std::printf("%d cases compared with the Blender 3.6.23 binary's own evaluated output (%zu in its file), %d failed\n",
+                run_cases, blender_run.size(), run_failures);
+    if (run_cases == 0 || run_cases != (int)blender_run.size()) run_failures++;
+    failures += run_failures;
+  }
   std::printf(failures ? "%d FAILURES\n" : "ALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

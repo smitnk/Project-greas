@@ -24,6 +24,7 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun historyRedo() = handle != 0L && GPNative.nativeHistoryRedo(handle)
     fun historyCanUndo() = handle != 0L && GPNative.nativeHistoryCanUndo(handle)
     fun historyCanRedo() = handle != 0L && GPNative.nativeHistoryCanRedo(handle)
+    fun historyUndoCount() = if (handle != 0L) GPNative.nativeHistoryUndoCount(handle) else 0
     fun detach() { handle = 0L }
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
     fun activeLayer() = if (handle != 0L) GPNative.nativeActiveLayer(handle) else -1
@@ -160,8 +161,11 @@ class HistoryController(private val native: NativeEditorBridge) {
      */
     var captureExtras: () -> Any? = { null }
     var restoreExtras: (Any?) -> Unit = {}
-    private val undoExtras = ArrayList<Any?>()
-    private val redoExtras = ArrayList<Any?>()
+    /** One list of steps (the Kotlin-side extras of each native step); [at] is the step the document is on, so undo / redo cannot desync two stacks. */
+    private val steps = ArrayList<Any?>()
+    private var at = -1
+    internal val stepCount: Int get() = steps.size
+    internal val stepIndex: Int get() = at
 
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
     /** Called whenever an edit is recorded (or queued in a batch): keeps the document's dirty flag exact. */
@@ -175,8 +179,11 @@ class HistoryController(private val native: NativeEditorBridge) {
     private fun record(): Boolean {
         val ok = native.historyRecord()
         if (ok) {
-            undoExtras += captureExtras(); redoExtras.clear()
-            while (undoExtras.size > MAX_STEPS) undoExtras.removeAt(0)
+            while (steps.size > at + 1) steps.removeAt(steps.size - 1) // a new step drops the redo tail
+            steps += captureExtras(); at = steps.size - 1
+            // native drops its oldest snapshots past 32 steps or its point budget: drop the same ones here
+            val kept = native.historyUndoCount()
+            while (at + 1 > kept && at > 0) { steps.removeAt(0); at-- }
         }
         return ok
     }
@@ -206,22 +213,22 @@ class HistoryController(private val native: NativeEditorBridge) {
     }
     fun reset(): Boolean {
         batchDepth = 0; batchChanged = false
-        undoExtras.clear(); redoExtras.clear()
-        return native.historyReset().also { if (it) undoExtras += captureExtras() }
+        steps.clear(); at = -1
+        return native.historyReset().also { if (it) { steps += captureExtras(); at = 0 } }
     }
     fun undo(): Boolean {
         endAllBatches() // an open batch would record the post-undo state as a new step and clear redo
         if (!native.historyUndo()) return false
-        if (undoExtras.size >= 2) { redoExtras += undoExtras.removeAt(undoExtras.size - 1); restoreExtras(undoExtras.last()) }
+        if (at > 0) restoreExtras(steps[--at])
         return true
     }
     fun redo(): Boolean {
         endAllBatches()
         if (!native.historyRedo()) return false
-        if (redoExtras.isNotEmpty()) { val e = redoExtras.removeAt(redoExtras.size - 1); undoExtras += e; restoreExtras(e) }
+        if (at < steps.size - 1) restoreExtras(steps[++at])
         return true
     }
-    companion object { const val MAX_STEPS = 64 } // kMaxHistory of the native history
+    companion object { const val MAX_STEPS = 32 } // kMaxHistory of the native history
 }
 
 class DocumentController {
@@ -322,10 +329,12 @@ class AnimationController(private val native: NativeEditorBridge, private val re
         val target = value.coerceAtLeast(1)
         if (native.handle == 0L) return false
         if (!native.selectFrameOrHold(target)) return false
-        if (target != currentFrame) onFrameChanged?.invoke()
+        val moved = target != currentFrame
+        if (moved) onFrameChanged?.invoke()
         currentFrame = target
         frameCount = native.frameCount().coerceAtLeast(1)
         timelineEnd = endFrame(); keyframes = native.frameNumbers(); refreshKeyInfo()
+        if (moved && playing) onPlayback?.invoke(true, target) // a scrub while playing: the sound jumps with the playhead
         return true
     }
     fun ensureFrame(frameNumber: Int): Boolean {
@@ -432,7 +441,8 @@ class AnimationController(private val native: NativeEditorBridge, private val re
     fun setFps(value:Int){
         fpsState.intValue=value.coerceIn(1,120)
         runCatching { GPNative.nativeSetSceneFps(fpsState.intValue) }
-        if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))}
+        if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,(1000L/fps).coerceAtLeast(1L))
+            onPlayback?.invoke(true, currentFrame)} // the sound's time of this frame changed with the rate
     }
     fun togglePlayback(){
         playing=!playing
@@ -682,7 +692,6 @@ class SelectionController(private val native: NativeEditorBridge) {
     }
 }
 
-class ModifierController { val modifiers=mutableListOf<String>(); fun add(name:String){modifiers+=name}; fun removeAt(index:Int){if(index in modifiers.indices)modifiers.removeAt(index)} }
 enum class EraserMode { HARD, SOFT, STROKE }
 enum class SculptBrush {
     SMOOTH, THICKNESS, STRENGTH, GRAB, PUSH, PINCH, TWIST, RANDOMIZE, CLONE
@@ -760,7 +769,13 @@ data class MaterialTexture(
 val SELECTION_TOOLS = setOf(GreaseTool.SELECT, GreaseTool.LASSO, GreaseTool.MOVE, GreaseTool.ROTATE,
     GreaseTool.SCALE, GreaseTool.MIRROR, GreaseTool.BOX_SELECT, GreaseTool.CIRCLE_SELECT)
 
-enum class GreaseTool { DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN, SCULPT, BOX_SELECT, CIRCLE_SELECT }
+/** [mode]: the mode the tool is (Sculpt is Sculpt mode); null = a tool of the current mode. */
+enum class GreaseTool(val mode: GreaseMode? = null) {
+    DRAW, ERASE, SELECT, LASSO, FILL, EYEDROPPER, LINE, RECTANGLE, CIRCLE, ARC, POLYLINE, CURVE, ANNOTATE, MOVE, ROTATE, SCALE, MIRROR, PAN,
+    SCULPT(GreaseMode.SCULPT), BOX_SELECT, CIRCLE_SELECT;
+    /** Whether the tool can be active in [m]: a mode tool only in its mode, no other tool in Sculpt, no Draw brush in Edit. */
+    fun allowedIn(m: GreaseMode): Boolean = if (mode != null) m == mode else m != GreaseMode.SCULPT && !(this == DRAW && m == GreaseMode.EDIT)
+}
 
 class ToolController {
     var activeTool=GreaseTool.DRAW; private set
@@ -809,19 +824,20 @@ class EditorController {
     val animation=AnimationController(native) { render() }
     val materials=MaterialController()
     val brushes=BrushController(materials)
-    var mode=GreaseMode.DRAW
-        private set
+    /** The mode set by setMode; never Sculpt (the Sculpt tool is Sculpt mode). */
+    private var baseMode=GreaseMode.DRAW
+    /** Derived from the tool, so mode and tool can never disagree. */
+    val mode: GreaseMode get() = tools.activeTool.mode ?: baseMode
     var multiframeEditing=false
         private set
     val view=ViewController()
     val selection=SelectionController(native)
     init {
         // a stroke index belongs to one frame of one layer: leaving it drops the selection
-        animation.onFrameChanged = { selection.clear() }
+        animation.onFrameChanged = { selection.clear(); cancelFrameBoundSessions() }
         // the playback tick never moves the native frame while a stroke / session / batch is open
         animation.canAdvance = { !gestureActive() }
     }
-    val modifiers=ModifierController()
     val sculpt=SculptController()
     val onion=OnionSkinController()
     private var rendererHandle=0L
@@ -962,11 +978,13 @@ class EditorController {
         if (tool != tools.activeTool && shapeEdit.isActive) confirmShape()
         if (warpActive) endWarp(true)
         if (gizmo != null) editModifierHandles(null) // the handle overlay would keep eating every touch
-        // Sculpt is one thing: the Sculpt tool is Sculpt mode, and any other tool leaves it.
-        if (tool == GreaseTool.SCULPT) mode = GreaseMode.SCULPT
-        else if (mode == GreaseMode.SCULPT) mode = GreaseMode.DRAW
+        // Sculpt is one thing: the Sculpt tool is Sculpt mode (mode follows the tool), and any other tool leaves it.
+        // The Draw brush is not an Edit-mode tool: picking it goes back to Draw mode.
+        if (!tools.select(tool)) return false
+        if (!tool.allowedIn(mode)) setMode(GreaseMode.DRAW)
         // Re-render so the edit overlay follows the tool at once.
-        return tools.select(tool).also { if (it) render() }
+        render()
+        return true
     }
     // ---- Native tool session (ToolSession.kt / project_grease_tool_session.h) ----
     /** The session tool the current gesture uses, or -1. */
@@ -1125,7 +1143,8 @@ class EditorController {
         if (value != GreaseMode.EDIT && bezierEditing) endBezierEdit()
         // the Photo lasso option is a Draw-mode control: left on, it would turn every Edit-mode lasso into a photo loop
         if (value != GreaseMode.DRAW) { lassoPhotos = false; photoLasso = null }
-        mode = value
+        // leaving Sculpt (picking another tool) returns to Draw mode
+        baseMode = if (value == GreaseMode.SCULPT) GreaseMode.DRAW else value
         // The mode chip and the sculpt tool are the same switch (the chip alone used to leave Draw active).
         if (value == GreaseMode.SCULPT) tools.select(GreaseTool.SCULPT)
         else if (tools.activeTool == GreaseTool.SCULPT) tools.select(if (value == GreaseMode.EDIT) GreaseTool.SELECT else GreaseTool.DRAW)
@@ -1572,6 +1591,7 @@ class EditorController {
     /** Curve handles in canvas space (start, end, cp1, cp2) while they can be edited, else empty. */
     fun curveHandles(): List<Pair<Float, Float>> = curve.handles()
     val curveEditing: Boolean get() = curve.phase == CurveSession.Phase.EDIT
+    val polylineEditing: Boolean get() = polyline.isActive
     /** Commits the edited curve (gpencil_primitive.c confirm). */
     fun confirmCurve(): Boolean {
         val anchors = curve.anchors()
@@ -1990,6 +2010,13 @@ class EditorController {
             onCancelGestures?.invoke()
         }.onFailure { com.smitnk.projectgrease.CrashLog.event("cancelActiveGestures failed: ${it.javaClass.simpleName}: ${it.message}") }
     }
+    /** The playhead moved: handles of an open gizmo drag / shape / curve / polyline belong to the old frame. A warp is reverted natively (resyncWarp). */
+    private fun cancelFrameBoundSessions() {
+        gizmoRelease()
+        if (shapeEdit.isActive) cancelShape()
+        if (curve.isActive) cancelCurve()
+        if (polyline.isActive) { polyline.reset(); polylineAwaitingPress = false; showPrimitivePreview(null); onOverlayChanged?.invoke(); render() }
+    }
     private fun cancelPendingStrokeState() {
         pendingShapePoints.clear(); pendingShapeTool = null; pendingLassoPoints.clear()
     }
@@ -2287,9 +2314,7 @@ class EditorController {
         val original = animation.currentFrame
         GPNative.nativeSetExportBackgroundEglRenderer(rendererHandle, s.background)
         // shortcut: export renders on the UI thread (GL context) and the screen waits; a progress view needs an async encoder
-        com.smitnk.projectgrease.CrashLog.expectedBusy = "export"
-        try { return withoutOnion { renderPlan(plan, original, transparent, sink) } }
-        finally { com.smitnk.projectgrease.CrashLog.expectedBusy = null }
+        return com.smitnk.projectgrease.CrashLog.expectBusy { withoutOnion { renderPlan(plan, original, transparent, sink) } }
     }
     /** Onion skin is a viewport overlay (Blender never renders it): off while exporting, then restored. */
     private fun <T> withoutOnion(block: () -> T): T {
@@ -2297,6 +2322,9 @@ class EditorController {
         native.setOnionSkin(false, onion.beforeFrames, onion.afterFrames, onion.opacity)
         try { return block() } finally { native.setOnionSkin(true, onion.beforeFrames, onion.afterFrames, onion.opacity) }
     }
+    /** A6: gives the engine's unused pooled render targets back (export-sized ones after an export; all in the background). */
+    fun trimGpuMemory(all:Boolean):Int = if (rendererHandle == 0L) 0 else GPNative.nativeTrimMemoryEglRenderer(rendererHandle, all)
+
     private fun renderPlan(plan: List<FrameSequenceExport.Item>, original: Int, transparent: Boolean, sink:(FrameSequenceExport.Item, IntArray) -> Unit): Boolean {
         val s = projectSettings
         var ok = true
@@ -2322,6 +2350,7 @@ class EditorController {
             // an encoder or sink failure must not leave the native document on another frame
             if (!animation.setFrame(original)) restoreLayerAndFrame(native.activeLayer().takeIf { it >= 0 } ?: selectedLayer, original)
             render()
+            trimGpuMemory(false)
         }
         com.smitnk.projectgrease.CrashLog.event("EXPORT frames done ok=$ok: back on frame $original, ${native.strokeCount()} strokes, ${native.layerCount()} layers, " +
             GPNative.nativeLastFrameInfo(rendererHandle))
@@ -2680,9 +2709,11 @@ class EditorController {
         for (i in 0 until native.strokeCount()) {
             val mat = native.strokeInfo(i)?.get(0)?.toInt() ?: continue
             if ((native.materialInfo(mat)?.getOrNull(9) ?: 0f) <= 0.5f) continue
+            if (materialRecord(mat)?.let { it.locked || !it.visible } == true) continue // as withFillsLocked: locked / hidden materials are not edited
             val xs = ArrayList<Float>(); val ys = ArrayList<Float>()
             var k = 0
             while (k < 20000) { val p = native.getPoint(i, k) ?: break; xs.add(p[0]); ys.add(p[1]); k++ }
+            if (k == 20000 && native.getPoint(i, k) != null) continue // over the read cap: reshaping the truncated outline would lose the rest
             if (xs.size >= 3) out.add(Triple(i, xs, ys))
         }
         return out
@@ -2714,20 +2745,30 @@ class EditorController {
         val n = path.size / 3
         val clear = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
         val dot = android.graphics.Paint().apply { isAntiAlias = false; xfermode = clear.xfermode }
+        val area = floatArrayOf(Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+        var radius = 0f
+        for (k in 0 until n) {
+            area[0] = minOf(area[0], path[3 * k]); area[1] = minOf(area[1], path[3 * k + 1])
+            area[2] = maxOf(area[2], path[3 * k]); area[3] = maxOf(area[3], path[3 * k + 1])
+            radius = maxOf(radius, path[3 * k + 2])
+        }
+        area[0] -= radius; area[1] -= radius; area[2] += radius; area[3] += radius
         return reshapeFills({ xs, ys ->
             (0 until n).any { k ->
                 val x = path[3 * k]; val y = path[3 * k + 1]; val r = path[3 * k + 2]
                 pointInPolygon(x, y, xs, ys) || xs.indices.any { (xs[it] - x) * (xs[it] - x) + (ys[it] - y) * (ys[it] - y) <= r * r }
             }
-        }) { c ->
+        }, area, radius) { c ->
             for (k in 0 until n) {
                 c.drawCircle(path[3 * k], path[3 * k + 1], path[3 * k + 2], dot)
                 if (k > 0) { clear.strokeWidth = path[3 * k + 2] * 2f; c.drawLine(path[3 * k - 3], path[3 * k - 2], path[3 * k], path[3 * k + 1], clear) }
             }
         }
     }
-    /** Redraws each fill [touches] accepts with [cut] cleared out of it, in place (see holdoutLoopOverFills). */
-    private fun reshapeFills(touches: (List<Float>, List<Float>) -> Boolean, cut: (android.graphics.Canvas) -> Unit): Boolean {
+    /** Redraws each fill [touches] accepts with [cut] cleared out of it, in place (see holdoutLoopOverFills).
+     *  [area] (minX, minY, maxX, maxY), when given, skips fills whose bounds miss it; the mask covers each
+     *  fill's bounds plus [radius] (clipped to the canvas, as the full-canvas mask was) instead of the canvas. */
+    private fun reshapeFills(touches: (List<Float>, List<Float>) -> Boolean, area: FloatArray? = null, radius: Float = 0f, cut: (android.graphics.Canvas) -> Unit): Boolean {
         val w = document.canvasWidth; val h = document.canvasHeight
         val fill = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL }
         var changed = false
@@ -2735,24 +2776,32 @@ class EditorController {
         for ((i, xs, ys) in filledStrokes().asReversed()) {
             val name = native.strokeInfo(i)?.let { native.materialName(it[0].toInt()) }
             if (name == HOLDOUT_MATERIAL || name == CUTTER_MATERIAL) continue
+            val minX = xs.min(); val minY = ys.min(); val maxX = xs.max(); val maxY = ys.max()
+            if (area != null && (maxX < area[0] || minX > area[2] || maxY < area[1] || minY > area[3])) continue
             if (!touches(xs, ys)) continue
             val info = native.strokeInfo(i)?.copyOf(11) ?: continue
             info[2] = 1f // cyclic
             val p0 = native.getPoint(i, 0) ?: continue
             val c0 = GPNative.nativeGetPointColor(native.handle, i, 0) ?: FloatArray(4)
-            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
+            // integer offset: the cropped mask rasterizes exactly the pixels the full-canvas one did
+            val left = kotlin.math.floor(minX - radius - 2f).toInt().coerceIn(0, w - 1); val top = kotlin.math.floor(minY - radius - 2f).toInt().coerceIn(0, h - 1)
+            val bw = (kotlin.math.ceil(maxX + radius + 2f).toInt().coerceAtMost(w) - left).coerceAtLeast(1)
+            val bh = (kotlin.math.ceil(maxY + radius + 2f).toInt().coerceAtMost(h) - top).coerceAtLeast(1)
+            val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ALPHA_8)
             val canvas = android.graphics.Canvas(bmp)
+            canvas.translate(-left.toFloat(), -top.toFloat())
             canvas.drawPath(android.graphics.Path().apply { moveTo(xs[0], ys[0]); for (k in 1 until xs.size) lineTo(xs[k], ys[k]); close() }, fill)
             cut(canvas)
-            val alpha = java.nio.ByteBuffer.allocate(w * h); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
-            val outlines = withHolesJoined(ImageTrace.trace(BooleanArray(w * h) { alpha.get(it).toInt() != 0 }, w, h, 0.75f, 3))
+            val alpha = java.nio.ByteBuffer.allocate(bmp.rowBytes * bh); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
+            val stride = alpha.capacity() / bh
+            val outlines = withHolesJoined(ImageTrace.trace(BooleanArray(bw * bh) { alpha.get(it / bw * stride + it % bw).toInt() != 0 }, bw, bh, 0.75f, 3))
             if (!native.deleteStroke(i)) continue
             var at = i
             for (o in outlines) {
                 val n = o.size
                 val pts = FloatArray(n * 6); val colors = FloatArray(n * 4)
                 for (k in 0 until n) {
-                    pts[6 * k] = o[k][0]; pts[6 * k + 1] = o[k][1]; pts[6 * k + 2] = p0[2]
+                    pts[6 * k] = o[k][0] + left; pts[6 * k + 1] = o[k][1] + top; pts[6 * k + 2] = p0[2]
                     pts[6 * k + 3] = p0.getOrElse(3) { 1f }; pts[6 * k + 4] = p0.getOrElse(4) { 1f }
                     for (c in 0 until 4) colors[4 * k + c] = c0.getOrElse(c) { 0f }
                 }
@@ -2898,6 +2947,7 @@ class EditorController {
         if (rendererHandle == 0L) return null
         val px = GPNative.nativeRenderCanvasPixelsEglRenderer(rendererHandle, document.canvasWidth, document.canvasHeight, transparent)
         render()
+        trimGpuMemory(false)
         return px?.takeIf { it.size == document.canvasWidth * document.canvasHeight }
     }
 
@@ -3577,63 +3627,33 @@ class EditorController {
         eraseGestureSamples += path.size / 3; eraseGestureHits += hits
         for (v in path) eraseGesturePath.add(v)
         if (!live) {
-            val ok = addFillEraseMark(path, hits)
-            // the live marks were a preview: cut the fills for real and drop the marks
-            if (eraseGestureMarks > 0 && native.handle != 0L) {
-                var left = eraseGestureMarks
-                while (left > 0 && native.strokeCount() > 0) {
-                    val last = native.strokeCount() - 1
-                    if (native.strokeInfo(last)?.let { native.materialName(it[0].toInt()) } != HOLDOUT_MATERIAL) break
-                    native.deleteStroke(last); left--
-                }
+            // the live preview was overlay only (never in the document): drop it, cut the fills for real
+            if ((eraseGestureMarks > 0 || eraseGestureHits > 0) && native.handle != 0L) {
+                if (rendererHandle != 0L) GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
                 val cut = erasePathFromFills(eraseGesturePath.toFloatArray())
-                com.smitnk.projectgrease.CrashLog.event("ERASE fills: cut from the fills=$cut, preview marks removed ${eraseGestureMarks - left}")
+                com.smitnk.projectgrease.CrashLog.event("ERASE fills: cut from the fills=$cut")
                 if (cut) { eraseGestureChanged = true; eraseGestureFilled = true }
             }
             eraseGestureMarks = 0; eraseGesturePath.clear()
             if (path.isNotEmpty()) com.smitnk.projectgrease.CrashLog.event("ERASE gesture: $eraseGestureSamples samples, fills like paint=$pixelEraseFills, mode $eraserMode, fill touches $eraseGestureHits")
             eraseGestureSamples = 0; eraseGestureHits = 0
-            return ok || eraseGestureFilled
+            return eraseGestureFilled
         }
-        return addFillEraseMark(path, hits)
+        return showFillEraseMark(hits)
     }
-    /** A live preview mark (holdout stroke) along this piece of the eraser path, when it touched a fill. */
-    private fun addFillEraseMark(path: FloatArray, hits: Int): Boolean {
-        if (native.handle == 0L || hits <= 0 || path.size < 3) return false
-        val slot = holdoutMaterialSlot() ?: return false
-        val radius = (0 until path.size / 3).maxOf { path[3 * it + 2] }
-        // samples closer than a tenth of the eraser are dropped: repeated points (finger held still)
-        // give zero-length segments, and such a holdout stroke wiped the whole drawing
-        val keep = ArrayList<Int>()
-        for (i in 0 until path.size / 3) {
-            val l = keep.lastOrNull()
-            if (l == null || Math.hypot((path[3 * i] - path[3 * l]).toDouble(), (path[3 * i + 1] - path[3 * l + 1]).toDouble()) >= radius * 0.1) keep.add(i)
+    /** Live preview along the eraser path once it touched a fill: renderer overlay only, never a document stroke (no save / undo / export). */
+    private fun showFillEraseMark(hits: Int): Boolean {
+        if (rendererHandle == 0L || (hits <= 0 && eraseGestureMarks == 0) || eraseGesturePath.size < 3) return false
+        val n = eraseGesturePath.size / 3
+        val packed = FloatArray(n * 3)
+        var radius = 0f
+        for (i in 0 until n) {
+            packed[3 * i] = eraseGesturePath[3 * i]; packed[3 * i + 1] = eraseGesturePath[3 * i + 1]; packed[3 * i + 2] = 1f
+            radius = maxOf(radius, eraseGesturePath[3 * i + 2])
         }
-        val n = keep.size
-        val pts = FloatArray(n * 6)
-        val colors = FloatArray(n * 4)
-        for ((k, i) in keep.withIndex()) {
-            pts[6 * k] = path[3 * i]; pts[6 * k + 1] = path[3 * i + 1]
-            pts[6 * k + 3] = (path[3 * i + 2] / radius).coerceIn(0.05f, 1f) // pressure: the eraser size here
-            pts[6 * k + 4] = 1f
-        }
-        val info = floatArrayOf(slot.toFloat(), radius * 2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f)
-        val ok = native.addStroke(pts, n, info, colors)
-        if (!ok) com.smitnk.projectgrease.CrashLog.event("ERASE fills: holdout stroke of $n points, width ${(radius * 2).toInt()} failed")
-        if (ok) { eraseGestureChanged = true; eraseGestureMarks++; document.markDirty(); render() }
-        return ok
-    }
-    /** The eraser's material: line shown, holdout (GP_MATERIAL_IS_STROKE_HOLDOUT), found or made. */
-    private fun holdoutMaterialSlot():Int? {
-        val count = native.materialCount()
-        for (i in 0 until count) if (native.materialName(i) == HOLDOUT_MATERIAL) return i
-        if (!native.createMaterial()) return null
-        native.setMaterialColors(count, floatArrayOf(0f, 0f, 0f, 1f), floatArrayOf(0f, 0f, 0f, 1f))
-        native.setMaterialStrokeEnabled(count, true)
-        native.setMaterialFillEnabled(count, false)
-        native.setMaterialName(count, HOLDOUT_MATERIAL)
-        setMaterialOptions(count, strokeHoldout = true, fillHoldout = false, selfOverlap = false)
-        return count
+        if (!GPNative.nativeSetPreviewStrokeEglRenderer(rendererHandle, packed, radius * 2f)) return false
+        eraseGestureMarks++; render()
+        return true
     }
     /** Ends an erase gesture: one undo step when it changed the document (the operator FINISHED); true then. */
     fun endErase():Boolean {
@@ -3645,6 +3665,20 @@ class EditorController {
         if (changed) history.markEdit()
         eraseGestureChanged = false
         return changed
+    }
+    /** Drops an erase drag (a second finger landed): no fill cut, no preview, no undo or redo step; what the
+     *  stroke eraser removed comes back from the last recorded step (beginErase records none of its own). */
+    fun cancelErase() {
+        erasePath.clear(); eraseGesturePath.clear(); eraseGestureMarks = 0; eraseGestureSamples = 0; eraseGestureHits = 0; eraseGestureFilled = false
+        if (native.handle != 0L) { runCatching { GPNative.nativeTakeEraseFillHits() }; GPNative.nativeEraseModal(native.handle, 2, false) }
+        if (rendererHandle != 0L) GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
+        if (eraseGestureChanged) {
+            eraseGestureChanged = false
+            // undo + redo lands on the current step again without recording one, so the redo tail stays
+            if (history.canUndo) { history.undo(); history.redo() } else if (history.canRedo) { history.redo(); history.undo() }
+            reapplyOnion(); restoreSelectedStroke(); animation.refresh()
+        }
+        render()
     }
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
@@ -4254,14 +4288,16 @@ class EditorController {
         val c = ProjectGreaseSelect.frameSelect(frame, mode)
         val ok = native.applyEditCommand(c.id, c.args)
         animation.refreshKeyInfo()
-        if (ok) { document.markDirty(); render() }
+        // GP_FRAME_SELECT is in the undo snapshots: a selection left out of the history is rolled back
+        // (or brought back) by the next undo / redo, so it is a step like Blender's action.select ops
+        if (ok) { history.markEdit(); document.markDirty(); render() }
         return ok
     }
     fun deselectTimelineFrames():Boolean {
         val c = ProjectGreaseSelect.frameDeselect()
         val ok = native.applyEditCommand(c.id, c.args)
         animation.refreshKeyInfo()
-        if (ok) render()
+        if (ok) { history.markEdit(); document.markDirty(); render() }
         return ok
     }
 

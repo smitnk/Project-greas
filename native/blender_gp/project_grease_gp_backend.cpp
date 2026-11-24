@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include "project_grease_gp_backend.h"
 #include "project_grease_blender_lattice.h"
@@ -62,6 +63,7 @@ extern "C" bool project_grease_legacy_build_apply(bGPdata *gpd, bGPDframe *gpf, 
 #ifdef __ANDROID__
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
+extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
 extern "C" int project_grease_android_present_annotations(const bGPdata *annot, int frame_number);
 extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, int frame_number);
 typedef const bGPDframe *(*ProjectGreaseGPFrameEvaluator)(void *user, const bGPDlayer *layer,
@@ -84,20 +86,24 @@ namespace project_grease::gp {
 /* Bumped by every document edit (all edits go through project_grease_gp_tag). The evaluated
  * modifier-stack frames are keyed by it, so any edit invalidates them. A process-wide counter can
  * only over-invalidate when several backends exist. */
-static uint64_t g_gp_data_revision = 1;
+/* One process-wide, atomic, never-reset source for every revision / generation value below: each
+ * bump takes a fresh number, so a value can never repeat after a reset or in another backend. */
+static std::atomic<uint64_t> g_revision_seed{1};
+static uint64_t next_revision() { return g_revision_seed.fetch_add(1, std::memory_order_relaxed) + 1; }
+static std::atomic<uint64_t> g_gp_data_revision{next_revision()};
 
 /* Installed as BKE_gpencil_batch_cache_dirty_tag_cb: the Blender-side edit code (edit commands,
  * BKE_gpencil_tag) reports every stroke change through it, so those changes invalidate the
  * evaluated modifier frames too, then the draw cache is dirtied as before. */
 static void project_grease_gp_dirty_tag_callback(bGPdata *gpd)
 {
-  g_gp_data_revision++;
+  g_gp_data_revision = next_revision();
   DRW_gpencil_batch_cache_dirty_tag(gpd);
 }
 
 static void project_grease_gp_tag(bGPdata *gpd)
 {
-  g_gp_data_revision++;
+  g_gp_data_revision = next_revision();
 #ifdef __ANDROID__
   if (gpd) {
     gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
@@ -227,6 +233,7 @@ struct HistorySnapshot {
   bGPdata *data = nullptr;
   ModifierStacks stacks; /* the live modifier stack of every layer, by layer index */
   FxStacks fx_stacks;    /* the shader effect list of every layer, by layer index */
+  size_t points = 0;     /* stroke points stored in data, for the history memory budget */
 };
 
 /* One evaluated copy of a layer's current frame (see pg_mod_eval_frame). */
@@ -234,8 +241,11 @@ struct EvalCacheEntry {
   const bGPDlayer *layer = nullptr;
   const bGPDframe *source = nullptr;
   int cfra = 0;
+  // The key is (layer, source) pointers AND these ids: a freed layer / frame whose address is reused
+  // by a new one never matches, because every edit moves revision and every replacement doc_generation.
   uint64_t revision = 0;
   uint64_t stack_revision = 0;
+  uint64_t doc_generation = 0;
   bGPDframe frame{};
 };
 
@@ -256,11 +266,6 @@ struct Backend::Impl {
   StrokeStyle stroke_style{};
   LegacyPaintSettings paint_settings{};
   std::vector<StrokePoint> pending_points;
-  PGSculptSession *sculpt_session = nullptr;
-  int sculpt_session_tool = -1;
-  float sculpt_session_radius = 0.0f;
-  float sculpt_session_strength = 0.0f;
-  bool sculpt_session_invert = false;
 
 #ifndef __ANDROID__
   // Desktop proof path owns its temporary GHOST/GPU session.
@@ -300,11 +305,11 @@ struct Backend::Impl {
   ModifierStacks stacks;
   // Shader effect lists (2D post-pass, see project_grease_shader_fx.h), same indexing and lifetime.
   FxStacks fx_stacks;
-  uint64_t stack_revision = 1;
+  std::atomic<uint64_t> stack_revision{next_revision()};
   // Bumped whenever the document's strokes/layers are replaced or freed (undo/redo restore, reset,
   // create, shutdown): sessions that hold stroke pointers compare it instead of the gpd pointer,
   // which stays the same across an in-place restore or a same-address realloc.
-  uint64_t doc_generation = 1;
+  std::atomic<uint64_t> doc_generation{next_revision()};
   uint64_t eval_count = 0;
   // Annotation data (project_grease_annotations.h): a second bGPdata drawn on top of the
   // drawing, not part of the drawing's layers, undo snapshots or modifier evaluation.
@@ -313,7 +318,22 @@ struct Backend::Impl {
   std::vector<std::unique_ptr<EvalCacheEntry>> eval_cache;
 };
 
-static void sculpt_session_end(Backend::Impl *impl);
+/* The GP_LAYER_ACTIVE flag is the single source of truth for the active layer (it is document state:
+ * undo / redo restore it, Blender reads it). Impl::layer is derived from it, never the other way round. */
+static void sync_active_layer(Backend::Impl *impl)
+{
+  bGPDlayer *active = BKE_gpencil_layer_active_get(impl->gpd);
+  if (!active) {
+    active = static_cast<bGPDlayer *>(impl->gpd->layers.first); /* none flagged (deleted / restored without one) */
+    if (active) BKE_gpencil_layer_active_set(impl->gpd, active);
+  }
+  impl->layer = active;
+}
+static void set_active_layer(Backend::Impl *impl, bGPDlayer *layer)
+{
+  BKE_gpencil_layer_active_set(impl->gpd, layer); /* clears the flag on every other layer */
+  sync_active_layer(impl);
+}
 
 static void eval_cache_clear(Backend::Impl *impl)
 {
@@ -409,7 +429,8 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
     }
   }
   if (target != nullptr && target->source == current && target->cfra == frame_number &&
-      target->revision == g_gp_data_revision && target->stack_revision == impl->stack_revision)
+      target->revision == g_gp_data_revision && target->stack_revision == impl->stack_revision &&
+      target->doc_generation == impl->doc_generation)
   {
     return &target->frame;
   }
@@ -424,6 +445,7 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   target->source = current;
   target->cfra = frame_number;
   target->revision = g_gp_data_revision;
+  target->doc_generation = impl->doc_generation;
   target->stack_revision = impl->stack_revision;
   if (empty_source) {
     std::memset(&target->frame, 0, sizeof(target->frame));
@@ -521,6 +543,13 @@ static HistorySnapshot *history_snapshot_create(const bGPdata *source,
   }
 
   snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
+  LISTBASE_FOREACH (const bGPDlayer *, gpl, &snapshot->data->layers) {
+    LISTBASE_FOREACH (const bGPDframe *, gpf, &gpl->frames) {
+      LISTBASE_FOREACH (const bGPDstroke *, gps, &gpf->strokes) {
+        snapshot->points += static_cast<size_t>(gps->totpoints);
+      }
+    }
+  }
   snapshot->stacks = stacks;
   snapshot->fx_stacks = fx_stacks;
   return snapshot;
@@ -646,28 +675,17 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   MEM_freeN(restored);
   BKE_gpencil_stats_update(impl->gpd);
 
-  impl->layer = nullptr;
-  for (bGPDlayer *layer = static_cast<bGPDlayer *>(impl->gpd->layers.first);
-       layer != nullptr;
-       layer = layer->next) {
-    if (layer->flag & GP_LAYER_ACTIVE) {
-      impl->layer = layer;
-      break;
-    }
-  }
-  if (!impl->layer) {
-    impl->layer = static_cast<bGPDlayer *>(impl->gpd->layers.first);
-  }
+  sync_active_layer(impl);
   set_frame(impl, impl->layer ? impl->layer->actframe : nullptr);
   impl->stroke = nullptr;
   impl->layer_created = impl->layer != nullptr;
   impl->frame_created = impl->frame != nullptr;
   stroke_discard(impl);
   impl->lattice_points.clear(); // its strokes were just freed
-  impl->doc_generation++;
+  impl->doc_generation = next_revision();
   impl->stacks = snapshot->stacks;
   impl->fx_stacks = snapshot->fx_stacks;
-  impl->stack_revision++;
+  impl->stack_revision = next_revision();
   eval_cache_clear(impl);
   project_grease_gp_tag(impl->gpd);
   return true;
@@ -709,8 +727,18 @@ bool Backend::history_record()
   history_snapshot_clear(impl_->redo_history);
   impl_->undo_history.push_back(snapshot);
 
-  constexpr size_t kMaxHistory = 64;
-  if (impl_->undo_history.size() > kMaxHistory) {
+  // Blender's default U.undosteps.
+  constexpr size_t kMaxHistory = 32;
+  // Each snapshot is a full document copy (~60 bytes per bGPDspoint plus weights), so 4M points keeps
+  // the undo stack near 250 MB on a phone however large the drawing; the newest step is always kept.
+  constexpr size_t kMaxHistoryPoints = 4000000;
+  size_t total_points = 0;
+  for (const HistorySnapshot *s : impl_->undo_history) {
+    total_points += s->points;
+  }
+  while (impl_->undo_history.size() > 1 &&
+         (impl_->undo_history.size() > kMaxHistory || total_points > kMaxHistoryPoints)) {
+    total_points -= impl_->undo_history.front()->points;
     history_snapshot_free(impl_->undo_history.front());
     impl_->undo_history.erase(impl_->undo_history.begin());
   }
@@ -754,6 +782,11 @@ bool Backend::history_redo()
   impl_->undo_history.push_back(target);
   impl_->last_error.clear();
   return true;
+}
+
+int Backend::history_undo_count() const
+{
+  return static_cast<int>(impl_->undo_history.size());
 }
 
 bool Backend::history_can_undo() const
@@ -800,7 +833,6 @@ bool Backend::initialize()
 
 void Backend::shutdown()
 {
-  sculpt_session_end(impl_);
   if (!impl_) {
     return;
   }
@@ -860,7 +892,7 @@ void Backend::shutdown()
   impl_->frame = nullptr;
   impl_->layer = nullptr;
   impl_->gpd = nullptr;
-  impl_->doc_generation++;
+  impl_->doc_generation = next_revision();
   impl_->lattice_points.clear();
   impl_->stroke_open = false;
   impl_->frame_created = false;
@@ -902,7 +934,6 @@ void Backend::shutdown()
 
 bool Backend::reset_document()
 {
-  sculpt_session_end(impl_);
   if (!impl_->initialized) {
     impl_->last_error = "backend is not initialized";
     return false;
@@ -914,7 +945,7 @@ bool Backend::reset_document()
   eval_cache_clear(impl_);
   impl_->stacks.clear();
   impl_->fx_stacks.clear();
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   pg_annot_free(impl_->annotations); /* a new document starts without annotations */
   impl_->annotations = nullptr;
   if (impl_->gpd) {
@@ -958,7 +989,7 @@ bool Backend::reset_document()
     impl_->gpd = nullptr;
   }
 
-  impl_->doc_generation++;
+  impl_->doc_generation = next_revision();
   impl_->lattice_points.clear(); // the freed document's strokes
   impl_->layer = nullptr;
   impl_->frame = nullptr;
@@ -1080,9 +1111,7 @@ bool Backend::select_layer(int index) {
        layer = layer->next, ++current) {
     if (current == index) {
       if (impl_->layer != layer) editing_ctx_changing(impl_); // open stroke / warp belong to the old layer
-      impl_->layer = layer;
-      // The active layer is document state (GP_LAYER_ACTIVE): undo/redo restore it from the flag.
-      BKE_gpencil_layer_active_set(impl_->gpd, layer);
+      set_active_layer(impl_, layer);
       // Keep the key held at the playhead (select_frame_or_hold) so drawing/render keep working
       // after a layer switch; none held (playhead before the first key) leaves no editing frame.
       set_frame(impl_, held_key_at(layer, impl_->cfra));
@@ -1282,8 +1311,8 @@ bool Backend::move_layer(int from_index, int to_index)
     impl_->fx_stacks.erase(impl_->fx_stacks.begin() + from_index);
     impl_->fx_stacks.insert(impl_->fx_stacks.begin() + to_index, std::move(moved));
   }
-  impl_->stack_revision++;
-  impl_->layer = layer_at(impl_->gpd, to_index);
+  impl_->stack_revision = next_revision();
+  set_active_layer(impl_, layer_at(impl_->gpd, to_index));
   set_frame(impl_, impl_->layer ? impl_->layer->actframe : nullptr);
   impl_->frame_created = impl_->frame != nullptr;
   project_grease_gp_tag(impl_->gpd);
@@ -1305,8 +1334,8 @@ bool Backend::duplicate_layer(int index)
   impl_->stacks.push_back(source_stack); /* a duplicated layer keeps its modifiers */
   impl_->fx_stacks.resize(static_cast<size_t>(layer_total(impl_->gpd)) - 1);
   impl_->fx_stacks.push_back(source_fx);  /* ... and its effects */
-  impl_->stack_revision++;
-  impl_->layer = copy;
+  impl_->stack_revision = next_revision();
+  set_active_layer(impl_, copy);
   set_frame(impl_, copy->actframe);
   impl_->layer_created = true;
   impl_->frame_created = impl_->frame != nullptr;
@@ -1337,9 +1366,9 @@ bool Backend::delete_layer(int index)
   if (layer_fx(impl_, index) != nullptr) {
     keep_drawing_fx(index);
   }
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   BKE_gpencil_layer_delete(impl_->gpd, layer);
-  impl_->layer = static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+  sync_active_layer(impl_); /* the flag, not "the first layer": the active layer stays when another one is deleted */
   set_frame(impl_, impl_->layer ? impl_->layer->actframe : nullptr);
   impl_->layer_created = impl_->layer != nullptr;
   impl_->frame_created = impl_->frame != nullptr;
@@ -1361,10 +1390,9 @@ bool Backend::merge_layer_down()
   /* the merged layer is gone: drop its modifier / effect lists (Blender merges the strokes only) */
   if (layer_stack(impl_, index) != nullptr) impl_->stacks.erase(impl_->stacks.begin() + index);
   if (layer_fx(impl_, index) != nullptr) keep_drawing_fx(index);
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   eval_cache_clear(impl_);
-  BKE_gpencil_layer_active_set(impl_->gpd, below);
-  impl_->layer = below;
+  set_active_layer(impl_, below);
   set_frame(impl_, below->actframe);
   impl_->stroke = nullptr;
   impl_->layer_created = true;
@@ -1560,6 +1588,13 @@ bool Backend::set_multiframe_editing(bool enabled)
   if (!impl_->gpd) {
     impl_->last_error = "document is not created";
     return false;
+  }
+  /* Only a real change of the switch selects / deselects the frames: the editor re-pushes its value
+   * after every undo / redo / load, and doing the frame loop then wiped the timeline selection
+   * (GP_FRAME_SELECT, restored by the snapshot) every time. */
+  const bool was = (impl_->gpd->flag & GP_DATA_STROKE_MULTIEDIT) != 0;
+  if (was == enabled) {
+    return true;
   }
   if (enabled) {
     impl_->gpd->flag |= GP_DATA_STROKE_MULTIEDIT;
@@ -2036,7 +2071,7 @@ bool Backend::erase(float x, float y, float radius, int mode, float draw_strengt
       continue;
     }
     changed |= legacy_gp_eraser::process_stroke(
-        impl_->gpd, impl_->frame, stroke, x, y, static_cast<int>(radius), settings);
+        impl_->gpd, impl_->frame, stroke, x, y, radius, settings);
     stroke = next;
   }
 
@@ -2073,32 +2108,7 @@ void Backend::clear_selection()
   project_grease_gp_tag(impl_->gpd);
 }
 
-static bool project_grease_point_in_polygon(float x, float y, const float *xy, int count)
-{
-  if (!xy || count < 3) {
-    return false;
-  }
-
-  /*
-   * Blender 3.6.23 Legacy GP lasso selection uses BLI_lasso_is_point_inside()
-   * after converting GP points to the selection space. Project Grease owns
-   * the Android canvas coordinate space, so the Android lasso coordinates and
-   * GP point coordinates are already in the same 2D space here.
-   */
-  std::vector<int> lasso_coords(static_cast<size_t>(count) * 2u);
-  for (int i = 0; i < count; ++i) {
-    lasso_coords[static_cast<size_t>(i) * 2u] = static_cast<int>(std::lround(xy[i * 2]));
-    lasso_coords[static_cast<size_t>(i) * 2u + 1u] = static_cast<int>(std::lround(xy[i * 2 + 1]));
-  }
-
-  return BLI_lasso_is_point_inside(reinterpret_cast<const int (*)[2]>(lasso_coords.data()),
-                                    count,
-                                    static_cast<int>(std::lround(x)),
-                                    static_cast<int>(std::lround(y)),
-                                    INT_MAX);
-}
-
-int Backend::lasso_select(const float *xy, int count, bool additive)
+int Backend::lasso_select(const float *xy, int count, bool additive, float px_per_unit)
 {
   if (!impl_->frame || !xy || count < 3) {
     impl_->last_error = "invalid lasso";
@@ -2113,6 +2123,22 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
   if (!additive) {
     clear_selection();
   }
+
+  /*
+   * Blender 3.6.23 Legacy GP lasso selection (gpencil_generic_select_lasso) builds the integer lasso
+   * and its BLI_lasso_boundbox once, then tests the box before BLI_lasso_is_point_inside.
+   * The Android lasso and GP points share the canvas space here.
+   */
+  // Round in view pixels, not canvas units, so points under 1 unit apart at high zoom stay distinct
+  // (as the eraser's px_per_unit).
+  const float px = px_per_unit > 0.0f ? px_per_unit : 1.0f;
+  std::vector<int> lasso_coords(static_cast<size_t>(count) * 2u);
+  for (int i = 0; i < count * 2; ++i) {
+    lasso_coords[static_cast<size_t>(i)] = static_cast<int>(std::lround(xy[i] * px));
+  }
+  const int(*mcoords)[2] = reinterpret_cast<const int(*)[2]>(lasso_coords.data());
+  rcti rect;
+  BLI_lasso_boundbox(&rect, mcoords, count);
 
   int selected = 0;
   for (bGPDstroke *stroke =
@@ -2129,7 +2155,11 @@ int Backend::lasso_select(const float *xy, int count, bool additive)
 
     for (int i = 0; i < original_points; ++i) {
       bGPDspoint &point = stroke->points[i];
-      if (project_grease_point_in_polygon(point.x, point.y, xy, count)) {
+      const int x0 = static_cast<int>(std::lround(point.x * px));
+      const int y0 = static_cast<int>(std::lround(point.y * px));
+      // BLI_rcti_isect_pt inline: rct.c is not in the Android blenlib build.
+      if (x0 >= rect.xmin && x0 <= rect.xmax && y0 >= rect.ymin && y0 <= rect.ymax &&
+          BLI_lasso_is_point_inside(mcoords, count, x0, y0, INT_MAX)) {
         point.flag |= GP_SPOINT_SELECT;
         stroke_hit = true;
         ++inside_points;
@@ -3788,7 +3818,8 @@ bool Backend::render_with_gpu_context()
   // untouched. Dropping copies the last render left behind keeps the cache to what is drawn.
   for (size_t i = impl_->eval_cache.size(); i-- > 0;) {
     EvalCacheEntry &entry = *impl_->eval_cache[i];
-    if (entry.revision != g_gp_data_revision || entry.stack_revision != impl_->stack_revision) {
+    if (entry.revision != g_gp_data_revision || entry.stack_revision != impl_->stack_revision ||
+        entry.doc_generation != impl_->doc_generation) {
       pg_mod_eval_free(&entry.frame);
       impl_->eval_cache.erase(impl_->eval_cache.begin() + static_cast<std::ptrdiff_t>(i));
     }
@@ -3797,6 +3828,12 @@ bool Backend::render_with_gpu_context()
   project_grease_android_set_fx_provider(fx_provider_trampoline, this);
   // The engine's batch cache is rebuilt when either revision moves (edits, undo / redo, stacks).
   project_grease_android_present_set_data_revision(g_gp_data_revision * 0x9E3779B97F4A7C15ull ^ impl_->stack_revision);
+  // The open stroke is drawn with the style it will be committed with (A9, commit_stroke above).
+  {
+    const StrokeStyle &st = impl_->stroke_style;
+    project_grease_android_present_set_live_stroke(impl_->stroke_open ? 1 : 0, std::max(1.0f, st.thickness),
+                                                   st.hardness, st.aspect_x, st.aspect_y, st.caps, st.material_index);
+  }
   bool presented =
       project_grease_android_present_gp_document(impl_->gpd, scene_frame()) != 0;
   // Annotations are drawn over every layer, in screen-space thickness.
@@ -4285,7 +4322,7 @@ int Backend::modifier_add(int layer_index, int type)
   PGModEntry entry;
   pg_mod_entry_init(&entry, type);
   stack->push_back(entry);
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   impl_->last_error.clear();
   return static_cast<int>(stack->size()) - 1;
 }
@@ -4298,7 +4335,7 @@ bool Backend::modifier_remove(int layer_index, int modifier_index)
     return false;
   }
   stack->erase(stack->begin() + modifier_index);
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   impl_->last_error.clear();
   return true;
 }
@@ -4315,7 +4352,7 @@ bool Backend::modifier_move(int layer_index, int from_index, int to_index)
     PGModEntry moved = (*stack)[static_cast<size_t>(from_index)];
     stack->erase(stack->begin() + from_index);
     stack->insert(stack->begin() + to_index, moved);
-    impl_->stack_revision++;
+    impl_->stack_revision = next_revision();
   }
   impl_->last_error.clear();
   return true;
@@ -4329,7 +4366,7 @@ bool Backend::modifier_set_enabled(int layer_index, int modifier_index, bool ena
     return false;
   }
   (*stack)[static_cast<size_t>(modifier_index)].enabled = enabled ? 1 : 0;
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   impl_->last_error.clear();
   return true;
 }
@@ -4349,7 +4386,7 @@ bool Backend::modifier_set_params(int layer_index, int modifier_index, const flo
     entry.params[i] = params[i];
   }
   pg_mod_sanitize(entry.type, entry.params);
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   impl_->last_error.clear();
   return true;
 }
@@ -4396,7 +4433,7 @@ bool Backend::modifier_apply(int layer_index, int modifier_index)
   impl_->stroke = nullptr;
   pg_mod_apply(impl_->gpd, layer, &entry, cfra);
   stack->erase(stack->begin() + modifier_index);
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   BKE_gpencil_stats_update(impl_->gpd);
   project_grease_gp_tag(impl_->gpd);
   impl_->last_error.clear();
@@ -4900,143 +4937,6 @@ bool Backend::smooth_stroke(int index, float influence, int iterations)
   return false;
 }
 
-static void sculpt_session_end(Backend::Impl *impl)
-{
-  if (impl->sculpt_session != nullptr) {
-    pg_sculpt_session_end(impl->sculpt_session);
-    impl->sculpt_session = nullptr;
-  }
-  impl->sculpt_session_tool = -1;
-  impl->sculpt_session_radius = 0.0f;
-  impl->sculpt_session_strength = 0.0f;
-  impl->sculpt_session_invert = false;
-}
-
-static PGSculptSession *sculpt_session_begin(Backend::Impl *impl,
-                                             int tool,
-                                             float radius,
-                                             float strength,
-                                             bool invert)
-{
-  PGToolBrushParams params{};
-  params.brush = tool;
-  params.radius = radius;
-  params.strength = strength;
-  params.px_per_unit = 1.0f;
-  params.invert = invert ? 1 : 0;
-  params.seed = 0x47505343u;
-  params.select_mask = 0;
-  params.active_material = 0;
-
-  PGSculptSession *session = pg_sculpt_session_begin(impl->gpd, &params);
-  if (session == nullptr) {
-    return nullptr;
-  }
-
-  impl->sculpt_session = session;
-  impl->sculpt_session_tool = tool;
-  impl->sculpt_session_radius = radius;
-  impl->sculpt_session_strength = strength;
-  impl->sculpt_session_invert = invert;
-  return session;
-}
-
-bool Backend::sculpt_at(int tool, float x, float y, float radius, float influence)
-{
-  if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
-      !std::isfinite(x) || !std::isfinite(y) ||
-      !std::isfinite(influence)) {
-    impl_->last_error = "invalid Legacy GP sculpt input";
-    return false;
-  }
-
-  if (impl_->sculpt_session == nullptr ||
-      impl_->sculpt_session_tool != tool ||
-      impl_->sculpt_session_radius != radius ||
-      impl_->sculpt_session_strength != influence ||
-      impl_->sculpt_session_invert) {
-    sculpt_session_end(impl_);
-    if (sculpt_session_begin(impl_, tool, radius, influence, false) == nullptr) {
-      impl_->last_error = "Blender 3.6.23 Legacy GP sculpt session creation failed";
-      return false;
-    }
-  }
-
-  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, 1.0f)) {
-    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
-    return false;
-  }
-
-  project_grease_gp_tag(impl_->gpd);
-  impl_->last_error.clear();
-  return true;
-}
-
-bool Backend::sculpt_begin(int tool, float x, float y, float pressure,
-                           float radius, float strength, bool invert)
-{
-  if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
-      !std::isfinite(x) || !std::isfinite(y) ||
-      !std::isfinite(pressure) || !std::isfinite(strength)) {
-    impl_->last_error = "invalid Legacy GP sculpt input";
-    return false;
-  }
-
-  sculpt_session_end(impl_);
-  if (sculpt_session_begin(impl_, tool, radius, strength, invert) == nullptr) {
-    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt session creation failed";
-    return false;
-  }
-
-  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, pressure)) {
-    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
-    return false;
-  }
-
-  project_grease_gp_tag(impl_->gpd);
-  impl_->last_error.clear();
-  return true;
-}
-
-bool Backend::sculpt_update(int tool, float x, float y, float /*prev_x*/, float /*prev_y*/,
-                            float pressure, float radius, float strength, bool invert)
-{
-  if (!impl_->gpd || !impl_->frame || radius <= 0.0f ||
-      !std::isfinite(x) || !std::isfinite(y) ||
-      !std::isfinite(pressure) || !std::isfinite(strength)) {
-    impl_->last_error = "invalid Legacy GP sculpt input";
-    return false;
-  }
-
-  if (impl_->sculpt_session == nullptr ||
-      impl_->sculpt_session_tool != tool ||
-      impl_->sculpt_session_radius != radius ||
-      impl_->sculpt_session_strength != strength ||
-      impl_->sculpt_session_invert != invert) {
-    sculpt_session_end(impl_);
-    if (sculpt_session_begin(impl_, tool, radius, strength, invert) == nullptr) {
-      impl_->last_error = "Blender 3.6.23 Legacy GP sculpt session creation failed";
-      return false;
-    }
-  }
-
-  if (!pg_sculpt_session_sample(impl_->sculpt_session, x, y, pressure)) {
-    impl_->last_error = "Blender 3.6.23 Legacy GP sculpt brush hit no editable points";
-    return false;
-  }
-
-  project_grease_gp_tag(impl_->gpd);
-  impl_->last_error.clear();
-  return true;
-}
-
-bool Backend::sculpt_end()
-{
-  sculpt_session_end(impl_);
-  impl_->last_error.clear();
-  return true;
-}
-
 bool Backend::set_onion_skin(bool enabled, int before, int after, float opacity)
 {
   if (!impl_->layer) {
@@ -5351,10 +5251,9 @@ void Backend::remap_layers(const std::vector<bGPDlayer *> &before, const bGPDlay
   }
   impl_->stacks = std::move(stacks);
   impl_->fx_stacks = std::move(fx);
-  impl_->stack_revision++;
+  impl_->stack_revision = next_revision();
   eval_cache_clear(impl_);
-  bGPDlayer *active = BKE_gpencil_layer_active_get(impl_->gpd);
-  impl_->layer = active ? active : static_cast<bGPDlayer *>(impl_->gpd->layers.first);
+  sync_active_layer(impl_);
   impl_->stroke = nullptr;
   impl_->layer_created = impl_->layer != nullptr;
   sync_active_frame();

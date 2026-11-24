@@ -131,6 +131,7 @@ class Backend {
   bool history_undo();
   bool history_redo();
   bool history_can_undo() const;
+  int history_undo_count() const; // snapshots kept, current state included
   bool history_can_redo() const;
   bool split_stroke(int index, int before_index);
   bool create_primitive(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, const StrokeStyle& style);
@@ -144,7 +145,8 @@ class Backend {
   // the brush vertex factor), applied to strokes drawn, primitives and fills.
   void set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor, int mode = 2);
   void clear_selection();
-  int lasso_select(const float* xy, int count, bool additive);
+  // px_per_unit: view pixels per canvas unit; the lasso test is in whole pixels as in Blender.
+  int lasso_select(const float* xy, int count, bool additive, float px_per_unit = 1.0f);
   // Bulk Legacy GP edit commands: selection, point editing and stroke ordering.
   bool select_all(int mode); // 0=set/select, 1=select, 2=invert, 3=deselect
   int select_circle(float x, float y, float radius, int mode); // 0=set, 1=add, 2=sub
@@ -236,12 +238,6 @@ class Backend {
   bool set_layer_opacity(int index, float opacity);
   bool get_material_info(int index, PGMaterialInfo* out) const;
   bool smooth_stroke(int index, float influence, int iterations);
-  // Focused Legacy GP sculpt brush bridge. Position/strength/thickness use Blender BKE algorithms;
-  // grab/push use the same real bGPD point data with a local falloff.
-  bool sculpt_at(int tool, float x, float y, float radius, float influence);
-  bool sculpt_begin(int tool, float x, float y, float pressure, float radius, float strength, bool invert);
-  bool sculpt_update(int tool, float x, float y, float prev_x, float prev_y, float pressure, float radius, float strength, bool invert);
-  bool sculpt_end();
   // One batched entry point for the real Blender 3.6.23 Legacy GP geometry API.
   // Each operation dispatches directly to Blender's BKE_gpencil_* implementation;
   // Project Grease does not reimplement the geometry algorithms.

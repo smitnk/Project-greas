@@ -49,7 +49,13 @@ class ProjectFiles(val dir: File) {
     }
 
     /** Overwrites [name]'s own file atomically (saving an existing project). */
-    fun write(name: String, json: String) = writeAtomic(fileFor(name)) { it.write(json.toByteArray(Charsets.UTF_8)) }
+    fun write(name: String, json: String, seq: Long = 0L) { synchronized(writeLock) {
+        // a write ticketed before the last one already written to this file is stale: skip it
+        val key = fileFor(name).path
+        if (seq > 0 && seq < (lastSeq[key] ?: 0L)) return@synchronized
+        writeAtomic(fileFor(name)) { it.write(json.toByteArray(Charsets.UTF_8)) }
+        if (seq > 0) lastSeq[key] = seq
+    } }
 
     /** "Name", or "Name (2)", "Name (3)", ... — the first whose file does not exist yet. */
     fun uniqueName(name: String, taken: (String) -> Boolean = { false }): String {
@@ -77,6 +83,11 @@ class ProjectFiles(val dir: File) {
     }
 
     companion object {
+        private val writeLock = Any()
+        private val lastSeq = HashMap<String, Long>()
+        private val seqCounter = java.util.concurrent.atomic.AtomicLong()
+        /** Take when the document is snapshotted; pass to [write] so an older snapshot never overwrites a newer one. */
+        fun nextSeq(): Long = seqCounter.incrementAndGet()
         const val EXT = ".gpjson"
         const val DEFAULT = "Project Grease"
 

@@ -2,8 +2,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
+#include <string>
 #include <cmath>
 #include <vector>
 
@@ -43,6 +45,7 @@
 extern "C" __attribute__((weak)) int pg_gp_engine_draw(struct bGPdata *gpd, int cfra, const PGGpEngineView *view);
 extern "C" __attribute__((weak)) long pg_gp_engine_pass_gl_errors(unsigned *last, const char **pass);
 extern "C" __attribute__((weak)) void pg_gp_engine_reset(void);
+extern "C" __attribute__((weak)) int pg_gp_engine_trim_pool(int all);
 extern "C" __attribute__((weak)) void pg_gp_engine_context_lost(void);
 extern "C" __attribute__((weak)) const char *pg_gp_engine_gl_debug_message(long *count);
 extern "C" __attribute__((weak)) int pg_gp_engine_present(int target_w, int target_h);
@@ -53,26 +56,82 @@ extern "C" __attribute__((weak)) unsigned int pg_gp_engine_result_texture(void);
 
 namespace {
 struct Vertex { float x; float y; };
-
-GLuint g_program=0, g_vbo=0;
-GLint g_position=-1, g_color=-1;
-GLuint g_vc_program=0, g_vc_mask_program=0;
+/* Per-renderer presenter configuration (A4). Everything a renderer sets from the UI (export mode, view,
+ * canvas, fill / guide / overlay options, stroke colour) lives here, so an export or a second renderer
+ * never changes what another one draws. Each JNI entry binds its renderer's config for its thread
+ * (project_grease_android_present_config_bind); with none bound (host tests) a default one is used.
+ * Its GL objects and caches are in PresentGL below. Still global: Blender's draw engine (gles/, one
+ * engine per process) with its batch cache and drawn-state latches, and the per-frame scratch (draw
+ * mode, draw parts, ghost / layer tint, line change) that is set and cleared inside one draw call. */
+// GL objects and caches of one renderer (A4): each renderer has its own EGL context, so its programs,
+// buffers, textures, FBOs and the caches that hold them must never be shared with or freed by another
+// renderer. They live in the renderer's PresentConfig; present_reset / context_lost clear the bound one.
 // Material textures (MaterialGPencilStyle stroke_style / fill_style TEXTURE). Android has no Blender
 // Image datablock: the picked image is uploaded per material slot, key = slot * 2 + (0 stroke, 1 fill).
 struct MatTex { GLuint id=0; int w=0, h=0; };
-std::map<int,MatTex> g_mat_tex;
-GLuint g_tex_program=0;
-GLuint g_grad_program=0;
-// Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
-// stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
-// stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
-int g_stencil_ref=0;
-GLint g_stencil_fbo=-1;
-// Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
-GLuint g_mask_program=0;
-GLint g_mask_color=-1, g_mask_sampler=-1, g_mask_size=-1;
-GLuint g_mask_fbo=0, g_mask_tex=0;
-int g_mask_w=0, g_mask_h=0;
+struct OpenStrokeCache {
+  GLuint tex=0, program=0, vbo=0;
+  int w=0, h=0, frame=0;
+  const bGPdata* gpd=nullptr;
+  uint64_t rev=0; // data revision the texture was taken at: any edit since then invalidates it
+  float scale=0, ox=0, oy=0, rot=0;
+  bool valid=false;
+};
+struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0,exported=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
+constexpr int kRefSlots=16;
+struct PresentGL {
+  GLuint program=0, vbo=0;
+  GLint position=-1, color=-1;
+  GLuint vc_program=0, vc_mask_program=0;
+  std::map<int,MatTex> mat_tex;
+  GLuint tex_program=0, grad_program=0;
+  // Per-stroke single coverage: each stroke draws with its own stencil reference and a fragment the
+  // stroke already wrote is rejected, so a stroke crossing itself is blended once (Blender draws a
+  // stroke's triangles depth-tested against themselves for the same result). -1 forces a clear.
+  int stencil_ref=0;
+  GLint stencil_fbo=-1;
+  GLint stencil_bits=0;     // of stencil_fbo: asked once per target, not per stroke
+  // Layer masks: strokes of a masked layer are multiplied by an offscreen mask (see render_layer_mask).
+  GLuint mask_program=0;
+  GLint mask_color=-1, mask_sampler=-1, mask_size=-1;
+  GLuint mask_fbo=0, mask_tex=0;
+  int mask_w=0, mask_h=0;
+  GLuint soft_program=0;
+  GLint soft_color=-1, soft_hard=-1, soft_aspect=-1;
+  OpenStrokeCache open_cache;
+  RefSlot refs[kRefSlots];
+  int ref_cur=0, ref_count=1;
+  GLuint ref_prog=0, ref_vbo=0;
+};
+struct PresentConfig {
+  int weight_group=-1;            // Weight Paint view: vertex group, -1 off
+  float vertex_opacity=1.0f;      // Viewport Overlay "Vertex Paint Opacity"
+  int fill_draw_mode=0;           // brush fill_draw_mode
+  float fill_extend=0.0f;         // brush fill_extend_fac
+  int fill_extend_mode=0,fill_layer_mode=0;
+  int fill_collide=0;             // GP_BRUSH_FILL_STROKE_COLLIDE
+  int export_mode=0;              // offscreen export: 0 off, 1 canvas background, 2 transparent
+  float export_background[4]={0.96f,0.96f,0.96f,1.0f};
+  int selection_overlay=0;        // edit-mode points
+  int guide_type=-1;              // drawing guide (GP_GUIDE_*; -1 off)
+  float guide_cx=0,guide_cy=0,guide_angle=0,guide_spacing=0;
+  float stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
+  int canvas_width=1280,canvas_height=720;
+  float map_origin_x=0.0f,map_origin_y=0.0f,map_scale=1.0f; // canvas -> screen map of the last frame
+  float view_zoom=1.0f,view_pan_x=0.0f,view_pan_y=0.0f;
+  float view_rotation=0.0f;       // two-finger rotation (radians); the engine draws unrotated views only
+  int overlay_unselected=1;
+  int engine_enabled=1;           // project_grease_android_present_set_engine
+  PresentGL gl;                   // this renderer's GL objects and caches (A4)
+};
+PresentConfig g_default_cfg;
+thread_local PresentConfig* g_cfg=&g_default_cfg;
+
+long g_frame_gl_queries=0;  // glGet round trips of the last document pass (each one stalls an emulator / remote GL)
+long g_frame_queries_now=0;
+bool g_in_document=false;   // inside present_gp_document: the bound target is known between retarget() calls
+bool g_target_known=false;
+void retarget(){g_target_known=false;} // an offscreen layer / mask pass may have bound another framebuffer
 GLuint g_active_mask_tex=0;   // non-zero while a masked layer is drawn
 int g_active_w=1, g_active_h=1;
 // DRAW_REVEALAGE multiplies the target by (1 - alpha) (mask buffer, Blender's "revealage" buffer);
@@ -80,27 +139,18 @@ int g_active_w=1, g_active_h=1;
 enum DrawMode { DRAW_NORMAL, DRAW_REVEALAGE, DRAW_INVERT, DRAW_PREMULT };
 DrawMode g_draw_mode=DRAW_NORMAL;
 // Weight Paint view: >= 0 draws strokes tinted by the weight of this vertex group (blue 0 .. red 1).
-int g_weight_group=-1;
 // Viewport Overlay "Vertex Paint Opacity" (View3DOverlay.gpencil_vertex_paint_opacity).
-float g_vertex_opacity=1.0f;
 // Fill boundary source (brush fill_draw_mode): 0 GP_FILL_DMODE_BOTH, 1 STROKE, 2 CONTROL.
-int g_fill_draw_mode=0;
 // Fill "Extend Lines" (brush fill_extend_fac, Blender default 0): Blender's line extensions
 // (pg_fill_extend_lines: fill_extend_fac * 0.1 BU, cut where they meet) are drawn in the mask.
-float g_fill_extend=0.0f;
 // brush fill_extend_mode (GP_FILL_EMODE_EXTEND 0 / RADIUS 1) and fill_layer_mode (GP_FILL_GPLMODE_*)
-int g_fill_extend_mode=0,g_fill_layer_mode=0;
 // GP_BRUSH_FILL_STROKE_COLLIDE: only extensions that hit something are drawn.
-int g_fill_collide=0;
 // Offscreen export (PNG): 0 off, 1 canvas background, 2 transparent background. Annotations and the
 // open sbuffer are not part of an export.
-int g_export_mode=0;
 /* Background of opaque exports (export mode 1): the project settings' background colour. */
-float g_export_background[4]={0.96f,0.96f,0.96f,1.0f};
 const float g_paper_color[4]={0.96f,0.96f,0.96f,1.0f};
 // Edit-mode overlay: the points of the editable strokes (Blender's edit-mode vertices), selected
 // points in the theme's vertex-select orange.
-int g_selection_overlay=0;
 // Which parts draw_frame draws: 1 strokes, 2 fills (effect targets render them into separate passes).
 int g_draw_parts=3;
 // Onion ghost tint (gpencil_layer_final_tint_and_alpha_get: a custom ghost colour replaces the rgb).
@@ -113,22 +163,10 @@ float g_layer_tint[4]={0,0,0,0};
 float g_line_change=0.0f;
 float g_force_layer_opacity=-1.0f;
 // Drawing guide overlay (GP_GUIDE_*; -1 off), drawn over the canvas, never exported.
-int g_guide_type=-1;
-float g_guide_cx=0,g_guide_cy=0,g_guide_angle=0,g_guide_spacing=0;
-float g_stroke_color[4]={0.05f,0.05f,0.05f,1.0f};
 /* linearrgb_to_srgb() (blenlib math_color.c) */
 static float pg_linear_to_srgb(float c){return c<0.0031308f?(c<0.0f?0.0f:c*12.92f):1.055f*std::pow(c,1.0f/2.4f)-0.055f;}
-int g_canvas_width=1280;
-int g_canvas_height=720;
-float g_map_origin_x=0.0f;
-float g_map_origin_y=0.0f;
-float g_map_scale=1.0f;
-float g_view_zoom=1.0f;
-float g_view_pan_x=0.0f;
-float g_view_pan_y=0.0f;
 /* Two-finger view rotation (radians) about the viewport centre; the engine path draws unrotated
  * views only (shortcut: rotated views use this presenter, until the engine gets a view matrix). */
-float g_view_rotation=0.0f;
 /* last engine frame, for the crash report slow steps */
 static double g_last_engine_ms=0.0;static int g_last_engine_rebuilt=0,g_last_w=0,g_last_h=0;
 static unsigned g_last_gl_error=0;static long g_gl_error_frames=0,g_engine_gl_errors=0;
@@ -136,13 +174,13 @@ static const char*g_last_gl_where="";
 /* GL error left since the last check: counted with the step that left it (the report names it) */
 static void gl_check(const char*where){const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_gl_error_frames++;g_last_gl_where=where;while(glGetError()!=GL_NO_ERROR){}}}
 void update_canvas_map(int w,int h){
-  const float sx=float(w)/float(std::max(1,g_canvas_width));
-  const float sy=float(h)/float(std::max(1,g_canvas_height));
-  g_map_scale=std::min(sx,sy)*0.92f*g_view_zoom;
-  const float cw=float(g_canvas_width)*g_map_scale;
-  const float ch=float(g_canvas_height)*g_map_scale;
-  g_map_origin_x=(float(w)-cw)*0.5f+g_view_pan_x;
-  g_map_origin_y=(float(h)-ch)*0.5f+g_view_pan_y;
+  const float sx=float(w)/float(std::max(1,g_cfg->canvas_width));
+  const float sy=float(h)/float(std::max(1,g_cfg->canvas_height));
+  g_cfg->map_scale=std::min(sx,sy)*0.92f*g_cfg->view_zoom;
+  const float cw=float(g_cfg->canvas_width)*g_cfg->map_scale;
+  const float ch=float(g_cfg->canvas_height)*g_cfg->map_scale;
+  g_cfg->map_origin_x=(float(w)-cw)*0.5f+g_cfg->view_pan_x;
+  g_cfg->map_origin_y=(float(h)-ch)*0.5f+g_cfg->view_pan_y;
 }
 
 
@@ -170,17 +208,17 @@ GLuint compile_shader(GLenum type,const char *src){
   if(ok==GL_FALSE){glDeleteShader(s);return 0;} return s;
 }
 bool ensure_program(){
-  if(g_program) return true;
+  if(g_cfg->gl.program) return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_program=glCreateProgram(); glAttachShader(g_program,vs); glAttachShader(g_program,fs);
-  glBindAttribLocation(g_program,0,"a_position"); glLinkProgram(g_program);
+  g_cfg->gl.program=glCreateProgram(); glAttachShader(g_cfg->gl.program,vs); glAttachShader(g_cfg->gl.program,fs);
+  glBindAttribLocation(g_cfg->gl.program,0,"a_position"); glLinkProgram(g_cfg->gl.program);
   glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_program);g_program=0;return false;}
-  g_position=glGetAttribLocation(g_program,"a_position"); g_color=glGetUniformLocation(g_program,"u_color");
-  glGenBuffers(1,&g_vbo);
-  return g_position>=0&&g_color>=0&&g_vbo!=0;
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.program);g_cfg->gl.program=0;return false;}
+  g_cfg->gl.position=glGetAttribLocation(g_cfg->gl.program,"a_position"); g_cfg->gl.color=glGetUniformLocation(g_cfg->gl.program,"u_color");
+  glGenBuffers(1,&g_cfg->gl.vbo);
+  return g_cfg->gl.position>=0&&g_cfg->gl.color>=0&&g_cfg->gl.vbo!=0;
 }
 GLuint link_vc(const char* fs_text){
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vc_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,fs_text);
@@ -195,9 +233,9 @@ GLuint link_vc(const char* fs_text){
 }
 // Plain and layer-masked (same mask texture as draw_vertices) per-vertex-colour programs.
 bool ensure_vc_program(){
-  if(!g_vc_program)g_vc_program=link_vc(fs_src());
-  if(!g_vc_mask_program)g_vc_mask_program=link_vc(mask_fs_src());
-  return g_vc_program!=0&&g_vc_mask_program!=0;
+  if(!g_cfg->gl.vc_program)g_cfg->gl.vc_program=link_vc(fs_src());
+  if(!g_cfg->gl.vc_mask_program)g_cfg->gl.vc_mask_program=link_vc(mask_fs_src());
+  return g_cfg->gl.vc_program!=0&&g_cfg->gl.vc_mask_program!=0;
 }
 // gpencil_frag.glsl: col = texture * (1 - mix) + material colour * mix (stroke_texture_mix /
 // fill_texture_mix are 1 - mix_stroke_factor / 1 - mix_factor). fract() repeats the image (GLES2 has
@@ -214,14 +252,14 @@ const char *tex_fs_src(){
          "if(u_use_mask>0.5)c.a*=texture2D(u_mask,gl_FragCoord.xy/u_size).r;gl_FragColor=c;}";
 }
 bool ensure_tex_program(){
-  if(g_tex_program)return true;
+  if(g_cfg->gl.tex_program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,tex_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,tex_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_tex_program=glCreateProgram();glAttachShader(g_tex_program,vs);glAttachShader(g_tex_program,fs);
-  glBindAttribLocation(g_tex_program,0,"a_position");glBindAttribLocation(g_tex_program,1,"a_uv");
-  glLinkProgram(g_tex_program);glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_tex_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_tex_program);g_tex_program=0;return false;}
+  g_cfg->gl.tex_program=glCreateProgram();glAttachShader(g_cfg->gl.tex_program,vs);glAttachShader(g_cfg->gl.tex_program,fs);
+  glBindAttribLocation(g_cfg->gl.tex_program,0,"a_position");glBindAttribLocation(g_cfg->gl.tex_program,1,"a_uv");
+  glLinkProgram(g_cfg->gl.tex_program);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.tex_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.tex_program);g_cfg->gl.tex_program=0;return false;}
   return true;
 }
 // Gradient fill (gpencil_frag.glsl GP_FILL_GRADIENT_USE): fac = radial ? length(uv * 2 - 1) : uv.x,
@@ -236,38 +274,38 @@ const char *grad_fs_src(){
          "if(u_use_mask>0.5)c.a*=texture2D(u_mask,gl_FragCoord.xy/u_size).r;gl_FragColor=c;}";
 }
 bool ensure_grad_program(){
-  if(g_grad_program)return true;
+  if(g_cfg->gl.grad_program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,tex_vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,grad_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_grad_program=glCreateProgram();glAttachShader(g_grad_program,vs);glAttachShader(g_grad_program,fs);
-  glBindAttribLocation(g_grad_program,0,"a_position");glBindAttribLocation(g_grad_program,1,"a_uv");
-  glLinkProgram(g_grad_program);glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_grad_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_grad_program);g_grad_program=0;return false;}
+  g_cfg->gl.grad_program=glCreateProgram();glAttachShader(g_cfg->gl.grad_program,vs);glAttachShader(g_cfg->gl.grad_program,fs);
+  glBindAttribLocation(g_cfg->gl.grad_program,0,"a_position");glBindAttribLocation(g_cfg->gl.grad_program,1,"a_uv");
+  glLinkProgram(g_cfg->gl.grad_program);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.grad_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.grad_program);g_cfg->gl.grad_program=0;return false;}
   return true;
 }
 const MatTex* material_texture(int slot,int fill){
-  auto it=g_mat_tex.find(slot*2+(fill?1:0));
-  return it!=g_mat_tex.end()&&it->second.id?&it->second:nullptr;
+  auto it=g_cfg->gl.mat_tex.find(slot*2+(fill?1:0));
+  return it!=g_cfg->gl.mat_tex.end()&&it->second.id?&it->second:nullptr;
 }
 struct UVVertex{float x,y,u,v;};
 void draw_textured(const std::vector<UVVertex>&v,const MatTex&tex,const float color[4],float mix){
   if(v.empty()||!ensure_tex_program())return;
   const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL;
-  glUseProgram(g_tex_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glUseProgram(g_cfg->gl.tex_program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(UVVertex)),v.data(),GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
   glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),nullptr);
   glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),reinterpret_cast<const void*>(2*sizeof(float)));
   glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,tex.id);
-  glUniform1i(glGetUniformLocation(g_tex_program,"u_tex"),1);
+  glUniform1i(glGetUniformLocation(g_cfg->gl.tex_program,"u_tex"),1);
   glActiveTexture(GL_TEXTURE0);
   if(masked)glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
-  glUniform1i(glGetUniformLocation(g_tex_program,"u_mask"),0);
-  glUniform2f(glGetUniformLocation(g_tex_program,"u_size"),float(g_active_w),float(g_active_h));
-  glUniform1f(glGetUniformLocation(g_tex_program,"u_use_mask"),masked?1.0f:0.0f);
-  glUniform4f(glGetUniformLocation(g_tex_program,"u_color"),color[0],color[1],color[2],color[3]);
-  glUniform1f(glGetUniformLocation(g_tex_program,"u_mix"),std::clamp(mix,0.0f,1.0f));
+  glUniform1i(glGetUniformLocation(g_cfg->gl.tex_program,"u_mask"),0);
+  glUniform2f(glGetUniformLocation(g_cfg->gl.tex_program,"u_size"),float(g_active_w),float(g_active_h));
+  glUniform1f(glGetUniformLocation(g_cfg->gl.tex_program,"u_use_mask"),masked?1.0f:0.0f);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.tex_program,"u_color"),color[0],color[1],color[2],color[3]);
+  glUniform1f(glGetUniformLocation(g_cfg->gl.tex_program,"u_mix"),std::clamp(mix,0.0f,1.0f));
   glEnable(GL_BLEND);
   if(g_draw_mode==DRAW_REVEALAGE)glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);
   else glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
@@ -280,21 +318,21 @@ void draw_textured(const std::vector<UVVertex>&v,const MatTex&tex,const float co
 void draw_gradient(const std::vector<UVVertex>&v,const float c1[4],const float c2[4],const float color[4],float mix_tex,bool radial){
   if(v.empty()||!ensure_grad_program())return;
   const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL;
-  glUseProgram(g_grad_program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  glUseProgram(g_cfg->gl.grad_program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(UVVertex)),v.data(),GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray(0);glEnableVertexAttribArray(1);
   glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),nullptr);
   glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(UVVertex),reinterpret_cast<const void*>(2*sizeof(float)));
   glActiveTexture(GL_TEXTURE0);
   if(masked)glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
-  glUniform1i(glGetUniformLocation(g_grad_program,"u_mask"),0);
-  glUniform2f(glGetUniformLocation(g_grad_program,"u_size"),float(g_active_w),float(g_active_h));
-  glUniform1f(glGetUniformLocation(g_grad_program,"u_use_mask"),masked?1.0f:0.0f);
-  glUniform4f(glGetUniformLocation(g_grad_program,"u_c1"),c1[0],c1[1],c1[2],c1[3]);
-  glUniform4f(glGetUniformLocation(g_grad_program,"u_c2"),c2[0],c2[1],c2[2],c2[3]);
-  glUniform4f(glGetUniformLocation(g_grad_program,"u_color"),color[0],color[1],color[2],color[3]);
-  glUniform1f(glGetUniformLocation(g_grad_program,"u_mix"),std::clamp(mix_tex,0.0f,1.0f));
-  glUniform1f(glGetUniformLocation(g_grad_program,"u_radial"),radial?1.0f:0.0f);
+  glUniform1i(glGetUniformLocation(g_cfg->gl.grad_program,"u_mask"),0);
+  glUniform2f(glGetUniformLocation(g_cfg->gl.grad_program,"u_size"),float(g_active_w),float(g_active_h));
+  glUniform1f(glGetUniformLocation(g_cfg->gl.grad_program,"u_use_mask"),masked?1.0f:0.0f);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.grad_program,"u_c1"),c1[0],c1[1],c1[2],c1[3]);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.grad_program,"u_c2"),c2[0],c2[1],c2[2],c2[3]);
+  glUniform4f(glGetUniformLocation(g_cfg->gl.grad_program,"u_color"),color[0],color[1],color[2],color[3]);
+  glUniform1f(glGetUniformLocation(g_cfg->gl.grad_program,"u_mix"),std::clamp(mix_tex,0.0f,1.0f));
+  glUniform1f(glGetUniformLocation(g_cfg->gl.grad_program,"u_radial"),radial?1.0f:0.0f);
   glEnable(GL_BLEND);
   if(g_draw_mode==DRAW_REVEALAGE)glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);
   else glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
@@ -304,53 +342,59 @@ void draw_gradient(const std::vector<UVVertex>&v,const float c1[4],const float c
   glDisableVertexAttribArray(1);glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
 bool coverage_begin(){
-  GLint bits=0;glGetIntegerv(GL_STENCIL_BITS,&bits);
-  if(bits<=0)return false;
-  GLint fbo=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&fbo);
-  glStencilMask(0xFF);
-  if(fbo!=g_stencil_fbo||g_stencil_ref>=255){
-    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_stencil_ref=0;g_stencil_fbo=fbo;
+  // The stencil bits were queried for every stroke: a glGet waits for the GL queue, and on the
+  // emulator (GL sent to the host) that wait was ~2 ms a stroke, the whole of the SLOW render time.
+  // In the document pass the target is asked again only after a pass that may switch it (retarget()).
+  if(!g_target_known){
+    GLint fbo=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&fbo);g_frame_queries_now++;
+    if(fbo!=g_cfg->gl.stencil_fbo){glGetIntegerv(GL_STENCIL_BITS,&g_cfg->gl.stencil_bits);g_frame_queries_now++;g_cfg->gl.stencil_fbo=fbo;g_cfg->gl.stencil_ref=255;}
+    g_target_known=g_in_document;
   }
-  ++g_stencil_ref;
+  if(g_cfg->gl.stencil_bits<=0)return false;
+  glStencilMask(0xFF);
+  if(g_cfg->gl.stencil_ref>=255){
+    glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);g_cfg->gl.stencil_ref=0;
+  }
+  ++g_cfg->gl.stencil_ref;
   glEnable(GL_STENCIL_TEST);
-  glStencilFunc(GL_NOTEQUAL,g_stencil_ref,0xFF);
+  glStencilFunc(GL_NOTEQUAL,g_cfg->gl.stencil_ref,0xFF);
   glStencilOp(GL_KEEP,GL_KEEP,GL_REPLACE);
   return true;
 }
 void coverage_end(bool on){if(on)glDisable(GL_STENCIL_TEST);}
 bool ensure_mask_program(){
-  if(g_mask_program) return true;
+  if(g_cfg->gl.mask_program) return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,vs_src()), fs=compile_shader(GL_FRAGMENT_SHADER,mask_fs_src());
   if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
-  g_mask_program=glCreateProgram(); glAttachShader(g_mask_program,vs); glAttachShader(g_mask_program,fs);
-  glBindAttribLocation(g_mask_program,0,"a_position"); glLinkProgram(g_mask_program);
+  g_cfg->gl.mask_program=glCreateProgram(); glAttachShader(g_cfg->gl.mask_program,vs); glAttachShader(g_cfg->gl.mask_program,fs);
+  glBindAttribLocation(g_cfg->gl.mask_program,0,"a_position"); glLinkProgram(g_cfg->gl.mask_program);
   glDeleteShader(vs);glDeleteShader(fs);
-  GLint ok=GL_FALSE;glGetProgramiv(g_mask_program,GL_LINK_STATUS,&ok);
-  if(ok==GL_FALSE){glDeleteProgram(g_mask_program);g_mask_program=0;return false;}
-  g_mask_color=glGetUniformLocation(g_mask_program,"u_color");
-  g_mask_sampler=glGetUniformLocation(g_mask_program,"u_mask");
-  g_mask_size=glGetUniformLocation(g_mask_program,"u_size");
-  return g_mask_color>=0&&g_mask_sampler>=0&&g_mask_size>=0;
+  GLint ok=GL_FALSE;glGetProgramiv(g_cfg->gl.mask_program,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(g_cfg->gl.mask_program);g_cfg->gl.mask_program=0;return false;}
+  g_cfg->gl.mask_color=glGetUniformLocation(g_cfg->gl.mask_program,"u_color");
+  g_cfg->gl.mask_sampler=glGetUniformLocation(g_cfg->gl.mask_program,"u_mask");
+  g_cfg->gl.mask_size=glGetUniformLocation(g_cfg->gl.mask_program,"u_size");
+  return g_cfg->gl.mask_color>=0&&g_cfg->gl.mask_sampler>=0&&g_cfg->gl.mask_size>=0;
 }
 bool ensure_mask_target(int w,int h){
-  if(g_mask_fbo&&g_mask_w==w&&g_mask_h==h) return true;
-  if(g_mask_tex){glDeleteTextures(1,&g_mask_tex);g_mask_tex=0;}
-  if(g_mask_fbo){glDeleteFramebuffers(1,&g_mask_fbo);g_mask_fbo=0;}
-  glGenTextures(1,&g_mask_tex);glBindTexture(GL_TEXTURE_2D,g_mask_tex);
+  if(g_cfg->gl.mask_fbo&&g_cfg->gl.mask_w==w&&g_cfg->gl.mask_h==h) return true;
+  if(g_cfg->gl.mask_tex){glDeleteTextures(1,&g_cfg->gl.mask_tex);g_cfg->gl.mask_tex=0;}
+  if(g_cfg->gl.mask_fbo){glDeleteFramebuffers(1,&g_cfg->gl.mask_fbo);g_cfg->gl.mask_fbo=0;}
+  glGenTextures(1,&g_cfg->gl.mask_tex);glBindTexture(GL_TEXTURE_2D,g_cfg->gl.mask_tex);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-  glGenFramebuffers(1,&g_mask_fbo);
+  glGenFramebuffers(1,&g_cfg->gl.mask_fbo);
   GLint prev=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev);
-  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,g_mask_tex,0);
+  glBindFramebuffer(GL_FRAMEBUFFER,g_cfg->gl.mask_fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,g_cfg->gl.mask_tex,0);
   const bool complete=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
   glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev);glBindTexture(GL_TEXTURE_2D,0);
-  if(complete){g_mask_w=w;g_mask_h=h;}else{g_mask_w=g_mask_h=0;} // do not cache an incomplete target
+  if(complete){g_cfg->gl.mask_w=w;g_cfg->gl.mask_h=h;}else{g_cfg->gl.mask_w=g_cfg->gl.mask_h=0;} // do not cache an incomplete target
   return complete;
 }
-inline Vertex ndc(float x,float y,int w,int h){float sx=g_map_origin_x+x*g_map_scale;float sy=g_map_origin_y+y*g_map_scale;
-  if(g_view_rotation!=0.0f&&!g_export_mode){const float c=std::cos(g_view_rotation),sn=std::sin(g_view_rotation),dx=sx-0.5f*float(w),dy=sy-0.5f*float(h);sx=0.5f*float(w)+c*dx-sn*dy;sy=0.5f*float(h)+sn*dx+c*dy;}
+inline Vertex ndc(float x,float y,int w,int h){float sx=g_cfg->map_origin_x+x*g_cfg->map_scale;float sy=g_cfg->map_origin_y+y*g_cfg->map_scale;
+  if(g_cfg->view_rotation!=0.0f&&!g_cfg->export_mode){const float c=std::cos(g_cfg->view_rotation),sn=std::sin(g_cfg->view_rotation),dx=sx-0.5f*float(w),dy=sy-0.5f*float(h);sx=0.5f*float(w)+c*dx-sn*dy;sy=0.5f*float(h)+sn*dx+c*dy;}
   return {2.0f*sx/float(std::max(1,w))-1.0f,1.0f-2.0f*sy/float(std::max(1,h))};}
 // A whole stroke as one band with miter / bevel+round joins and round caps
 // (project_grease_stroke_outline.h, after Blender's gpencil_vertex()); thickness is per point.
@@ -358,7 +402,7 @@ void append_outline(std::vector<Vertex>&v,const std::vector<PGOutlinePoint>&pts,
   if(pts.empty())return;
   float max_r=0.0f;
   for(const PGOutlinePoint&p:pts)max_r=std::max(max_r,p.radius);
-  const int steps=std::clamp(int(max_r*g_map_scale*0.5f),4,32);
+  const int steps=std::clamp(int(max_r*g_cfg->map_scale*0.5f),4,32);
   static std::vector<float> buf;
   const int max_tris=pg_stroke_outline_max_triangles(int(pts.size()),steps);
   buf.resize(size_t(max_tris)*6u);
@@ -393,7 +437,7 @@ void append_dots(std::vector<Vertex>&v,const bGPDstroke*s,const MaterialGPencilS
     const bGPDspoint&p=s->points[i];
     const float r=0.5f*std::max(g_line_change!=0.0f?1.0f:0.0f,thickness*std::max(p.pressure,0.01f)+g_line_change);
     if(!squares){
-      const int seg=std::clamp(int(r*g_map_scale*0.5f),8,32);
+      const int seg=std::clamp(int(r*g_cfg->map_scale*0.5f),8,32);
       for(int k=0;k<seg;k++){
         const float a0=6.2831853f*k/seg,a1=6.2831853f*(k+1)/seg;
         v.push_back(ndc(p.x,p.y,w,h));
@@ -427,17 +471,17 @@ void append_fill(std::vector<Vertex>&v,const bGPDstroke*s,int w,int h){
 }
 void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=true){
   if(v.empty())return;
-  const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL&&g_mask_program!=0;
-  const GLuint program=masked?g_mask_program:g_program;
-  const GLint color_loc=masked?g_mask_color:g_color;
-  glUseProgram(program);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+  const bool masked=g_active_mask_tex!=0&&g_draw_mode==DRAW_NORMAL&&g_cfg->gl.mask_program!=0;
+  const GLuint program=masked?g_cfg->gl.mask_program:g_cfg->gl.program;
+  const GLint color_loc=masked?g_cfg->gl.mask_color:g_cfg->gl.color;
+  glUseProgram(program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
   if(masked){
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
-    glUniform1i(g_mask_sampler,0);glUniform2f(g_mask_size,float(g_active_w),float(g_active_h));
+    glUniform1i(g_cfg->gl.mask_sampler,0);glUniform2f(g_cfg->gl.mask_size,float(g_active_w),float(g_active_h));
   }
   glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(Vertex)),v.data(),GL_DYNAMIC_DRAW);
-  glEnableVertexAttribArray((GLuint)g_position);
-  glVertexAttribPointer((GLuint)g_position,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
+  glEnableVertexAttribArray((GLuint)g_cfg->gl.position);
+  glVertexAttribPointer((GLuint)g_cfg->gl.position,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),nullptr);
   glUniform4f(color_loc,color[0],color[1],color[2],color[3]);
   if(g_draw_mode==DRAW_REVEALAGE){glEnable(GL_BLEND);glBlendFunc(GL_ZERO,GL_ONE_MINUS_SRC_ALPHA);}
   else if(g_draw_mode==DRAW_INVERT){glEnable(GL_BLEND);glBlendFunc(GL_ONE_MINUS_DST_COLOR,GL_ZERO);}
@@ -446,7 +490,7 @@ void draw_vertices(const std::vector<Vertex>&v,const float color[4],bool blend=t
   glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
   if(blend||g_draw_mode!=DRAW_NORMAL)glDisable(GL_BLEND);
   if(masked){glBindTexture(GL_TEXTURE_2D,0);}
-  glDisableVertexAttribArray((GLuint)g_position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
+  glDisableVertexAttribArray((GLuint)g_cfg->gl.position);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
 }
 // One stroke's triangles, blended once per pixel.
 void draw_stroke_once(const std::vector<Vertex>&v,const float color[4]){
@@ -461,34 +505,197 @@ void draw_stroke_once(const std::vector<Vertex>&v,const float color[4]){
 void draw_holdout(const std::vector<Vertex>&v,float alpha,bool overlap){
   if(v.empty()||g_draw_mode==DRAW_REVEALAGE||g_draw_mode==DRAW_INVERT)return;
   const float a=std::clamp(alpha,0.0f,1.0f);
-  if(g_draw_mode==DRAW_PREMULT||g_export_mode==2){
+  if(g_draw_mode==DRAW_PREMULT||g_cfg->export_mode==2){
     const DrawMode saved=g_draw_mode;g_draw_mode=DRAW_REVEALAGE;
     const float c[4]={0,0,0,a};
     const bool on=overlap?false:coverage_begin();draw_vertices(v,c);if(!overlap)coverage_end(on);
     g_draw_mode=saved;return;
   }
-  const float*bg=g_export_mode==1?g_export_background:g_paper_color;
+  const float*bg=g_cfg->export_mode==1?g_cfg->export_background:g_paper_color;
   const float c[4]={bg[0],bg[1],bg[2],a};
   const bool on=overlap?false:coverage_begin();draw_vertices(v,c);if(!overlap)coverage_end(on);
 }
+// A9, presenter fallback: hardness and aspect as Blender's GP stroke shader applies them. Each segment
+// (or dot) is a quad that carries gpencil_vertex()'s sspos / thickness, and the fragment shader is
+// gpencil_stroke_round_cap_mask() (common_gpencil_lib.glsl) verbatim in GLSL ES 1.0. Fragments with
+// alpha < 0.001 are discarded as gpencil_frag.glsl does, so they do not take the stroke's stencil.
+const char *soft_vs_src(){
+  return "attribute vec2 a_position; attribute vec4 a_sspos; attribute float a_thickness; "
+         "varying vec4 v_sspos; varying float v_thickness; "
+         "void main(){gl_Position=vec4(a_position,0.0,1.0);v_sspos=a_sspos;v_thickness=a_thickness;}";
+}
+const char *soft_fs_src(){
+  return "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n"
+         "varying vec4 v_sspos; varying float v_thickness; uniform vec4 u_color; uniform float u_hardness; uniform vec2 u_aspect;\n"
+         "float gpencil_stroke_round_cap_mask(vec2 p1, vec2 p2, vec2 aspect, float thickness, float hardfac){\n"
+         "  vec2 line = p2.xy - p1.xy; vec2 pos = gl_FragCoord.xy - p1.xy;\n"
+         "  float line_len = length(line); float half_line_len = line_len * 0.5;\n"
+         "  line = (line_len > 0.0) ? (line / line_len) : vec2(1.0, 0.0);\n"
+         "  vec2 uv_end;\n"
+         "  uv_end.x = max(abs(dot(line, pos) - half_line_len) - half_line_len, 0.0);\n"
+         "  uv_end.y = dot(vec2(-line.y, line.x), pos);\n"
+         "  uv_end /= thickness; uv_end *= aspect;\n"
+         "  float dist = clamp(1.0 - length(uv_end) * 2.0, 0.0, 1.0);\n"
+         "  if (hardfac > 0.999) { return step(1e-8, dist); }\n"
+         "  float hardness = 1.0 - hardfac;\n"
+         "  dist = pow(dist, mix(0.01, 10.0, hardness));\n"
+         "  return smoothstep(0.0, 1.0, dist);\n"
+         "}\n"
+         "void main(){float a=u_color.a*gpencil_stroke_round_cap_mask(v_sspos.xy,v_sspos.zw,u_aspect,v_thickness,u_hardness);\n"
+         "  if(a<0.001)discard; gl_FragColor=vec4(u_color.rgb,a);}";
+}
+bool ensure_soft_program(){
+  if(g_cfg->gl.soft_program)return true;
+  GLuint vs=compile_shader(GL_VERTEX_SHADER,soft_vs_src()),fs=compile_shader(GL_FRAGMENT_SHADER,soft_fs_src());
+  if(!vs||!fs){if(vs)glDeleteShader(vs);if(fs)glDeleteShader(fs);return false;}
+  GLuint p=glCreateProgram();glAttachShader(p,vs);glAttachShader(p,fs);
+  glBindAttribLocation(p,0,"a_position");glBindAttribLocation(p,1,"a_sspos");glBindAttribLocation(p,2,"a_thickness");
+  glLinkProgram(p);glDeleteShader(vs);glDeleteShader(fs);
+  GLint ok=GL_FALSE;glGetProgramiv(p,GL_LINK_STATUS,&ok);
+  if(ok==GL_FALSE){glDeleteProgram(p);return false;}
+  g_cfg->gl.soft_program=p;g_cfg->gl.soft_color=glGetUniformLocation(p,"u_color");
+  g_cfg->gl.soft_hard=glGetUniformLocation(p,"u_hardness");g_cfg->gl.soft_aspect=glGetUniformLocation(p,"u_aspect");
+  return true;
+}
+struct SoftVertex{float x,y,s1x,s1y,s2x,s2y,thickness;};
+// canvas -> target pixel (gl_FragCoord space: y up)
+inline void to_px(float x,float y,int w,int h,float out[2]){const Vertex n=ndc(x,y,w,h);out[0]=(n.x+1.0f)*0.5f*float(w);out[1]=(n.y+1.0f)*0.5f*float(h);}
+inline void push_soft(std::vector<SoftVertex>&v,float px,float py,const float s1[2],const float s2[2],float th,int w,int h){
+  v.push_back({2.0f*px/float(std::max(1,w))-1.0f,2.0f*py/float(std::max(1,h))-1.0f,s1[0],s1[1],s2[0],s2[1],th});}
+// gpencil_vertex() stroke path: pts are canvas x, y and radius (thickness / 2, as outline_point).
+void append_soft_line(std::vector<SoftVertex>&v,const std::vector<PGOutlinePoint>&pts,bool cyclic,bool flat_start,bool flat_end,int w,int h){
+  const int n=int(pts.size());
+  if(n<=0)return;
+  std::vector<float> ss(size_t(n)*2),th(static_cast<size_t>(n));
+  for(int i=0;i<n;i++){to_px(pts[size_t(i)].x,pts[size_t(i)].y,w,h,&ss[size_t(i)*2]);
+    th[size_t(i)]=std::max(1.0f,2.0f*pts[size_t(i)].radius*g_cfg->map_scale);} // gpencil_stroke_thickness_modulate: max(1, ...)
+  if(n==1){ // a one-point stroke is a round dot (gpencil_vertex(): is_dot, not squares)
+    const float*c=&ss[0];const float r=th[0]*0.5f;const float z[2]={c[0]+0.5f,c[1]};
+    const float q[4][2]={{c[0]-r,c[1]-r},{c[0]+r,c[1]-r},{c[0]+r,c[1]+r},{c[0]-r,c[1]+r}};
+    for(int k:{0,1,2,0,2,3})push_soft(v,q[k][0],q[k][1],c,z,th[0],w,h);
+    return;
+  }
+  auto dir=[&](int a,int b,float o[2]){const float dx=ss[size_t(b)*2]-ss[size_t(a)*2],dy=ss[size_t(b)*2+1]-ss[size_t(a)*2+1];
+    const float l=std::hypot(dx,dy);if(l>1e-8f){o[0]=dx/l;o[1]=dy/l;}else{o[0]=0;o[1]=0;}};
+  const int segs=cyclic?n:n-1;
+  for(int i=0;i<segs;i++){
+    const int a=i,b=(i+1)%n;
+    float line[2];dir(a,b,line);
+    float corner[4][2];
+    for(int end=0;end<2;end++){ // end 0: x = -1 at a, end 1: x = +1 at b
+      const int p=end?b:a;
+      const bool open_end=!cyclic&&(end?b==n-1:a==0);
+      float adj[2];
+      if(open_end){adj[0]=line[0];adj[1]=line[1];}
+      else if(end)dir(b,(b+1)%n,adj);else dir((a+n-1)%n,a,adj);
+      float mt[2]={adj[0]+line[0],adj[1]+line[1]};
+      {const float l=std::hypot(mt[0],mt[1]);if(l>1e-8f){mt[0]/=l;mt[1]/=l;}else{mt[0]=mt[1]=0;}}
+      const float md=mt[0]*adj[0]+mt[1]*adj[1];
+      const bool brk=md<0.5f; // miter_limit cos(60 deg)
+      if(brk||open_end){mt[0]=line[0];mt[1]=line[1];}else{mt[0]/=md;mt[1]/=md;}
+      const float miter[2]={-mt[1],mt[0]};
+      const float x=end?1.0f:-1.0f;
+      const bool cap=open_end&&!(end?flat_end:flat_start);
+      const float r=th[size_t(p)]*0.5f; // clamped_thickness * viewport_size.zw in pixels
+      for(int side=0;side<2;side++){
+        const float y=side?1.0f:-1.0f;
+        float ox=miter[0]*y,oy=miter[1]*y;
+        if(cap||(brk&&!open_end)){ox+=line[0]*x;oy+=line[1]*x;}
+        corner[end*2+side][0]=ss[size_t(p)*2]+ox*r;corner[end*2+side][1]=ss[size_t(p)*2+1]+oy*r;
+      }
+    }
+    const float*s1=&ss[size_t(a)*2],*s2=&ss[size_t(b)*2];
+    const float ta=th[size_t(a)],tb=th[size_t(b)];
+    push_soft(v,corner[0][0],corner[0][1],s1,s2,ta,w,h);push_soft(v,corner[1][0],corner[1][1],s1,s2,ta,w,h);push_soft(v,corner[3][0],corner[3][1],s1,s2,tb,w,h);
+    push_soft(v,corner[0][0],corner[0][1],s1,s2,ta,w,h);push_soft(v,corner[3][0],corner[3][1],s1,s2,tb,w,h);push_soft(v,corner[2][0],corner[2][1],s1,s2,tb,w,h);
+  }
+}
+// gpencil_vertex() is_dot path: a quad of thickness * aspect along x_axis, sspos = (p, p + x_axis / 2).
+void append_soft_dots(std::vector<SoftVertex>&v,const bGPDstroke*s,const MaterialGPencilStyle*st,float thickness,const float aspect[2],int w,int h){
+  const bool squares=st->mode==GP_MATERIAL_MODE_SQUARE;
+  const float ca=std::cos(st->alignment_rotation),sa=std::sin(st->alignment_rotation);
+  for(int i=0;i<s->totpoints;i++){
+    const bGPDspoint&p=s->points[i];
+    const float tk=std::max(1.0f,std::max(g_line_change!=0.0f?1.0f:0.0f,thickness*std::max(p.pressure,0.01f)+g_line_change)*g_cfg->map_scale);
+    float c[2];to_px(p.x,p.y,w,h,c);
+    float ax=1.0f,ay=0.0f;
+    if(st->alignment_mode==GP_MATERIAL_FOLLOW_PATH&&s->totpoints>1){
+      const bGPDspoint&a=i+1<s->totpoints?s->points[i]:s->points[i-1];
+      const bGPDspoint&b=i+1<s->totpoints?s->points[i+1]:s->points[i];
+      float pa[2],pb[2];to_px(a.x,a.y,w,h,pa);to_px(b.x,b.y,w,h,pb);
+      const float l=std::hypot(pb[0]-pa[0],pb[1]-pa[1]);
+      if(l>1e-6f){ax=(pb[0]-pa[0])/l;ay=(pb[1]-pa[1])/l;}
+    }
+    const float xx=ax*ca-ay*sa,xy=ax*sa+ay*ca,yx=-xy,yy=xx;
+    const float hx=0.5f*tk*aspect[0],hy=0.5f*tk*aspect[1];
+    const float z[2]={c[0]+xx*0.5f,c[1]+xy*0.5f};
+    const float k4[4][2]={{-1,-1},{1,-1},{1,1},{-1,1}};
+    float q[4][2];
+    for(int k=0;k<4;k++){q[k][0]=c[0]+k4[k][0]*hx*xx+k4[k][1]*hy*yx;q[k][1]=c[1]+k4[k][0]*hx*xy+k4[k][1]*hy*yy;}
+    const float t=squares?1e18f:tk; // squares: out_thickness 1e18, the mask is 1
+    for(int k:{0,1,2,0,2,3})push_soft(v,q[k][0],q[k][1],c,z,t,w,h);
+  }
+}
+// pack_rotation_aspect_hardness() + gpencil_decode_aspect(): the quad scale of a dot.
+void stroke_aspect(const bGPDstroke*s,float out[2]){
+  const float asp=s->aspect_ratio[0]/std::max(s->aspect_ratio[1],1e-8f);
+  if(asp>1.0f){out[0]=1.0f;out[1]=1.0f/asp;}else{out[0]=std::max(asp,0.0f);out[1]=1.0f;}
+}
+// false: not drawn (no program, a masked layer or a revealage / invert pass), the caller draws it flat.
+bool draw_soft(const std::vector<SoftVertex>&v,const float color[4],float hardness,const float aspect[2],bool overlap){
+  if(g_active_mask_tex!=0||(g_draw_mode!=DRAW_NORMAL&&g_draw_mode!=DRAW_PREMULT)||!ensure_program()||!ensure_soft_program())return false;
+  if(v.empty())return true;
+  const bool on=overlap?false:coverage_begin();
+  glUseProgram(g_cfg->gl.soft_program);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
+  glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(v.size()*sizeof(SoftVertex)),v.data(),GL_DYNAMIC_DRAW);
+  for(GLuint a=0;a<3;a++)glEnableVertexAttribArray(a);
+  glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),nullptr);
+  glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),(const void*)offsetof(SoftVertex,s1x));
+  glVertexAttribPointer(2,1,GL_FLOAT,GL_FALSE,sizeof(SoftVertex),(const void*)offsetof(SoftVertex,thickness));
+  glUniform4f(g_cfg->gl.soft_color,color[0],color[1],color[2],color[3]);
+  glUniform1f(g_cfg->gl.soft_hard,std::clamp(hardness,0.0f,1.0f));
+  glUniform2f(g_cfg->gl.soft_aspect,1.0f/std::max(aspect[0],1e-6f),1.0f/std::max(aspect[1],1e-6f)); // "invert for vertex shader"
+  glEnable(GL_BLEND);glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
+  glDrawArrays(GL_TRIANGLES,0,(GLsizei)v.size());
+  glDisable(GL_BLEND);
+  for(GLuint a=0;a<3;a++)glDisableVertexAttribArray(a);
+  glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);
+  coverage_end(on);
+  return true;
+}
+struct LiveStyle{int active=0;float thickness=1.0f,hardness=1.0f,ax=1.0f,ay=1.0f;int caps=0,material=0;} g_live;
+void* g_live_batch_cache=nullptr;
+bool engine_draw_live(const bGPdata *gpd, int w, int h);
 void draw_sbuffer(const bGPdata *gpd, float thickness, int w, int h)
 {
   if (!gpd || !gpd->runtime.sbuffer || gpd->runtime.sbuffer_used <= 0) return;
+  /* A9: through Blender's draw engine, as the committed stroke will be drawn (hardness, caps, aspect,
+   * thickness, material); the code below is the presenter fallback. */
+  if (engine_draw_live(gpd, w, h)) return;
   const tGPspoint *points = static_cast<const tGPspoint *>(gpd->runtime.sbuffer);
   std::vector<Vertex> stroke;
   std::vector<PGOutlinePoint> pts;
+  /* the brush size the stroke is committed with (as append_stroke_outline draws it), not 1 unit */
+  const float tk = g_live.active ? g_live.thickness : thickness;
   pts.reserve(static_cast<size_t>(gpd->runtime.sbuffer_used));
   for (int i = 0; i < gpd->runtime.sbuffer_used; ++i) {
     pts.push_back(outline_point(points[i].m_xy[0], points[i].m_xy[1],
-                                thickness * std::max(points[i].pressure, 0.01f)));
+                                tk * std::max(points[i].pressure, 0.01f)));
   }
-  append_outline(stroke, pts, 0, w, h);
-  // g_stroke_color carries the material colour and opacity only; the point strength of the open
+  const bool flat = g_live.active && g_live.caps == 1;
+  // g_cfg->stroke_color carries the material colour and opacity only; the point strength of the open
   // buffer is applied here once, as draw_frame() applies it to committed strokes.
   float strength = 0.0f;
   for (int i = 0; i < gpd->runtime.sbuffer_used; ++i) strength += std::clamp(points[i].strength, 0.0f, 1.0f);
   strength /= float(gpd->runtime.sbuffer_used);
-  const float color[4] = {g_stroke_color[0], g_stroke_color[1], g_stroke_color[2], g_stroke_color[3] * strength};
+  const float color[4] = {g_cfg->stroke_color[0], g_cfg->stroke_color[1], g_cfg->stroke_color[2], g_cfg->stroke_color[3] * strength};
+  if (g_live.active && g_live.hardness < 0.999f) {
+    std::vector<SoftVertex> soft;
+    append_soft_line(soft, pts, false, flat, flat, w, h);
+    const float one[2] = {1.0f, 1.0f}; // a line's aspect is (1, 1); aspect shapes dots only
+    if (draw_soft(soft, color, g_live.hardness, one, false)) return;
+  }
+  append_outline(stroke, pts, flat ? (PG_OUTLINE_FLAT_START | PG_OUTLINE_FLAT_END) : 0, w, h);
   draw_stroke_once(stroke, color);
 }
 
@@ -518,8 +725,8 @@ void append_textured_stroke(std::vector<UVVertex>&out,const bGPDstroke*s,float p
   for(const Vertex&v:tri){
     // back from NDC to canvas units
     float sx=(v.x+1.0f)*0.5f*float(w),sy=(1.0f-v.y)*0.5f*float(h);
-    if(g_view_rotation!=0.0f&&!g_export_mode){const float c=std::cos(-g_view_rotation),sn=std::sin(-g_view_rotation),dx=sx-0.5f*float(w),dy=sy-0.5f*float(h);sx=0.5f*float(w)+c*dx-sn*dy;sy=0.5f*float(h)+sn*dx+c*dy;}
-    const float cx=(sx-g_map_origin_x)/g_map_scale,cy=(sy-g_map_origin_y)/g_map_scale;
+    if(g_cfg->view_rotation!=0.0f&&!g_cfg->export_mode){const float c=std::cos(-g_cfg->view_rotation),sn=std::sin(-g_cfg->view_rotation),dx=sx-0.5f*float(w),dy=sy-0.5f*float(h);sx=0.5f*float(w)+c*dx-sn*dy;sy=0.5f*float(h)+sn*dx+c*dy;}
+    const float cx=(sx-g_cfg->map_origin_x)/g_cfg->map_scale,cy=(sy-g_cfg->map_origin_y)/g_cfg->map_scale;
     float along,side;centerline_param(s,cx,cy,&along,&side);
     out.push_back({v.x,v.y,along*u_scale,0.5f+side/width});
   }
@@ -596,19 +803,19 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
     // vert_color, fill color mixes the stroke's vert_color_fill. One color per draw call, so the
     // stroke gets the mean of its per-point mixes (see project_grease_gp_color.h).
     const float stroke_base_rgb[3] = {
-        style ? style->stroke_rgba[0] : g_stroke_color[0],
-        style ? style->stroke_rgba[1] : g_stroke_color[1],
-        style ? style->stroke_rgba[2] : g_stroke_color[2]};
+        style ? style->stroke_rgba[0] : g_cfg->stroke_color[0],
+        style ? style->stroke_rgba[1] : g_cfg->stroke_color[1],
+        style ? style->stroke_rgba[2] : g_cfg->stroke_color[2]};
     const float fill_base_rgb[3] = {
-        style ? style->fill_rgba[0] : g_stroke_color[0],
-        style ? style->fill_rgba[1] : g_stroke_color[1],
-        style ? style->fill_rgba[2] : g_stroke_color[2]};
+        style ? style->fill_rgba[0] : g_cfg->stroke_color[0],
+        style ? style->fill_rgba[1] : g_cfg->stroke_color[1],
+        style ? style->fill_rgba[2] : g_cfg->stroke_color[2]};
     float stroke_rgb[3], fill_rgb[3];
     pg_gp_stroke_mean_mix(stroke_base_rgb, s->points[0].vert_color, sizeof(bGPDspoint),
-                          s->totpoints, g_vertex_opacity, stroke_rgb);
-    pg_gp_mix_vertex_color(fill_base_rgb, s->vert_color_fill, g_vertex_opacity, fill_rgb);
-    const float stroke_base_alpha = style ? style->stroke_rgba[3] : g_stroke_color[3];
-    const float fill_base_alpha = style ? style->fill_rgba[3] : g_stroke_color[3];
+                          s->totpoints, g_cfg->vertex_opacity, stroke_rgb);
+    pg_gp_mix_vertex_color(fill_base_rgb, s->vert_color_fill, g_cfg->vertex_opacity, fill_rgb);
+    const float stroke_base_alpha = style ? style->stroke_rgba[3] : g_cfg->stroke_color[3];
+    const float fill_base_alpha = style ? style->fill_rgba[3] : g_cfg->stroke_color[3];
     const float layer_opacity = g_force_layer_opacity>=0.0f?g_force_layer_opacity:layer->opacity;
     const float alpha_scale = alpha * layer_opacity * avg_strength;
     // gpencil_vert.glsl: mixed_col.rgb = mix(mixed_col.rgb, gpLayerTint.rgb, gpLayerTint.a)
@@ -637,10 +844,25 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
         std::vector<UVVertex> tv;append_textured_stroke(tv,s,style->texture_pixsize,w,h);
         const bool on=coverage_begin();draw_textured(tv,*stroke_tex,color,style->mix_stroke_factor);coverage_end(on);
       }
+      else if(style&&style->mode!=GP_MATERIAL_MODE_LINE&&(s->hardeness<0.999f||s->aspect_ratio[0]!=s->aspect_ratio[1])&&
+              [&]{std::vector<SoftVertex> sv;float asp[2];stroke_aspect(s,asp);
+                  append_soft_dots(sv,s,style,float(s->thickness),asp,w,h);
+                  return draw_soft(sv,color,s->hardeness,asp,style->flag&GP_MATERIAL_DISABLE_STENCIL);}()){
+      }
       else if(style&&style->mode!=GP_MATERIAL_MODE_LINE){
         append_dots(stroke,s,style,float(s->thickness),w,h);
         if(overlap)draw_vertices(stroke,color);else draw_stroke_once(stroke,color);
         stroke.clear();
+      }
+      else if(s->hardeness<0.999f&&[&]{
+                std::vector<PGOutlinePoint> pts;pts.reserve(size_t(s->totpoints));
+                for(int i=0;i<s->totpoints;i++)
+                  pts.push_back(outline_point(s->points[i].x,s->points[i].y,
+                      std::max(g_line_change!=0.0f?1.0f:0.0f,float(s->thickness)*std::max(s->points[i].pressure,0.01f)+g_line_change)));
+                std::vector<SoftVertex> sv;
+                append_soft_line(sv,pts,(s->flag&GP_STROKE_CYCLIC)!=0,s->caps[0]==GP_STROKE_CAP_FLAT,s->caps[1]==GP_STROKE_CAP_FLAT,w,h);
+                const float one[2]={1.0f,1.0f};
+                return draw_soft(sv,color,s->hardeness,one,style&&(style->flag&GP_MATERIAL_DISABLE_STENCIL));}()){
       }
       else{
         append_stroke_outline(stroke,s,float(s->thickness),w,h);
@@ -661,7 +883,7 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
         for(int c=0;c<4;c++){c1[c]=style->fill_rgba[c];c2[c]=style->mix_rgba[c];}
         if(style->flag&GP_MATERIAL_FLIP_FILL)for(int c=0;c<4;c++)std::swap(c1[c],c2[c]);
         // gpencil_vert.glsl: gradient mode does not modulate alpha by the material (fill_col.a = 1)
-        float base[3];pg_gp_mix_vertex_color(c1,s->vert_color_fill,g_vertex_opacity,base);
+        float base[3];pg_gp_mix_vertex_color(c1,s->vert_color_fill,g_cfg->vertex_opacity,base);
         if(g_layer_tint[3]>0.0f)for(int c=0;c<3;c++)base[c]+=(g_layer_tint[c]-base[c])*g_layer_tint[3];
         for(int c=0;c<3;c++){c1[c]=pg_linear_to_srgb(c1[c]);c2[c]=pg_linear_to_srgb(c2[c]);base[c]=pg_linear_to_srgb(base[c]);}
         const float gcol[4]={base[0],base[1],base[2],alpha_scale};
@@ -712,7 +934,7 @@ float point_group_weight(const bGPDstroke* s,int i,int group){
 // view), every outline vertex coloured by the weight interpolated at its nearest centre-line
 // position through Blender's weight ramp (BKE_defvert_weight_to_rgb), blue 0 .. red 1.
 float weight_at(const bGPDstroke* s,float x,float y){
-  if(s->totpoints==1)return point_group_weight(s,0,g_weight_group);
+  if(s->totpoints==1)return point_group_weight(s,0,g_cfg->weight_group);
   const bool cyclic=(s->flag&GP_STROKE_CYCLIC)!=0;
   const int segs=cyclic?s->totpoints:s->totpoints-1;
   float best_d=1e30f,best_w=0.0f;
@@ -725,7 +947,7 @@ float weight_at(const bGPDstroke* s,float x,float y){
     const float px=ax+dx*t-x,py=ay+dy*t-y,d=px*px+py*py;
     if(d<best_d){
       best_d=d;
-      const float w0=point_group_weight(s,i,g_weight_group),w1=point_group_weight(s,j,g_weight_group);
+      const float w0=point_group_weight(s,i,g_cfg->weight_group),w1=point_group_weight(s,j,g_cfg->weight_group);
       best_w=w0+(w1-w0)*t;
     }
   }
@@ -741,7 +963,7 @@ void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
     if(!s->points||s->totpoints<=0)continue;
     const float base=float(std::max<short>(s->thickness,1));
     // At least 4 px wide on screen so the weights stay readable on thin strokes.
-    const float min_r=2.0f/std::max(g_map_scale,1e-6f);
+    const float min_r=2.0f/std::max(g_cfg->map_scale,1e-6f);
     // Centre line resampled about every 6 px so the colour ramp (not a linear blue..red blend)
     // shows between the original points; extra points are collinear and do not change the shape.
     const bool cyclic=(s->flag&GP_STROKE_CYCLIC)!=0;
@@ -753,7 +975,7 @@ void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
       pts.push_back(p);
       if(i+1>=s->totpoints&&!cyclic)break;
       const bGPDspoint&b=s->points[(i+1)%s->totpoints];
-      const float len=std::hypot(b.x-a.x,b.y-a.y)*g_map_scale;
+      const float len=std::hypot(b.x-a.x,b.y-a.y)*g_cfg->map_scale;
       const int pieces=std::clamp(int(std::ceil(len/6.0f)),1,64);
       const float rb=std::max(base*std::max(b.pressure,0.01f)*0.5f,min_r);
       for(int k=1;k<pieces;k++){
@@ -764,7 +986,7 @@ void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
     int flags=0;
     if(cyclic)flags|=PG_OUTLINE_CYCLIC;
     float max_r=0.0f;for(const PGOutlinePoint&p:pts)max_r=std::max(max_r,p.radius);
-    const int steps=std::clamp(int(max_r*g_map_scale*0.5f),4,32);
+    const int steps=std::clamp(int(max_r*g_cfg->map_scale*0.5f),4,32);
     const int max_tris=pg_stroke_outline_max_triangles(int(pts.size()),steps);
     buf.resize(size_t(max_tris)*6u);
     const int n=pg_stroke_outline(pts.data(),int(pts.size()),flags,steps,buf.data(),max_tris);
@@ -778,8 +1000,8 @@ void draw_frame_weights(const bGPdata* gpd,const bGPDframe* frame,int w,int h){
     if(verts.empty())continue;
     const bool on=coverage_begin();
     const bool masked=g_active_mask_tex!=0;
-    const GLuint prog=masked?g_vc_mask_program:g_vc_program;
-    glUseProgram(prog);glBindBuffer(GL_ARRAY_BUFFER,g_vbo);
+    const GLuint prog=masked?g_cfg->gl.vc_mask_program:g_cfg->gl.vc_program;
+    glUseProgram(prog);glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.vbo);
     if(masked){
       glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,g_active_mask_tex);
       glUniform1i(glGetUniformLocation(prog,"u_mask"),0);
@@ -828,7 +1050,7 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
   if(!ensure_mask_program()||!ensure_mask_target(w,h))return 0;
   GLint prev_fbo=0,vp[4]={0,0,0,0};
   glGetIntegerv(GL_FRAMEBUFFER_BINDING,&prev_fbo);glGetIntegerv(GL_VIEWPORT,vp);
-  glBindFramebuffer(GL_FRAMEBUFFER,g_mask_fbo);glViewport(0,0,w,h);
+  glBindFramebuffer(GL_FRAMEBUFFER,g_cfg->gl.mask_fbo);glViewport(0,0,w,h);retarget();
   bool cleared=false,inverted=false;
   for(const bGPDlayer* m=static_cast<const bGPDlayer*>(gpd->layers.first);m;m=m->next){
     const bGPDlayer_Mask* entry=valid_mask_entry(gpd,layer,m);
@@ -845,7 +1067,7 @@ GLuint render_layer_mask(const bGPdata* gpd,const bGPDlayer* layer,int frame_num
   }
   if(cleared&&!inverted)draw_invert_pass(w,h);
   glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)prev_fbo);glViewport(vp[0],vp[1],vp[2],vp[3]);
-  return cleared?g_mask_tex:0;
+  return cleared?g_cfg->gl.mask_tex:0;
 }
 } // namespace
 
@@ -853,10 +1075,9 @@ namespace {
 // Selected points 5 px, unselected 3 px (screen pixels, independent of zoom).
 // Edit mode shows every point (Blender's edit overlay); elsewhere (a lasso in Draw / Vertex Paint)
 // only the selected ones, so unselected points do not look selected and huge drawings stay fast.
-int g_overlay_unselected=1;
 void draw_selection_overlay(const bGPDframe*frame,int w,int h){
   if(!frame)return;
-  const float px=1.0f/std::max(g_map_scale,1e-6f);
+  const float px=1.0f/std::max(g_cfg->map_scale,1e-6f);
   std::vector<Vertex> sel,unsel;
   // An octagon per point (6 triangles): the round outline per point cost ~1 ms each on a Mali
   // phone, 1.8 s a frame in Edit mode at 1800 points.
@@ -865,7 +1086,7 @@ void draw_selection_overlay(const bGPDframe*frame,int w,int h){
     if(!s->points)continue;
     for(int i=0;i<s->totpoints;i++){
       const bool selected=(s->points[i].flag&GP_SPOINT_SELECT)!=0;
-      if(!selected&&!g_overlay_unselected)continue;
+      if(!selected&&!g_cfg->overlay_unselected)continue;
       const float r=(selected?5.0f:3.0f)*0.5f*px,x=s->points[i].x,y=s->points[i].y;
       std::vector<Vertex>&v=selected?sel:unsel;
       const Vertex c0=ndc(x+r*ox[0],y+r*oy[0],w,h);
@@ -882,21 +1103,14 @@ void draw_selection_overlay(const bGPDframe*frame,int w,int h){
 // later frame of the gesture redraws only that texture and the open stroke. Blender's draw engine
 // does the same with its cached batches; without it each input sample re-tessellated and redrew
 // every stroke of the frame.
-struct OpenStrokeCache {
-  GLuint tex=0, program=0, vbo=0;
-  int w=0, h=0, frame=0;
-  const bGPdata* gpd=nullptr;
-  float scale=0, ox=0, oy=0, rot=0;
-  bool valid=false;
-} g_open_cache;
 long g_open_cache_stores=0, g_open_cache_reuses=0;
 static long g_engine_reuses=0;
-bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h){
-  const OpenStrokeCache& c=g_open_cache;
-  return c.valid&&c.gpd==gpd&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_map_scale&&c.ox==g_map_origin_x&&c.oy==g_map_origin_y&&c.rot==g_view_rotation;
+bool open_cache_matches(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
+  const OpenStrokeCache& c=g_cfg->gl.open_cache;
+  return c.valid&&c.gpd==gpd&&c.rev==rev&&c.frame==frame&&c.w==w&&c.h==h&&c.scale==g_cfg->map_scale&&c.ox==g_cfg->map_origin_x&&c.oy==g_cfg->map_origin_y&&c.rot==g_cfg->view_rotation;
 }
 bool open_cache_program(){
-  OpenStrokeCache& c=g_open_cache;
+  OpenStrokeCache& c=g_cfg->gl.open_cache;
   if(c.program)return true;
   GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec2 a_position; varying vec2 v_uv; "
       "void main(){v_uv=a_position*0.5+0.5;gl_Position=vec4(a_position,0.0,1.0);}");
@@ -915,8 +1129,8 @@ bool open_cache_program(){
 // sample of the open stroke redrew the whole frame.
 void clear_gl_errors(){for(int i=0;i<16&&glGetError()!=GL_NO_ERROR;i++){}}
 // Copies the framebuffer as drawn so far (canvas and committed strokes) into the cache texture.
-void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
-  OpenStrokeCache& c=g_open_cache;
+void open_cache_store(const bGPdata* gpd,int frame,int w,int h,uint64_t rev){
+  OpenStrokeCache& c=g_cfg->gl.open_cache;
   clear_gl_errors();
   if(!c.tex)glGenTextures(1,&c.tex);
   glBindTexture(GL_TEXTURE_2D,c.tex);
@@ -930,10 +1144,10 @@ void open_cache_store(const bGPdata* gpd,int frame,int w,int h){
   glBindTexture(GL_TEXTURE_2D,0);
   c.valid=glGetError()==GL_NO_ERROR;
   if(c.valid)g_open_cache_stores++;
-  c.gpd=gpd;c.frame=frame;c.w=c.valid?w:0;c.h=c.valid?h:0; /* a failed store must reallocate next time */ c.scale=g_map_scale;c.ox=g_map_origin_x;c.oy=g_map_origin_y;c.rot=g_view_rotation;
+  c.gpd=gpd;c.rev=rev;c.frame=frame;c.w=c.valid?w:0;c.h=c.valid?h:0; /* a failed store must reallocate next time */ c.scale=g_cfg->map_scale;c.ox=g_cfg->map_origin_x;c.oy=g_cfg->map_origin_y;c.rot=g_cfg->view_rotation;
 }
 bool open_cache_draw(){
-  OpenStrokeCache& c=g_open_cache;
+  OpenStrokeCache& c=g_cfg->gl.open_cache;
   if(!open_cache_program())return false;
   clear_gl_errors();
   const float quad[12]={-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1};
@@ -959,7 +1173,6 @@ extern "C" void project_grease_android_present_cache_stats(long* stores,long* re
  * carry yet (onion skin, shader effects, the weight view, exports): those keep this presenter.
  * The engine draws a copy of the document whose layers hold only the frame shown (the evaluated
  * modifier frame), over the paper; overlays (selection, guides, the open stroke) stay here. */
-int g_engine_enabled=1;      // project_grease_android_present_set_engine
 int g_engine_failed=0;       // a shader failed in this context: stay on the presenter
 uint64_t g_engine_revision=0, g_engine_drawn_revision=~0ull;
 int g_engine_drawn_frame=-1;
@@ -968,15 +1181,20 @@ std::vector<const bGPDframe*> g_engine_drawn_frames;
 // Probe result of engine_context_ok (-1 = not probed) and the engine-image reuse state: file scope so
 // present_reset / nativeResetEngine can clear them with the rest of the engine state.
 int g_engine_ctx_ok=-1;
+bool g_engine_finish_next=true;long g_engine_finishes=0; // glFinish the next engine frame (a new context)
+const bool g_engine_finish_always=[]{const char*e=std::getenv("PG_GL_FINISH");return e&&e[0]=='1';}();
 int g_engine_drawn_weight=-2;       // the overlay's vertex group (its edit batch)
 float g_engine_drawn_vopacity=-1.0f;
 PGGpEngineView g_engine_last_view{};
 bool g_engine_have_last=false;
+std::vector<unsigned char> g_engine_last_fx; // effect settings of the last engine image
 
 // Startup self-test (reported: on an ARM Mali phone the engine compiled but drew a black / broken
 // canvas and the app hung): a black line on white paper through the engine, read back. A wrong
 // picture keeps the presenter, with what was seen in the renderer report.
 char g_selftest_msg[256]="not run";
+std::string g_selftest_gpu; // GL_RENDERER|GL_VERSION the cached verdict belongs to
+bool g_selftest_verdict=false;int g_selftest_runs=0;double g_selftest_frame_ms=0.0;
 extern "C" __attribute__((weak)) void DRW_gpencil_batch_cache_free(bGPdata *gpd);
 static Material *selftest_material(){
   Material*ma=static_cast<Material*>(MEM_callocN(sizeof(Material),"pg selftest ma"));
@@ -1036,7 +1254,18 @@ bool engine_context_ok(){
     if(!v)return false; // no current context yet: ask again next frame instead of keeping "off"
     // OpenGL ES 3.2, or 3.1 with the texture buffer / base vertex / implicit conversion extensions
     ok=(pg_gles_api&&pg_gles_api()!=0)?1:0;
-    if(ok&&!engine_self_test()){ok=0;g_engine_failed=1;}
+    if(ok){
+      // The self-test (a 64x64 engine draw + float readback) is slow: run it once per GPU/driver per
+      // process, so a context recovery on the same GPU reuses the verdict; its time is not document time.
+      const char*r=reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+      const std::string gpu=std::string(r?r:"?")+"|"+v;
+      if(gpu!=g_selftest_gpu){
+        const auto t=std::chrono::steady_clock::now();
+        g_selftest_verdict=engine_self_test();g_selftest_gpu=gpu;g_selftest_runs++;
+        g_selftest_frame_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t).count();
+      }
+      if(!g_selftest_verdict){ok=0;g_engine_failed=1;}
+    }
 #ifdef PG_HAVE_ANDROID_LOG
     __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","GL_VERSION %s: Blender GP draw engine %s (API %d)",v?v:"?",ok?"on":"off (needs OpenGL ES 3.2, or 3.1 with texture buffers)",pg_gles_api?pg_gles_api():0);
 #endif
@@ -1054,46 +1283,41 @@ float srgb_to_linear(float c){return c<=0.04045f?c/12.92f:std::pow((c+0.055f)/1.
  * engine to draw each layer in its own pass. */
 // spare: the other texture of a ping-pong pair, so a new video frame never goes into the texture
 // the GPU is still drawing (Mali waited 40-150 ms for it on every frame step)
-struct RefSlot{GLuint tex=0,spare=0;int w=0,h=0,sw=0,sh=0,visible=0,exported=0;float opacity=0.5f,dx=0.0f,dy=0.0f,scale=1.0f,rot=0.0f,sx=1.0f,sy=1.0f;};
-constexpr int kRefSlots=16;
-RefSlot g_refs[kRefSlots];
-int g_ref_cur=0,g_ref_count=1;
-GLuint g_ref_prog=0, g_ref_vbo=0;
 // a reference stays out of exports unless it is part of the animation (an imported video layer)
-bool slot_shown(const RefSlot&r){return r.visible&&r.tex&&r.w>0&&r.h>0&&(!g_export_mode||r.exported);}
-bool reference_shown(){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))return true;return false;}
+bool slot_shown(const RefSlot&r){return r.visible&&r.tex&&r.w>0&&r.h>0&&(!g_cfg->export_mode||r.exported);}
+bool reference_shown(){for(int i=0;i<g_cfg->gl.ref_count;i++)if(slot_shown(g_cfg->gl.refs[i]))return true;return false;}
 void draw_reference_slot(const RefSlot&r,int w,int h){
-  if(!g_ref_prog){
+  if(!g_cfg->gl.ref_prog){
     GLuint vs=compile_shader(GL_VERTEX_SHADER,"attribute vec4 a_p; varying vec2 v_uv; void main(){v_uv=a_p.zw;gl_Position=vec4(a_p.xy,0.0,1.0);}");
     GLuint fs=compile_shader(GL_FRAGMENT_SHADER,"precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; uniform float u_a;"
         "void main(){vec4 c=texture2D(u_tex,v_uv);gl_FragColor=vec4(c.rgb,c.a*u_a);}");
     if(!vs||!fs)return;
-    g_ref_prog=glCreateProgram();glAttachShader(g_ref_prog,vs);glAttachShader(g_ref_prog,fs);
-    glBindAttribLocation(g_ref_prog,0,"a_p");glLinkProgram(g_ref_prog);glDeleteShader(vs);glDeleteShader(fs);
+    g_cfg->gl.ref_prog=glCreateProgram();glAttachShader(g_cfg->gl.ref_prog,vs);glAttachShader(g_cfg->gl.ref_prog,fs);
+    glBindAttribLocation(g_cfg->gl.ref_prog,0,"a_p");glLinkProgram(g_cfg->gl.ref_prog);glDeleteShader(vs);glDeleteShader(fs);
   }
-  if(!g_ref_vbo)glGenBuffers(1,&g_ref_vbo);
+  if(!g_cfg->gl.ref_vbo)glGenBuffers(1,&g_cfg->gl.ref_vbo);
   // aspect fit inside the canvas, centred
-  const float cw=float(g_canvas_width),ch=float(g_canvas_height);
+  const float cw=float(g_cfg->canvas_width),ch=float(g_cfg->canvas_height);
   const float k=std::min(cw/float(r.w),ch/float(r.h));
   const float hw=float(r.w)*k*r.scale*r.sx*0.5f,hh=float(r.h)*k*r.scale*r.sy*0.5f; // sx/sy: squash / stretch
   const float mx=cw*0.5f+r.dx,my=ch*0.5f+r.dy,cs=std::cos(r.rot),sn=std::sin(r.rot);
   auto corner=[&](float u,float v){return ndc(mx+cs*u-sn*v,my+sn*u+cs*v,w,h);};
   const Vertex a=corner(-hw,-hh),b=corner(hw,-hh),c=corner(hw,hh),d=corner(-hw,hh);
   const float q[24]={a.x,a.y,0,0, b.x,b.y,1,0, c.x,c.y,1,1, a.x,a.y,0,0, c.x,c.y,1,1, d.x,d.y,0,1};
-  glUseProgram(g_ref_prog);
-  glBindBuffer(GL_ARRAY_BUFFER,g_ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
+  glUseProgram(g_cfg->gl.ref_prog);
+  glBindBuffer(GL_ARRAY_BUFFER,g_cfg->gl.ref_vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(q),q,GL_STREAM_DRAW);
   glEnableVertexAttribArray(0);glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,0,nullptr);
   glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,r.tex);
-  glUniform1i(glGetUniformLocation(g_ref_prog,"u_tex"),0);
-  glUniform1f(glGetUniformLocation(g_ref_prog,"u_a"),r.opacity);
+  glUniform1i(glGetUniformLocation(g_cfg->gl.ref_prog,"u_tex"),0);
+  glUniform1f(glGetUniformLocation(g_cfg->gl.ref_prog,"u_a"),r.opacity);
   glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
   glDrawArrays(GL_TRIANGLES,0,6);
   glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glBindTexture(GL_TEXTURE_2D,0);glUseProgram(0);
 }
-void draw_reference(int w,int h){for(int i=0;i<g_ref_count;i++)if(slot_shown(g_refs[i]))draw_reference_slot(g_refs[i],w,h);}
+void draw_reference(int w,int h){for(int i=0;i<g_cfg->gl.ref_count;i++)if(slot_shown(g_cfg->gl.refs[i]))draw_reference_slot(g_cfg->gl.refs[i],w,h);}
 
 bool engine_wanted(const bGPdata*gpd){
-  if(!g_engine_enabled||g_engine_failed||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
+  if(!g_cfg->engine_enabled||g_engine_failed||!pg_gp_engine_draw||!pg_gp_engine_present)return false;
   if(!engine_context_ok())return false;
   // Onion skin is drawn by the engine (engine_draw_canvas carries the keyframes of onion layers).
   (void)gpd;
@@ -1111,7 +1335,7 @@ static void build_engine_fx(const bGPdata*gpd,EngineFx&out){
   auto lin=[](float c){return srgb_to_linear(c);};
   auto pivot=[&](float fx_,float fy_)->Object*{
     Object*o=static_cast<Object*>(MEM_callocN(sizeof(Object),"pg fx pivot"));out.blocks.push_back(o);
-    unit_m4(o->object_to_world);o->object_to_world[3][0]=fx_*float(g_canvas_width);o->object_to_world[3][1]=fy_*float(g_canvas_height);
+    unit_m4(o->object_to_world);o->object_to_world[3][0]=fx_*float(g_cfg->canvas_width);o->object_to_world[3][1]=fy_*float(g_cfg->canvas_height);
     return o;};
   for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
     const PGFxEntry*e=nullptr;const int n=g_fx_provider(g_fx_provider_user,l,&e);
@@ -1211,37 +1435,47 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   }
   /* Update tagging: the batch cache (draw_cache_impl_gpencil.cc) is rebuilt only when the document
    * or modifier revision, the frame or the evaluated frames changed (GP_DATA_CACHE_IS_DIRTY). */
-  const bool changed=g_engine_drawn_weight!=g_weight_group||g_engine_drawn_vopacity!=g_vertex_opacity||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
+  const bool changed=g_engine_drawn_weight!=g_cfg->weight_group||g_engine_drawn_vopacity!=g_cfg->vertex_opacity||g_engine_revision!=g_engine_drawn_revision||frame_number!=g_engine_drawn_frame||
                      shown_frames!=g_engine_drawn_frames;
   copy.flag&=~GP_DATA_CACHE_IS_DIRTY;
   if(changed)copy.flag|=GP_DATA_CACHE_IS_DIRTY;
   copy.runtime.gpencil_cache=static_cast<GpencilBatchCache*>(g_engine_batch_cache);
   copy.runtime.sbuffer_used=0;
-  PGGpEngineView view{w,h,g_map_origin_x,g_map_origin_y,g_map_scale,
+  PGGpEngineView view{w,h,g_cfg->map_origin_x,g_cfg->map_origin_y,g_cfg->map_scale,
                       {srgb_to_linear(g_paper_color[0]),srgb_to_linear(g_paper_color[1]),srgb_to_linear(g_paper_color[2]),1.0f},
                       changed?1:0};
   // A rotoscope reference shows through: the engine image is drawn with a clear background over it.
-  const bool rotated=g_view_rotation!=0.0f&&!g_export_mode;
+  const bool rotated=g_cfg->view_rotation!=0.0f&&!g_cfg->export_mode;
   /* Export (PNG / GIF / MP4 frames): the project background, or a transparent one composited over
    * the cleared target, at canvas size, with no view rotation and no overlays. */
-  if(g_export_mode==1)for(int c=0;c<3;c++)view.background[c]=srgb_to_linear(g_export_background[c]);
+  if(g_cfg->export_mode==1)for(int c=0;c<3;c++)view.background[c]=srgb_to_linear(g_cfg->export_background[c]);
   // on screen the engine image goes over paper + surround (strokes off the paper stay visible, as in
   // Blender's viewport); export mode 1 draws the project background itself
-  const bool over=(g_export_mode!=1||reference_shown()||rotated)&&pg_gp_engine_present_over;
-  view.rotation=rotated?g_view_rotation:0.0f;
+  const bool over=(g_cfg->export_mode!=1||reference_shown()||rotated)&&pg_gp_engine_present_over;
+  view.rotation=rotated?g_cfg->view_rotation:0.0f;
   EngineFx fx;build_engine_fx(gpd,fx);
   view.shader_fx=&fx.list;
   view.rendered=fx.list.first!=nullptr;
-  view.weight_group=g_weight_group;
-  view.vertex_opacity=g_vertex_opacity;
+  view.weight_group=g_cfg->weight_group;
+  view.vertex_opacity=g_cfg->vertex_opacity;
   if(over)for(float&c:view.background)c=0.0f;
   const auto t_engine=std::chrono::steady_clock::now();
   gl_check("canvas paper / reference / masks before the engine");
-  /* Nothing changed since the last engine image (same strokes, frame, view, no effects): present
-   * that image again instead of re-running every engine pass. Effects are left out because their
-   * settings are not part of the data revision. */
+  /* Nothing changed since the last engine image (same strokes, frame, view, effect settings):
+   * present that image again instead of re-running every engine pass. The effect settings are not
+   * part of the data revision, so they are compared here (the pivots also depend on the canvas size). */
+  std::vector<unsigned char> fx_sig;
+  if(g_fx_provider){
+    const int cs[2]={g_cfg->canvas_width,g_cfg->canvas_height};
+    fx_sig.insert(fx_sig.end(),reinterpret_cast<const unsigned char*>(cs),reinterpret_cast<const unsigned char*>(cs+2));
+    for(const bGPDlayer*l=static_cast<const bGPDlayer*>(gpd->layers.first);l;l=l->next){
+      const PGFxEntry*e=nullptr;const int n=g_fx_provider(g_fx_provider_user,l,&e);
+      if(n>0&&e)fx_sig.insert(fx_sig.end(),reinterpret_cast<const unsigned char*>(e),reinterpret_cast<const unsigned char*>(e+n));
+      fx_sig.push_back(0xFF); // layer boundary
+    }
+  }
   PGGpEngineView&last=g_engine_last_view;
-  const bool same=g_engine_have_last&&!changed&&!g_export_mode&&!view.rendered&&!last.rendered&&
+  const bool same=g_engine_have_last&&!changed&&!g_cfg->export_mode&&fx_sig==g_engine_last_fx&&
       view.viewport_w==last.viewport_w&&view.viewport_h==last.viewport_h&&view.origin_x==last.origin_x&&
       view.origin_y==last.origin_y&&view.scale==last.scale&&view.rotation==last.rotation&&
       std::memcmp(view.background,last.background,sizeof view.background)==0;
@@ -1249,9 +1483,10 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   if(!same){
     ok=pg_gp_engine_draw(&copy,frame_number,&view);
     {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
-    glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
+    // a stall: only the first frame of a context (its timing is logged) or with PG_GL_FINISH=1 set
+    if(g_engine_finish_next||g_engine_finish_always){glFinish();g_engine_finish_next=false;g_engine_finishes++;}
   }
-  last=view;g_engine_have_last=ok&&!g_export_mode;
+  last=view;g_engine_last_fx.swap(fx_sig);g_engine_have_last=ok&&!g_cfg->export_mode;
   g_engine_reuses+=same?1:0;
   g_last_engine_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t_engine).count();
   g_last_engine_rebuilt=same?2:changed?1:0;g_last_w=w;g_last_h=h;
@@ -1269,19 +1504,19 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   g_engine_drawn_revision=g_engine_revision;
   g_engine_drawn_frame=frame_number;
   g_engine_drawn_frames=shown_frames;
-  g_engine_drawn_weight=g_weight_group;
-  g_engine_drawn_vopacity=g_vertex_opacity;
+  g_engine_drawn_weight=g_cfg->weight_group;
+  g_engine_drawn_vopacity=g_cfg->vertex_opacity;
   /* The engine image replaces the paper rectangle only (strokes are clipped to the canvas, as the
    * camera frame clips them in Blender). */
-  const int x0=int(std::floor(g_map_origin_x)), y1=int(std::ceil(g_map_origin_y+float(g_canvas_height)*g_map_scale));
-  const int cw=int(std::ceil(float(g_canvas_width)*g_map_scale)), ch=int(std::ceil(float(g_canvas_height)*g_map_scale));
+  const int x0=int(std::floor(g_cfg->map_origin_x)), y1=int(std::ceil(g_cfg->map_origin_y+float(g_cfg->canvas_height)*g_cfg->map_scale));
+  const int cw=int(std::ceil(float(g_cfg->canvas_width)*g_cfg->map_scale)), ch=int(std::ceil(float(g_cfg->canvas_height)*g_cfg->map_scale));
   // exports are cut to the canvas; on screen strokes outside it stay visible
-  if(g_export_mode&&!rotated){glEnable(GL_SCISSOR_TEST);glScissor(x0,h-y1,cw,ch);}
+  if(g_cfg->export_mode&&!rotated){glEnable(GL_SCISSOR_TEST);glScissor(x0,h-y1,cw,ch);}
   if(over)pg_gp_engine_present_over(w,h); else pg_gp_engine_present(w,h);
   glDisable(GL_SCISSOR_TEST);
   // Blender's camera passepartout (alpha 0.5): what lies outside the paper is dimmed, not hidden
-  if(!g_export_mode&&!rotated){
-    const float W=float(g_canvas_width),H=float(g_canvas_height),F=1e5f;
+  if(!g_cfg->export_mode&&!rotated){
+    const float W=float(g_cfg->canvas_width),H=float(g_cfg->canvas_height),F=1e5f;
     auto quad=[&](float ax,float ay,float bx,float by){return std::vector<Vertex>{ndc(ax,ay,w,h),ndc(bx,ay,w,h),ndc(ax,by,w,h),ndc(bx,by,w,h),ndc(ax,by,w,h),ndc(bx,ay,w,h)};};
     std::vector<Vertex> out=quad(-F,-F,F,0);
     for(const auto&q:{quad(-F,H,F,F),quad(-F,0,0,H),quad(W,0,F,H)})out.insert(out.end(),q.begin(),q.end());
@@ -1292,7 +1527,64 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   return true;
 }
 
-extern "C" void project_grease_android_present_set_engine(int enabled){g_engine_enabled=enabled?1:0;}
+
+/* ---- A9: the stroke being drawn, through the same engine path as the committed stroke ----------------
+ * The brush style the stroke will be committed with (Backend::commit_stroke: thickness, hardeness,
+ * aspect_ratio, caps, material) is set before each document pass; the open sbuffer becomes a
+ * temporary bGPDstroke with those values and is drawn by Blender's gpencil engine (gpencil_vert/frag:
+ * hardness falloff, round-cap mask, aspect) over the frame as drawn so far. The engine's own cache is
+ * not involved (a second GpencilBatchCache), so the committed drawing's cache stays valid. */
+namespace {
+bool engine_draw_live(const bGPdata*gpd,int w,int h){
+  if(!g_live.active||!gpd||gpd->runtime.sbuffer_used<=0||!gpd->runtime.sbuffer||!engine_wanted(gpd))return false;
+  const tGPspoint*src=static_cast<const tGPspoint*>(gpd->runtime.sbuffer);
+  const int n=gpd->runtime.sbuffer_used;
+  const bGPDlayer*active=BKE_gpencil_layer_active_get(const_cast<bGPdata*>(gpd));
+  if(!active)return false;
+  bGPDstroke*gps=BKE_gpencil_stroke_new(g_live.material,n,short(std::clamp(g_live.thickness,1.0f,32767.0f)));
+  if(!gps)return false;
+  for(int i=0;i<n;i++){
+    bGPDspoint&d=gps->points[i];
+    d.x=src[i].m_xy[0];d.y=src[i].m_xy[1];d.z=0.0f;d.pressure=src[i].pressure;d.strength=src[i].strength;d.time=src[i].time;
+    d.uv_fac=src[i].uv_fac;d.uv_rot=src[i].uv_rot;std::memcpy(d.vert_color,src[i].vert_color,sizeof(d.vert_color));
+  }
+  gps->hardeness=std::clamp(g_live.hardness,0.0f,1.0f);
+  gps->aspect_ratio[0]=std::clamp(g_live.ax,0.01f,1.0f);gps->aspect_ratio[1]=std::clamp(g_live.ay,0.01f,1.0f);
+  gps->caps[0]=gps->caps[1]=short(g_live.caps==1?GP_STROKE_CAP_FLAT:GP_STROKE_CAP_ROUND);
+  BKE_gpencil_stroke_geometry_update(const_cast<bGPdata*>(gpd),gps);
+  bGPdata&copy=*static_cast<bGPdata*>(MEM_mallocN(sizeof(bGPdata),"pg live gpd"));
+  std::memcpy(&copy,gpd,sizeof(bGPdata));
+  BLI_listbase_clear(&copy.layers);
+  bGPDlayer layer;std::memcpy(&layer,active,sizeof(bGPDlayer));
+  layer.next=layer.prev=nullptr;BLI_listbase_clear(&layer.frames);
+  layer.blend_mode=eGplBlendMode_Regular; // blended over the frame once, by the presenter below
+  layer.mask_layers=ListBase{nullptr,nullptr};layer.flag&=~GP_LAYER_USE_MASK;
+  bGPDframe frame;std::memset(&frame,0,sizeof(frame));
+  frame.framenum=1;BLI_addtail(&frame.strokes,gps);BLI_addtail(&layer.frames,&frame);
+  layer.actframe=&frame;
+  BLI_addtail(&copy.layers,&layer);
+  copy.flag|=GP_DATA_CACHE_IS_DIRTY;
+  copy.runtime.gpencil_cache=static_cast<GpencilBatchCache*>(g_live_batch_cache);
+  copy.runtime.sbuffer_used=0;
+  const bool rotated=g_cfg->view_rotation!=0.0f&&!g_cfg->export_mode;
+  PGGpEngineView view{w,h,g_cfg->map_origin_x,g_cfg->map_origin_y,g_cfg->map_scale,{0.0f,0.0f,0.0f,0.0f},1};
+  view.rotation=rotated?g_cfg->view_rotation:0.0f;
+  view.weight_group=-1;view.vertex_opacity=1.0f;
+  const int ok=pg_gp_engine_draw(&copy,1,&view);
+  if(ok&&pg_gp_engine_present_over)pg_gp_engine_present_over(w,h);
+  g_live_batch_cache=copy.runtime.gpencil_cache;
+  BLI_listbase_clear(&frame.strokes); // the stroke is freed below, the frame is on this stack
+  BKE_gpencil_free_stroke(gps);
+  MEM_freeN(&copy);
+  g_engine_have_last=false; // the engine's last image is the live stroke now: the next frame redraws the document
+  glViewport(0,0,w,h);
+  return ok==1;
+}
+} // namespace
+
+extern "C" void project_grease_android_present_set_live_stroke(int active,float thickness,float hardness,float ax,float ay,int caps,int material){
+  g_live={active?1:0,std::isfinite(thickness)?thickness:1.0f,std::isfinite(hardness)?hardness:1.0f,std::isfinite(ax)?ax:1.0f,std::isfinite(ay)?ay:1.0f,caps,material};}
+extern "C" void project_grease_android_present_set_engine(int enabled){g_cfg->engine_enabled=enabled?1:0;}
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision){g_engine_revision=revision;}
 extern "C" int project_grease_android_present_engine_active(){return g_engine_drawn_frame>=0&&!g_engine_failed;}
 
@@ -1300,32 +1592,35 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number);
 static double g_last_doc_ms=0.0;
 extern "C" int project_grease_android_present_gp_document(const bGPdata* gpd,int frame_number){
   const auto t0=std::chrono::steady_clock::now();
+  g_frame_queries_now=0;g_in_document=true;g_target_known=false;g_selftest_frame_ms=0.0;
   const int r=present_gp_document_impl(gpd,frame_number);
-  g_last_doc_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count();
+  g_in_document=false;g_target_known=false;
+  g_frame_gl_queries=g_frame_queries_now;
+  g_last_doc_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count()-g_selftest_frame_ms;
   return r;
 }
 static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   if(!gpd||!ensure_program())return 0;
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0)return 0;
-  if(g_export_mode==2)glClearColor(0.0f,0.0f,0.0f,0.0f);
+  if(g_cfg->export_mode==2)glClearColor(0.0f,0.0f,0.0f,0.0f);
   else glClearColor(0.08f,0.08f,0.08f,1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
-  g_stencil_fbo=-1;
+  g_cfg->gl.stencil_fbo=-1;
   update_canvas_map(w,h);
-  const bool drawing=!g_export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
-  if(!drawing)g_open_cache.valid=false;
-  const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h)&&open_cache_draw();
+  const bool drawing=!g_cfg->export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
+  if(!drawing)g_cfg->gl.open_cache.valid=false;
+  const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h,g_engine_revision)&&open_cache_draw();
   if(reuse)g_open_cache_reuses++;
   if(!reuse){
   std::vector<Vertex> canvas;
-  const float x0=g_map_origin_x, y0=g_map_origin_y;
-  const float x1=x0+float(g_canvas_width)*g_map_scale, y1=y0+float(g_canvas_height)*g_map_scale;
+  const float x0=g_cfg->map_origin_x, y0=g_cfg->map_origin_y;
+  const float x1=x0+float(g_cfg->canvas_width)*g_cfg->map_scale, y1=y0+float(g_cfg->canvas_height)*g_cfg->map_scale;
   canvas.insert(canvas.end(),{
-      ndc(0,0,w,h), ndc(g_canvas_width,0,w,h), ndc(0,g_canvas_height,w,h),
-      ndc(g_canvas_width,g_canvas_height,w,h), ndc(0,g_canvas_height,w,h), ndc(g_canvas_width,0,w,h)
+      ndc(0,0,w,h), ndc(g_cfg->canvas_width,0,w,h), ndc(0,g_cfg->canvas_height,w,h),
+      ndc(g_cfg->canvas_width,g_cfg->canvas_height,w,h), ndc(0,g_cfg->canvas_height,w,h), ndc(g_cfg->canvas_width,0,w,h)
   });
   gl_check("between frames (uploads, textures, tool calls)");
-  if(g_export_mode!=2)draw_vertices(canvas,g_export_mode==1?g_export_background:g_paper_color,false);
+  if(g_cfg->export_mode!=2)draw_vertices(canvas,g_cfg->export_mode==1?g_cfg->export_background:g_paper_color,false);
   gl_check("canvas paper");
   if(reference_shown())draw_reference(w,h);
   gl_check("reference image");
@@ -1335,7 +1630,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     for(const bGPDlayer*layer=static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
       if(layer->flag&GP_LAYER_HIDE)continue;
       bGPDframe*current=BKE_gpencil_layer_frame_get(const_cast<bGPDlayer*>(layer),frame_number,GP_GETFRAME_USE_PREV);
-      if(current&&g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
+      if(current&&g_cfg->selection_overlay&&!g_cfg->export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
     }
   }
   for(const bGPDlayer*layer=by_engine?nullptr:static_cast<const bGPDlayer*>(gpd->layers.first);layer;layer=layer->next){
@@ -1345,13 +1640,13 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     // Layers without masks keep the direct path; a masked layer is multiplied by its mask texture.
     if(layer_is_masked(gpd,layer)){
       g_active_mask_tex=render_layer_mask(gpd,layer,frame_number,w,h);
-      g_active_w=w;g_active_h=h;
+      g_active_w=w;g_active_h=h;retarget();
     }
     // Shader effects: a layer with working effects is drawn offscreen (premultiplied), the passes run on
     // it and the result is composited; a layer without effects keeps the direct path.
     const PGFxEntry* fx_entries=nullptr;
     const int fx_count=g_fx_provider?g_fx_provider(g_fx_provider_user,layer,&fx_entries):0;
-    PGFxView fx_view{w,h,g_map_scale,g_map_origin_x,g_map_origin_y,g_canvas_width,g_canvas_height};
+    PGFxView fx_view{w,h,g_cfg->map_scale,g_cfg->map_origin_x,g_cfg->map_origin_y,g_cfg->canvas_width,g_cfg->canvas_height};
     // Effects aimed at strokes only / fills only: the layer is drawn as a fills pass and a strokes
     // pass, each through the effects that target it or the whole layer.
     bool split_fx=false;
@@ -1360,9 +1655,10 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     // onto the frame with gpencil_layer_blend_frag.glsl's blend_mode_output (fx pipeline buffer).
     const int blend_mode=(!split_fx&&layer->blend_mode!=eGplBlendMode_Regular)?layer->blend_mode:eGplBlendMode_Regular;
     const bool want_fx=!split_fx&&fx_count>0&&project_grease_fx_pass_count(fx_entries,fx_count,&fx_view)>0;
-    const bool use_blend=blend_mode!=eGplBlendMode_Regular&&g_weight_group<0&&project_grease_fx_begin_layer(w,h)!=0;
+    const bool use_blend=blend_mode!=eGplBlendMode_Regular&&g_cfg->weight_group<0&&project_grease_fx_begin_layer(w,h)!=0;
     const bool use_fx=!use_blend&&want_fx&&project_grease_fx_begin_layer(w,h)!=0;
     if(use_fx||use_blend)g_draw_mode=DRAW_PREMULT;
+    retarget();
     g_layer_tint[0]=layer->tintcolor[0];g_layer_tint[1]=layer->tintcolor[1];g_layer_tint[2]=layer->tintcolor[2];g_layer_tint[3]=layer->tintcolor[3];
     g_line_change=float(layer->line_change);
     // Onion skin: the ghost keyframes of the layer by bGPdata.onion_mode (pg_onion_ghosts: Relative =
@@ -1422,7 +1718,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     }
     const bGPDframe*shown=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,current,frame_number):current;
     if(use_blend)g_force_layer_opacity=1.0f; // applied once by the blend composite (blendOpacity)
-    if(g_weight_group>=0)draw_frame_weights(gpd,shown?shown:current,w,h);
+    if(g_cfg->weight_group>=0)draw_frame_weights(gpd,shown?shown:current,w,h);
     else if(split_fx){
       for(int part:{2,1}){ // fills under strokes
         std::vector<PGFxEntry> sub;
@@ -1432,10 +1728,12 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
         const bool pass=!sub.empty()&&project_grease_fx_pass_count(sub.data(),int(sub.size()),&fx_view)>0&&
                         project_grease_fx_begin_layer(w,h)!=0;
         if(pass)g_draw_mode=DRAW_PREMULT;
+        retarget();
         g_draw_parts=part;
         draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
         g_draw_parts=3;
         if(pass){g_draw_mode=DRAW_NORMAL;project_grease_fx_end_layer(sub.data(),int(sub.size()),&fx_view,nullptr,nullptr);}
+        retarget();
       }
     }
     else draw_frame(gpd,layer,shown?shown:current,w,h,1.0f);
@@ -1444,52 +1742,53 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
       g_draw_mode=DRAW_NORMAL;
       project_grease_fx_end_layer_blend(want_fx?fx_entries:nullptr,want_fx?fx_count:0,&fx_view,blend_mode,layer->opacity);
     }
+    retarget();
     g_force_layer_opacity=-1.0f;
     g_layer_tint[3]=0.0f;
     g_line_change=0.0f;
     g_active_mask_tex=0;
-    if(g_selection_overlay&&!g_export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
+    if(g_cfg->selection_overlay&&!g_cfg->export_mode&&!(layer->flag&GP_LAYER_LOCKED))draw_selection_overlay(current,w,h);
   }
-  if(drawing)open_cache_store(gpd,frame_number,w,h);
+  if(drawing)open_cache_store(gpd,frame_number,w,h,g_engine_revision);
   }
   // Drawing guide (gpencil_draw_guide / the guide overlay of the Draw tool): reference lines of the
   // active guide in the theme's guide colour, over the canvas, not exported.
-  if(!g_export_mode&&g_guide_type>=0){
+  if(!g_cfg->export_mode&&g_cfg->guide_type>=0){
     // built once per guide / view change: rebuilding the circular rings every frame (thousands of
     // segments) made each frame take ~2 s on the phone
     static std::vector<Vertex> lines;
     static float key[12]={-1};
-    const float k_now[12]={float(g_guide_type),g_guide_cx,g_guide_cy,g_guide_angle,g_guide_spacing,g_map_scale,g_map_origin_x,g_map_origin_y,float(w*100000+h),
-      g_view_rotation,float(g_canvas_width),float(g_canvas_height)}; // vertices come from ndc(), which applies the view rotation
+    const float k_now[12]={float(g_cfg->guide_type),g_cfg->guide_cx,g_cfg->guide_cy,g_cfg->guide_angle,g_cfg->guide_spacing,g_cfg->map_scale,g_cfg->map_origin_x,g_cfg->map_origin_y,float(w*100000+h),
+      g_cfg->view_rotation,float(g_cfg->canvas_width),float(g_cfg->canvas_height)}; // vertices come from ndc(), which applies the view rotation
     if(std::memcmp(key,k_now,sizeof key)!=0){
     std::memcpy(key,k_now,sizeof key);
     lines.clear();
-    const float px=1.0f/std::max(g_map_scale,1e-6f);
-    const float diag=std::hypot(float(g_canvas_width),float(g_canvas_height));
+    const float px=1.0f/std::max(g_cfg->map_scale,1e-6f);
+    const float diag=std::hypot(float(g_cfg->canvas_width),float(g_cfg->canvas_height));
     auto seg=[&](float x0,float y0,float x1,float y1){
       append_outline(lines,{PGOutlinePoint{x0,y0,0.75f*px},PGOutlinePoint{x1,y1,0.75f*px}},PG_OUTLINE_FLAT_START|PG_OUTLINE_FLAT_END,w,h);
     };
-    const float sp=std::max(g_guide_spacing,4.0f);
+    const float sp=std::max(g_cfg->guide_spacing,4.0f);
     const int count=std::min(200,int(diag/sp)+1);
-    if(g_guide_type==0){ // circular: rings around the centre
+    if(g_cfg->guide_type==0){ // circular: rings around the centre
       for(int k=1;k<=count;k++){
-        const float r=sp*k; const int n=std::clamp(int(r*g_map_scale*0.08f),24,72);
+        const float r=sp*k; const int n=std::clamp(int(r*g_cfg->map_scale*0.08f),24,72);
         for(int j=0;j<n;j++){const float a0=6.2831853f*j/n,a1=6.2831853f*(j+1)/n;
-          seg(g_guide_cx+r*std::cos(a0),g_guide_cy+r*std::sin(a0),g_guide_cx+r*std::cos(a1),g_guide_cy+r*std::sin(a1));}
+          seg(g_cfg->guide_cx+r*std::cos(a0),g_cfg->guide_cy+r*std::sin(a0),g_cfg->guide_cx+r*std::cos(a1),g_cfg->guide_cy+r*std::sin(a1));}
       }
     }
-    else if(g_guide_type==1){ // radial: rays through the centre
-      for(int k=0;k<24;k++){const float a=6.2831853f*k/24;seg(g_guide_cx,g_guide_cy,g_guide_cx+diag*std::cos(a),g_guide_cy+diag*std::sin(a));}
+    else if(g_cfg->guide_type==1){ // radial: rays through the centre
+      for(int k=0;k<24;k++){const float a=6.2831853f*k/24;seg(g_cfg->guide_cx,g_cfg->guide_cy,g_cfg->guide_cx+diag*std::cos(a),g_cfg->guide_cy+diag*std::sin(a));}
     }
     else{ // parallel / grid / isometric: families of lines through the canvas
       std::vector<float> angles;
-      if(g_guide_type==2)angles={g_guide_angle};
-      else if(g_guide_type==3)angles={0.0f,1.5707963f};
+      if(g_cfg->guide_type==2)angles={g_cfg->guide_angle};
+      else if(g_cfg->guide_type==3)angles={0.0f,1.5707963f};
       else angles={0.5235988f,1.5707963f,2.6179939f};
       for(float a:angles){
         const float dx=std::cos(a),dy=std::sin(a),nx=-dy,ny=dx;
         for(int k=-count;k<=count;k++){
-          const float ox=g_guide_cx+nx*sp*k,oy=g_guide_cy+ny*sp*k;
+          const float ox=g_cfg->guide_cx+nx*sp*k,oy=g_cfg->guide_cy+ny*sp*k;
           seg(ox-dx*diag,oy-dy*diag,ox+dx*diag,oy+dy*diag);
         }
       }
@@ -1499,7 +1798,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
     draw_vertices(lines,guide_color);
   }
   // Present Blender 3.6.23 Legacy GP tGPspoint sbuffer while the stroke is open.
-  if(!g_export_mode)draw_sbuffer(gpd, 1.0f, w, h);
+  if(!g_cfg->export_mode)draw_sbuffer(gpd, 1.0f, w, h);
   /* A GL error left by any pass used to fail the frame and the swap was skipped (canvas frozen /
    * black, reported on a turned view). The frame is drawn: keep it, report the error. */
   gl_check("overlays after the engine (onion, guides, live stroke)");
@@ -1529,7 +1828,7 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
     layer_index++;
     if (layer->flag & GP_LAYER_HIDE) continue;
     // fill_layer_mode: the strokes of a skipped layer stay out, its boundary strokes stay in
-    const bool skip = skip_layer_check(short(g_fill_layer_mode), active_index, layer_index);
+    const bool skip = skip_layer_check(short(g_cfg->fill_layer_mode), active_index, layer_index);
 
     bGPDframe* current = BKE_gpencil_layer_frame_get(
         const_cast<bGPDlayer*>(layer), frame_number, GP_GETFRAME_USE_PREV);
@@ -1565,11 +1864,11 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
       // gpencil_fill.c gpencil_draw_datablock(): STROKE / BOTH draw the strokes as they look
       // (not the help strokes), CONTROL / BOTH the thin basic lines (gpencil_draw_basic_stroke,
       // 1 px) of every stroke; the app's modes: 0 All (BOTH), 1 Strokes (STROKE), 2 Edit Lines (CONTROL).
-      if (g_fill_draw_mode != 2 && !(stroke->flag & GP_STROKE_HELP)) {
+      if (g_cfg->fill_draw_mode != 2 && !(stroke->flag & GP_STROKE_HELP)) {
         append_stroke_outline(strokes, stroke, float(stroke->thickness), w, h);
       }
-      if (g_fill_draw_mode != 1) {
-        append_stroke_outline(strokes, stroke, 1.0f / std::max(g_map_scale, 1e-6f), w, h);
+      if (g_cfg->fill_draw_mode != 1) {
+        append_stroke_outline(strokes, stroke, 1.0f / std::max(g_cfg->map_scale, 1e-6f), w, h);
       }
     }
     draw_vertices(strokes, mask_color, false);
@@ -1577,15 +1876,15 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata* gpd, i
 
   // Extend Lines: gpencil_draw_datablock() draws the extension strokes with
   // gpencil_draw_basic_stroke(thickness 1) -> line width 2 px.
-  if (g_fill_extend > 0.0f) {
+  if (g_cfg->fill_extend > 0.0f) {
     update_canvas_map(w, h);
     std::vector<float> ext(4096 * 4);
-    const int n = pg_fill_extend_lines_ex(const_cast<bGPdata*>(gpd), frame_number, g_fill_extend,
-                                          g_fill_extend_mode, g_fill_collide, g_fill_layer_mode,
-                                          g_map_scale, g_map_origin_x, g_map_origin_y,
-                                          0.5f * float(g_canvas_width), 0.5f * float(g_canvas_height),
+    const int n = pg_fill_extend_lines_ex(const_cast<bGPdata*>(gpd), frame_number, g_cfg->fill_extend,
+                                          g_cfg->fill_extend_mode, g_cfg->fill_collide, g_cfg->fill_layer_mode,
+                                          g_cfg->map_scale, g_cfg->map_origin_x, g_cfg->map_origin_y,
+                                          0.5f * float(g_cfg->canvas_width), 0.5f * float(g_cfg->canvas_height),
                                           ext.data(), 4096);
-    const float r = 1.0f / std::max(g_map_scale, 1e-6f);
+    const float r = 1.0f / std::max(g_cfg->map_scale, 1e-6f);
     std::vector<Vertex> lines;
     for (int e = 0; e < n; e++) {
       const std::vector<PGOutlinePoint> seg = {PGOutlinePoint{ext[e * 4], ext[e * 4 + 1], r},
@@ -1611,7 +1910,7 @@ static void annot_early(const char*why,int frame_number){
 static void annot_early(const char*,int){}
 #endif
 extern "C" int project_grease_android_present_annotations(const bGPdata* annot,int frame_number){
-  if(g_export_mode){annot_early("export-mode",frame_number);return 1;}
+  if(g_cfg->export_mode){annot_early("export-mode",frame_number);return 1;}
   if(!annot||!ensure_program()){annot_early("no-annot-or-program",frame_number);return 0;}
   GLint vp[4]={0,0,0,0};glGetIntegerv(GL_VIEWPORT,vp);int w=vp[2],h=vp[3];if(w<=0||h<=0){annot_early("viewport",frame_number);return 0;}
   update_canvas_map(w,h);
@@ -1620,7 +1919,7 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
   const bGPDframe*frame=pg_annot_frame_at(annot,frame_number);
   if(!frame){annot_early("no-frame",frame_number);return 1;}
   annot_early("drawing",frame_number);
-  const float px=std::max(1.0f,float(layer->thickness))/std::max(g_map_scale,1e-6f);
+  const float px=std::max(1.0f,float(layer->thickness))/std::max(g_cfg->map_scale,1e-6f);
   std::vector<Vertex> v; v.reserve(1024);
   for(const bGPDstroke*s=static_cast<const bGPDstroke*>(frame->strokes.first);s;s=s->next){
     if(!s->points||s->totpoints<=0)continue;
@@ -1643,7 +1942,7 @@ extern "C" int project_grease_android_present_annotations(const bGPdata* annot,i
     const int np=last?last->totpoints:0;
     const float fx=np?last->points[0].x:0, fy=np?last->points[0].y:0, lx=np?last->points[np-1].x:0, ly=np?last->points[np-1].y:0;
     __android_log_print(ANDROID_LOG_INFO,"ProjectGrease","annotpass frame=%d/%d strokes=%d points=%ld last_stroke_points=%d first=(%.1f,%.1f) last=(%.1f,%.1f) verts=%zu px=%.2f scale=%.3f vp=%dx%d rgba=%.2f,%.2f,%.2f,%.2f err=0x%x",
-        frame_number,frame->framenum,strokes,points,np,fx,fy,lx,ly,v.size(),px,g_map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
+        frame_number,frame->framenum,strokes,points,np,fx,fy,lx,ly,v.size(),px,g_cfg->map_scale,w,h,layer->color[0],layer->color[1],layer->color[2],layer->color[3],err);
   }
 #endif
   return err==GL_NO_ERROR?1:0;
@@ -1664,22 +1963,22 @@ extern "C" int project_grease_android_present_pending_stroke(const project_greas
   // Live preview must use the active Legacy GP material color. The old
   // presenter hard-coded white, which made shape previews disagree with the
   // committed stroke and obscured whether the tool was actually connected.
-  draw_vertices(v,g_stroke_color);
+  draw_vertices(v,g_cfg->stroke_color);
   return glGetError()==GL_NO_ERROR?1:0;
 }
 extern "C" void project_grease_android_present_set_canvas_size(int width,int height){
-  g_canvas_width=std::max(1,width);
-  g_canvas_height=std::max(1,height);
+  g_cfg->canvas_width=std::max(1,width);
+  g_cfg->canvas_height=std::max(1,height);
 }
-extern "C" void project_grease_android_present_set_weight_view(int group){g_weight_group=group;}
-extern "C" void project_grease_android_present_set_vertex_opacity(float o){g_vertex_opacity=o<0?0:(o>1?1:o);}
+extern "C" void project_grease_android_present_set_weight_view(int group){g_cfg->weight_group=group;}
+extern "C" void project_grease_android_present_set_vertex_opacity(float o){g_cfg->vertex_opacity=o<0?0:(o>1?1:o);}
 extern "C" void project_grease_android_present_set_guide(int type,float cx,float cy,float angle,float spacing){
-  g_guide_type=(type>=0&&type<=4)?type:-1;g_guide_cx=cx;g_guide_cy=cy;g_guide_angle=angle;g_guide_spacing=spacing;}
-extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_fill_draw_mode=std::clamp(mode,0,2);}
+  g_cfg->guide_type=(type>=0&&type<=4)?type:-1;g_cfg->guide_cx=cx;g_cfg->guide_cy=cy;g_cfg->guide_angle=angle;g_cfg->guide_spacing=spacing;}
+extern "C" void project_grease_android_present_set_fill_draw_mode(int mode){g_cfg->fill_draw_mode=std::clamp(mode,0,2);}
 extern "C" int project_grease_android_present_set_material_texture(int slot,int fill,const unsigned char*rgba,int w,int h){
   const int key=slot*2+(fill?1:0);
-  auto it=g_mat_tex.find(key);
-  if(it!=g_mat_tex.end()){if(it->second.id)glDeleteTextures(1,&it->second.id);g_mat_tex.erase(it);}
+  auto it=g_cfg->gl.mat_tex.find(key);
+  if(it!=g_cfg->gl.mat_tex.end()){if(it->second.id)glDeleteTextures(1,&it->second.id);g_cfg->gl.mat_tex.erase(it);}
   if(!rgba||w<=0||h<=0||slot<0)return 1;
   MatTex t;glGenTextures(1,&t.id);glBindTexture(GL_TEXTURE_2D,t.id);
   glPixelStorei(GL_UNPACK_ALIGNMENT,1);
@@ -1687,11 +1986,11 @@ extern "C" int project_grease_android_present_set_material_texture(int slot,int 
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
   glBindTexture(GL_TEXTURE_2D,0);
-  t.w=w;t.h=h;g_mat_tex[key]=t;
+  t.w=w;t.h=h;g_cfg->gl.mat_tex[key]=t;
   return glGetError()==GL_NO_ERROR?1:0;
 }
 extern "C" int project_grease_android_present_set_reference(const unsigned char*rgba,int w,int h){
-  RefSlot&r=g_refs[g_ref_cur];
+  RefSlot&r=g_cfg->gl.refs[g_cfg->gl.ref_cur];
   if(!rgba||w<=0||h<=0){if(r.tex)glDeleteTextures(1,&r.tex);if(r.spare)glDeleteTextures(1,&r.spare);r.tex=r.spare=0;r.w=r.h=r.sw=r.sh=0;return 1;}
   std::swap(r.tex,r.spare);std::swap(r.w,r.sw);std::swap(r.h,r.sh);
   const bool same=r.tex&&r.w==w&&r.h==h;
@@ -1708,42 +2007,42 @@ extern "C" int project_grease_android_present_set_reference(const unsigned char*
 /* Following reference calls go to [slot]; slots at or past [count] are not drawn (their textures
  * are freed). */
 extern "C" void project_grease_android_present_select_reference(int slot,int count){
-  g_ref_count=std::clamp(count,0,kRefSlots);
-  for(int i=g_ref_count;i<kRefSlots;i++)if(g_refs[i].tex||g_refs[i].spare){if(g_refs[i].tex)glDeleteTextures(1,&g_refs[i].tex);if(g_refs[i].spare)glDeleteTextures(1,&g_refs[i].spare);g_refs[i]=RefSlot{};}
-  g_ref_cur=std::clamp(slot,0,kRefSlots-1);
+  g_cfg->gl.ref_count=std::clamp(count,0,kRefSlots);
+  for(int i=g_cfg->gl.ref_count;i<kRefSlots;i++)if(g_cfg->gl.refs[i].tex||g_cfg->gl.refs[i].spare){if(g_cfg->gl.refs[i].tex)glDeleteTextures(1,&g_cfg->gl.refs[i].tex);if(g_cfg->gl.refs[i].spare)glDeleteTextures(1,&g_cfg->gl.refs[i].spare);g_cfg->gl.refs[i]=RefSlot{};}
+  g_cfg->gl.ref_cur=std::clamp(slot,0,kRefSlots-1);
 }
 extern "C" void project_grease_android_present_set_reference_transform(float dx,float dy,float scale,float rot,float sx,float sy){
   if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(scale)||!std::isfinite(rot)||!std::isfinite(sx)||!std::isfinite(sy))return;
-  RefSlot&r=g_refs[g_ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;
+  RefSlot&r=g_cfg->gl.refs[g_cfg->gl.ref_cur];r.dx=dx;r.dy=dy;r.scale=std::clamp(scale,0.05f,20.0f);r.rot=rot;
   r.sx=std::clamp(sx,0.05f,20.0f);r.sy=std::clamp(sy,0.05f,20.0f);}
 extern "C" void project_grease_android_present_set_reference_style(int visible,float opacity){
-  RefSlot&r=g_refs[g_ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
-extern "C" void project_grease_android_present_set_reference_exported(int exported){g_refs[g_ref_cur].exported=exported?1:0;}
-extern "C" void project_grease_android_present_set_fill_collide(int collide){g_fill_collide=collide?1:0;}
-extern "C" void project_grease_android_present_set_fill_modes(int extend_mode,int layer_mode){g_fill_extend_mode=extend_mode==1?1:0;g_fill_layer_mode=std::clamp(layer_mode,0,5);}
-extern "C" void project_grease_android_present_set_fill_extend(float factor){g_fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
-extern "C" void project_grease_android_present_set_export_mode(int mode){g_export_mode=std::clamp(mode,0,2);}
+  RefSlot&r=g_cfg->gl.refs[g_cfg->gl.ref_cur];r.visible=visible?1:0;r.opacity=std::isfinite(opacity)?std::clamp(opacity,0.0f,1.0f):0.5f;}
+extern "C" void project_grease_android_present_set_reference_exported(int exported){g_cfg->gl.refs[g_cfg->gl.ref_cur].exported=exported?1:0;}
+extern "C" void project_grease_android_present_set_fill_collide(int collide){g_cfg->fill_collide=collide?1:0;}
+extern "C" void project_grease_android_present_set_fill_modes(int extend_mode,int layer_mode){g_cfg->fill_extend_mode=extend_mode==1?1:0;g_cfg->fill_layer_mode=std::clamp(layer_mode,0,5);}
+extern "C" void project_grease_android_present_set_fill_extend(float factor){g_cfg->fill_extend=std::isfinite(factor)?std::clamp(factor,0.0f,10.0f):0.0f;}
+extern "C" void project_grease_android_present_set_export_mode(int mode){g_cfg->export_mode=std::clamp(mode,0,2);}
 extern "C" void project_grease_android_present_get_canvas_map(int w,int h,float*scale,float*ox,float*oy,float*rotation){
-  if(rotation)*rotation=g_export_mode?0.0f:g_view_rotation;
+  if(rotation)*rotation=g_cfg->export_mode?0.0f:g_cfg->view_rotation;
   update_canvas_map(w,h);
-  if(scale)*scale=g_map_scale;
-  if(ox)*ox=g_map_origin_x;
-  if(oy)*oy=g_map_origin_y;
+  if(scale)*scale=g_cfg->map_scale;
+  if(ox)*ox=g_cfg->map_origin_x;
+  if(oy)*oy=g_cfg->map_origin_y;
 }
 extern "C" void project_grease_android_present_set_export_background(float r,float g,float b){
-  g_export_background[0]=std::clamp(r,0.0f,1.0f);g_export_background[1]=std::clamp(g,0.0f,1.0f);
-  g_export_background[2]=std::clamp(b,0.0f,1.0f);g_export_background[3]=1.0f;
+  g_cfg->export_background[0]=std::clamp(r,0.0f,1.0f);g_cfg->export_background[1]=std::clamp(g,0.0f,1.0f);
+  g_cfg->export_background[2]=std::clamp(b,0.0f,1.0f);g_cfg->export_background[3]=1.0f;
 }
-extern "C" void project_grease_android_present_set_selection_overlay(int enabled){g_selection_overlay=enabled!=0;}
+extern "C" void project_grease_android_present_set_selection_overlay(int enabled){g_cfg->selection_overlay=enabled!=0;}
 extern "C" void project_grease_android_present_get_view_transform(float*zoom,float*pan_x,float*pan_y){
-  if(zoom)*zoom=g_view_zoom;if(pan_x)*pan_x=g_view_pan_x;if(pan_y)*pan_y=g_view_pan_y;}
+  if(zoom)*zoom=g_cfg->view_zoom;if(pan_x)*pan_x=g_cfg->view_pan_x;if(pan_y)*pan_y=g_cfg->view_pan_y;}
 extern "C" void project_grease_android_present_set_view_transform(float zoom,float pan_x,float pan_y){
-  g_view_zoom=std::clamp(zoom,0.1f,8.0f);
-  g_view_pan_x=pan_x;
-  g_view_pan_y=pan_y;
+  g_cfg->view_zoom=std::clamp(zoom,0.1f,8.0f);
+  g_cfg->view_pan_x=pan_x;
+  g_cfg->view_pan_y=pan_y;
 }
-extern "C" void project_grease_android_present_set_view_rotation(float radians){g_view_rotation=std::isfinite(radians)?radians:0.0f;}
-extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_stroke_color[0]=std::clamp(r,0.0f,1.0f);g_stroke_color[1]=std::clamp(g,0.0f,1.0f);g_stroke_color[2]=std::clamp(b,0.0f,1.0f);g_stroke_color[3]=std::clamp(a,0.0f,1.0f);}
+extern "C" void project_grease_android_present_set_view_rotation(float radians){g_cfg->view_rotation=std::isfinite(radians)?radians:0.0f;}
+extern "C" void project_grease_android_present_set_color(float r,float g,float b,float a){g_cfg->stroke_color[0]=std::clamp(r,0.0f,1.0f);g_cfg->stroke_color[1]=std::clamp(g,0.0f,1.0f);g_cfg->stroke_color[2]=std::clamp(b,0.0f,1.0f);g_cfg->stroke_color[3]=std::clamp(a,0.0f,1.0f);}
 /* The failure latch is process-wide state about "this context"; a new context (present_reset) or the
  * app (nativeResetEngine) clears it so one transient failure does not disable the engine for good. */
 static void engine_clear_latch(){
@@ -1755,46 +2054,61 @@ static void engine_clear_latch(){
 }
 extern "C" int project_grease_android_present_engine_healthy(){return g_engine_failed?0:1;}
 extern "C" void project_grease_android_present_engine_reset(){engine_clear_latch();}
+extern "C" int project_grease_android_present_selftest_runs(){return g_selftest_runs;}
+extern "C" long project_grease_android_present_engine_finishes(){return g_engine_finishes;}
 static void present_reset_impl(bool alive){
-  engine_clear_latch();
+  engine_clear_latch();g_engine_finish_next=true;
   // the engine and its stroke cache belong to this context too: a new context rebuilds them
   // shortcut: the old GpencilBatchCache CPU memory leaks once per context; free it with a gpd once one is at hand here
   if(alive){if(pg_gp_engine_reset)pg_gp_engine_reset();}else if(pg_gp_engine_context_lost)pg_gp_engine_context_lost();
-  g_engine_batch_cache=nullptr;g_engine_drawn_revision=~0ull;g_engine_drawn_frame=-1;g_engine_drawn_frames.clear();
-if(alive&&g_vbo)glDeleteBuffers(1,&g_vbo);if(alive&&g_program)glDeleteProgram(g_program);g_vbo=0;g_program=0;g_position=-1;g_color=-1;
-  if(alive&&g_mask_program)glDeleteProgram(g_mask_program);if(alive&&g_mask_tex)glDeleteTextures(1,&g_mask_tex);if(alive&&g_mask_fbo)glDeleteFramebuffers(1,&g_mask_fbo);
-  g_mask_program=0;g_mask_tex=0;g_mask_fbo=0;g_mask_w=g_mask_h=0;g_active_mask_tex=0;
-  for(auto&kv:g_mat_tex)if(alive&&kv.second.id)glDeleteTextures(1,&kv.second.id);g_mat_tex.clear();if(alive&&g_tex_program)glDeleteProgram(g_tex_program);g_tex_program=0;if(alive&&g_grad_program)glDeleteProgram(g_grad_program);g_grad_program=0;
-  if(alive&&g_vc_program)glDeleteProgram(g_vc_program);if(alive&&g_vc_mask_program)glDeleteProgram(g_vc_mask_program);g_vc_program=0;g_vc_mask_program=0;g_stencil_ref=0;g_stencil_fbo=-1;
+  g_engine_batch_cache=nullptr;g_live_batch_cache=nullptr;g_engine_drawn_revision=~0ull;g_engine_drawn_frame=-1;g_engine_drawn_frames.clear();
+if(alive&&g_cfg->gl.vbo)glDeleteBuffers(1,&g_cfg->gl.vbo);if(alive&&g_cfg->gl.program)glDeleteProgram(g_cfg->gl.program);g_cfg->gl.vbo=0;g_cfg->gl.program=0;g_cfg->gl.position=-1;g_cfg->gl.color=-1;
+  if(alive&&g_cfg->gl.mask_program)glDeleteProgram(g_cfg->gl.mask_program);if(alive&&g_cfg->gl.mask_tex)glDeleteTextures(1,&g_cfg->gl.mask_tex);if(alive&&g_cfg->gl.mask_fbo)glDeleteFramebuffers(1,&g_cfg->gl.mask_fbo);
+  g_cfg->gl.mask_program=0;g_cfg->gl.mask_tex=0;g_cfg->gl.mask_fbo=0;g_cfg->gl.mask_w=g_cfg->gl.mask_h=0;g_active_mask_tex=0;
+  for(auto&kv:g_cfg->gl.mat_tex)if(alive&&kv.second.id)glDeleteTextures(1,&kv.second.id);g_cfg->gl.mat_tex.clear();if(alive&&g_cfg->gl.tex_program)glDeleteProgram(g_cfg->gl.tex_program);g_cfg->gl.tex_program=0;if(alive&&g_cfg->gl.grad_program)glDeleteProgram(g_cfg->gl.grad_program);g_cfg->gl.grad_program=0;
+  if(alive&&g_cfg->gl.vc_program)glDeleteProgram(g_cfg->gl.vc_program);if(alive&&g_cfg->gl.vc_mask_program)glDeleteProgram(g_cfg->gl.vc_mask_program);g_cfg->gl.vc_program=0;g_cfg->gl.vc_mask_program=0;if(alive&&g_cfg->gl.soft_program)glDeleteProgram(g_cfg->gl.soft_program);g_cfg->gl.soft_program=0;g_cfg->gl.stencil_ref=0;g_cfg->gl.stencil_fbo=-1;
   // The open-stroke cache's texture / program / buffer belong to the context being torn down: a
   // stale id in the next context has no storage, every later store failed and each input sample
   // redrew the whole frame (sweep: 104 ms per sample over 200 strokes, cache stored once per run).
-  {OpenStrokeCache&c=g_open_cache;if(alive&&c.tex)glDeleteTextures(1,&c.tex);if(alive&&c.program)glDeleteProgram(c.program);if(alive&&c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
+  {OpenStrokeCache&c=g_cfg->gl.open_cache;if(alive&&c.tex)glDeleteTextures(1,&c.tex);if(alive&&c.program)glDeleteProgram(c.program);if(alive&&c.vbo)glDeleteBuffers(1,&c.vbo);c=OpenStrokeCache{};}
   // reference program / buffer / textures were never reset: the next context drew with stale ids
   // (GL_INVALID_VALUE at "reference image" every frame and no picture until the app restarted)
-  if(alive&&g_ref_prog)glDeleteProgram(g_ref_prog);if(alive&&g_ref_vbo)glDeleteBuffers(1,&g_ref_vbo);g_ref_prog=0;g_ref_vbo=0;
-  for(auto&r:g_refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
+  if(alive&&g_cfg->gl.ref_prog)glDeleteProgram(g_cfg->gl.ref_prog);if(alive&&g_cfg->gl.ref_vbo)glDeleteBuffers(1,&g_cfg->gl.ref_vbo);g_cfg->gl.ref_prog=0;g_cfg->gl.ref_vbo=0;
+  for(auto&r:g_cfg->gl.refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
   if(alive)project_grease_fx_reset();else project_grease_fx_context_lost();}
+extern "C" void* project_grease_android_present_config_new(){return new PresentConfig();}
+extern "C" void project_grease_android_present_config_free(void*cfg){if(cfg==g_cfg)g_cfg=&g_default_cfg;delete static_cast<PresentConfig*>(cfg);}
+/* Makes `cfg` (nullptr: the default one) the configuration of the calling thread's presenter calls. */
+extern "C" void project_grease_android_present_config_bind(void*cfg){g_cfg=cfg?static_cast<PresentConfig*>(cfg):&g_default_cfg;}
 extern "C" void project_grease_android_present_reset(){present_reset_impl(true);}
+/* Gives GL memory back without a reset (after an export, app in the background / onTrimMemory): the
+ * engine's pooled render targets the last draw did not use (all: every one) and, for all, the open
+ * stroke cache texture. Everything is recreated on demand. Context current. Returns textures freed. */
+extern "C" int project_grease_android_present_trim(int all){
+  int n=pg_gp_engine_trim_pool?pg_gp_engine_trim_pool(all):0;
+  OpenStrokeCache&c=g_cfg->gl.open_cache;
+  if(all&&c.tex){glDeleteTextures(1,&c.tex);c=OpenStrokeCache{};n++;}
+  return n;}
 /* The EGL context was lost (EGL_CONTEXT_LOST / GPU reset): drop every GL id and cache WITHOUT calling
  * GL (the names belong to a dead context), so everything is rebuilt lazily in the next context. */
 extern "C" void project_grease_android_present_context_lost(){present_reset_impl(false);}
 
-extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_overlay_unselected=show?1:0;}
+extern "C" void project_grease_android_present_set_overlay_unselected(int show){g_cfg->overlay_unselected=show?1:0;}
 
 /* For the crash / diagnostics report: which renderer draws, and the GL version it saw. */
 extern "C" const char* project_grease_android_present_last_frame(){
   static char buf[900];
   std::snprintf(buf,sizeof buf,"document %.0f ms, engine draw %.0f ms (%s), %dx%d px%s, GL errors: %ld frames / %ld in engine, last 0x%x at %s",g_last_doc_ms,g_last_engine_ms,
-                g_last_engine_rebuilt==2?"reused last image":g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_view_rotation!=0.0f?", rotated view":"",
+                g_engine_drawn_frame<0?"engine not used, presenter":g_last_engine_rebuilt==2?"reused last image":g_last_engine_rebuilt?"rebuilt its stroke cache":"cached strokes",g_last_w,g_last_h,g_cfg->view_rotation!=0.0f?", rotated view":"",
                 g_gl_error_frames,g_engine_gl_errors,g_last_gl_error,g_last_gl_where);
   unsigned plast=0;const char*pname="";
   const long pn=pg_gp_engine_pass_gl_errors?pg_gp_engine_pass_gl_errors(&plast,&pname):0;
+  {const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", stroke GL queries %ld",g_frame_gl_queries);}
   if(pn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", %ld in passes (last 0x%x at pass %s)",pn,plast,pname);}
   {long dn=0;const char*dm=pg_gp_engine_gl_debug_message?pg_gp_engine_gl_debug_message(&dn):"";
    if(dn>0){const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", driver says (%ld): %.200s",dn,dm);}}
   {const size_t l=std::strlen(buf);std::snprintf(buf+l,sizeof buf-l,", paper %dx%d at %.0f,%.0f x%.3f colour %.2f %.2f %.2f, export mode %d",
-    g_canvas_width,g_canvas_height,g_map_origin_x,g_map_origin_y,g_map_scale,g_paper_color[0],g_paper_color[1],g_paper_color[2],g_export_mode);}
+    g_cfg->canvas_width,g_cfg->canvas_height,g_cfg->map_origin_x,g_cfg->map_origin_y,g_cfg->map_scale,g_paper_color[0],g_paper_color[1],g_paper_color[2],g_cfg->export_mode);}
   return buf;
 }
 extern "C" const char* project_grease_android_present_renderer_info(){

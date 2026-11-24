@@ -12,6 +12,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Phones get the debug APK: keep its native engine optimised (-O0 made fills/renders several times slower). Asserts stay on.
 set(CMAKE_C_FLAGS_DEBUG "-O2 -g")
 set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g")
+# Release APK (arm64-v8a only): -O3 and ThinLTO across the Blender closure. AGP builds release as
+# Release or RelWithDebInfo depending on its version: both get it. NEON is the arm64 baseline (no flag).
+foreach(cfg RELEASE RELWITHDEBINFO)
+    set(CMAKE_C_FLAGS_${cfg} "-O3 -g -flto=thin")
+    set(CMAKE_CXX_FLAGS_${cfg} "-O3 -g -flto=thin")
+    set(CMAKE_SHARED_LINKER_FLAGS_${cfg} "-flto=thin -O3")
+endforeach()
 
 # The Android target consumes the same minimal Blender legacy-GP closure that
 # already passed the ARM64 --no-undefined native-link probe. This is deliberately

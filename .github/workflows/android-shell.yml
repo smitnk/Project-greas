@@ -120,6 +120,9 @@ jobs:
       - name: Run native document-state tests
         run: bash tools/run_native_document_state_tests.sh
 
+      - name: Run native handle-registry tests (stale JNI handles refused)
+        run: bash tools/run_native_handle_tests.sh
+
       - name: Run native stroke outline tests (miter / round joins)
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"
@@ -203,6 +206,16 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_l7_tests.sh
 
+      - name: Blender 3.6.23 binary vs PG modifiers (real headless Blender run, evaluated stroke points compared)
+        run: |
+          set -euo pipefail
+          mkdir -p build/qa
+          # build/blender-3.6.23 is the official Linux x64 build, fetched by the Line Art reference step
+          build/blender-3.6.23/blender -b --factory-startup --python-exit-code 1 \
+            --python tools/modifier_reference/blender_modifier_reference.py -- build/qa/blender_modifier_run.txt
+          L7_BLENDER_RUN=build/qa/blender_modifier_run.txt bash tools/run_native_l7_tests.sh | tee build/qa/blender_modifier_compare.txt
+          grep BLENDER-RUN build/qa/blender_modifier_compare.txt
+
       - name: Cache glslang 14.3.0 (GLES shader validator)
         id: glslang-cache
         uses: actions/cache@v4
@@ -266,7 +279,7 @@ jobs:
         run: |
           set -o pipefail
           # compile errors and failed tests as annotations (the job log is not always readable)
-          if ! ./gradlew :app:testDebugUnitTest --no-daemon 2>&1 | tee ut.txt; then
+          if ! bash ../tools/gradle_retry.sh :app:testDebugUnitTest --no-daemon 2>&1 | tee ut.txt; then
             grep -E "^e: |FAILED|AssertionError|Exception" ut.txt | head -30 | sed 's/^/::error title=unit tests::/'
             exit 1
           fi
@@ -277,7 +290,7 @@ jobs:
         run: |
           set -o pipefail
           # compiler errors also become annotations (readable without the full log)
-          ./gradlew :app:assembleDebug --no-daemon 2>&1 | tee build.log || {
+          bash ../tools/gradle_retry.sh :app:assembleDebug --no-daemon 2>&1 | tee build.log || {
             grep -E "error:|^e: |FAILED|undefined reference" build.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
             exit 1
           }
@@ -391,6 +404,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Release APK for phones: arm64-v8a only, -O3 + ThinLTO (CMakeLists.txt), stripped .so files.
+      - name: Build release APK
+        working-directory: android
+        run: bash ../tools/gradle_retry.sh :app:assembleRelease --no-daemon
+
+      - name: Verify every native method has its JNI symbol in the release APK
+        run: |
+          NM="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          python3 tools/verify_jni_symbols.py android/app/build/outputs/apk/release/app-release-unsigned.apk "$NM"
+
+      - name: Record APK sizes
+        run: |
+          mkdir -p build/qa
+          for f in android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/release/app-release-unsigned.apk; do
+            echo "$(stat -c %s "$f") $(basename "$f") $(unzip -l "$f" | grep -o 'lib/[^ ]*\.so' | tr '\n' ' ')"
+          done | tee build/qa/apk-sizes.txt
+
+      # The APKs carry stripped .so files: keep the unstripped ones to symbolicate native crashes.
+      - name: Upload unstripped native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-grease-native-symbols
+          path: android/app/build/intermediates/merged_native_libs/**/*.so
+          if-no-files-found: error
+          retention-days: 30
+
       # Anyone can download the newest build from the repository's Releases ("Latest build").
       - name: Publish APK to the Latest build release
         if: github.ref == 'refs/heads/feature/l8-implementation'
@@ -415,7 +454,7 @@ jobs:
         if: always() # the emulator runs SwiftShader, not a phone GPU: failures here are triaged, they do not block the APK
         continue-on-error: true
         working-directory: android
-        run: ./gradlew :app:assembleDebugAndroidTest --no-daemon
+        run: bash ../tools/gradle_retry.sh :app:assembleDebugAndroidTest --no-daemon
 
       - name: Enable KVM for the emulator
         if: always() # the emulator runs SwiftShader, not a phone GPU: failures here are triaged, they do not block the APK
@@ -426,8 +465,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Run device tests on the emulator
-        if: always() # the emulator runs SwiftShader, not a phone GPU: failures here are triaged, they do not block the APK
-        continue-on-error: true
+        if: always() # run even if an earlier step failed; a failing device test fails the run (publish steps below still run)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -455,6 +493,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p android/device-shots && cp build/qa/* android/device-shots/ 2>/dev/null || true
           tar czf qa-results.tgz -C android device-shots 2>/dev/null || exit 0
           gh release view qa-results >/dev/null 2>&1 || gh release create qa-results --title "Emulator QA results" --notes "Latest emulator test run" --prerelease --target "$GITHUB_SHA"
           gh release upload qa-results qa-results.tgz --clobber

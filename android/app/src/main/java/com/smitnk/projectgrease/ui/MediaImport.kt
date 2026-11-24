@@ -111,13 +111,20 @@ fun MediaImportDialogs(m: MediaImport, controller: EditorController, context: Co
     }
 }
 
+/** Where a picked video is in the trim screen: loading its info, unreadable, ready to trim, or importing the kept part. */
+internal enum class VideoImportState {
+    LOADING, UNREADABLE, READY, IMPORTING;
+    companion object { fun afterLoad(frames: Int) = if (frames > 0) READY else UNREADABLE }
+}
+
 private fun fmt(ms: Long) = "%d:%04.1f".format(ms / 60000, (ms % 60000) / 1000f)
 
 @Composable
 private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Context, done: () -> Unit) {
     val loader = controller.rotoscopeLoader
     val pink = Color(0xFFF2416B)
-    var frames by remember(uri) { mutableIntStateOf(-1) }
+    var frames by remember(uri) { mutableIntStateOf(0) }
+    var state by remember(uri) { mutableStateOf(VideoImportState.LOADING) }
     var fps by remember(uri) { mutableIntStateOf(24) }
     var thumbs by remember(uri) { mutableStateOf<List<Bitmap?>>(emptyList()) }
     fun grab(frame: Int, size: Int): Bitmap? = runCatching {
@@ -131,6 +138,7 @@ private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Con
     }.getOrNull()
     LaunchedEffect(uri) {
         withContext(Dispatchers.IO) { frames = loader?.movieFrames(uri) ?: 0; fps = loader?.movieFps(uri) ?: 24 }
+        state = VideoImportState.afterLoad(frames)
         // the strip's thumbnails, decoded once
         if (frames > 0) thumbs = withContext(Dispatchers.IO) { (0 until 8).map { k -> grab(1 + k * (frames - 1) / 7, 160) } }
     }
@@ -141,20 +149,19 @@ private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Con
                 var b by remember(uri) { mutableIntStateOf(1) }
                 var pos by remember(uri) { mutableIntStateOf(1) }
                 var playing by remember(uri) { mutableStateOf(false) }
-                var importing by remember(uri) { mutableStateOf(false) }
                 LaunchedEffect(frames) { if (frames > 0) { a = 1; b = frames; pos = 1 } }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = done) { Icon(Icons.Default.Close, "Cancel") }
                     Text("Video import", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                    IconButton(enabled = frames > 0 && !importing, onClick = {
-                        importing = true; playing = false
+                    IconButton(enabled = state == VideoImportState.READY, onClick = {
+                        state = VideoImportState.IMPORTING; playing = false
                         addVideoLayer(controller, context, uri, frames, a, b)
                         done()
-                    }, modifier = Modifier.testTag("videoAdd")) { Icon(Icons.Default.Check, "Import", tint = if (frames > 0) pink else Color.Gray) }
+                    }, modifier = Modifier.testTag("videoAdd")) { Icon(Icons.Default.Check, "Import", tint = if (state == VideoImportState.READY) pink else Color.Gray) }
                 }
                 when {
-                    frames < 0 -> { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = pink) }; return@Column }
-                    frames == 0 -> { Text("Couldn't read this video on this phone.", Modifier.padding(16.dp)); TextButton(onClick = done) { Text("Close") }; return@Column }
+                    state == VideoImportState.LOADING -> { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = pink) }; return@Column }
+                    state == VideoImportState.UNREADABLE -> { Text("Couldn't read this video on this phone.", Modifier.padding(16.dp)); TextButton(onClick = done) { Text("Close") }; return@Column }
                 }
                 // the frame under the playhead (decoded off the UI thread)
                 var bmp by remember(uri) { mutableStateOf<Bitmap?>(null) }
@@ -220,7 +227,7 @@ private fun VideoTrimDialog(uri: Uri, controller: EditorController, context: Con
                     Modifier.align(Alignment.CenterHorizontally).padding(8.dp), fontSize = 11.sp)
                 if (fps != controller.animation.fps) Text("The video is $fps fps and the animation ${controller.animation.fps} fps: one video frame per animation frame, as Blender plays a clip.",
                     Modifier.padding(horizontal = 16.dp), fontSize = 10.sp, color = Color.Gray)
-                if (importing) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (state == VideoImportState.IMPORTING) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(18.dp), color = pink, strokeWidth = 2.dp); Text("  Importing video frames", color = pink, fontSize = 12.sp)
                 }
             }
@@ -371,22 +378,31 @@ internal fun decodeGifFrames(context: Context, uri: Uri, fps: Int): List<String>
         f.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
         return Uri.fromFile(f).toString()
     }
-    if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
-        val still = runCatching { context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull() ?: return emptyList()
-        return listOf(save(still, 1))
-    }
-    val dur = movie.duration().coerceAtLeast(1)
-    val n = ((dur.toLong() * fps.coerceAtLeast(1) + 999) / 1000).toInt().coerceIn(1, 600)
-    val out = ArrayList<String>(n)
-    val bmp = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bmp)
-    for (k in 0 until n) {
-        bmp.eraseColor(0)
-        @Suppress("DEPRECATION") movie.setTime(((k * 1000L) / fps.coerceAtLeast(1)).toInt().coerceAtMost(dur - 1))
-        @Suppress("DEPRECATION") movie.draw(canvas, 0f, 0f)
-        out.add(save(bmp, k + 1))
-    }
-    return out
+    // any failure (full disk, decoder error, OOM-ish) returns no frames - addGifLayer reports it - and the half-written folder goes
+    return runCatching {
+        if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
+            // sample down: a huge still must not run out of memory (cap ~2048 px on the long side)
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+            val still = context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }
+                ?: error("undecodable image")
+            return@runCatching listOf(save(still, 1))
+        }
+        val dur = movie.duration().coerceAtLeast(1)
+        val n = ((dur.toLong() * fps.coerceAtLeast(1) + 999) / 1000).toInt().coerceIn(1, 600)
+        val out = ArrayList<String>(n)
+        val bmp = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        for (k in 0 until n) {
+            bmp.eraseColor(0)
+            @Suppress("DEPRECATION") movie.setTime(((k * 1000L) / fps.coerceAtLeast(1)).toInt().coerceAtMost(dur - 1))
+            @Suppress("DEPRECATION") movie.draw(canvas, 0f, 0f)
+            out.add(save(bmp, k + 1))
+        }
+        out
+    }.getOrElse { dir.deleteRecursively(); emptyList() }
 }
 
 internal fun addGifLayer(controller: EditorController, context: Context, frames: List<String>) {

@@ -23,6 +23,54 @@
 #include "project_grease_blender_fill.h"
 #include "BKE_gpencil_legacy.h"
 #include "DNA_material_types.h"
+#include "MEM_guardedalloc.h"
+#include <vector>
+
+/* A2 reused-address case: while active, freed guardedalloc blocks are parked and handed back (LIFO,
+ * same allocation name) to the next allocation, so a new document's layer / frame land at the old
+ * addresses. Names are recorded here because the lock-free allocator does not keep them. */
+#include <map>
+#include <string>
+static std::vector<std::pair<void *, std::string>> g_parked;
+static std::map<void *, std::string> g_names;
+static void *(*g_real_calloc)(size_t, const char *);
+static void *(*g_real_malloc)(size_t, const char *);
+static void (*g_real_free)(void *);
+static void *recycle(size_t len, const char *s, void *(*real)(size_t, const char *))
+{
+  void *p = nullptr;
+  for (size_t i = g_parked.size(); i-- > 0;) {
+    if (g_parked[i].second == s && MEM_allocN_len(g_parked[i].first) == len) {
+      p = std::memset(g_parked[i].first, 0, len);
+      g_parked.erase(g_parked.begin() + static_cast<std::ptrdiff_t>(i));
+      break;
+    }
+  }
+  if (!p) p = real(len, s);
+  g_names[p] = s;
+  return p;
+}
+static void *recycling_calloc(size_t len, const char *s) { return recycle(len, s, g_real_calloc); }
+static void *recycling_malloc(size_t len, const char *s) { return recycle(len, s, g_real_malloc); }
+static void parking_free(void *p)
+{
+  auto it = g_names.find(p);
+  if (it == g_names.end()) { g_real_free(p); return; }
+  g_parked.emplace_back(p, it->second);
+  g_names.erase(it);
+}
+static void recycling_alloc(bool on)
+{
+  if (on) {
+    g_real_calloc = MEM_callocN; g_real_malloc = MEM_mallocN; g_real_free = MEM_freeN;
+    MEM_callocN = recycling_calloc; MEM_mallocN = recycling_malloc; MEM_freeN = parking_free;
+    return;
+  }
+  MEM_callocN = g_real_calloc; MEM_mallocN = g_real_malloc; MEM_freeN = g_real_free;
+  for (auto &e : g_parked) MEM_freeN(e.first);
+  g_parked.clear();
+  g_names.clear(); /* still-live blocks are freed later through the real MEM_freeN */
+}
 
 /* The draw module is not part of this host test: the backend only needs these two to be non-null. */
 extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *) {}
@@ -907,10 +955,189 @@ int main()
     CHECK(b.fx_count(1) == PG_FX_MAX_STACK && b.fx_add(1, PG_FX_PIXEL) == -1);
   }
 
+  /* --- Impl::layer and GP_LAYER_ACTIVE agree after delete_layer, undo and redo --- */
+  {
+    CHECK(b.history_reset());
+    for (int i = 0; i < 16 && b.layer_count() > 1; i++) CHECK(b.delete_layer(b.layer_count() - 1));
+    CHECK(b.create_layer("P") && b.create_layer("Q") && b.create_frame(1));
+    CHECK(b.layer_count() == 3);
+    auto agree = [&]() {
+      int flagged = 0, at = -1, i = 0;
+      for (bGPDlayer *l = static_cast<bGPDlayer *>(b.document_data()->layers.first); l; l = l->next, ++i) {
+        if (l->flag & GP_LAYER_ACTIVE) { flagged++; at = i; }
+      }
+      return flagged == 1 && at == b.active_layer_index() &&
+             b.active_layer_data() == BLI_findlink(&b.document_data()->layers, at);
+    };
+    CHECK(b.select_layer(2) && agree());
+    CHECK(b.delete_layer(0) && agree());               /* another layer deleted: the active one stays */
+    CHECK(b.active_layer_index() == 1 && std::strcmp(b.active_layer_data()->info, "Q") == 0);
+    CHECK(b.history_record());
+    CHECK(b.select_layer(0) && agree() && std::strcmp(b.active_layer_data()->info, "P") == 0);
+    CHECK(b.history_record());
+    CHECK(b.delete_layer(0) && agree());               /* the active layer deleted: flag moves, no stale pointer */
+    CHECK(b.history_record());
+    CHECK(b.history_undo() && agree());
+    CHECK(b.history_undo() && agree());
+    CHECK(b.history_redo() && agree());
+    CHECK(b.duplicate_layer(0) && agree());
+    CHECK(b.move_layer(0, b.layer_count() - 1) && agree());
+  }
+
+  /* --- A5: frame selection and the material Self Overlap (GP_MATERIAL_DISABLE_STENCIL) flag live in the
+   * snapshots: an undo / redo restores them, so the UI must record a step after changing them --- */
+  {
+    CHECK(b.reset_document());
+    CHECK(b.create_layer("S") && b.create_frame(1));
+    add_line(b, 10.0f, 10.0f);
+    CHECK(b.history_reset());
+    auto first_frame = [&]() { return static_cast<bGPDframe *>(b.active_layer_data()->frames.first); };
+    auto style = [&]() { return b.document_data()->mat[0]->gp_style; };
+    first_frame()->flag |= GP_FRAME_SELECT;
+    style()->flag |= GP_MATERIAL_DISABLE_STENCIL;
+    CHECK(b.history_record());
+    first_frame()->flag &= ~GP_FRAME_SELECT;
+    style()->flag &= ~GP_MATERIAL_DISABLE_STENCIL;
+    CHECK(b.history_record());
+    CHECK(b.history_undo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK((style()->flag & GP_MATERIAL_DISABLE_STENCIL) != 0);
+    CHECK(b.history_redo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) == 0);
+    CHECK((style()->flag & GP_MATERIAL_DISABLE_STENCIL) == 0);
+    /* the editor re-pushes its multiframe switch after undo / redo: an unchanged value must not touch the
+     * restored frame selection (it used to deselect every frame) */
+    CHECK(b.history_undo() && (first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK(b.set_multiframe_editing(false));
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK(b.set_multiframe_editing(true) && (first_frame()->flag & GP_FRAME_SELECT) != 0);
+    CHECK(b.set_multiframe_editing(false) && (first_frame()->flag & GP_FRAME_SELECT) == 0); /* a real change */
+    CHECK(b.history_redo());
+    /* a change that was never recorded is dropped by the next undo (what the UI fix prevents) */
+    first_frame()->flag |= GP_FRAME_SELECT;
+    CHECK(b.history_undo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) != 0); /* the undo target had it set (step 1) */
+    CHECK(b.history_redo());
+    CHECK((first_frame()->flag & GP_FRAME_SELECT) == 0); /* unrecorded selection lost on redo */
+  }
+
+  /* --- A2: the evaluated-frame cache never serves an entry of a replaced document, even when the new
+   * layer / frame sit at the freed addresses of the old ones (the key also holds doc_generation) --- */
+  {
+    bool reused = false;
+    for (int round = 0; round < 40; round++) {
+      recycling_alloc(true); /* the old document's allocation to the new one's */
+      CHECK(b.reset_document()); /* the document's own "Layer 1" / frame 1 */
+      add_line(b, 100.0f, 100.0f);
+      CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);
+      set_offset(b, 0, 0, 25.0f);
+      bGPDlayer *lay = b.active_layer_data();
+      bGPDframe *fr = static_cast<bGPDframe *>(lay->frames.first);
+      const float old_first = first_x(b.evaluated_frame(lay, fr, 1));
+      const uint64_t gen = b.document_generation();
+      CHECK(b.reset_document());
+      CHECK(b.document_generation() > gen);
+      bGPDlayer *lay2 = b.active_layer_data();
+      bGPDframe *fr2 = static_cast<bGPDframe *>(lay2->frames.first);
+      recycling_alloc(false);
+      reused |= (lay2 == lay && fr2 == fr);
+      /* same (layer, frame, cfra) key, no edit yet: the stale evaluated strokes must not come back */
+      const bGPDframe *fresh_eval = b.evaluated_frame(lay2, fr2, 1);
+      CHECK(fresh_eval == nullptr || BLI_listbase_is_empty(&fresh_eval->strokes));
+      add_line(b, 300.0f, 100.0f); /* different content, same shape of document */
+      CHECK(b.modifier_add(0, PG_MOD_OFFSET) == 0);
+      set_offset(b, 0, 0, 25.0f);
+      const float new_first = first_x(b.evaluated_frame(lay2, fr2, 1));
+      CHECK(b.modifier_eval_count() >= 1);                      /* evaluated (a reset restarts the count) */
+      CHECK(std::fabs(new_first - old_first - 200.0f) < 1e-3f); /* and from the new strokes */
+    }
+    CHECK(reused); /* the recycling allocator forces the stale-address case */
+    std::printf("  eval cache: addresses reused across a reset: %s\n", reused ? "yes" : "no");
+  }
+
   /* --- reset clears every stack --- */
+  const uint64_t gen_before_reset = b.document_generation();
   CHECK(b.reset_document());
   CHECK(b.layer_count() == 1 && b.modifier_count(0) == 0);
   CHECK(b.fx_count(0) == 0);
+  /* revisions are monotonic across a reset and across backends: they never fall back to a seed */
+  CHECK(b.document_generation() > gen_before_reset);
+  {
+    Backend other;
+    CHECK(other.document_generation() > b.document_generation());
+  }
+  CHECK(b.document_generation() < Backend().document_generation());
+
+  /* --- lasso select: a fixed lasso over a zigzag picks the same points (bounding-box prefilter) --- */
+  {
+    Backend l;
+    CHECK(l.initialize() && l.create_document() && l.create_layer("L") && l.create_frame(1));
+    add_line(l, 100.0f, 100.0f); /* (100,100) (120,106) (140,100) (160,106) (180,100) */
+    add_line(l, 100.0f, 300.0f);
+    const float lasso[] = {110.0f, 90.0f, 170.0f, 90.0f, 170.0f, 110.0f, 110.0f, 110.0f};
+    CHECK(l.lasso_select(lasso, 4, false) == 1);
+    const bGPDstroke *s0 = static_cast<const bGPDstroke *>(
+        static_cast<const bGPDframe *>(l.active_layer_data()->frames.first)->strokes.first);
+    int mask = 0;
+    for (int i = 0; i < s0->totpoints; i++) mask |= (s0->points[i].flag & GP_SPOINT_SELECT) ? 1 << i : 0;
+    CHECK(mask == 0b01110);
+    CHECK(l.frame_selected_point_count() == 3);
+    l.shutdown();
+  }
+
+  /* --- lasso at high zoom: points 0.4 units apart stay distinct in px_per_unit rounding --- */
+  {
+    Backend z;
+    CHECK(z.initialize() && z.create_document() && z.create_layer("Z") && z.create_frame(1));
+    StrokePoint pts[8];
+    for (int i = 0; i < 8; i++) pts[i] = StrokePoint{10.0f + 0.4f * i, 10.0f, 0.0f, 0.5f, 1.0f, 0.0f};
+    PGStrokeInfo info{};
+    info.thickness = 4.0f;
+    CHECK(z.add_stroke(pts, 8, info));
+    /* x in [10.6, 11.4] holds points 2 (10.8) and 3 (11.2) only */
+    const float lasso[] = {10.6f, 9.8f, 11.4f, 9.8f, 11.4f, 10.2f, 10.6f, 10.2f};
+    CHECK(z.lasso_select(lasso, 4, false, 20.0f) == 1);
+    const bGPDstroke *s0 = static_cast<const bGPDstroke *>(
+        static_cast<const bGPDframe *>(z.active_layer_data()->frames.first)->strokes.first);
+    int mask = 0;
+    for (int i = 0; i < s0->totpoints; i++) mask |= (s0->points[i].flag & GP_SPOINT_SELECT) ? 1 << i : 0;
+    CHECK(mask == 0b00001100);
+    z.shutdown();
+  }
+
+  /* --- undo history bounds: 32 steps (U.undosteps) and a 4M stored-point budget --- */
+  {
+    Backend h;
+    CHECK(h.initialize() && h.create_document() && h.create_layer("H") && h.create_frame(1));
+    CHECK(h.history_reset());
+    for (int i = 0; i < 40; i++) {
+      add_line(h, 10.0f * i, 0.0f);
+      CHECK(h.history_record());
+    }
+    int undos = 0;
+    while (h.history_undo()) undos++;
+    CHECK(undos == 31);          /* 32 snapshots kept */
+    CHECK(h.stroke_count() == 9); /* the oldest kept step: strokes 1..9 */
+    CHECK(h.history_redo() && h.stroke_count() == 10);
+
+    Backend big;
+    CHECK(big.initialize() && big.create_document() && big.create_layer("B") && big.create_frame(1));
+    std::vector<StrokePoint> pts(100000, StrokePoint{0.0f, 0.0f, 0.0f, 0.5f, 1.0f, 0.0f});
+    PGStrokeInfo info{};
+    info.thickness = 4.0f;
+    CHECK(big.add_stroke(pts.data(), 1, info) && big.history_reset());
+    for (int i = 0; i < 12; i++) {
+      CHECK(big.add_stroke(pts.data(), static_cast<int>(pts.size()), info) && big.history_record());
+    }
+    /* 13 steps (< 32) holding ~0.1M..1.2M points; only the newest 3 fit in 4M (1.2+1.1+1.0M) */
+    undos = 0;
+    while (big.history_undo()) undos++;
+    CHECK(undos == 2);
+    CHECK(big.point_count() == 1 + 10 * 100000);
+    CHECK(big.history_redo() && big.point_count() == 1 + 11 * 100000);
+    big.shutdown();
+    h.shutdown();
+  }
 
   b.shutdown();
   if (failures) {

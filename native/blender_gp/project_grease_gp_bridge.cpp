@@ -438,6 +438,11 @@ int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.history_can_undo() ? 1 : 0;
 }
+int project_grease_gp_history_undo_count(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
+  return handle->backend.history_undo_count();
+}
 int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle)
 {
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
@@ -629,10 +634,11 @@ void project_grease_gp_clear_selection(ProjectGreaseGPHandle *handle)
   if (ensure_ready(handle)) handle->backend.clear_selection();
 }
 
-int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive)
+int project_grease_gp_lasso_select(ProjectGreaseGPHandle *handle, const float *xy, int count, int additive,
+                                  float px_per_unit)
 {
   if (!ensure_ready(handle) || !xy) return 0;
-  return handle->backend.lasso_select(xy, count, additive != 0);
+  return handle->backend.lasso_select(xy, count, additive != 0, px_per_unit);
 }
 
 
@@ -1165,11 +1171,6 @@ int project_grease_gp_set_material_fill_enabled(ProjectGreaseGPHandle *handle, i
 int project_grease_gp_smooth_stroke(ProjectGreaseGPHandle *handle, int index, float influence, int iterations)
 {
   return ensure_operator(handle) && handle->backend.smooth_stroke(index, influence, iterations) ? 1 : 0;
-}
-
-int project_grease_gp_sculpt_at(ProjectGreaseGPHandle *handle, int tool, float x, float y, float radius, float influence)
-{
-  return ensure_operator(handle) && handle->backend.sculpt_at(tool, x, y, radius, influence) ? 1 : 0;
 }
 
 int project_grease_gp_apply_legacy_geometry_batch(

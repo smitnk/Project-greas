@@ -98,6 +98,13 @@ int main()
   CHECK(!b.erase(150, 100, 0, 0, 1, 1, 1, 1));
   CHECK(!b.erase(NAN, 100, 20, 0, 1, 1, 1, 1));
 
+  /* high zoom: a 0.5-unit eraser on a point removes it (it was cast to int 0 and erased nothing) */
+  fresh(b);
+  line(b, 100);
+  CHECK(b.erase(150.2f, 100, 0.5f, 0, 1, 1, 1, 1));
+  CHECK(b.stroke_count() == 2 && points_of(b, 0) + points_of(b, 1) == 100);
+  CHECK(!b.erase(151.5f, 100, 0.5f, 0, 1, 1, 1, 1)); /* between points (150 gone, 153 is 1.5 away) */
+
   std::printf(failures ? "%d FAILURES\n" : "backend eraser tests passed\n", failures);
   /* Pixel eraser for fills: a fill-only stroke keeps all its points; the touch is counted */
   fresh(b);

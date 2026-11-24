@@ -20,7 +20,7 @@ bool process_stroke(bGPdata *gpd,
                     bGPDstroke *stroke,
                     float x,
                     float y,
-                    int radius,
+                    float radius,
                     const Settings &settings);
 
 }  // namespace project_grease::legacy_gp_eraser

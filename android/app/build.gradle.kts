@@ -12,22 +12,29 @@ android {
         applicationId = "com.smitnk.projectgrease"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.051 beta"
+        versionCode = 35
+        versionName = "0.058 beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // arm64-v8a + armeabi-v7a (32-bit budget / Android Go phones) for devices, x86_64 for the emulator job (instrumented device-bugfix tests).
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
     }
 
     buildTypes {
+        // debug: arm64-v8a for phones, x86_64 for the emulator job (instrumented tests)
+        debug {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
+        // release (phones): arm64-v8a only; the packager strips the .so files, the unstripped
+        // ones are kept by CI (android-shell.yml) for crash symbolication
         release {
             isMinifyEnabled = false
+            ndk { abiFilters += listOf("arm64-v8a") }
         }
     }
+
+    // lintVitalAnalyzeRelease crashed in lifecycle's NullSafeMutableLiveData detector (built against
+    // another Kotlin analysis API: IncompatibleClassChangeError), failing assembleRelease in CI.
+    lint { disable += "NullSafeMutableLiveData" }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

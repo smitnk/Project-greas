@@ -45,6 +45,9 @@ class AudioPlayback(private val context: Context) {
         }
     }
 
+    /** The strip's playback position in its file (ms), or null when it has no player. */
+    fun positionMs(s: AudioStrip): Long? = players[s]?.let { p -> runCatching { p.currentPosition.toLong() }.getOrNull() }
+
     /** Reads a file's length (for a strip just added). */
     fun durationOf(uri: Uri): Long = runCatching {
         val mr = android.media.MediaMetadataRetriever()

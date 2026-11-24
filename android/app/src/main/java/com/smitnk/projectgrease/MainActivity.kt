@@ -19,6 +19,13 @@ class MainActivity : ComponentActivity() {
     /** One editor per activity (the instrumented tests drive and inspect it through the activity). */
     val controller by lazy { EditorController() }
 
+    /** A6: pooled GL render targets go back to the driver when the app is no longer visible or memory is tight. */
+    override fun onStop() { super.onStop(); controller.trimGpuMemory(true) }
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_UI_HIDDEN) controller.trimGpuMemory(true)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)

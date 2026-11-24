@@ -15,6 +15,15 @@ class ProjectFilesTest {
 
     private fun doc(v: String) = JSONObject().put("v", v).toString()
 
+    @Test fun staleTicketedWriteDoesNotOverwriteNewer() {
+        val files = ProjectFiles(tmp.newFolder("projects"))
+        val older = ProjectFiles.nextSeq()
+        val newer = ProjectFiles.nextSeq()
+        files.write("Demo", doc("newer"), newer)
+        files.write("Demo", doc("older"), older)
+        assertEquals("newer", JSONObject(files.read("Demo")!!).getString("v"))
+    }
+
     @Test fun interruptedSaveKeepsOldFileIntact() {
         val files = ProjectFiles(tmp.newFolder("projects"))
         files.write("Demo", doc("old"))

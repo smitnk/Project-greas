@@ -36,6 +36,7 @@ typedef struct PGEraserParams {
   float soft_strength; /* era_strength_f / 100 */
   float soft_thickness; /* era_thickness_f / 100 */
   int hard_flag;       /* GP_PAINTFLAG_HARD_ERASER (shift) */
+  float px_per_unit;   /* view scale canvas->pixels (0 = 1); radius is in these pixels */
 } PGEraserParams;
 
 /* Returns a combination of PG_ERASER_* flags. */

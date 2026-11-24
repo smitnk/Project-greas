@@ -29,6 +29,11 @@ extern "C" void project_grease_android_present_set_view_transform(float zoom, fl
 extern "C" void project_grease_android_present_reset();
 extern "C" void project_grease_android_present_set_weight_view(int group);
 extern "C" void project_grease_android_present_set_export_mode(int mode);
+extern "C" void *project_grease_android_present_config_new();
+extern "C" void project_grease_android_present_config_free(void *cfg);
+extern "C" void project_grease_android_present_config_bind(void *cfg);
+extern "C" void project_grease_android_present_set_view_rotation(float radians);
+extern "C" void project_grease_android_present_get_canvas_map(int w, int h, float *scale, float *ox, float *oy, float *rotation);
 extern "C" void project_grease_android_present_set_export_background(float r, float g, float b);
 extern "C" void project_grease_android_present_set_selection_overlay(int enabled);
 extern "C" void project_grease_android_present_set_fill_draw_mode(int mode);
@@ -38,6 +43,7 @@ extern "C" int project_grease_android_present_gp_fill_mask(const bGPdata *gpd, i
 extern "C" void project_grease_android_present_set_guide(int type, float cx, float cy, float angle, float spacing);
 extern "C" int project_grease_fx_pass_count(const PGFxEntry *, int, const PGFxView *);
 extern "C" int project_grease_fx_begin_layer(int, int);
+extern "C" const char *project_grease_fx_pass_body(int kind);
 extern "C" int project_grease_fx_end_layer(const PGFxEntry *, int, const PGFxView *, unsigned char *, unsigned char *);
 extern "C" void project_grease_android_set_fx_provider(
     int (*)(void *, const bGPDlayer *, const PGFxEntry **), void *);
@@ -455,6 +461,49 @@ static void test_strength_full()
 
 /* A stroke at half strength that crosses itself is blended once per pixel: the crossing is not
  * darker than the rest of the stroke (Blender draws a stroke as one surface). */
+extern "C" const char *project_grease_android_present_last_frame();
+/* Batch 6, the SLOW render lines: GL state was queried for every stroke (a GL queue stall each, ~2 ms
+ * a stroke on the emulator). 300 strokes (the stencil reference wraps at 255) take a fixed few
+ * queries, and a self-crossing stroke after them is still blended once. */
+static void test_queries_per_frame()
+{
+  Doc d = make_doc();
+  set_color(d, 0.0f, 0.0f, 0.0f);
+  bGPDlayer *l = add_layer(d, "A");
+  for (int i = 0; i < 300; i++) add_bar(l, 5, 15, 5 + (i % 10), 1, 0.5f);
+  bGPDframe *f = static_cast<bGPDframe *>(l->frames.first);
+  const float xy[4][2] = {{20, 30}, {180, 90}, {20, 90}, {180, 30}};
+  bGPDstroke *s = BKE_gpencil_stroke_add(f, 0, 4, 12, false);
+  for (int i = 0; i < 4; i++) {
+    s->points[i].x = xy[i][0];
+    s->points[i].y = xy[i][1];
+    s->points[i].pressure = 1.0f;
+    s->points[i].strength = 0.5f;
+  }
+  present(d);
+  const char *info = project_grease_android_present_last_frame();
+  const char *q = std::strstr(info, "stroke GL queries ");
+  CHECK(q != nullptr);
+  const long n = q ? std::strtol(q + std::strlen("stroke GL queries "), nullptr, 10) : -1;
+  if (n < 0 || n > 4) std::printf("FAIL: %ld GL queries for 301 strokes: %s\n", n, info);
+  CHECK(n >= 0 && n <= 4);
+  const Rgba cross = pixel_at_canvas(100, 60), single = pixel_at_canvas(60, 45);
+  CHECK(cross.r < 200);
+  CHECK(std::abs(cross.r - single.r) <= 3);
+}
+
+/* The 4-13 s frames of the blur, glow, rim and shadow tests on the emulator: the sample loops ran
+ * all 65 iterations (i = -32..32, 'continue' outside sampCount), so a 2-sample blur paid 65
+ * texture-fetch iterations per pixel per pass on a software GPU. They must stop after 2n+1. */
+static void test_fx_loops_bounded()
+{
+  const int kinds[] = {PGFX_PASS_BLUR, PGFX_PASS_GLOW, PGFX_PASS_RIM, PGFX_PASS_SHADOW};
+  for (int k : kinds) {
+    const char *b = project_grease_fx_pass_body(k);
+    CHECK(b && std::strstr(b, "if (i > sampCount) break;") && !std::strstr(b, "continue"));
+  }
+}
+
 static void test_self_overlap()
 {
   Doc d = make_doc();
@@ -943,6 +992,38 @@ static void test_shader_fx_gl() {
                               fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})});
 }
 
+/* GLES 3 runs each effect pass as one draw into both planes (glDrawBuffers); the GLES 2 path
+ * (PG_FX_GLES2=1) draws twice. Both must give the same bytes. */
+extern "C" int project_grease_fx_last_draws();
+extern "C" void project_grease_fx_reset();
+static void test_fx_mrt_matches_gles2() {
+  const std::vector<std::vector<PGFxEntry>> cases = {
+      {fxe(PG_FX_BLUR, {{PG_FXP_BLUR_RADIUS_X, 4}, {PG_FXP_BLUR_RADIUS_Y, 4}, {PG_FXP_BLUR_SAMPLES, 3}}),
+       fxe(PG_FX_COLORIZE, {{PG_FXP_COLORIZE_MODE, 1}, {PG_FXP_COLORIZE_FACTOR, 1.0f}}), fxe(PG_FX_FLIP)},
+      {fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_BLUR_X, 2}, {PG_FXP_SHADOW_BLUR_Y, 2}}),
+       fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})},
+      {fxe(PG_FX_RIM, {{PG_FXP_RIM_MODE, 2}, {PG_FXP_RIM_OFFSET_X, 4}, {PG_FXP_RIM_BLUR_X, 2}, {PG_FXP_RIM_BLUR_Y, 2}})},
+      {fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLEND, 4}, {PG_FXP_GLOW_BLUR_X, 4}, {PG_FXP_GLOW_BLUR_Y, 4}, {PG_FXP_GLOW_SAMPLES, 3}})},
+  };
+  const char *ver = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+  const bool es3 = ver && std::strncmp(ver, "OpenGL ES 3", 11) == 0;
+  for (const auto &e : cases) {
+    std::vector<unsigned char> mrt, two;
+    project_grease_fx_reset();
+    fx_max_diff(e, "mrt", &mrt);
+    const int d_mrt = project_grease_fx_last_draws();
+    setenv("PG_FX_GLES2", "1", 1);
+    project_grease_fx_reset();
+    fx_max_diff(e, "gles2", &two);
+    const int d_two = project_grease_fx_last_draws();
+    unsetenv("PG_FX_GLES2");
+    printf("  fx draws: GLES 3 path %d, GLES 2 path %d (%s)\n", d_mrt, d_two, ver ? ver : "?");
+    CHECK(mrt == two);
+    if (es3) CHECK(d_mrt < d_two);
+  }
+  project_grease_fx_reset();
+}
+
 /* ---- Batch 21: layer tint / line change / blend modes, dots & squares, onion filter + loop, guide ---- */
 static void test_batch21_layer_state()
 {
@@ -1102,6 +1183,116 @@ static void test_open_stroke_cache()
   CHECK(near_rgb(pixel_at_canvas(100, 60), 0, 0, 255));
 }
 
+extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
+/* A9 (presenter fallback, GLES < 3.2): the open stroke has the brush size it is committed with and its
+ * flat caps, not 1 unit round. */
+static void test_live_stroke_style()
+{
+  Doc d = make_doc();
+  set_color(d, 0, 0, 0);
+  add_layer(d, "A");
+  tGPspoint pts[2] = {};
+  for (int i = 0; i < 2; i++) { pts[i].m_xy[0] = 40.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  d.gpd->runtime.sbuffer_used = 2;
+  project_grease_android_present_set_live_stroke(0, 1, 1, 1, 1, 0, 0);
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(70, 80), 245, 245, 245)); /* 1 unit: 8 units off the line is paper */
+  project_grease_android_present_set_live_stroke(1, 20, 1, 1, 1, 1, 0);
+  d.gpd->runtime.sbuffer_used = 1; d.gpd->runtime.sbuffer_used = 2; /* new frame of the gesture */
+  present(d);
+  CHECK(!near_rgb(pixel_at_canvas(70, 80), 245, 245, 245)); /* brush size 20: covered */
+  CHECK(near_rgb(pixel_at_canvas(34, 88), 245, 245, 245));  /* flat start cap: nothing behind the first point */
+  project_grease_android_present_set_live_stroke(0, 1, 1, 1, 1, 0, 0);
+  d.gpd->runtime.sbuffer_used = 0;
+  d.gpd->runtime.sbuffer = nullptr;
+}
+
+/* A9 on the presenter fallback: gps->hardeness and aspect_ratio as gpencil_frag.glsl's
+ * gpencil_stroke_round_cap_mask() applies them (hardness falloff on every stroke, aspect on dots). */
+static void test_a9_hardness_aspect()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 40, 160, 60, 30); /* radius 15 units */
+  bGPDstroke *s = static_cast<bGPDstroke *>(static_cast<bGPDframe *>(l->frames.first)->strokes.first);
+  present(d);
+  const Rgba hard_edge = pixel_at_canvas(100, 60 + 11), hard_mid = pixel_at_canvas(100, 60);
+  s->hardeness = 0.3f;
+  present(d);
+  const Rgba soft_edge = pixel_at_canvas(100, 60 + 11), soft_mid = pixel_at_canvas(100, 60);
+  printf("  A9 hardness: edge hard %d,%d,%d soft %d,%d,%d; centre soft %d,%d,%d\n", hard_edge.r, hard_edge.g,
+         hard_edge.b, soft_edge.r, soft_edge.g, soft_edge.b, soft_mid.r, soft_mid.g, soft_mid.b);
+  CHECK(near_rgb(hard_edge, 255, 0, 0));
+  CHECK(std::abs(soft_edge.g - hard_edge.g) > 100); /* the soft edge fades towards the paper */
+  CHECK(near_rgb(hard_mid, 255, 0, 0) && soft_mid.r > 240 && soft_mid.g < 80); /* the centre stays (near) full */
+  CHECK(near_rgb(pixel_at_canvas(100, 60 + 20), 245, 245, 245));
+  s->hardeness = 1.0f;
+
+  /* dots: aspect_ratio (1, 0.5) is a dot half as tall (gpencil_decode_aspect: asp 2 -> (1, 0.5)) */
+  MaterialGPencilStyle *st = d.gpd->mat[0]->gp_style;
+  st->mode = GP_MATERIAL_MODE_DOT;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 10), 255, 0, 0));
+  CHECK(near_rgb(pixel_at_canvas(40 + 10, 60), 255, 0, 0));
+  s->aspect_ratio[1] = 0.5f;
+  present(d);
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 10), 245, 245, 245)); /* squashed vertically */
+  CHECK(near_rgb(pixel_at_canvas(40 + 10, 60), 255, 0, 0));      /* full width */
+  CHECK(near_rgb(pixel_at_canvas(40, 60 + 5), 255, 0, 0));
+  s->aspect_ratio[1] = 1.0f;
+  st->mode = GP_MATERIAL_MODE_LINE;
+}
+
+/* A4: two renderers, each with its own EGL context and presenter config, as two GL surfaces in the
+ * app. Each must draw with its own GL objects; destroying one (bind, reset with its context current,
+ * free its config: nativeDestroyEglRenderer) must leave the other drawing correctly. */
+static void test_two_renderers_gl()
+{
+  const EGLint pa[] = {EGL_WIDTH, W, EGL_HEIGHT, H, EGL_NONE};
+  const EGLint xa[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+  EGLSurface sa = eglCreatePbufferSurface(g_dpy, g_cfg, pa), sb = eglCreatePbufferSurface(g_dpy, g_cfg, pa);
+  EGLContext ca = eglCreateContext(g_dpy, g_cfg, EGL_NO_CONTEXT, xa), cb = eglCreateContext(g_dpy, g_cfg, EGL_NO_CONTEXT, xa);
+  CHECK(sa != EGL_NO_SURFACE && sb != EGL_NO_SURFACE && ca != EGL_NO_CONTEXT && cb != EGL_NO_CONTEXT);
+  void *a = project_grease_android_present_config_new(), *b = project_grease_android_present_config_new();
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  add_bar(add_layer(d, "A"), 20, 180, 60, 20);
+  auto draw = [&](void *cfg, EGLSurface s, EGLContext c) {
+    CHECK(eglMakeCurrent(g_dpy, s, s, c));
+    project_grease_android_present_config_bind(cfg);
+    project_grease_android_present_set_canvas_size(W, H);
+    project_grease_android_present_set_view_transform(1.0f, 0.0f, 0.0f);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    present(d);
+    CHECK(glGetError() == GL_NO_ERROR);
+    return near_rgb(pixel_at_canvas(100, 60), 255, 0, 0);
+  };
+  CHECK(draw(a, sa, ca));
+  CHECK(draw(b, sb, cb)); /* b's context has none of a's objects: it must build its own */
+  CHECK(draw(a, sa, ca));
+  /* destroy renderer a */
+  CHECK(eglMakeCurrent(g_dpy, sa, sa, ca));
+  project_grease_android_present_config_bind(a);
+  project_grease_android_present_reset();
+  project_grease_android_present_config_free(a);
+  eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  eglDestroyContext(g_dpy, ca);
+  eglDestroySurface(g_dpy, sa);
+  CHECK(draw(b, sb, cb));
+  CHECK(draw(b, sb, cb));
+  /* destroy renderer b, back to the test's own context and default config */
+  project_grease_android_present_reset();
+  project_grease_android_present_config_free(b);
+  project_grease_android_present_config_bind(nullptr);
+  eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx);
+  eglDestroyContext(g_dpy, cb);
+  eglDestroySurface(g_dpy, sb);
+  glViewport(0, 0, W, H);
+}
+
 extern "C" void project_grease_android_present_cache_stats(long *stores, long *reuses);
 /* Regression (emulator sweep: cache stored once per run): present_reset() runs when the window and
  * its GL context go away; the cache must not keep its texture id into the next context, or every
@@ -1132,6 +1323,67 @@ static void test_open_stroke_cache_after_reset()
   CHECK(reuses1 == reuses0 + 1);
   CHECK(near_rgb(pixel_at_canvas(100, 60), 255, 0, 0));
   CHECK(!near_rgb(pixel_at_canvas(130, 88), 245, 245, 245));
+  d.gpd->runtime.sbuffer_used = 0;
+  d.gpd->runtime.sbuffer = nullptr;
+  present(d);
+}
+
+extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
+/* A4: the presenter's settings belong to the renderer that set them. An export (export mode, canvas size)
+ * on one config must not show in another config's canvas map, and freeing the bound one falls back. */
+static void test_per_renderer_config()
+{
+  void *a = project_grease_android_present_config_new();
+  void *b = project_grease_android_present_config_new();
+  float sc, ox, oy, rot;
+  project_grease_android_present_config_bind(a);
+  project_grease_android_present_set_view_rotation(0.5f);
+  project_grease_android_present_set_canvas_size(640, 480);
+  project_grease_android_present_config_bind(b);
+  project_grease_android_present_set_export_mode(1);
+  project_grease_android_present_set_canvas_size(320, 200);
+  project_grease_android_present_get_canvas_map(320, 200, &sc, &ox, &oy, &rot);
+  CHECK(rot == 0.0f);                 /* b exports: no rotation */
+  CHECK(std::fabs(sc - 1.0f) > 1e-4f); /* b's 320x200 canvas fitted into 320x200 at 92% */
+  const float sc_b = sc;
+  project_grease_android_present_config_bind(a);
+  project_grease_android_present_get_canvas_map(320, 200, &sc, &ox, &oy, &rot);
+  CHECK(rot == 0.5f);                 /* a is not exporting and keeps its rotation */
+  CHECK(sc != sc_b);                  /* a's canvas is 640x480 */
+  project_grease_android_present_config_bind(b);
+  project_grease_android_present_set_export_mode(0);
+  project_grease_android_present_config_free(a); /* a is not the bound one: b stays bound */
+  project_grease_android_present_get_canvas_map(320, 200, &sc, &ox, &oy, &rot);
+  CHECK(sc == sc_b);
+  project_grease_android_present_config_free(b); /* the bound one: falls back to the default config */
+  project_grease_android_present_config_bind(nullptr);
+}
+
+/* The open-stroke cache is keyed on the data revision: an edit mid-gesture (revision moved) must not
+ * be hidden behind the cached texture of the old drawing. */
+static void test_open_stroke_cache_revision()
+{
+  Doc d = make_doc();
+  set_color(d, 1, 0, 0);
+  bGPDlayer *l = add_layer(d, "A");
+  add_bar(l, 20, 180, 60, 20);
+  tGPspoint pts[3] = {};
+  for (int i = 0; i < 3; i++) { pts[i].m_xy[0] = 20.0f + 60.0f * i; pts[i].m_xy[1] = 88.0f; pts[i].pressure = 1.0f; pts[i].strength = 1.0f; }
+  d.gpd->runtime.sbuffer = pts;
+  project_grease_android_present_set_data_revision(1000);
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* stores at revision 1000 */
+  long s0 = 0, r0 = 0, s1 = 0, r1 = 0, s2 = 0, r2 = 0;
+  project_grease_android_present_cache_stats(&s0, &r0);
+  d.gpd->runtime.sbuffer_used = 3;
+  present(d); /* same revision: reused */
+  project_grease_android_present_cache_stats(&s1, &r1);
+  CHECK(r1 == r0 + 1 && s1 == s0);
+  project_grease_android_present_set_data_revision(1001); /* an edit */
+  d.gpd->runtime.sbuffer_used = 2;
+  present(d); /* not reused: redrawn and stored again */
+  project_grease_android_present_cache_stats(&s2, &r2);
+  CHECK(r2 == r1 && s2 == s1 + 1);
   d.gpd->runtime.sbuffer_used = 0;
   d.gpd->runtime.sbuffer = nullptr;
   present(d);
@@ -1204,12 +1456,15 @@ int main()
   test_weight_view();
   test_strength_full();
   test_self_overlap();
+  test_queries_per_frame();
+  test_fx_loops_bounded();
   test_gradient_fill();
   test_holdout_and_overlap();
   test_cyclic_square();
   test_weight_view_smooth();
   test_weight_view_masked();
   test_shader_fx_gl();
+  test_fx_mrt_matches_gles2();
   test_fx_through_presenter();
   test_fx_targets();
   test_batch21_layer_state();
@@ -1219,6 +1474,11 @@ int main()
   test_batch21_guide();
   test_open_stroke_cache();
   test_open_stroke_cache_after_reset();
+  test_open_stroke_cache_revision();
+  test_per_renderer_config();
+  test_live_stroke_style();
+  test_a9_hardness_aspect();
+  test_two_renderers_gl();
   test_annotations();
   project_grease_android_present_reset();
   if (failures) {

@@ -79,6 +79,11 @@ int pg_gp_engine_present(int target_w, int target_h);
 int pg_gp_engine_present_over(int target_w, int target_h);
 /* Frees every GL object of the engine (context loss). */
 void pg_gp_engine_reset(void);
+/* Number of engine contexts (CPU side of the engine) currently allocated: 0 after a reset, 1 while drawing. */
+int pg_gp_engine_live_contexts(void);
+/* Frees the pooled render-target textures the last draw did not use (all != 0: every one); returns
+ * how many. Needs the GL context current. */
+int pg_gp_engine_trim_pool(int all);
 /* Same, for a lost EGL context: no GL call is made, all names are just forgotten. */
 void pg_gp_engine_context_lost(void);
 

@@ -126,20 +126,26 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
     fun saveCurrentProject(tree: org.json.JSONObject? = controller.saveDocumentTree(), write: Boolean = true, savedRevision: Int = controller.document.revision) {
-        if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString()) }
-        projectStore.upsert(ProjectRecord(
-            controller.document.projectName,
-            controller.document.canvasWidth,
-            controller.document.canvasHeight,
-            controller.animation.fps,
-            System.currentTimeMillis()
-        ))
-        projects=projectStore.load()
-        controller.document.markSaved(savedRevision)
+        try {
+            if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString(), ProjectFiles.nextSeq()) }
+            projectStore.upsert(ProjectRecord(
+                controller.document.projectName,
+                controller.document.canvasWidth,
+                controller.document.canvasHeight,
+                controller.animation.fps,
+                System.currentTimeMillis()
+            ))
+            projects=projectStore.load()
+            controller.document.markSaved(savedRevision)
+        } catch (e: java.io.IOException) {
+            // full disk: the document stays dirty (markSaved not reached) so nothing is silently lost
+            android.widget.Toast.makeText(context,"Couldn't save \u2013 storage full?",android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     LaunchedEffect(screen) {
         if (screen == Screen.EDITOR) {
+            var failureShown = false
             while (true) {
                 kotlinx.coroutines.delay(5000L)
                 // Nothing changed since the last save: no native layer/frame juggling and no file write.
@@ -153,13 +159,19 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     // Build the tree here (native reads); text + file write on IO so the UI never stalls.
                     val tree = controller.saveDocumentTree() ?: continue
                     val projectName = controller.document.projectName
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString()) }
+                    val seq = ProjectFiles.nextSeq()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString(), seq) }
                     saveCurrentProject(tree, write = false, savedRevision = revision)
+                    failureShown = false
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (t: Throwable) {
                     // disk full, encode failure, native hiccup: log and try again next tick, never crash
                     com.smitnk.projectgrease.CrashLog.event("AUTOSAVE failed: ${t.javaClass.simpleName}: ${t.message}")
+                    if (!failureShown) {
+                        failureShown = true
+                        android.widget.Toast.makeText(context,"Couldn't save \u2013 storage full?",android.widget.Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
@@ -434,9 +446,10 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         controller.onUiChanged={redraw()}
         controller.onMessage={toast(context,it)}
         controller.useBlenderRenderer=context.getSharedPreferences("project_grease_settings",android.content.Context.MODE_PRIVATE).getBoolean("blender_renderer",true)
-        controller.rotoscopeLoader=RotoscopeLoader(context.applicationContext)
+        val rotoscopeLoader=RotoscopeLoader(context.applicationContext)
+        controller.rotoscopeLoader=rotoscopeLoader
         controller.audioPlayback=AudioPlayback(context.applicationContext)
-        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null;controller.audioPlayback?.release();controller.audioPlayback=null}
+        onDispose{controller.onUiChanged=null;controller.rotoscopeLoader=null;rotoscopeLoader.release();controller.audioPlayback?.release();controller.audioPlayback=null}
     }
     // One UI: the full-screen canvas with the floating toolbar, option popups, the layer panel with
     // each layer's Advanced panel, the frame strip, and one menu for everything else.

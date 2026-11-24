@@ -4,7 +4,7 @@
 # still be present in the pinned source. Set PG_REQUIRE_BLENDER_SOURCE=1 (CI) to fail, not skip,
 # when the Blender source has not been imported.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/native_test_lib.sh"
 
 SHADER="$ROOT/third_party/blender/source/blender/draw/engines/gpencil/shaders/gpencil_vert.glsl"
 if [[ -f "$SHADER" ]]; then
@@ -26,12 +26,4 @@ else
   exit 1
 fi
 
-OUT="$(mktemp -d)"
-trap 'rm -rf "$OUT"' EXIT
-SRC=("$ROOT/native/blender_gp/tests/test_gp_color.c")
-INC=(-I"$ROOT/native/blender_gp")
-WARN=(-Wall -Wno-unused-parameter)
-cc -std=gnu11 "${WARN[@]}" "${INC[@]}" "${SRC[@]}" -lm -o "$OUT/test_gp_color"
-"$OUT/test_gp_color"
-cc -std=gnu11 -g -fsanitize=address,undefined -fno-omit-frame-pointer "${WARN[@]}" "${INC[@]}" "${SRC[@]}" -lm -o "$OUT/test_gp_color_asan"
-ASAN_OPTIONS=detect_leaks=0 "$OUT/test_gp_color_asan"
+pg_test test_gp_color 1 cc -std=gnu11 -Wall -Wno-unused-parameter -I"$ROOT/native/blender_gp" "$ROOT/native/blender_gp/tests/test_gp_color.c"

@@ -4,19 +4,8 @@
 # tools/import_blender_gp.sh must have run; set PG_REQUIRE_BLENDER_SOURCE=1 (CI) to fail instead of
 # skip when it has not.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-B="$ROOT/third_party/blender"
-BL="$B/source/blender"
-if [[ ! -f "$BL/blenlib/intern/rand.cc" ]]; then
-  if [[ "${PG_ALLOW_SKIP:-0}" == "1" && "${PG_REQUIRE_BLENDER_SOURCE:-0}" != "1" ]]; then
-    echo "SKIP edit test (run tools/import_blender_gp.sh first)"
-    exit 0
-  fi
-  echo "ERROR: Pinned Blender source missing: $BL/blenlib/intern/rand.cc (set PG_ALLOW_SKIP=1 to skip locally)" >&2
-  exit 1
-fi
-OUT="$(mktemp -d)"
-trap 'rm -rf "$OUT"' EXIT
+source "$(dirname "${BASH_SOURCE[0]}")/native_test_lib.sh"
+pg_require_file "edit test" "$BL/blenlib/intern/rand.cc"
 SRC=("$ROOT/native/blender_gp/tests/test_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit.c" "$ROOT/native/blender_gp/project_grease_blender_edit2.c" "$ROOT/native/blender_gp/project_grease_blender_edit3.c" "$ROOT/native/blender_gp/project_grease_blender_edit4.c" "$ROOT/native/blender_gp/project_grease_blender_edit6.c" "$ROOT/native/blender_gp/project_grease_blender_edit7.c" "$ROOT/native/blender_gp/project_grease_blender_edit9.c" "$ROOT/native/blender_gp/project_grease_wm.c" "$ROOT/native/blender_gp/project_grease_blender_select.c")
 # Shims first; BLI_rand.h comes from the pinned tree.
 INC=(-I"$ROOT/native/blender_gp/tests/select_shim" -I"$ROOT/native/blender_gp" -I"$BL/blenlib" -I"$BL/makesdna")

@@ -4,19 +4,9 @@
 # Requires tools/import_blender_gp.sh and tools/android_blender_gp_generate_dna.sh to have run;
 # A missing source fails; PG_ALLOW_SKIP=1 (local only, never CI) turns it into a skip.
 # usage: source tools/native_host_closure.sh "<test name>"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-B="$ROOT/third_party/blender"
-BL="$B/source/blender"
-if [[ ! -f "$BL/blenkernel/intern/gpencil_geom_legacy.cc" || ! -f "$ROOT/build/blender-dna/dna.c" ]]; then
-  if [[ "${PG_ALLOW_SKIP:-0}" == "1" && "${PG_REQUIRE_BLENDER_SOURCE:-0}" != "1" ]]; then
-    echo "SKIP $1 (run tools/import_blender_gp.sh and the DNA generator first)"
-    exit 0
-  fi
-  echo "ERROR: $1: missing pinned Blender source or generated DNA (set PG_ALLOW_SKIP=1 to skip locally)" >&2
-  exit 1
-fi
-OUT="$(mktemp -d)"
-trap 'rm -rf "$OUT"' EXIT
+source "$(dirname "${BASH_SOURCE[0]}")/native_test_lib.sh"
+pg_require_file "$1" "$BL/blenkernel/intern/gpencil_geom_legacy.cc"
+pg_require_file "$1" "$ROOT/build/blender-dna/dna.c"
 INC=(-I"$BL/draw" -I"$BL/draw/intern" -I"$BL/draw/engines/gpencil" -I"$BL/gpu" -I"$BL/gpu/intern" -I"$ROOT/native/blender_gp/android_compat" -I"$ROOT/native/blender_gp" -I"$BL" -I"$B/source"
      -I"$BL/blenlib" -I"$BL/blenkernel" -I"$BL/makesdna" -I"$BL/makesrna" -I"$BL/depsgraph"
      -I"$BL/gpencil_modifiers_legacy" -I"$BL/blentranslation" -I"$BL/blentranslation/intern"

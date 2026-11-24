@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Lasso warp: Blender 3.6.23 lattice deform (verbatim) on canvas points.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-B="$ROOT/third_party/blender"; BL="$B/source/blender"
-OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT
+source "$(dirname "${BASH_SOURCE[0]}")/native_test_lib.sh"
 INC=(-I"$ROOT/native/blender_gp/android_compat" -I"$ROOT/native/blender_gp" -I"$BL/blenlib" -I"$BL/blenkernel"
      -I"$BL/makesdna" -I"$B/intern/guardedalloc" -I"$B/intern/atomic")
 SRC=("$ROOT/native/blender_gp/tests/test_blender_lattice.c" "$ROOT/native/blender_gp/project_grease_blender_lattice.c"

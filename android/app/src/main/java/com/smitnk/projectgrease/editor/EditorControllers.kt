@@ -2711,6 +2711,7 @@ class EditorController {
             val xs = ArrayList<Float>(); val ys = ArrayList<Float>()
             var k = 0
             while (k < 20000) { val p = native.getPoint(i, k) ?: break; xs.add(p[0]); ys.add(p[1]); k++ }
+            if (k == 20000 && native.getPoint(i, k) != null) continue // over the read cap: reshaping the truncated outline would lose the rest
             if (xs.size >= 3) out.add(Triple(i, xs, ys))
         }
         return out

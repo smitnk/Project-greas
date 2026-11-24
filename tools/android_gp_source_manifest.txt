@@ -4,6 +4,7 @@
 # exact object set. Keep each path exactly once.
 CXX|android/app/src/main/cpp/project_grease_android_jni_smoke.cpp
 CXX|android/app/src/main/cpp/project_grease_android_egl_renderer.cpp
+CXX|android/app/src/main/cpp/project_grease_view3d_jni.cpp
 CXX|native/blender_gp/project_grease_gp_backend.cpp
 CXX|native/blender_gp/project_grease_gp_bridge.cpp
 CXX|native/blender_gp/project_grease_gp_jni.cpp
@@ -66,6 +67,7 @@ C|native/blender_gp/project_grease_modifier_gen.c
 C|native/blender_gp/project_grease_blender_build.c
 C|native/blender_gp/project_grease_blender_interp.c
 C|native/blender_gp/project_grease_blender_edit10.c
+C|native/blender_gp/project_grease_view3d.c
 C|native/blender_gp/project_grease_blender_fill.c
 C|native/blender_gp/project_grease_blender_mod2.c
 C|native/blender_gp/project_grease_curvemap.c

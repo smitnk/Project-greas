@@ -1432,6 +1432,7 @@ static void tool_sink_cancel(void *user)
   static_cast<ProjectGreaseGPHandle *>(user)->backend.cancel_stroke();
 }
 
+extern "C" __attribute__((weak)) void project_grease_view3d_stroke_done(bGPdata *gpd, bGPDstroke *gps);
 int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle,
                                    int tool,
                                    const float *samples,
@@ -1461,7 +1462,13 @@ int project_grease_gp_tool_samples(ProjectGreaseGPHandle *handle,
     handle->tool_gpd = gpd;
     handle->tool_generation = handle->backend.document_generation();
   }
+  bGPDlayer *draw_layer = (tool == PG_TOOL_DRAW && phase == PG_TOOL_PHASE_END) ? handle->backend.active_layer_data() : nullptr;
+  void *last_before = (draw_layer && draw_layer->actframe) ? draw_layer->actframe->strokes.last : nullptr;
   int result = pg_wm_modal_tool(&C, tool, phase, samples, count, params, param_count, &status);
+  // 3D viewport: the new stroke is placed on the drawing plane (android_gp_view3d.inc)
+  if (draw_layer && project_grease_view3d_stroke_done && draw_layer->actframe &&
+      draw_layer->actframe->strokes.last != last_before && draw_layer->actframe->strokes.last)
+    project_grease_view3d_stroke_done(gpd, static_cast<bGPDstroke *>(draw_layer->actframe->strokes.last));
   if (phase == PG_TOOL_PHASE_BEGIN) {
     // The gesture that BEGIN cut off left edits nobody recorded: report them as ENDED so the caller
     // records an undo step for them (it must not call history_record itself twice for them).

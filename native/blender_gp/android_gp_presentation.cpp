@@ -1384,6 +1384,7 @@ static void build_engine_fx(const bGPdata*gpd,EngineFx&out){
   }
 }
 
+#include "android_gp_view3d.inc"
 bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   /* Shallow copies (DNA structs are copied as bytes; strokes stay shared). */
   bGPdata&copy=*static_cast<bGPdata*>(MEM_mallocN(sizeof(bGPdata),"pg engine gpd"));
@@ -1458,6 +1459,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   view.rendered=fx.list.first!=nullptr;
   view.weight_group=g_cfg->weight_group;
   view.vertex_opacity=g_cfg->vertex_opacity;
+  view3d_engine_matrices(view); // 3D viewport: its view matrices (the Camera view keeps the canvas map)
   if(over)for(float&c:view.background)c=0.0f;
   const auto t_engine=std::chrono::steady_clock::now();
   gl_check("canvas paper / reference / masks before the engine");
@@ -1478,7 +1480,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   const bool same=g_engine_have_last&&!changed&&!g_cfg->export_mode&&fx_sig==g_engine_last_fx&&
       view.viewport_w==last.viewport_w&&view.viewport_h==last.viewport_h&&view.origin_x==last.origin_x&&
       view.origin_y==last.origin_y&&view.scale==last.scale&&view.rotation==last.rotation&&
-      std::memcmp(view.background,last.background,sizeof view.background)==0;
+      std::memcmp(view.background,last.background,sizeof view.background)==0&&view.use_matrices==last.use_matrices&&
+      std::memcmp(view.viewmat,last.viewmat,sizeof view.viewmat)==0&&std::memcmp(view.winmat,last.winmat,sizeof view.winmat)==0;
   int ok=1;
   if(!same){
     ok=pg_gp_engine_draw(&copy,frame_number,&view);
@@ -1515,7 +1518,7 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   if(over)pg_gp_engine_present_over(w,h); else pg_gp_engine_present(w,h);
   glDisable(GL_SCISSOR_TEST);
   // Blender's camera passepartout (alpha 0.5): what lies outside the paper is dimmed, not hidden
-  if(!g_cfg->export_mode&&!rotated){
+  if(!g_cfg->export_mode&&!rotated&&!view.use_matrices){
     const float W=float(g_cfg->canvas_width),H=float(g_cfg->canvas_height),F=1e5f;
     auto quad=[&](float ax,float ay,float bx,float by){return std::vector<Vertex>{ndc(ax,ay,w,h),ndc(bx,ay,w,h),ndc(ax,by,w,h),ndc(bx,by,w,h),ndc(ax,by,w,h),ndc(bx,ay,w,h)};};
     std::vector<Vertex> out=quad(-F,-F,F,0);
@@ -1607,6 +1610,7 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
   glClear(GL_COLOR_BUFFER_BIT);
   g_cfg->gl.stencil_fbo=-1;
   update_canvas_map(w,h);
+  if(view3d_present(gpd,frame_number,w,h))return 1;
   const bool drawing=!g_cfg->export_mode&&gpd->runtime.sbuffer&&gpd->runtime.sbuffer_used>0;
   if(!drawing)g_cfg->gl.open_cache.valid=false;
   const bool reuse=drawing&&open_cache_matches(gpd,frame_number,w,h,g_engine_revision)&&open_cache_draw();
@@ -2075,6 +2079,7 @@ if(alive&&g_cfg->gl.vbo)glDeleteBuffers(1,&g_cfg->gl.vbo);if(alive&&g_cfg->gl.pr
   // (GL_INVALID_VALUE at "reference image" every frame and no picture until the app restarted)
   if(alive&&g_cfg->gl.ref_prog)glDeleteProgram(g_cfg->gl.ref_prog);if(alive&&g_cfg->gl.ref_vbo)glDeleteBuffers(1,&g_cfg->gl.ref_vbo);g_cfg->gl.ref_prog=0;g_cfg->gl.ref_vbo=0;
   for(auto&r:g_cfg->gl.refs){if(alive&&r.tex)glDeleteTextures(1,&r.tex);if(alive&&r.spare)glDeleteTextures(1,&r.spare);r=RefSlot{};}
+  if(alive&&g_v3d.grid_prog)glDeleteProgram(g_v3d.grid_prog);if(alive&&g_v3d.grid_vbo)glDeleteBuffers(1,&g_v3d.grid_vbo);g_v3d.grid_prog=0;g_v3d.grid_vbo=0;
   if(alive)project_grease_fx_reset();else project_grease_fx_context_lost();}
 extern "C" void* project_grease_android_present_config_new(){return new PresentConfig();}
 extern "C" void project_grease_android_present_config_free(void*cfg){if(cfg==g_cfg)g_cfg=&g_default_cfg;delete static_cast<PresentConfig*>(cfg);}

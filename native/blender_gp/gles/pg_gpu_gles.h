@@ -64,6 +64,10 @@ typedef struct PGGpEngineView {
   int weight_group;
   /* Overlay "Vertex Paint Opacity" (gpencil_vertex_paint_opacity), 0..1. */
   float vertex_opacity;
+  /* 3D viewport: non-zero uses viewmat / winmat (world = canvas pixels) instead of the canvas map
+   * above; zero (the Camera view) keeps the 2D path unchanged. */
+  int use_matrices;
+  float viewmat[4][4], winmat[4][4];
 } PGGpEngineView;
 
 /* Runs Blender 3.6.23's GP draw engine (draw/engines/gpencil, unmodified) on \a gpd at frame

@@ -34,6 +34,13 @@
 
 extern "C" void project_grease_android_present_set_live_stroke(int active, float thickness, float hardness, float ax, float ay, int caps, int material);
 extern "C" int project_grease_android_present_gp_document(const bGPdata *gpd, int frame_number);
+extern "C" void project_grease_view3d_set_active(int active);
+extern "C" void project_grease_view3d_set_axis_view(int view);
+extern "C" void project_grease_view3d_orbit(float dx, float dy, float ui_scale);
+extern "C" void project_grease_view3d_zoom(float dfac, float sx, float sy);
+extern "C" void project_grease_view3d_set_placement(int align, int lock_axis);
+extern "C" void project_grease_view3d_stroke_done(bGPdata *gpd, bGPDstroke *gps);
+extern "C" int project_grease_view3d_canvas_to_screen(float x, float y, float z, float *out);
 extern "C" void project_grease_android_present_set_canvas_size(int width, int height);
 extern "C" void project_grease_android_present_set_data_revision(uint64_t revision);
 extern "C" int project_grease_android_present_engine_active();
@@ -398,6 +405,64 @@ int main()
     glReadPixels(int(ox + 130 * sc), H - 1 - int(oy + 50 * sc), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
     std::printf("  presenter paper = %d %d %d (expected 245)\n", c[0], c[1], c[2]);
     CHECK(std::abs(c[0] - 245) <= 3);
+  }
+
+  /* 8b. The 3D viewport (android_gp_view3d.inc): the Camera view is the 2D frame, pixel for pixel;
+   * the 3D view draws the grid and the strokes through the view matrices; a stroke drawn in 3D is
+   * placed on its drawing plane. */
+  {
+    std::vector<unsigned char> cam0((size_t)W * H * 4), cam1((size_t)W * H * 4), v3((size_t)W * H * 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); glViewport(0, 0, W, H);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam0.data());
+    project_grease_view3d_set_active(1);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1); /* sizes the region */
+    project_grease_view3d_zoom(0.15f, W * 0.5f, H * 0.5f); /* the 0.2 unit wide canvas fills the view */
+    for (int view : {1 /* Front */, 0 /* user perspective */}) {
+      if (view) project_grease_view3d_set_axis_view(view); else project_grease_view3d_orbit(40.0f, 25.0f, 1.0f);
+      CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, v3.data());
+      float s[2] = {0, 0};
+      CHECK(project_grease_view3d_canvas_to_screen(50, 30, 0, s) == 1); /* on the line, off the cursor */
+      const int sx = int(s[0]), sy = H - 1 - int(s[1]);
+      unsigned char c[4] = {};
+      int darkest = 255;
+      for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++) {
+          if (sx + dx < 0 || sx + dx >= W || sy + dy < 0 || sy + dy >= H) continue;
+          glReadPixels(sx + dx, sy + dy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+          darkest = std::min(darkest, int(c[0]));
+        }
+      std::printf("  3D view %d: line at %.1f %.1f darkest %d (background 61)\n", view, s[0], s[1], darkest);
+      CHECK(darkest < 40);
+      CHECK(std::memcmp(v3.data(), cam0.data(), v3.size()) != 0);
+      /* the grid's X axis line (red, colorGridAxisX) */
+      int red = 0;
+      for (size_t i = 0; i < v3.size(); i += 4) red += (v3[i] > v3[i + 1] + 30 && v3[i] > v3[i + 2] + 30) ? 1 : 0;
+      std::printf("  3D view %d: %d red axis pixels\n", view, red);
+      CHECK(red > 20);
+    }
+    /* Front X-Z / Top X-Y planes through the origin (Origin placement): a stroke sampled through the
+     * 2D map lands under the same screen points, on the plane. */
+    {
+      bGPDstroke s3{};
+      bGPDspoint pts[2] = {};
+      pts[0].x = 60; pts[0].y = 40; pts[1].x = 140; pts[1].y = 90;
+      s3.points = pts; s3.totpoints = 2;
+      for (int lock : {2 /* Y: Front */, 3 /* Z: Top */}) {
+        pts[0].x = 60; pts[0].y = 40; pts[0].z = 0; pts[1].x = 140; pts[1].y = 90; pts[1].z = 0;
+        project_grease_view3d_set_placement(1 /* GP_PROJECT_VIEWSPACE */, lock);
+        project_grease_view3d_stroke_done(gpd, &s3);
+        std::printf("  plane %d: %.2f %.2f %.2f / %.2f %.2f %.2f\n", lock, pts[0].x, pts[0].y, pts[0].z, pts[1].x, pts[1].y, pts[1].z);
+        if (lock == 2) CHECK(std::fabs(pts[0].z) < 1e-2f && std::fabs(pts[1].z) < 1e-2f);
+        if (lock == 3) CHECK(std::fabs(pts[0].y - H * 0.5f) < 1e-2f && std::fabs(pts[1].y - H * 0.5f) < 1e-2f);
+      }
+      s3.points = nullptr;
+    }
+    project_grease_view3d_set_active(0);
+    CHECK(project_grease_android_present_gp_document(gpd, 1) == 1);
+    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, cam1.data());
+    CHECK(std::memcmp(cam0.data(), cam1.data(), cam0.size()) == 0);
   }
 
   /* 9. A photo reference on the engine path (reported: imported photos never showed): a red image

@@ -900,7 +900,7 @@ void DRW_view_persmat_get(const DRWView * /*view*/, float mat[4][4], bool invers
 
 bool DRW_view_is_persp_get(const DRWView * /*view*/)
 {
-  return false;
+  return pgc().winmat[3][3] == 0.0f; /* the 3D viewport's perspective view */
 }
 
 int DRW_object_visibility_in_active_context(const Object * /*ob*/)
@@ -1073,6 +1073,11 @@ static void view_set(PGContext &c, const PGGpEngineView *v)
   /* World = canvas pixels, y down. View: y flipped to Blender's y up. Window: orthographic, the
    * canvas at origin / scale in the viewport (as the Android presenter maps it). */
   const float W = (float)v->viewport_w, H = (float)v->viewport_h;
+  if (v->use_matrices) {
+    copy_m4_m4(c.viewmat, v->viewmat);
+    copy_m4_m4(c.winmat, v->winmat);
+  }
+  else {
   /* Two-finger view rotation: a turn of the canvas about the canvas point at the viewport centre
    * (screen y down, as the presenter), in the view matrix so the window matrix (stroke thickness,
    * ProjectionMatrix[1][1]) is unchanged. */
@@ -1085,13 +1090,14 @@ static void view_set(PGContext &c, const PGGpEngineView *v)
   c.viewmat[1][1] = -cs;
   c.viewmat[3][0] = cx - (cs * cx - sn * cy);
   c.viewmat[3][1] = -(cy - (sn * cx + cs * cy));
-  invert_m4_m4(c.viewinv, c.viewmat);
   unit_m4(c.winmat);
   c.winmat[0][0] = 2.0f * v->scale / W;
   c.winmat[1][1] = 2.0f * v->scale / H;
   c.winmat[2][2] = -0.001f; /* clip -1000 .. 1000 px */
   c.winmat[3][0] = 2.0f * v->origin_x / W - 1.0f;
   c.winmat[3][1] = 1.0f - 2.0f * v->origin_y / H;
+  }
+  invert_m4_m4(c.viewinv, c.viewmat);
   invert_m4_m4(c.wininv, c.winmat);
   mul_m4_m4m4(c.persmat, c.winmat, c.viewmat);
   invert_m4_m4(c.persinv, c.persmat);

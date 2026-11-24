@@ -126,20 +126,26 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     var themeMode by remember{mutableStateOf(ProjectGreaseThemeMode.SYSTEM)}
 
     fun saveCurrentProject(tree: org.json.JSONObject? = controller.saveDocumentTree(), write: Boolean = true, savedRevision: Int = controller.document.revision) {
-        if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString()) }
-        projectStore.upsert(ProjectRecord(
-            controller.document.projectName,
-            controller.document.canvasWidth,
-            controller.document.canvasHeight,
-            controller.animation.fps,
-            System.currentTimeMillis()
-        ))
-        projects=projectStore.load()
-        controller.document.markSaved(savedRevision)
+        try {
+            if (write) tree?.let { projectStore.saveDocument(controller.document.projectName, it.toString()) }
+            projectStore.upsert(ProjectRecord(
+                controller.document.projectName,
+                controller.document.canvasWidth,
+                controller.document.canvasHeight,
+                controller.animation.fps,
+                System.currentTimeMillis()
+            ))
+            projects=projectStore.load()
+            controller.document.markSaved(savedRevision)
+        } catch (e: java.io.IOException) {
+            // full disk: the document stays dirty (markSaved not reached) so nothing is silently lost
+            android.widget.Toast.makeText(context,"Couldn't save \u2013 storage full?",android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     LaunchedEffect(screen) {
         if (screen == Screen.EDITOR) {
+            var failureShown = false
             while (true) {
                 kotlinx.coroutines.delay(5000L)
                 // Nothing changed since the last save: no native layer/frame juggling and no file write.
@@ -155,11 +161,16 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
                     val projectName = controller.document.projectName
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { projectStore.saveDocument(projectName, tree.toString()) }
                     saveCurrentProject(tree, write = false, savedRevision = revision)
+                    failureShown = false
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (t: Throwable) {
                     // disk full, encode failure, native hiccup: log and try again next tick, never crash
                     com.smitnk.projectgrease.CrashLog.event("AUTOSAVE failed: ${t.javaClass.simpleName}: ${t.message}")
+                    if (!failureShown) {
+                        failureShown = true
+                        android.widget.Toast.makeText(context,"Couldn't save \u2013 storage full?",android.widget.Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }

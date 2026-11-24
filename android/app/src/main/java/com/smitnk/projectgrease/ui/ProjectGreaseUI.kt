@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.input.pointer.pointerInput
 import com.smitnk.projectgrease.editor.EditorController
 import com.smitnk.projectgrease.editor.FeatureId
@@ -451,7 +454,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
     }
     // One UI: the full-screen canvas with the floating toolbar, option popups, the layer panel with
     // each layer's Advanced panel, the frame strip, and one menu for everything else.
-    StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},viewport)
+    StudioLayout(controller,refresh,overlayTick,::redraw,{sheet=it},viewport,{fpsDialog=true})
     if(fpsDialog) FpsDialog(controller,{fpsDialog=false},::redraw)
     val rotoscopePickers=rememberRotoscopePickers(controller,context,::redraw)
     val mediaImport=rememberMediaImport(controller,context,::redraw)
@@ -1561,15 +1564,16 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
 
 // ---- Studio layout: full-screen canvas, floating toolbar, layer panel, frame strip, option popups ----
 
-private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
+private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
 
 @NonSkippableComposable
 @Composable private fun StudioLayout(controller:EditorController,refresh:Int,overlayTick:Int,redraw:()->Unit,
-                                     onSheet:(Sheet)->Unit,viewport:@Composable BoxScope.()->Unit){
+                                     onSheet:(Sheet)->Unit,viewport:@Composable BoxScope.()->Unit,onFps:()->Unit={}){
     var popup by remember{mutableStateOf(StudioPopup.NONE)}
     val context=LocalContext.current
     var layersOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
+    var timelineFull by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     Box(Modifier.fillMaxSize().background(CanvasBg).testTag("studioCanvas")){
         var toolbarHidden by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
         // the floating toolbar no longer covers the canvas: the viewport starts right of it (narrow phones lost the left edge)
@@ -1597,10 +1601,10 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             FloatingIcon(PgIcons.Menu,"Menu"){onSheet(Sheet.MENU)}
             Spacer(Modifier.width(6.dp))
             Surface(shape=RoundedCornerShape(16.dp),tonalElevation=4.dp,shadowElevation=2.dp,
-                modifier=Modifier.clickable{popup=StudioPopup.MODE}.testTag("studioMode")){
-                Row(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                modifier=Modifier.clickable{popup=if(popup==StudioPopup.MODE)StudioPopup.NONE else StudioPopup.MODE}.semantics{contentDescription="Mode"}.testTag("studioMode")){
+                Row(Modifier.heightIn(min=48.dp).padding(horizontal=12.dp),,verticalAlignment=Alignment.CenterVertically){
                     Icon(modeIcon(controller.mode),null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                    Text(controller.mode.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()},fontSize=13.sp)
+                    Text(StudioMode.entries.firstOrNull{it.name==controller.mode.name}?.label?:controller.mode.name,fontSize=13.sp,fontWeight=FontWeight.Bold)
                     Icon(PgIcons.ArrowDropDown,null,Modifier.size(18.dp))
                 }
             }
@@ -1614,10 +1618,11 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
         if(toolbarHidden) Box(Modifier.align(Alignment.CenterStart).padding(start=2.dp).testTag("toolbarShow")){
             FloatingIcon(PgIcons.ChevronRight,"Show tools"){toolbarHidden=false}
         }
-        if(!toolbarHidden) Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp).testTag("studioToolbar"),
+        if(!toolbarHidden) Surface(Modifier.align(Alignment.CenterStart).padding(start=6.dp,top=60.dp,bottom=60.dp).testTag("studioToolbar"),
             shape=RoundedCornerShape(24.dp),tonalElevation=6.dp,shadowElevation=4.dp){
-            Column(Modifier.padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                IconButton(onClick={toolbarHidden=true},Modifier.size(32.dp).testTag("toolbarHide")){Icon(PgIcons.ChevronLeft,"Hide tools")}
+            // scrolls on short screens and at large text sizes, so no tool is ever cut off
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                IconButton(onClick={toolbarHidden=true},Modifier.size(48.dp).testTag("toolbarHide")){Icon(PgIcons.ChevronLeft,"Hide tools")}
                 // Tap a tool to use it; tap the active tool again for its options.
                 fun pick(t:GreaseTool){ if(tool==t) popup=StudioPopup.OPTIONS else { controller.selectTool(t); popup=StudioPopup.NONE }; redraw() }
                 ToolbarButton(PgIcons.Brush,"Brush",tool==GreaseTool.DRAW||tool==GreaseTool.SCULPT){pick(if(controller.mode==GreaseMode.SCULPT)GreaseTool.SCULPT else GreaseTool.DRAW)}
@@ -1627,6 +1632,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 Box(Modifier.padding(6.dp).size(30.dp).background(Color(controller.materials.colorArgb),CircleShape)
                     .border(2.dp,MaterialTheme.colorScheme.outline,CircleShape)
                     .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
+                ToolbarButton(PgIcons.TripOrigin,"Brush size",popup==StudioPopup.BRUSH){popup=if(popup==StudioPopup.BRUSH)StudioPopup.NONE else StudioPopup.BRUSH}
                 ToolbarButton(PgIcons.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
                 // one-point perspective: Blender's radial guide on/off, its vanishing point at the canvas centre at first
                 ToolbarButton(PgIcons.Architecture,"Perspective",controller.view.guideType==1){
@@ -1690,11 +1696,21 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
             {onSheet(Sheet.LAYER_ADVANCED)},{onSheet(Sheet.ROTOSCOPE)})
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()){
-            Row(Modifier.align(Alignment.End).padding(end=6.dp)){
-                FloatingIcon(if(stripOpen)PgIcons.KeyboardArrowDown else PgIcons.KeyboardArrowUp,
-                    if(stripOpen)"Hide timeline" else "Show timeline"){stripOpen=!stripOpen}
+            // drag the handle up: strip, then the full Timeline; down to hide. Tap cycles (TalkBack too).
+            var drag by remember{mutableFloatStateOf(0f)}
+            Box(Modifier.fillMaxWidth().height(48.dp).pointerInput(Unit){
+                    detectVerticalDragGestures(onDragEnd={
+                        if(drag< -60f){ if(stripOpen) timelineFull=true else stripOpen=true }
+                        else if(drag>60f){ if(timelineFull) timelineFull=false else stripOpen=false }
+                        drag=0f },onVerticalDrag={_,dy->drag+=dy})}
+                .clickable{ when{ timelineFull->{timelineFull=false;stripOpen=false}; stripOpen->timelineFull=true; else->stripOpen=true } }
+                .semantics{contentDescription=if(timelineFull)"Timeline: tap to hide" else "Timeline: drag up to open"}.testTag("timelineHandle"),
+                contentAlignment=Alignment.Center){
+                Box(Modifier.size(48.dp,5.dp).background(MaterialTheme.colorScheme.outline,CircleShape))
             }
-            if(stripOpen) StudioFrameStrip(controller,redraw,{onSheet(Sheet.TIMELINE)})
+            if(timelineFull) Surface(Modifier.fillMaxWidth().fillMaxHeight(0.8f).testTag("timelineFull"),tonalElevation=3.dp){
+                Column(Modifier.verticalScroll(rememberScrollState())){Timeline(controller,redraw,onFps,{onSheet(Sheet.AUDIO)})}
+            } else if(stripOpen) StudioFrameStrip(controller,redraw,{timelineFull=true})
         }
 
         when(popup){
@@ -1717,14 +1733,14 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
                 TextButton(onClick={popup=StudioPopup.NONE;onSheet(Sheet.MATERIALS)}){Text("Materials…")}
             }
             StudioPopup.MODE->StudioCard({popup=StudioPopup.NONE}){
-                GreaseMode.entries.forEach{m->
-                    ListItem(headlineContent={Text(m.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()})},
-                        leadingContent={Row(verticalAlignment=Alignment.CenterVertically){RadioButton(selected=controller.mode==m,onClick=null);Icon(modeIcon(m),null)}},
-                        modifier=Modifier.clickable{
-                            // Blender's mode operators (GPENCIL_OT_*mode_toggle)
-                            val op=when(m){GreaseMode.DRAW->"GPENCIL_OT_paintmode_toggle";GreaseMode.EDIT->"GPENCIL_OT_editmode_toggle";GreaseMode.SCULPT->"GPENCIL_OT_sculptmode_toggle";GreaseMode.VERTEX_PAINT->"GPENCIL_OT_vertexmode_toggle";GreaseMode.WEIGHT_PAINT->"GPENCIL_OT_weightmode_toggle"}
-                            if(controller.mode!=m&&controller.modeToggle(op))redraw();popup=StudioPopup.NONE}.testTag("studioMode_"+m.name))
-                }
+                ModeSwitcher(controller.mode.name,{m->
+                    // Blender's mode operators; Object / Pose answer once the controller supports them
+                    if(controller.mode.name!=m.name){ if(controller.modeToggle(m.op)) redraw() else toast(context,"${m.label} mode is not ready yet") }
+                    popup=StudioPopup.NONE},Modifier.padding(horizontal=8.dp))
+            }
+            StudioPopup.BRUSH->StudioCard({popup=StudioPopup.NONE}){
+                BrushQuickPanel(controller.brushes.size,controller.brushes.strength,controller.materials.colorArgb,
+                    {controller.brushes.setSize(it);redraw()},{controller.setBrushStrength(it);redraw()},{popup=StudioPopup.COLOR})
             }
             StudioPopup.NONE->Unit
         }
@@ -1733,16 +1749,11 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 
 @Composable private fun FloatingIcon(icon:ImageVector,label:String,onClick:()->Unit){
     Surface(shape=CircleShape,tonalElevation=4.dp,shadowElevation=2.dp,modifier=Modifier.padding(2.dp)){
-        IconButton(onClick=onClick,Modifier.size(40.dp)){Icon(icon,label)}
+        IconButton(onClick=onClick,Modifier.size(48.dp)){Icon(icon,label)}
     }
 }
 
-@Composable private fun ToolbarButton(icon:ImageVector,label:String,selected:Boolean,onClick:()->Unit){
-    Surface(shape=RoundedCornerShape(16.dp),color=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        modifier=Modifier.padding(horizontal=4.dp,vertical=1.dp)){
-        IconButton(onClick=onClick,Modifier.size(44.dp).testTag("studioTool_$label")){Icon(icon,label)}
-    }
-}
+@Composable private fun ToolbarButton(icon:ImageVector,label:String,selected:Boolean,onClick:()->Unit)=RailButton(icon,label,selected,onClick=onClick)
 
 /** A small floating card for tool options (closes on outside tap). */
 @Composable private fun StudioCard(onDismiss:()->Unit,content:@Composable ColumnScope.()->Unit){
@@ -2052,7 +2063,5 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE }
 @Composable private fun BtnLabel(icon:ImageVector,label:String){
     Icon(icon,null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(label,maxLines=1)
 }
-private fun modeIcon(m:GreaseMode):ImageVector=when(m){
-    GreaseMode.DRAW->PgIcons.Brush; GreaseMode.EDIT->PgIcons.Edit; GreaseMode.SCULPT->PgIcons.PanTool
-    GreaseMode.VERTEX_PAINT->PgIcons.FormatPaint; GreaseMode.WEIGHT_PAINT->PgIcons.LineWeight
-}
+// by name, so new GreaseMode values (Object, Pose) need no change here
+private fun modeIcon(m:GreaseMode):ImageVector=studioModeIcon(StudioMode.entries.firstOrNull{it.name==m.name}?:StudioMode.DRAW)

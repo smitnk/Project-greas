@@ -246,6 +246,16 @@ static void test_fcurves()
   CHECK(pg_arm_bone_keys(a, b, frames, 8) == 2);
   CHECK(pg_arm_key_delete(a, b, 2.0f) == PG_ARM_CHANNELS);
   CHECK(pg_arm_bone_keys(a, b, frames, 8) == 1);
+  /* dope sheet Grab: key 1 -> 5 stays sorted; landing on another key merges into one */
+  pg_arm_key_insert(a, 3.0f);
+  CHECK(pg_arm_key_move(a, b, 1.0f, 5.0f) == PG_ARM_CHANNELS);
+  CHECK(pg_arm_bone_keys(a, b, frames, 8) == 2);
+  NEAR(frames[0], 3.0, 1e-6);
+  NEAR(frames[1], 5.0, 1e-6);
+  CHECK(pg_arm_fcurve(a, b, 0)->bezt[0].vec[1][0] < pg_arm_fcurve(a, b, 0)->bezt[1].vec[1][0]);
+  CHECK(pg_arm_key_move(a, b, 5.0f, 3.0f) == PG_ARM_CHANNELS);
+  CHECK(pg_arm_bone_keys(a, b, frames, 8) == 1);
+  CHECK(pg_arm_key_move(a, b, 9.0f, 3.0f) == 0);
   pg_arm_free(a);
 }
 

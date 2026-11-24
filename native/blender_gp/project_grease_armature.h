@@ -120,6 +120,9 @@ int pg_arm_key_insert(PGArmature *a, float frame);
 int pg_arm_key_delete(PGArmature *a, int bone, float frame);
 /* Interpolation of the keys of `bone` at `frame`: BEZT_IPO_CONST 0 / LIN 1 / BEZ 2 */
 int pg_arm_key_set_interpolation(PGArmature *a, int bone, float frame, int ipo);
+/* Dope sheet Grab of the keys of `bone` at `frame` to `to` (transform_convert_action.c:
+ * TIME_TRANSLATE, then sort_time_fcurve and BKE_fcurve_merge_duplicate_keys). */
+int pg_arm_key_move(PGArmature *a, int bone, float frame, float to);
 /* Sorted distinct key frames of `bone` (all its channels); returns the count (may exceed cap). */
 int pg_arm_bone_keys(const PGArmature *a, int bone, float *r_frames, int cap);
 /* Interpolation of the first key of `bone` found at `frame`, or -1. */

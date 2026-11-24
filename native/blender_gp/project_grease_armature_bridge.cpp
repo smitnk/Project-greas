@@ -146,6 +146,9 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
     case PG_ARM_CMD_KEY_INTERPOLATION:
       r = pg_arm_key_set_interpolation(a, bone, arg(args, n, 0, 1.0f), (int)arg(args, n, 1, 2));
       break;
+    case PG_ARM_CMD_KEY_MOVE:
+      r = pg_arm_key_move(a, bone, arg(args, n, 0, 1.0f), arg(args, n, 1, 1.0f));
+      break;
     case PG_ARM_CMD_DISPLAY:
       pg_arm_set_display(a, (int)arg(args, n, 0), arg(args, n, 1) != 0.0f);
       r = 1;

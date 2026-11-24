@@ -366,6 +366,7 @@ enum {
   PG_ARM_CMD_BIND = 26,           /* mode 0 armature, 1 empty groups, 2 automatic, 3 envelope */
   PG_ARM_CMD_EVALUATE = 27,       /* frame */
   PG_ARM_CMD_DISPLAY = 28,        /* drawtype (ARM_OCTA 0 / ARM_LINE 1 ...), show in front */
+  PG_ARM_CMD_KEY_MOVE = 30,       /* bone; frame, to (dope sheet key move) */
   PG_ARM_CMD_PICK = 29,           /* x, y, dist, extend[, canvas px -> window 4x4 (16, column major)];
                                      no matrix: x, y, dist in canvas px. Returns the bone or -1 */
 };

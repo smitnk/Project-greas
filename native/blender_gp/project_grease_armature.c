@@ -929,6 +929,60 @@ int pg_arm_key_set_interpolation(PGArmature *a, int bone, float frame, int ipo)
   return n;
 }
 
+/* sort_time_fcurve (fcurve.c:1353): bubble the keys into time order, then fix crossed handles. */
+static void key_sort_time(FCurve *fcu)
+{
+  bool ok = true;
+  while (ok) {
+    ok = false;
+    for (int i = 0; i + 1 < fcu->totvert; i++) {
+      if (fcu->bezt[i].vec[1][0] > fcu->bezt[i + 1].vec[1][0]) {
+        BezTriple t = fcu->bezt[i];
+        fcu->bezt[i] = fcu->bezt[i + 1];
+        fcu->bezt[i + 1] = t;
+        ok = true;
+      }
+    }
+  }
+  for (int i = 0; i < fcu->totvert; i++) {
+    BezTriple *b = &fcu->bezt[i];
+    if (b->vec[0][0] > b->vec[1][0] && b->vec[2][0] < b->vec[1][0]) {
+      float t0 = b->vec[0][0], t1 = b->vec[0][1];
+      b->vec[0][0] = b->vec[2][0]; b->vec[0][1] = b->vec[2][1];
+      b->vec[2][0] = t0; b->vec[2][1] = t1;
+    }
+    else {
+      if (b->vec[0][0] > b->vec[1][0]) b->vec[0][0] = b->vec[1][0];
+      if (b->vec[2][0] < b->vec[1][0]) b->vec[2][0] = b->vec[1][0];
+    }
+  }
+}
+
+int pg_arm_key_move(PGArmature *a, int bone, float frame, float to)
+{
+  const EditBone *eb = ebone_at(a, bone);
+  if (!eb) return 0;
+  int n = 0;
+  for (int c = 0; c < PG_ARM_CHANNELS; c++) {
+    FCurve *fcu = fcurve_find(a, eb->name, c);
+    int i = fcu ? find_key(fcu, frame) : -1;
+    if (i < 0) continue;
+    /* BKE_fcurve_merge_duplicate_keys (fcurve.c:1779): the moved (selected) key replaces the one it lands on */
+    const int j = fabsf(to - frame) < 0.01f ? -1 : find_key(fcu, to);
+    if (j >= 0) {
+      memmove(&fcu->bezt[j], &fcu->bezt[j + 1], sizeof(BezTriple) * (fcu->totvert - j - 1));
+      fcu->totvert--;
+      if (j < i) i--;
+    }
+    const float d = to - frame; /* TIME_TRANSLATE moves the key and both handles */
+    for (int k = 0; k < 3; k++) fcu->bezt[i].vec[k][0] += d;
+    key_sort_time(fcu);
+    pg_bke_fcurve_handles_recalc(fcu);
+    n++;
+  }
+  return n;
+}
+
 static int cmp_float(const void *x, const void *y)
 {
   const float a = *(const float *)x, b = *(const float *)y;

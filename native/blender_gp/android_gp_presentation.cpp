@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -1180,6 +1181,8 @@ std::vector<const bGPDframe*> g_engine_drawn_frames;
 // Probe result of engine_context_ok (-1 = not probed) and the engine-image reuse state: file scope so
 // present_reset / nativeResetEngine can clear them with the rest of the engine state.
 int g_engine_ctx_ok=-1;
+bool g_engine_finish_next=true;long g_engine_finishes=0; // glFinish the next engine frame (a new context)
+const bool g_engine_finish_always=[]{const char*e=std::getenv("PG_GL_FINISH");return e&&e[0]=='1';}();
 int g_engine_drawn_weight=-2;       // the overlay's vertex group (its edit batch)
 float g_engine_drawn_vopacity=-1.0f;
 PGGpEngineView g_engine_last_view{};
@@ -1480,7 +1483,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
   if(!same){
     ok=pg_gp_engine_draw(&copy,frame_number,&view);
     {const GLenum e=glGetError();if(e!=GL_NO_ERROR){g_last_gl_error=e;g_engine_gl_errors++;}}
-    glFinish(); /* the GPU time belongs to this frame's report, not the next call's */
+    // a stall: only the first frame of a context (its timing is logged) or with PG_GL_FINISH=1 set
+    if(g_engine_finish_next||g_engine_finish_always){glFinish();g_engine_finish_next=false;g_engine_finishes++;}
   }
   last=view;g_engine_last_fx.swap(fx_sig);g_engine_have_last=ok&&!g_cfg->export_mode;
   g_engine_reuses+=same?1:0;
@@ -2051,8 +2055,9 @@ static void engine_clear_latch(){
 extern "C" int project_grease_android_present_engine_healthy(){return g_engine_failed?0:1;}
 extern "C" void project_grease_android_present_engine_reset(){engine_clear_latch();}
 extern "C" int project_grease_android_present_selftest_runs(){return g_selftest_runs;}
+extern "C" long project_grease_android_present_engine_finishes(){return g_engine_finishes;}
 static void present_reset_impl(bool alive){
-  engine_clear_latch();
+  engine_clear_latch();g_engine_finish_next=true;
   // the engine and its stroke cache belong to this context too: a new context rebuilds them
   // shortcut: the old GpencilBatchCache CPU memory leaks once per context; free it with a gpd once one is at hand here
   if(alive){if(pg_gp_engine_reset)pg_gp_engine_reset();}else if(pg_gp_engine_context_lost)pg_gp_engine_context_lost();

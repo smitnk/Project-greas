@@ -39,6 +39,7 @@ extern "C" void project_grease_android_present_set_data_revision(uint64_t revisi
 extern "C" int project_grease_android_present_engine_active();
 extern "C" const char *project_grease_android_present_last_frame();
 extern "C" int project_grease_android_present_selftest_runs();
+extern "C" long project_grease_android_present_engine_finishes();
 extern "C" void project_grease_android_present_engine_reset();
 extern "C" void project_grease_android_set_fx_provider(int (*fn)(void *, const bGPDlayer *, const PGFxEntry **), void *user);
 static PGFxEntry g_test_fx;
@@ -437,6 +438,9 @@ int main()
     CHECK(project_grease_android_present_engine_active() == 1);
     std::printf("  self-test runs after a reset: %d (expected 1)\n", project_grease_android_present_selftest_runs());
     CHECK(project_grease_android_present_selftest_runs() == 1);
+    /* only the context's first engine frame stalls on glFinish, not every redrawn frame since */
+    std::printf("  engine glFinish calls: %ld (expected 1)\n", project_grease_android_present_engine_finishes());
+    CHECK(project_grease_android_present_engine_finishes() == 1);
   }
 
   /* Batch 6: a frame with unchanged effects reuses the last engine image (effects were re-run on

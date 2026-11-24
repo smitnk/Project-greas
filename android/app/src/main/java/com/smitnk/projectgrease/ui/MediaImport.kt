@@ -378,22 +378,31 @@ internal fun decodeGifFrames(context: Context, uri: Uri, fps: Int): List<String>
         f.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
         return Uri.fromFile(f).toString()
     }
-    if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
-        val still = runCatching { context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull() ?: return emptyList()
-        return listOf(save(still, 1))
-    }
-    val dur = movie.duration().coerceAtLeast(1)
-    val n = ((dur.toLong() * fps.coerceAtLeast(1) + 999) / 1000).toInt().coerceIn(1, 600)
-    val out = ArrayList<String>(n)
-    val bmp = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bmp)
-    for (k in 0 until n) {
-        bmp.eraseColor(0)
-        @Suppress("DEPRECATION") movie.setTime(((k * 1000L) / fps.coerceAtLeast(1)).toInt().coerceAtMost(dur - 1))
-        @Suppress("DEPRECATION") movie.draw(canvas, 0f, 0f)
-        out.add(save(bmp, k + 1))
-    }
-    return out
+    // any failure (full disk, decoder error, OOM-ish) returns no frames - addGifLayer reports it - and the half-written folder goes
+    return runCatching {
+        if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
+            // sample down: a huge still must not run out of memory (cap ~2048 px on the long side)
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+            val still = context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }
+                ?: return@runCatching emptyList<String>()
+            return@runCatching listOf(save(still, 1))
+        }
+        val dur = movie.duration().coerceAtLeast(1)
+        val n = ((dur.toLong() * fps.coerceAtLeast(1) + 999) / 1000).toInt().coerceIn(1, 600)
+        val out = ArrayList<String>(n)
+        val bmp = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        for (k in 0 until n) {
+            bmp.eraseColor(0)
+            @Suppress("DEPRECATION") movie.setTime(((k * 1000L) / fps.coerceAtLeast(1)).toInt().coerceAtMost(dur - 1))
+            @Suppress("DEPRECATION") movie.draw(canvas, 0f, 0f)
+            out.add(save(bmp, k + 1))
+        }
+        out
+    }.getOrElse { dir.deleteRecursively(); emptyList() }
 }
 
 internal fun addGifLayer(controller: EditorController, context: Context, frames: List<String>) {

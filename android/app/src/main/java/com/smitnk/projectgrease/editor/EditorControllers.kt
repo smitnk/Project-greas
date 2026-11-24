@@ -2744,20 +2744,30 @@ class EditorController {
         val n = path.size / 3
         val clear = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
         val dot = android.graphics.Paint().apply { isAntiAlias = false; xfermode = clear.xfermode }
+        val area = floatArrayOf(Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+        var radius = 0f
+        for (k in 0 until n) {
+            area[0] = minOf(area[0], path[3 * k]); area[1] = minOf(area[1], path[3 * k + 1])
+            area[2] = maxOf(area[2], path[3 * k]); area[3] = maxOf(area[3], path[3 * k + 1])
+            radius = maxOf(radius, path[3 * k + 2])
+        }
+        area[0] -= radius; area[1] -= radius; area[2] += radius; area[3] += radius
         return reshapeFills({ xs, ys ->
             (0 until n).any { k ->
                 val x = path[3 * k]; val y = path[3 * k + 1]; val r = path[3 * k + 2]
                 pointInPolygon(x, y, xs, ys) || xs.indices.any { (xs[it] - x) * (xs[it] - x) + (ys[it] - y) * (ys[it] - y) <= r * r }
             }
-        }) { c ->
+        }, area, radius) { c ->
             for (k in 0 until n) {
                 c.drawCircle(path[3 * k], path[3 * k + 1], path[3 * k + 2], dot)
                 if (k > 0) { clear.strokeWidth = path[3 * k + 2] * 2f; c.drawLine(path[3 * k - 3], path[3 * k - 2], path[3 * k], path[3 * k + 1], clear) }
             }
         }
     }
-    /** Redraws each fill [touches] accepts with [cut] cleared out of it, in place (see holdoutLoopOverFills). */
-    private fun reshapeFills(touches: (List<Float>, List<Float>) -> Boolean, cut: (android.graphics.Canvas) -> Unit): Boolean {
+    /** Redraws each fill [touches] accepts with [cut] cleared out of it, in place (see holdoutLoopOverFills).
+     *  [area] (minX, minY, maxX, maxY), when given, skips fills whose bounds miss it; the mask covers each
+     *  fill's bounds plus [radius] (clipped to the canvas, as the full-canvas mask was) instead of the canvas. */
+    private fun reshapeFills(touches: (List<Float>, List<Float>) -> Boolean, area: FloatArray? = null, radius: Float = 0f, cut: (android.graphics.Canvas) -> Unit): Boolean {
         val w = document.canvasWidth; val h = document.canvasHeight
         val fill = android.graphics.Paint().apply { isAntiAlias = false; style = android.graphics.Paint.Style.FILL }
         var changed = false
@@ -2765,24 +2775,32 @@ class EditorController {
         for ((i, xs, ys) in filledStrokes().asReversed()) {
             val name = native.strokeInfo(i)?.let { native.materialName(it[0].toInt()) }
             if (name == HOLDOUT_MATERIAL || name == CUTTER_MATERIAL) continue
+            val minX = xs.min(); val minY = ys.min(); val maxX = xs.max(); val maxY = ys.max()
+            if (area != null && (maxX < area[0] || minX > area[2] || maxY < area[1] || minY > area[3])) continue
             if (!touches(xs, ys)) continue
             val info = native.strokeInfo(i)?.copyOf(11) ?: continue
             info[2] = 1f // cyclic
             val p0 = native.getPoint(i, 0) ?: continue
             val c0 = GPNative.nativeGetPointColor(native.handle, i, 0) ?: FloatArray(4)
-            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
+            // integer offset: the cropped mask rasterizes exactly the pixels the full-canvas one did
+            val left = kotlin.math.floor(minX - radius - 2f).toInt().coerceIn(0, w - 1); val top = kotlin.math.floor(minY - radius - 2f).toInt().coerceIn(0, h - 1)
+            val bw = (kotlin.math.ceil(maxX + radius + 2f).toInt().coerceAtMost(w) - left).coerceAtLeast(1)
+            val bh = (kotlin.math.ceil(maxY + radius + 2f).toInt().coerceAtMost(h) - top).coerceAtLeast(1)
+            val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ALPHA_8)
             val canvas = android.graphics.Canvas(bmp)
+            canvas.translate(-left.toFloat(), -top.toFloat())
             canvas.drawPath(android.graphics.Path().apply { moveTo(xs[0], ys[0]); for (k in 1 until xs.size) lineTo(xs[k], ys[k]); close() }, fill)
             cut(canvas)
-            val alpha = java.nio.ByteBuffer.allocate(w * h); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
-            val outlines = withHolesJoined(ImageTrace.trace(BooleanArray(w * h) { alpha.get(it).toInt() != 0 }, w, h, 0.75f, 3))
+            val alpha = java.nio.ByteBuffer.allocate(bmp.rowBytes * bh); bmp.copyPixelsToBuffer(alpha); bmp.recycle()
+            val stride = alpha.capacity() / bh
+            val outlines = withHolesJoined(ImageTrace.trace(BooleanArray(bw * bh) { alpha.get(it / bw * stride + it % bw).toInt() != 0 }, bw, bh, 0.75f, 3))
             if (!native.deleteStroke(i)) continue
             var at = i
             for (o in outlines) {
                 val n = o.size
                 val pts = FloatArray(n * 6); val colors = FloatArray(n * 4)
                 for (k in 0 until n) {
-                    pts[6 * k] = o[k][0]; pts[6 * k + 1] = o[k][1]; pts[6 * k + 2] = p0[2]
+                    pts[6 * k] = o[k][0] + left; pts[6 * k + 1] = o[k][1] + top; pts[6 * k + 2] = p0[2]
                     pts[6 * k + 3] = p0.getOrElse(3) { 1f }; pts[6 * k + 4] = p0.getOrElse(4) { 1f }
                     for (c in 0 until 4) colors[4 * k + c] = c0.getOrElse(c) { 0f }
                 }

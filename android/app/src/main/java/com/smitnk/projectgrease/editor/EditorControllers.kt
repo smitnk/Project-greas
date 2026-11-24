@@ -3665,6 +3665,20 @@ class EditorController {
         eraseGestureChanged = false
         return changed
     }
+    /** Drops an erase drag (a second finger landed): no fill cut, no preview, no undo or redo step; what the
+     *  stroke eraser removed comes back from the last recorded step (beginErase records none of its own). */
+    fun cancelErase() {
+        erasePath.clear(); eraseGesturePath.clear(); eraseGestureMarks = 0; eraseGestureSamples = 0; eraseGestureHits = 0; eraseGestureFilled = false
+        if (native.handle != 0L) { runCatching { GPNative.nativeTakeEraseFillHits() }; GPNative.nativeEraseModal(native.handle, 2, false) }
+        if (rendererHandle != 0L) GPNative.nativeClearPreviewStrokeEglRenderer(rendererHandle)
+        if (eraseGestureChanged) {
+            eraseGestureChanged = false
+            // undo + redo lands on the current step again without recording one, so the redo tail stays
+            if (history.canUndo) { history.undo(); history.redo() } else if (history.canRedo) { history.redo(); history.undo() }
+            reapplyOnion(); restoreSelectedStroke(); animation.refresh()
+        }
+        render()
+    }
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun duplicateSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.duplicateStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}

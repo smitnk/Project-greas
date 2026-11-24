@@ -729,7 +729,7 @@ internal class ProjectGreaseDrawingSurfaceView(
             // (undo) runs with no batch open and undoes exactly that drag
             is Gesture.Transform -> controller.history.endBatch()
             // the first finger's erase was not meant: revert it before the gesture
-            is Gesture.Erase -> if (controller.endErase()) controller.undo()
+            is Gesture.Erase -> controller.cancelErase()
             is Gesture.Deferred -> g.down.recycle()
             else -> {}
         }

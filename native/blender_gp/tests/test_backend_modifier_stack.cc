@@ -1068,6 +1068,40 @@ int main()
   }
   CHECK(b.document_generation() < Backend().document_generation());
 
+  /* --- undo history bounds: 32 steps (U.undosteps) and a 4M stored-point budget --- */
+  {
+    Backend h;
+    CHECK(h.initialize() && h.create_document() && h.create_layer("H") && h.create_frame(1));
+    CHECK(h.history_reset());
+    for (int i = 0; i < 40; i++) {
+      add_line(h, 10.0f * i, 0.0f);
+      CHECK(h.history_record());
+    }
+    int undos = 0;
+    while (h.history_undo()) undos++;
+    CHECK(undos == 31);          /* 32 snapshots kept */
+    CHECK(h.stroke_count() == 9); /* the oldest kept step: strokes 1..9 */
+    CHECK(h.history_redo() && h.stroke_count() == 10);
+
+    Backend big;
+    CHECK(big.initialize() && big.create_document() && big.create_layer("B") && big.create_frame(1));
+    std::vector<StrokePoint> pts(100000, StrokePoint{0.0f, 0.0f, 0.0f, 0.5f, 1.0f, 0.0f});
+    PGStrokeInfo info{};
+    info.thickness = 4.0f;
+    CHECK(big.add_stroke(pts.data(), 1, info) && big.history_reset());
+    for (int i = 0; i < 12; i++) {
+      CHECK(big.add_stroke(pts.data(), static_cast<int>(pts.size()), info) && big.history_record());
+    }
+    /* 13 steps (< 32) holding ~0.1M..1.2M points; only the newest 3 fit in 4M (1.2+1.1+1.0M) */
+    undos = 0;
+    while (big.history_undo()) undos++;
+    CHECK(undos == 2);
+    CHECK(big.point_count() == 1 + 10 * 100000);
+    CHECK(big.history_redo() && big.point_count() == 1 + 11 * 100000);
+    big.shutdown();
+    h.shutdown();
+  }
+
   b.shutdown();
   if (failures) {
     printf("%d FAILURES\n", failures);

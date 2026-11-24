@@ -2708,6 +2708,7 @@ class EditorController {
         for (i in 0 until native.strokeCount()) {
             val mat = native.strokeInfo(i)?.get(0)?.toInt() ?: continue
             if ((native.materialInfo(mat)?.getOrNull(9) ?: 0f) <= 0.5f) continue
+            if (materialRecord(mat)?.let { it.locked || !it.visible } == true) continue // as withFillsLocked: locked / hidden materials are not edited
             val xs = ArrayList<Float>(); val ys = ArrayList<Float>()
             var k = 0
             while (k < 20000) { val p = native.getPoint(i, k) ?: break; xs.add(p[0]); ys.add(p[1]); k++ }

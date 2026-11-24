@@ -25,6 +25,9 @@ struct Plane { GLuint tex = 0, fbo = 0, rb = 0; };
 struct Buffer { Plane color, reveal; GLuint mrt = 0; }; // mrt: both planes, GLES 3 only
 
 int g_w = 0, g_h = 0;
+// RGBA16F effect buffers like gpencil_engine.c (GPU_RGBA16F); false: the RGBA8 fallback, dithered on output.
+bool g_half = false;
+bool g_es3 = false;
 Plane g_layer;            // the layer as drawn: premultiplied rgba
 Buffer g_bufs[3];
 GLuint g_vbo = 0;
@@ -42,7 +45,7 @@ const char* fs_header() {
     "precision highp float;\nprecision highp int;\n"
     "#else\nprecision mediump float;\nprecision mediump int;\n#endif\n"
     "uniform sampler2D colorBuf; uniform sampler2D revealBuf; uniform sampler2D dstColor; uniform sampler2D dstReveal;\n"
-    "uniform vec2 uSize; uniform int uOut; uniform int uBlend;\n"
+    "uniform vec2 uSize; uniform int uOut; uniform int uBlend; uniform int uDither;\n"
     "uniform vec2 offset; uniform int sampCount;\n"
     "uniform vec3 lowColor; uniform vec3 highColor; uniform float factor; uniform int mode;\n"
     "uniform vec2 axisFlip; uniform vec2 waveDir; uniform vec2 waveOffset; uniform float wavePhase;\n"
@@ -52,6 +55,10 @@ const char* fs_header() {
     "uniform vec2 blurDir; uniform vec2 uvOffset; uniform vec2 uvRotX; uniform vec2 uvRotY;\n"
     "uniform vec3 maskColor; uniform vec3 rimColor; uniform vec4 shadowColor;\n"
     "vec4 fragColor; vec4 fragRevealage;\n"
+    // 8x8 ordered (Bayer) dither in [0, 1): spreads the RGBA8 fallback's quantisation instead of banding
+    "float bayer2(vec2 a){ a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }\n"
+    "float bayer8(vec2 a){ return (bayer2(0.25 * a) * 0.25 + bayer2(0.5 * a)) * 0.25 + bayer2(a); }\n"
+    "vec4 dither(vec4 o){ return uDither != 0 ? o + (bayer8(gl_FragCoord.xy) - 0.5) / 255.0 : o; }\n"
     "float gaussian_weight(float x){return exp(-x * x / (2.0 * 0.35 * 0.35));}\n"
     "vec4 doBlend(vec4 s, vec4 d){\n"
     "  if (uBlend == 1) return s + d * (1.0 - s.a);\n"
@@ -176,7 +183,7 @@ const char* fs_tail() {
   return
     "  vec4 o = (uOut == 0) ? fragColor : fragRevealage;\n"
     "  if (uBlend != 0) { vec4 d = (uOut == 0) ? texture2D(dstColor, uv0Final()) : texture2D(dstReveal, uv0Final()); o = doBlend(o, d); }\n"
-    "  gl_FragColor = o; }\n";
+    "  gl_FragColor = dither(o); }\n";
 }
 
 struct Program {
@@ -227,7 +234,7 @@ Program* program_for(int kind, bool mrt = false) {
     fs += "  vec2 uvF = gl_FragCoord.xy / uSize;\n";
     std::string tail = mrt ? "  vec4 c = fragColor, r = fragRevealage;\n"
                              "  if (uBlend != 0) { c = doBlend(c, texture2D(dstColor, uv0Final())); r = doBlend(r, texture2D(dstReveal, uv0Final())); }\n"
-                             "  pgColor = c; pgReveal = r; }\n" : fs_tail();
+                             "  pgColor = dither(c); pgReveal = dither(r); }\n" : fs_tail();
     // uv0Final() is replaced by the pixel coordinate computed above
     size_t at;
     while ((at = tail.find("uv0Final()")) != std::string::npos) tail.replace(at, 10, "uvF");
@@ -261,14 +268,17 @@ bool ensure_convert_composite() {
   return g_vbo != 0;
 }
 
-bool make_plane(Plane& p, int w, int h, bool stencil = false) {
+bool make_plane(Plane& p, int w, int h, bool stencil = false, bool half = false) {
   if (p.tex) glDeleteTextures(1, &p.tex);
   if (p.fbo) glDeleteFramebuffers(1, &p.fbo);
   if (p.rb) glDeleteRenderbuffers(1, &p.rb);
   p.rb = 0;
   glGenTextures(1, &p.tex);
   glBindTexture(GL_TEXTURE_2D, p.tex);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  const bool es3 = half && g_es3;
+  // GLES 2 half float: OES_texture_half_float's GL_HALF_FLOAT_OES (0x8D61) with an unsized GL_RGBA
+  glTexImage2D(GL_TEXTURE_2D, 0, !half ? GL_RGBA : es3 ? GL_RGBA16F : GL_RGBA, w, h, 0, GL_RGBA,
+               !half ? GL_UNSIGNED_BYTE : es3 ? GL_HALF_FLOAT : 0x8D61, nullptr);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -292,14 +302,35 @@ bool make_plane(Plane& p, int w, int h, bool stencil = false) {
   return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
 }
 
+bool has_ext(const char* name) {
+  const char* e = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+  const size_t n = std::strlen(name);
+  for (const char* p = e; p && (p = std::strstr(p, name)); p += n)
+    if ((p == e || p[-1] == ' ') && (p[n] == ' ' || p[n] == '\0')) return true;
+  return false;
+}
+
 bool ensure_targets(int w, int h) {
   if (g_layer.fbo && g_w == w && g_h == h) return true;
-  bool ok = make_plane(g_layer, w, h, true);
-  for (Buffer& b : g_bufs) ok = make_plane(b.color, w, h) && make_plane(b.reveal, w, h) && ok;
-  // GLES 3: one FBO with both planes, so a pass is one draw (PG_FX_GLES2=1 forces the GLES 2 path)
   const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  g_es3 = ver && std::strncmp(ver, "OpenGL ES ", 10) == 0 && ver[10] >= '3';
+  // half float colour attachments as Blender's GPU_RGBA16F; PG_FX_RGBA8=1 forces the dithered RGBA8 fallback
+  const char* force8 = std::getenv("PG_FX_RGBA8");
+  g_half = !(force8 && force8[0] == '1') &&
+           (g_es3 ? has_ext("GL_EXT_color_buffer_half_float") || has_ext("GL_EXT_color_buffer_float")
+                  : has_ext("GL_OES_texture_half_float") && has_ext("GL_OES_texture_half_float_linear") &&
+                    has_ext("GL_EXT_color_buffer_half_float"));
+  bool ok = make_plane(g_layer, w, h, true);
+  bool bufs_ok = true;
+  for (Buffer& b : g_bufs) bufs_ok = make_plane(b.color, w, h, false, g_half) && make_plane(b.reveal, w, h, false, g_half) && bufs_ok;
+  if (!bufs_ok && g_half) { // an incomplete half float FBO: fall back to RGBA8
+    g_half = false; bufs_ok = true;
+    for (Buffer& b : g_bufs) bufs_ok = make_plane(b.color, w, h) && make_plane(b.reveal, w, h) && bufs_ok;
+  }
+  ok = ok && bufs_ok;
+  // GLES 3: one FBO with both planes, so a pass is one draw (PG_FX_GLES2=1 forces the GLES 2 path)
   const char* force2 = std::getenv("PG_FX_GLES2");
-  const bool es3 = ok && ver && std::strncmp(ver, "OpenGL ES ", 10) == 0 && ver[10] >= '3' && !(force2 && force2[0] == '1');
+  const bool es3 = ok && g_es3 && !(force2 && force2[0] == '1');
   for (Buffer& b : g_bufs) {
     if (b.mrt) glDeleteFramebuffers(1, &b.mrt);
     b.mrt = 0;
@@ -434,6 +465,7 @@ int fx_run(const PGFxEntry* entries, int count, const PGFxView* view) {
       bind_tex(3, g_bufs[dst >= 0 ? dst : src].reveal.tex, *pr, "dstReveal");
       glUniform2f(pr->u_size, float(w), float(h));
       glUniform1i(pr->u_blend, dst >= 0 ? p.blend : 0);
+      glUniform1i(glGetUniformLocation(pr->id, "uDither"), g_half ? 0 : 1);
       set_pass_uniforms(*pr, p);
       if (mrt) {
         glBindFramebuffer(GL_FRAMEBUFFER, g_bufs[target].mrt);
@@ -453,6 +485,15 @@ int fx_run(const PGFxEntry* entries, int count, const PGFxView* view) {
   return cur;
 }
 
+// Reads a plane as RGBA8 bytes; a half float plane is read as GL_FLOAT (the format ES 3 guarantees for it).
+void read_plane(const Plane& p, int w, int h, unsigned char* out) {
+  glBindFramebuffer(GL_FRAMEBUFFER, p.fbo);
+  if (!g_half) { glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out); return; }
+  std::vector<float> f(size_t(w) * size_t(h) * 4u);
+  glReadPixels(0, 0, w, h, GL_RGBA, GL_FLOAT, f.data());
+  for (size_t i = 0; i < f.size(); i++) out[i] = (unsigned char)std::lround(std::min(1.0f, std::max(0.0f, f[i])) * 255.0f);
+}
+
 }  // namespace
 
 extern "C" int project_grease_fx_end_layer(const PGFxEntry* entries, int count, const PGFxView* view,
@@ -461,14 +502,8 @@ extern "C" int project_grease_fx_end_layer(const PGFxEntry* entries, int count, 
   const int cur = fx_run(entries, count, view);
   if (out_color || out_reveal) {
     glFinish();
-    if (out_color) {
-      glBindFramebuffer(GL_FRAMEBUFFER, g_bufs[cur].color.fbo);
-      glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out_color);
-    }
-    if (out_reveal) {
-      glBindFramebuffer(GL_FRAMEBUFFER, g_bufs[cur].reveal.fbo);
-      glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out_reveal);
-    }
+    if (out_color) read_plane(g_bufs[cur].color, w, h, out_color);
+    if (out_reveal) read_plane(g_bufs[cur].reveal, w, h, out_reveal);
   }
   // composite: frame = frame * R, then frame += C (COMPOSITE of gpencil_vfx_frag.glsl)
   glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_prev_fbo);
@@ -597,6 +632,8 @@ static void fx_reset_impl(bool alive) {
 
 extern "C" int project_grease_fx_last_draws() { return g_draws; }
 extern "C" void project_grease_fx_reset() { fx_reset_impl(true); }
+/* 1 when the effect buffers are RGBA16F, 0 for the dithered RGBA8 fallback (valid after a layer began). */
+extern "C" int project_grease_fx_half_float() { return g_half ? 1 : 0; }
 /* EGL context lost: forget every GL name without calling GL. */
 extern "C" void project_grease_fx_context_lost() { fx_reset_impl(false); }
 /* Fragment body of a pass kind, for the host test that keeps the sample loops bounded. */

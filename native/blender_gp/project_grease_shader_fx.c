@@ -1085,11 +1085,11 @@ int pg_fx_run_cpu(const PGFxEntry *entries, int count, const PGFxView *view, PGF
             fr = apply_blend(p->blend, fr, dr);
           }
           const size_t o = ((size_t)y * (size_t)image->width + (size_t)x) * 4u;
-          /* the 8-bit buffers of the GL engine clamp to 0..1 */
-          bufs[target].color[o] = fx_clampf(fc.x, 0, 1); bufs[target].color[o + 1] = fx_clampf(fc.y, 0, 1);
-          bufs[target].color[o + 2] = fx_clampf(fc.z, 0, 1); bufs[target].color[o + 3] = fx_clampf(fc.w, 0, 1);
-          bufs[target].reveal[o] = fx_clampf(fr.x, 0, 1); bufs[target].reveal[o + 1] = fx_clampf(fr.y, 0, 1);
-          bufs[target].reveal[o + 2] = fx_clampf(fr.z, 0, 1); bufs[target].reveal[o + 3] = fx_clampf(fr.w, 0, 1);
+          /* unclamped between passes, as Blender's float (GPU_RGBA16F) buffers */
+          bufs[target].color[o] = fc.x; bufs[target].color[o + 1] = fc.y;
+          bufs[target].color[o + 2] = fc.z; bufs[target].color[o + 3] = fc.w;
+          bufs[target].reveal[o] = fr.x; bufs[target].reveal[o + 1] = fr.y;
+          bufs[target].reveal[o + 2] = fr.z; bufs[target].reveal[o + 3] = fr.w;
         }
       }
       prev_src = cur;

@@ -992,6 +992,68 @@ static void test_shader_fx_gl() {
                               fxe(PG_FX_GLOW, {{PG_FXP_GLOW_BLUR_X, 3}, {PG_FXP_GLOW_BLUR_Y, 3}, {PG_FXP_GLOW_SAMPLES, 3}})});
 }
 
+/* #17 banding: Blur + Shadow on a smooth gradient fill. Blender keeps the passes in GPU_RGBA16F
+ * (gpencil_engine.c:678), so neighbouring pixels of the ramp step at most 1 LSB; the RGBA8 fallback
+ * (PG_FX_RGBA8=1) is dithered, so the ramp has no long runs of one value (bands). */
+extern "C" int project_grease_fx_half_float();
+extern "C" void project_grease_fx_reset();
+static std::vector<unsigned char> fx_ramp(float lo, float hi, int w, int h) {
+  PGFxView view{w, h, 1.0f, 0.0f, 0.0f, w, h};
+  const std::vector<PGFxEntry> e = {
+      fxe(PG_FX_BLUR, {{PG_FXP_BLUR_RADIUS_X, 6}, {PG_FXP_BLUR_RADIUS_Y, 6}, {PG_FXP_BLUR_SAMPLES, 4}}),
+      fxe(PG_FX_SHADOW, {{PG_FXP_SHADOW_OFFSET_X, 0}, {PG_FXP_SHADOW_OFFSET_Y, 0}, {PG_FXP_SHADOW_BLUR_X, 3}, {PG_FXP_SHADOW_BLUR_Y, 3}})};
+  CHECK(project_grease_fx_begin_layer(w, h) == 1);
+  glEnable(GL_SCISSOR_TEST);
+  for (int x = 0; x < w; x++) { /* a horizontal grey ramp, one exact clear per column */
+    const float v = lo + (hi - lo) * float(x) / float(w - 1);
+    glScissor(x, 0, 1, h);
+    glClearColor(v, v, v, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
+  glDisable(GL_SCISSOR_TEST);
+  std::vector<unsigned char> col(size_t(w) * h * 4), rev(size_t(w) * h * 4);
+  CHECK(project_grease_fx_end_layer(e.data(), int(e.size()), &view, col.data(), rev.data()) == 1);
+  return col;
+}
+static void test_fx_no_banding() {
+  const int W = 256, H = 32, row = H / 2, margin = 16;
+  /* float path: every step of the ramp is at most 1 LSB */
+  project_grease_fx_reset();
+  std::vector<unsigned char> f = fx_ramp(0.2f, 0.8f, W, H);
+  const bool half = project_grease_fx_half_float() == 1;
+  printf("  fx banding: %s effect buffers\n", half ? "RGBA16F" : "RGBA8 (no half float colour buffers)");
+  if (half) {
+    int worst = 0;
+    for (int x = margin; x < W - margin - 1; x++)
+      for (int c = 0; c < 3; c++)
+        worst = std::max(worst, std::abs(int(f[(size_t(row) * W + x + 1) * 4 + c]) - int(f[(size_t(row) * W + x) * 4 + c])));
+    printf("  fx banding float: largest neighbour step %d LSB\n", worst);
+    CHECK(worst <= 1);
+  }
+  /* RGBA8 fallback: a slow ramp (0.25 LSB per pixel, so the 8-bit layer itself already steps every
+   * 4 px) has no run of one value over N, and the ordered dither is really there (local reversals) */
+  const int N = 6;
+  setenv("PG_FX_RGBA8", "1", 1);
+  project_grease_fx_reset();
+  std::vector<unsigned char> d = fx_ramp(0.3f, 0.55f, W, H);
+  CHECK(project_grease_fx_half_float() == 0);
+  unsetenv("PG_FX_RGBA8");
+  project_grease_fx_reset();
+  int longest = 0, reversals = 0;
+  for (int y = 8; y < H - 8; y++) {
+    int run = 1;
+    for (int x = margin + 1; x < W - margin; x++) {
+      const int cur = d[(size_t(y) * W + x) * 4], prev = d[(size_t(y) * W + x - 1) * 4];
+      run = (cur == prev) ? run + 1 : 1;
+      longest = std::max(longest, run);
+      reversals += cur < prev;
+    }
+  }
+  CHECK(reversals > 0);
+  printf("  fx banding RGBA8 dithered: longest run of one value %d px (limit %d), %d dither reversals\n", longest, N, reversals);
+  CHECK(longest <= N);
+}
+
 /* GLES 3 runs each effect pass as one draw into both planes (glDrawBuffers); the GLES 2 path
  * (PG_FX_GLES2=1) draws twice. Both must give the same bytes. */
 extern "C" int project_grease_fx_last_draws();
@@ -1465,6 +1527,7 @@ int main()
   test_weight_view_masked();
   test_shader_fx_gl();
   test_fx_mrt_matches_gles2();
+  test_fx_no_banding();
   test_fx_through_presenter();
   test_fx_targets();
   test_batch21_layer_state();

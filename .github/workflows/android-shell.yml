@@ -279,7 +279,7 @@ jobs:
         run: |
           set -o pipefail
           # compile errors and failed tests as annotations (the job log is not always readable)
-          if ! ./gradlew :app:testDebugUnitTest --no-daemon 2>&1 | tee ut.txt; then
+          if ! bash ../tools/gradle_retry.sh :app:testDebugUnitTest --no-daemon 2>&1 | tee ut.txt; then
             grep -E "^e: |FAILED|AssertionError|Exception" ut.txt | head -30 | sed 's/^/::error title=unit tests::/'
             exit 1
           fi
@@ -290,7 +290,7 @@ jobs:
         run: |
           set -o pipefail
           # compiler errors also become annotations (readable without the full log)
-          ./gradlew :app:assembleDebug --no-daemon 2>&1 | tee build.log || {
+          bash ../tools/gradle_retry.sh :app:assembleDebug --no-daemon 2>&1 | tee build.log || {
             grep -E "error:|^e: |FAILED|undefined reference" build.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
             exit 1
           }
@@ -407,7 +407,7 @@ jobs:
       # Release APK for phones: arm64-v8a only, -O3 + ThinLTO (CMakeLists.txt), stripped .so files.
       - name: Build release APK
         working-directory: android
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: bash ../tools/gradle_retry.sh :app:assembleRelease --no-daemon
 
       - name: Verify every native method has its JNI symbol in the release APK
         run: |
@@ -454,7 +454,7 @@ jobs:
         if: always() # the emulator runs SwiftShader, not a phone GPU: failures here are triaged, they do not block the APK
         continue-on-error: true
         working-directory: android
-        run: ./gradlew :app:assembleDebugAndroidTest --no-daemon
+        run: bash ../tools/gradle_retry.sh :app:assembleDebugAndroidTest --no-daemon
 
       - name: Enable KVM for the emulator
         if: always() # the emulator runs SwiftShader, not a phone GPU: failures here are triaged, they do not block the APK
@@ -465,8 +465,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Run device tests on the emulator
-        if: always() # the emulator runs SwiftShader, not a phone GPU: failures here are triaged, they do not block the APK
-        continue-on-error: true
+        if: always() # run even if an earlier step failed; a failing device test fails the run (publish steps below still run)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30

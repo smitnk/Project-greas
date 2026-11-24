@@ -1602,7 +1602,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             Spacer(Modifier.width(6.dp))
             Surface(shape=RoundedCornerShape(16.dp),tonalElevation=4.dp,shadowElevation=2.dp,
                 modifier=Modifier.clickable{popup=if(popup==StudioPopup.MODE)StudioPopup.NONE else StudioPopup.MODE}.semantics{contentDescription="Mode"}.testTag("studioMode")){
-                Row(Modifier.heightIn(min=48.dp).padding(horizontal=12.dp),,verticalAlignment=Alignment.CenterVertically){
+                Row(Modifier.heightIn(min=48.dp).padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
                     Icon(modeIcon(controller.mode),null,Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                     Text(StudioMode.entries.firstOrNull{it.name==controller.mode.name}?.label?:controller.mode.name,fontSize=13.sp,fontWeight=FontWeight.Bold)
                     Icon(PgIcons.ArrowDropDown,null,Modifier.size(18.dp))

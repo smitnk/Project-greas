@@ -40,7 +40,13 @@ class SweepRigUiTest : SweepBase() {
     // the first BACK only hides the keyboard when a text field (bone name, slider name) still has it
     private fun panelOpen() = listOf("rigAdd", "rigBindEmpty").any { rule.onAllNodesWithTag(it).fetchSemanticsNodes().isNotEmpty() }
     private fun back() {
-        repeat(3) { if (it == 0 || panelOpen()) { instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); rule.waitForIdle() } }
+        repeat(3) {
+            if (it == 0 || panelOpen()) {
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); rule.waitForIdle()
+                // the sheet window outlives its hide animation: a second BACK would leave the editor, a touch would hit the scrim
+                runCatching { rule.waitUntil(1500) { !panelOpen() } }
+            }
+        }
     }
     private fun mode(chip: String) { rule.onNodeWithTag("studioMode").performClick(); click("modeChip_$chip") }
     private fun armature() = document().getJSONObject("armature")
@@ -65,7 +71,9 @@ class SweepRigUiTest : SweepBase() {
         assertTrue(onUi { rig.extrudeNext })
         back()
         drag(cx to cy - 100f, cx + 80f to cy - 180f)
-        assertEquals(2, onUi { rig.boneCount })
+        // extrudeNext is consumed by the DOWN that reaches RigTouch: still true means the touch never got there
+        assertEquals("after the extrude drag: extrudeNext=${onUi { rig.extrudeNext }} mode=${onUi { rig.mode }} 3d=${View3DUi.active}",
+            2, onUi { rig.boneCount })
         onUi { rig.bone(1)!! }.let { assertEquals(cx + 80f, it.tailX, 2f); assertEquals(cy - 180f, it.tailY, 2f) }
         openRig()
         rule.onNodeWithTag("rigBoneName").performScrollTo().performTextReplacement("Jaw")
@@ -216,7 +224,8 @@ class SweepRigUiTest : SweepBase() {
     /** View px of the 3D view -> screen px. */
     private fun view3dScreen(x: Float, y: Float): Pair<Float, Float> {
         val loc = IntArray(2)
-        onUi { surface().getLocationOnScreen(loc) }
+        val v = surface() // surface() is itself an onUi: never call it inside one
+        onUi { v.getLocationOnScreen(loc) }
         return loc[0] + x to loc[1] + y
     }
 

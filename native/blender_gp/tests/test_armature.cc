@@ -795,6 +795,25 @@ static void test_display_and_pick()
   pg_arm_free(a);
 }
 
+/* RigTouch drag-extrude: a 1 canvas px extrude (0.001 units, as the app sends it), then the translate that puts
+ * the new tail under the finger. The new bone must survive every arm_update (zero sized bones are removed). */
+static void test_touch_extrude()
+{
+  PGArmature *a = pg_arm_new();
+  const float h[3] = {0.64f, -0.36f, 0}, t[3] = {0.64f, -0.26f, 0}; /* canvas (640, 360) -> (640, 260) */
+  pg_arm_bone_add(a, "Bone", h, t);
+  const float one[3] = {0.001f, 0, 0};
+  CHECK(pg_arm_extrude(a, one) == 1);
+  CHECK(pg_arm_bone_count(a) == 2);
+  const float d[3] = {0.079f, 0.08f, 0}; /* the new tail 80 px right, 80 px up of the old tail, minus the 1 px */
+  CHECK(pg_arm_edit_translate(a, d) > 0);
+  CHECK(pg_arm_bone_count(a) == 2);
+  float info[PG_ARM_BONE_INFO];
+  pg_arm_bone_info(a, 1, info);
+  NEAR(info[3], 0.72f, 1e-5);
+  pg_arm_free(a);
+}
+
 int main()
 {
   test_bone_matrices();
@@ -807,6 +826,7 @@ int main()
   test_pose_pivot();
   test_edit_ops_and_io();
   test_display_and_pick();
+  test_touch_extrude();
   printf("armature: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

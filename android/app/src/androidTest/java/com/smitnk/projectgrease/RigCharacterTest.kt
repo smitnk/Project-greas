@@ -196,7 +196,7 @@ class RigCharacterTest : SweepBase() {
             controller.history.markEdit()
         }
         assertTrue(onUi { controller.vertexGroups() }.containsAll(deform))
-        parts.forEach { p -> assertTrue("$p bound", onUi { controller.modifiers(layerIndex(p)) }.any { it.type == ModifierType.ARMATURE }) }
+        parts.forEach { p -> val li = layerIndex(p); assertTrue("$p bound", onUi { controller.modifiers(li) }.any { it.type == ModifierType.ARMATURE }) }
 
         // IK, chain 2, with a pole: Arm.L and Leg.L
         val lowerArm = onUi { rig.findBone("LowerArm.L") }; val lowerLeg = onUi { rig.findBone("LowerLeg.L") }

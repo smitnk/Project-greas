@@ -83,7 +83,8 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
 
     Text("Armature", style = MaterialTheme.typography.titleLarge)
     if (!rig.exists) {
-        Op("Add Armature", "rigAdd") { if (rig.create()) { controller.setActiveObject(true); rig.setMode(RigController.MODE_EDIT) }; done() }
+        Op("Add Armature", "rigAdd") { // object.armature_add with Enter Edit Mode: the same mode switch as the mode chip (leaves Object mode)
+            if (rig.create()) { controller.setActiveObject(true); controller.modeToggle("GPENCIL_OT_editmode_toggle") }; done() }
         return
     }
     val bones = rig.bones()

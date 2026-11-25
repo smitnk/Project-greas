@@ -28,6 +28,7 @@ extern "C" {
 
 struct bGPdata;
 struct bGPDframe;
+struct bGPDlayer;
 struct bGPDstroke;
 struct FCurve;
 
@@ -63,6 +64,14 @@ int pg_arm_bone_info(const PGArmature *a, int bone, float *r);
 int pg_arm_bone_set_envelope(PGArmature *a, int bone, float dist, float weight, float rad_head,
                              float rad_tail, bool deform, bool mult_vg);
 int pg_arm_bone_envelope(const PGArmature *a, int bone, float r[4]);
+/* B-Bone: ease1, ease2, roll1, roll2, curve_in_x, curve_in_z, curve_out_x, curve_out_z,
+ * scale_in[3], scale_out[3] of the edit bone (rest shape, plus segments 1..32) or of the pose
+ * channel (animated offsets). pg_arm_bone_bbone returns the segments. */
+#define PG_ARM_BBONE 14
+int pg_arm_bone_set_bbone(PGArmature *a, int bone, int segments, const float v[PG_ARM_BBONE]);
+int pg_arm_bone_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE]);
+int pg_arm_pose_set_bbone(PGArmature *a, int bone, const float v[PG_ARM_BBONE]);
+int pg_arm_pose_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE]);
 
 /* ---- edit mode (ARMATURE_OT_*) ---- */
 /* bone_primitive_add: deselects all, adds a bone named `name` ("Bone" if empty, made unique),
@@ -148,6 +157,9 @@ int pg_arm_deform_stroke(const PGArmature *a, const struct bGPdata *gpd, struct 
  * 2 With Automatic Weights, 3 With Envelope Weights (Blender 3.6 handles it like Automatic for GP).
  * Returns the number of vertex groups added, or -1. */
 int pg_arm_bind_frame(const PGArmature *a, struct bGPdata *gpd, struct bGPDframe *gpf, int mode);
+/* The same for every frame of `gpl` (multi-frame bind); actframe is the frame shown. */
+int pg_arm_bind_layer(const PGArmature *a, struct bGPdata *gpd, struct bGPDlayer *gpl,
+                      struct bGPDframe *actframe, int mode);
 
 /* ---- viewport display ---- */
 /* bArmature.drawtype (ARM_OCTA 0 default / ARM_LINE 1 stick / B-Bone 2 / Envelope 3 / Wire 4; only

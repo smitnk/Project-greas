@@ -13,6 +13,7 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_alloca.h"
 #include "BLI_ghash.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
@@ -270,6 +271,712 @@ float BLI_easing_sine_ease_out(float time, float begin, float change, float dura
 float BLI_easing_sine_ease_in_out(float time, float begin, float change, float duration)
 {
   return -change / 2 * (cosf((float)M_PI * time / duration) - 1) + begin;
+}
+/* END VERBATIM */
+
+/* BEGIN VERBATIM source/blender/blenkernel/intern/armature.c */
+/* Compute a set of bezier parameter values that produce approximately equally spaced points. */
+static void equalize_cubic_bezier(const float control[4][3],
+                                  int temp_segments,
+                                  int final_segments,
+                                  const float *segment_scales,
+                                  float *r_t_points)
+{
+  float(*coords)[3] = BLI_array_alloca(coords, temp_segments + 1);
+  float *pdist = BLI_array_alloca(pdist, temp_segments + 1);
+
+  /* Compute the first pass of bezier point coordinates. */
+  for (int i = 0; i < 3; i++) {
+    BKE_curve_forward_diff_bezier(control[0][i],
+                                  control[1][i],
+                                  control[2][i],
+                                  control[3][i],
+                                  &coords[0][i],
+                                  temp_segments,
+                                  sizeof(*coords));
+  }
+
+  /* Calculate the length of the polyline at each point. */
+  pdist[0] = 0.0f;
+
+  for (int i = 0; i < temp_segments; i++) {
+    pdist[i + 1] = pdist[i] + len_v3v3(coords[i], coords[i + 1]);
+  }
+
+  /* Go over distances and calculate new parameter values. */
+  float dist_step = pdist[temp_segments];
+  float dist = 0, sum = 0;
+
+  for (int i = 0; i < final_segments; i++) {
+    sum += segment_scales[i];
+  }
+
+  dist_step /= sum;
+
+  r_t_points[0] = 0.0f;
+
+  for (int i = 1, nr = 1; i <= final_segments; i++) {
+    dist += segment_scales[i - 1] * dist_step;
+
+    /* We're looking for location (distance) 'dist' in the array. */
+    while ((nr < temp_segments) && (dist >= pdist[nr])) {
+      nr++;
+    }
+
+    float fac = (pdist[nr] - dist) / (pdist[nr] - pdist[nr - 1]);
+
+    r_t_points[i] = (nr - fac) / temp_segments;
+  }
+
+  r_t_points[final_segments] = 1.0f;
+}
+
+/* Evaluate bezier position and tangent at a specific parameter value
+ * using the De Casteljau algorithm. */
+static void evaluate_cubic_bezier(const float control[4][3],
+                                  float t,
+                                  float r_pos[3],
+                                  float r_tangent[3])
+{
+  float layer1[3][3];
+  interp_v3_v3v3(layer1[0], control[0], control[1], t);
+  interp_v3_v3v3(layer1[1], control[1], control[2], t);
+  interp_v3_v3v3(layer1[2], control[2], control[3], t);
+
+  float layer2[2][3];
+  interp_v3_v3v3(layer2[0], layer1[0], layer1[1], t);
+  interp_v3_v3v3(layer2[1], layer1[1], layer1[2], t);
+
+  sub_v3_v3v3(r_tangent, layer2[1], layer2[0]);
+  madd_v3_v3v3fl(r_pos, layer2[0], r_tangent, t);
+}
+
+void BKE_pchan_bbone_handles_get(bPoseChannel *pchan, bPoseChannel **r_prev, bPoseChannel **r_next)
+{
+  if (pchan->bone->bbone_prev_type == BBONE_HANDLE_AUTO) {
+    /* Use connected parent. */
+    if (pchan->bone->flag & BONE_CONNECTED) {
+      *r_prev = pchan->parent;
+    }
+    else {
+      *r_prev = NULL;
+    }
+  }
+  else {
+    /* Use the provided bone as prev - leave blank to eliminate this effect altogether. */
+    *r_prev = pchan->bbone_prev;
+  }
+
+  if (pchan->bone->bbone_next_type == BBONE_HANDLE_AUTO) {
+    /* Use connected child. */
+    *r_next = pchan->child;
+  }
+  else {
+    /* Use the provided bone as next - leave blank to eliminate this effect altogether. */
+    *r_next = pchan->bbone_next;
+  }
+}
+
+void BKE_pchan_bbone_spline_params_get(struct bPoseChannel *pchan,
+                                       const bool rest,
+                                       struct BBoneSplineParameters *param)
+{
+  bPoseChannel *next, *prev;
+  Bone *bone = pchan->bone;
+  float imat[4][4], posemat[4][4], tmpmat[4][4];
+  float delta[3];
+
+  memset(param, 0, sizeof(*param));
+
+  param->segments = bone->segments;
+  param->length = bone->length;
+
+  if (!rest) {
+    float scale[3];
+
+    /* Check if we need to take non-uniform bone scaling into account. */
+    mat4_to_size(scale, pchan->pose_mat);
+
+    if (fabsf(scale[0] - scale[1]) > 1e-6f || fabsf(scale[1] - scale[2]) > 1e-6f) {
+      param->do_scale = true;
+      copy_v3_v3(param->scale, scale);
+    }
+  }
+
+  BKE_pchan_bbone_handles_get(pchan, &prev, &next);
+
+  /* Find the handle points, since this is inside bone space, the
+   * first point = (0, 0, 0)
+   * last point =  (0, length, 0) */
+  if (rest) {
+    invert_m4_m4(imat, pchan->bone->arm_mat);
+  }
+  else if (param->do_scale) {
+    copy_m4_m4(posemat, pchan->pose_mat);
+    normalize_m4(posemat);
+    invert_m4_m4(imat, posemat);
+  }
+  else {
+    invert_m4_m4(imat, pchan->pose_mat);
+  }
+
+  float prev_scale[3], next_scale[3];
+
+  copy_v3_fl(prev_scale, 1.0f);
+  copy_v3_fl(next_scale, 1.0f);
+
+  if (prev) {
+    float h1[3];
+    bool done = false;
+
+    param->use_prev = true;
+
+    /* Transform previous point inside this bone space. */
+    if (bone->bbone_prev_type == BBONE_HANDLE_RELATIVE) {
+      /* Use delta movement (from restpose), and apply this relative to the current bone's head. */
+      if (rest) {
+        /* In restpose, arm_head == pose_head */
+        zero_v3(param->prev_h);
+        done = true;
+      }
+      else {
+        sub_v3_v3v3(delta, prev->pose_head, prev->bone->arm_head);
+        sub_v3_v3v3(h1, pchan->pose_head, delta);
+      }
+    }
+    else if (bone->bbone_prev_type == BBONE_HANDLE_TANGENT) {
+      /* Use bone direction by offsetting so that its tail meets current bone's head */
+      if (rest) {
+        sub_v3_v3v3(delta, prev->bone->arm_tail, prev->bone->arm_head);
+        sub_v3_v3v3(h1, bone->arm_head, delta);
+      }
+      else {
+        sub_v3_v3v3(delta, prev->pose_tail, prev->pose_head);
+        sub_v3_v3v3(h1, pchan->pose_head, delta);
+      }
+    }
+    else {
+      /* Apply special handling for smoothly joining B-Bone chains */
+      param->prev_bbone = (prev->bone->segments > 1);
+
+      /* Use bone head as absolute position. */
+      copy_v3_v3(h1, rest ? prev->bone->arm_head : prev->pose_head);
+    }
+
+    if (!done) {
+      mul_v3_m4v3(param->prev_h, imat, h1);
+    }
+
+    if (!param->prev_bbone) {
+      /* Find the previous roll to interpolate. */
+      mul_m4_m4m4(param->prev_mat, imat, rest ? prev->bone->arm_mat : prev->pose_mat);
+
+      /* Retrieve the local scale of the bone if necessary. */
+      if ((bone->bbone_prev_flag & BBONE_HANDLE_SCALE_ANY) && !rest) {
+        BKE_armature_mat_pose_to_bone(prev, prev->pose_mat, tmpmat);
+        mat4_to_size(prev_scale, tmpmat);
+      }
+    }
+  }
+
+  if (next) {
+    float h2[3];
+    bool done = false;
+
+    param->use_next = true;
+
+    /* Transform next point inside this bone space. */
+    if (bone->bbone_next_type == BBONE_HANDLE_RELATIVE) {
+      /* Use delta movement (from restpose), and apply this relative to the current bone's tail. */
+      if (rest) {
+        /* In restpose, arm_head == pose_head */
+        copy_v3_fl3(param->next_h, 0.0f, param->length, 0.0);
+        done = true;
+      }
+      else {
+        sub_v3_v3v3(delta, next->pose_head, next->bone->arm_head);
+        add_v3_v3v3(h2, pchan->pose_tail, delta);
+      }
+    }
+    else if (bone->bbone_next_type == BBONE_HANDLE_TANGENT) {
+      /* Use bone direction by offsetting so that its head meets current bone's tail */
+      if (rest) {
+        sub_v3_v3v3(delta, next->bone->arm_tail, next->bone->arm_head);
+        add_v3_v3v3(h2, bone->arm_tail, delta);
+      }
+      else {
+        sub_v3_v3v3(delta, next->pose_tail, next->pose_head);
+        add_v3_v3v3(h2, pchan->pose_tail, delta);
+      }
+    }
+    else {
+      /* Apply special handling for smoothly joining B-Bone chains */
+      param->next_bbone = (next->bone->segments > 1);
+
+      /* Use bone tail as absolute position. */
+      copy_v3_v3(h2, rest ? next->bone->arm_tail : next->pose_tail);
+    }
+
+    if (!done) {
+      mul_v3_m4v3(param->next_h, imat, h2);
+    }
+
+    /* Find the next roll to interpolate as well. */
+    mul_m4_m4m4(param->next_mat, imat, rest ? next->bone->arm_mat : next->pose_mat);
+
+    /* Retrieve the local scale of the bone if necessary. */
+    if ((bone->bbone_next_flag & BBONE_HANDLE_SCALE_ANY) && !rest) {
+      BKE_armature_mat_pose_to_bone(next, next->pose_mat, tmpmat);
+      mat4_to_size(next_scale, tmpmat);
+    }
+  }
+
+  /* Add effects from bbone properties over the top
+   * - These properties allow users to hand-animate the
+   *   bone curve/shape, without having to resort to using
+   *   extra bones
+   * - The "bone" level offsets are for defining the restpose
+   *   shape of the bone (e.g. for curved eyebrows for example).
+   *   -> In the viewport, it's needed to define what the rest pose
+   *      looks like
+   *   -> For "rest == 0", we also still need to have it present
+   *      so that we can "cancel out" this restpose when it comes
+   *      time to deform some geometry, it won't cause double transforms.
+   * - The "pchan" level offsets are the ones that animators actually
+   *   end up animating
+   */
+  {
+    param->ease1 = bone->ease1 + (!rest ? pchan->ease1 : 0.0f);
+    param->ease2 = bone->ease2 + (!rest ? pchan->ease2 : 0.0f);
+
+    param->roll1 = bone->roll1 + (!rest ? pchan->roll1 : 0.0f);
+    param->roll2 = bone->roll2 + (!rest ? pchan->roll2 : 0.0f);
+
+    if (bone->bbone_flag & BBONE_ADD_PARENT_END_ROLL) {
+      if (prev) {
+        if (prev->bone) {
+          param->roll1 += prev->bone->roll2;
+        }
+
+        if (!rest) {
+          param->roll1 += prev->roll2;
+        }
+      }
+    }
+
+    copy_v3_v3(param->scale_in, bone->scale_in);
+    copy_v3_v3(param->scale_out, bone->scale_out);
+
+    if (!rest) {
+      mul_v3_v3(param->scale_in, pchan->scale_in);
+      mul_v3_v3(param->scale_out, pchan->scale_out);
+    }
+
+    /* Extra curve x / z */
+    param->curve_in_x = bone->curve_in_x + (!rest ? pchan->curve_in_x : 0.0f);
+    param->curve_in_z = bone->curve_in_z + (!rest ? pchan->curve_in_z : 0.0f);
+
+    param->curve_out_x = bone->curve_out_x + (!rest ? pchan->curve_out_x : 0.0f);
+    param->curve_out_z = bone->curve_out_z + (!rest ? pchan->curve_out_z : 0.0f);
+
+    if (bone->bbone_flag & BBONE_SCALE_EASING) {
+      param->ease1 *= param->scale_in[1];
+      param->curve_in_x *= param->scale_in[1];
+      param->curve_in_z *= param->scale_in[1];
+
+      param->ease2 *= param->scale_out[1];
+      param->curve_out_x *= param->scale_out[1];
+      param->curve_out_z *= param->scale_out[1];
+    }
+
+    /* Custom handle scale. */
+    if (bone->bbone_prev_flag & BBONE_HANDLE_SCALE_X) {
+      param->scale_in[0] *= prev_scale[0];
+    }
+    if (bone->bbone_prev_flag & BBONE_HANDLE_SCALE_Y) {
+      param->scale_in[1] *= prev_scale[1];
+    }
+    if (bone->bbone_prev_flag & BBONE_HANDLE_SCALE_Z) {
+      param->scale_in[2] *= prev_scale[2];
+    }
+    if (bone->bbone_prev_flag & BBONE_HANDLE_SCALE_EASE) {
+      param->ease1 *= prev_scale[1];
+      param->curve_in_x *= prev_scale[1];
+      param->curve_in_z *= prev_scale[1];
+    }
+
+    if (bone->bbone_next_flag & BBONE_HANDLE_SCALE_X) {
+      param->scale_out[0] *= next_scale[0];
+    }
+    if (bone->bbone_next_flag & BBONE_HANDLE_SCALE_Y) {
+      param->scale_out[1] *= next_scale[1];
+    }
+    if (bone->bbone_next_flag & BBONE_HANDLE_SCALE_Z) {
+      param->scale_out[2] *= next_scale[2];
+    }
+    if (bone->bbone_next_flag & BBONE_HANDLE_SCALE_EASE) {
+      param->ease2 *= next_scale[1];
+      param->curve_out_x *= next_scale[1];
+      param->curve_out_z *= next_scale[1];
+    }
+  }
+}
+
+void BKE_pchan_bbone_spline_setup(bPoseChannel *pchan,
+                                  const bool rest,
+                                  const bool for_deform,
+                                  Mat4 *result_array)
+{
+  BBoneSplineParameters param;
+
+  BKE_pchan_bbone_spline_params_get(pchan, rest, &param);
+
+  pchan->bone->segments = BKE_pchan_bbone_spline_compute(&param, for_deform, result_array);
+}
+
+void BKE_pchan_bbone_handles_compute(const BBoneSplineParameters *param,
+                                     float h1[3],
+                                     float *r_roll1,
+                                     float h2[3],
+                                     float *r_roll2,
+                                     bool ease,
+                                     bool offsets)
+{
+  float mat3[3][3];
+  float length = param->length;
+  float epsilon = 1e-5 * length;
+
+  if (param->do_scale) {
+    length *= param->scale[1];
+  }
+
+  *r_roll1 = *r_roll2 = 0.0f;
+
+  if (param->use_prev) {
+    copy_v3_v3(h1, param->prev_h);
+
+    if (param->prev_bbone) {
+      /* If previous bone is B-bone too, use average handle direction. */
+      h1[1] -= length;
+    }
+
+    if (normalize_v3(h1) < epsilon) {
+      copy_v3_fl3(h1, 0.0f, -1.0f, 0.0f);
+    }
+
+    negate_v3(h1);
+
+    if (!param->prev_bbone) {
+      /* Find the previous roll to interpolate. */
+      copy_m3_m4(mat3, param->prev_mat);
+      mat3_vec_to_roll(mat3, h1, r_roll1);
+    }
+  }
+  else {
+    h1[0] = 0.0f;
+    h1[1] = 1.0;
+    h1[2] = 0.0f;
+  }
+
+  if (param->use_next) {
+    copy_v3_v3(h2, param->next_h);
+
+    /* If next bone is B-bone too, use average handle direction. */
+    if (param->next_bbone) {
+      /* pass */
+    }
+    else {
+      h2[1] -= length;
+    }
+
+    if (normalize_v3(h2) < epsilon) {
+      copy_v3_fl3(h2, 0.0f, 1.0f, 0.0f);
+    }
+
+    /* Find the next roll to interpolate as well. */
+    copy_m3_m4(mat3, param->next_mat);
+    mat3_vec_to_roll(mat3, h2, r_roll2);
+  }
+  else {
+    h2[0] = 0.0f;
+    h2[1] = 1.0f;
+    h2[2] = 0.0f;
+  }
+
+  if (ease) {
+    const float circle_factor = length * (cubic_tangent_factor_circle_v3(h1, h2) / 0.75f);
+
+    const float hlength1 = param->ease1 * circle_factor;
+    const float hlength2 = param->ease2 * circle_factor;
+
+    /* and only now negate h2 */
+    mul_v3_fl(h1, hlength1);
+    mul_v3_fl(h2, -hlength2);
+  }
+
+  /* Add effects from bbone properties over the top
+   * - These properties allow users to hand-animate the
+   *   bone curve/shape, without having to resort to using
+   *   extra bones
+   * - The "bone" level offsets are for defining the rest-pose
+   *   shape of the bone (e.g. for curved eyebrows for example).
+   *   -> In the viewport, it's needed to define what the rest pose
+   *      looks like
+   *   -> For "rest == 0", we also still need to have it present
+   *      so that we can "cancel out" this rest-pose when it comes
+   *      time to deform some geometry, it won't cause double transforms.
+   * - The "pchan" level offsets are the ones that animators actually
+   *   end up animating
+   */
+  if (offsets) {
+    /* Add extra rolls. */
+    *r_roll1 += param->roll1;
+    *r_roll2 += param->roll2;
+
+    /* Extra curve x / y */
+    /* NOTE:
+     * Scale correction factors here are to compensate for some random floating-point glitches
+     * when scaling up the bone or its parent by a factor of approximately 8.15/6, which results
+     * in the bone length getting scaled up too (from 1 to 8), causing the curve to flatten out.
+     */
+    const float xscale_correction = (param->do_scale) ? param->scale[0] : 1.0f;
+    const float zscale_correction = (param->do_scale) ? param->scale[2] : 1.0f;
+
+    h1[0] += param->curve_in_x * xscale_correction;
+    h1[2] += param->curve_in_z * zscale_correction;
+
+    h2[0] += param->curve_out_x * xscale_correction;
+    h2[2] += param->curve_out_z * zscale_correction;
+  }
+}
+
+static void make_bbone_spline_matrix(BBoneSplineParameters *param,
+                                     const float scalemats[2][4][4],
+                                     const float pos[3],
+                                     const float axis[3],
+                                     float roll,
+                                     float scalex,
+                                     float scalez,
+                                     float result[4][4])
+{
+  float mat3[3][3];
+
+  vec_roll_to_mat3(axis, roll, mat3);
+
+  copy_m4_m3(result, mat3);
+  copy_v3_v3(result[3], pos);
+
+  if (param->do_scale) {
+    /* Correct for scaling when this matrix is used in scaled space. */
+    mul_m4_series(result, scalemats[0], result, scalemats[1]);
+  }
+
+  /* BBone scale... */
+  mul_v3_fl(result[0], scalex);
+  mul_v3_fl(result[2], scalez);
+}
+
+/* Fade from first to second derivative when the handle is very short. */
+static void ease_handle_axis(const float deriv1[3], const float deriv2[3], float r_axis[3])
+{
+  const float gap = 0.1f;
+
+  copy_v3_v3(r_axis, deriv1);
+
+  const float len2 = len_squared_v3(deriv2);
+  if (UNLIKELY(len2 == 0.0f)) {
+    return;
+  }
+  const float len1 = len_squared_v3(deriv1);
+  const float ratio = len1 / len2;
+  if (ratio < gap * gap) {
+    madd_v3_v3fl(r_axis, deriv2, gap - sqrtf(ratio));
+  }
+}
+
+int BKE_pchan_bbone_spline_compute(BBoneSplineParameters *param,
+                                   const bool for_deform,
+                                   Mat4 *result_array)
+{
+  float scalemats[2][4][4];
+  float bezt_controls[4][3];
+  float h1[3], roll1, h2[3], roll2, prev[3], cur[3], axis[3];
+  float length = param->length;
+
+  if (param->do_scale) {
+    size_to_mat4(scalemats[1], param->scale);
+    invert_m4_m4(scalemats[0], scalemats[1]);
+
+    length *= param->scale[1];
+  }
+
+  BKE_pchan_bbone_handles_compute(param, h1, &roll1, h2, &roll2, true, true);
+
+  /* Make curve. */
+  CLAMP_MAX(param->segments, MAX_BBONE_SUBDIV);
+
+  copy_v3_fl3(bezt_controls[3], 0.0f, length, 0.0f);
+  add_v3_v3v3(bezt_controls[2], bezt_controls[3], h2);
+  copy_v3_v3(bezt_controls[1], h1);
+  zero_v3(bezt_controls[0]);
+
+  /* Compute lengthwise segment scale. */
+  float segment_scales[MAX_BBONE_SUBDIV];
+
+  CLAMP_MIN(param->scale_in[1], 0.0001f);
+  CLAMP_MIN(param->scale_out[1], 0.0001f);
+
+  const float log_scale_in_len = logf(param->scale_in[1]);
+  const float log_scale_out_len = logf(param->scale_out[1]);
+
+  for (int i = 0; i < param->segments; i++) {
+    const float fac = ((float)i) / (param->segments - 1);
+    segment_scales[i] = expf(interpf(log_scale_out_len, log_scale_in_len, fac));
+  }
+
+  /* Compute segment vertex offsets along the curve length. */
+  float bezt_points[MAX_BBONE_SUBDIV + 1];
+
+  equalize_cubic_bezier(
+      bezt_controls, MAX_BBONE_SUBDIV, param->segments, segment_scales, bezt_points);
+
+  /* Deformation uses N+1 matrices computed at points between the segments. */
+  if (for_deform) {
+    /* Bezier derivatives. */
+    float bezt_deriv1[3][3], bezt_deriv2[2][3];
+
+    for (int i = 0; i < 3; i++) {
+      sub_v3_v3v3(bezt_deriv1[i], bezt_controls[i + 1], bezt_controls[i]);
+    }
+    for (int i = 0; i < 2; i++) {
+      sub_v3_v3v3(bezt_deriv2[i], bezt_deriv1[i + 1], bezt_deriv1[i]);
+    }
+
+    /* End points require special handling to fix zero length handles. */
+    ease_handle_axis(bezt_deriv1[0], bezt_deriv2[0], axis);
+    make_bbone_spline_matrix(param,
+                             scalemats,
+                             bezt_controls[0],
+                             axis,
+                             roll1,
+                             param->scale_in[0],
+                             param->scale_in[2],
+                             result_array[0].mat);
+
+    for (int a = 1; a < param->segments; a++) {
+      evaluate_cubic_bezier(bezt_controls, bezt_points[a], cur, axis);
+
+      float fac = ((float)a) / param->segments;
+      float roll = interpf(roll2, roll1, fac);
+      float scalex = interpf(param->scale_out[0], param->scale_in[0], fac);
+      float scalez = interpf(param->scale_out[2], param->scale_in[2], fac);
+
+      make_bbone_spline_matrix(
+          param, scalemats, cur, axis, roll, scalex, scalez, result_array[a].mat);
+    }
+
+    negate_v3(bezt_deriv2[1]);
+    ease_handle_axis(bezt_deriv1[2], bezt_deriv2[1], axis);
+    make_bbone_spline_matrix(param,
+                             scalemats,
+                             bezt_controls[3],
+                             axis,
+                             roll2,
+                             param->scale_out[0],
+                             param->scale_out[2],
+                             result_array[param->segments].mat);
+  }
+  /* Other code (e.g. display) uses matrices for the segments themselves. */
+  else {
+    zero_v3(prev);
+
+    for (int a = 0; a < param->segments; a++) {
+      evaluate_cubic_bezier(bezt_controls, bezt_points[a + 1], cur, axis);
+
+      sub_v3_v3v3(axis, cur, prev);
+
+      float fac = (a + 0.5f) / param->segments;
+      float roll = interpf(roll2, roll1, fac);
+      float scalex = interpf(param->scale_out[0], param->scale_in[0], fac);
+      float scalez = interpf(param->scale_out[2], param->scale_in[2], fac);
+
+      make_bbone_spline_matrix(
+          param, scalemats, prev, axis, roll, scalex, scalez, result_array[a].mat);
+      copy_v3_v3(prev, cur);
+    }
+  }
+
+  return param->segments;
+}
+
+static void allocate_bbone_cache(bPoseChannel *pchan, int segments)
+{
+  bPoseChannel_Runtime *runtime = &pchan->runtime;
+
+  if (runtime->bbone_segments != segments) {
+    BKE_pose_channel_free_bbone_cache(runtime);
+
+    runtime->bbone_segments = segments;
+    runtime->bbone_rest_mats = MEM_malloc_arrayN(
+        1 + (uint)segments, sizeof(Mat4), "bPoseChannel_Runtime::bbone_rest_mats");
+    runtime->bbone_pose_mats = MEM_malloc_arrayN(
+        1 + (uint)segments, sizeof(Mat4), "bPoseChannel_Runtime::bbone_pose_mats");
+    runtime->bbone_deform_mats = MEM_malloc_arrayN(
+        2 + (uint)segments, sizeof(Mat4), "bPoseChannel_Runtime::bbone_deform_mats");
+    runtime->bbone_dual_quats = MEM_malloc_arrayN(
+        1 + (uint)segments, sizeof(DualQuat), "bPoseChannel_Runtime::bbone_dual_quats");
+  }
+}
+
+void BKE_pchan_bbone_segments_cache_compute(bPoseChannel *pchan)
+{
+  bPoseChannel_Runtime *runtime = &pchan->runtime;
+  Bone *bone = pchan->bone;
+  int segments = bone->segments;
+
+  BLI_assert(segments > 1);
+
+  /* Allocate the cache if needed. */
+  allocate_bbone_cache(pchan, segments);
+
+  /* Compute the shape. */
+  Mat4 *b_bone = runtime->bbone_pose_mats;
+  Mat4 *b_bone_rest = runtime->bbone_rest_mats;
+  Mat4 *b_bone_mats = runtime->bbone_deform_mats;
+  DualQuat *b_bone_dual_quats = runtime->bbone_dual_quats;
+  int a;
+
+  BKE_pchan_bbone_spline_setup(pchan, false, true, b_bone);
+  BKE_pchan_bbone_spline_setup(pchan, true, true, b_bone_rest);
+
+  /* Compute deform matrices. */
+  /* first matrix is the inverse arm_mat, to bring points in local bone space
+   * for finding out which segment it belongs to */
+  invert_m4_m4(b_bone_mats[0].mat, bone->arm_mat);
+
+  /* then we make the b_bone_mats:
+   * - first transform to local bone space
+   * - translate over the curve to the bbone mat space
+   * - transform with b_bone matrix
+   * - transform back into global space */
+
+  for (a = 0; a <= bone->segments; a++) {
+    float tmat[4][4];
+
+    invert_m4_m4(tmat, b_bone_rest[a].mat);
+    mul_m4_series(b_bone_mats[a + 1].mat,
+                  pchan->chan_mat,
+                  bone->arm_mat,
+                  b_bone[a].mat,
+                  tmat,
+                  b_bone_mats[0].mat);
+
+    /* Compute the orthonormal object space rest matrix of the segment. */
+    mul_m4_m4m4(tmat, bone->arm_mat, b_bone_rest[a].mat);
+    normalize_m4(tmat);
+
+    mat4_to_dquat(&b_bone_dual_quats[a], tmat, b_bone_mats[a + 1].mat);
+  }
 }
 /* END VERBATIM */
 
@@ -2944,9 +3651,37 @@ void pg_bke_armature_bonelist_free(ListBase *lb)
   BLI_freelistN(lb);
 }
 
+/* BEGIN VERBATIM source/blender/blenkernel/intern/action.c */
+void BKE_pose_channel_free_bbone_cache(bPoseChannel_Runtime *runtime)
+{
+  runtime->bbone_segments = 0;
+  MEM_SAFE_FREE(runtime->bbone_rest_mats);
+  MEM_SAFE_FREE(runtime->bbone_pose_mats);
+  MEM_SAFE_FREE(runtime->bbone_deform_mats);
+  MEM_SAFE_FREE(runtime->bbone_dual_quats);
+}
+/* END VERBATIM */
+
+/* BKE_pose_eval_bbone_segments (armature_update.c:963-980) for every channel, without the
+ * depsgraph: the segment cache (rest / pose / deform matrices, dual quaternions) follows the pose. */
+void pg_bke_pose_bbone_segments(bPose *pose)
+{
+  LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) {
+    if (pchan->bone != NULL && pchan->bone->segments > 1) {
+      BKE_pchan_bbone_segments_cache_compute(pchan);
+    }
+    else {
+      BKE_pose_channel_free_bbone_cache(&pchan->runtime);
+    }
+  }
+}
+
 void pg_bke_pose_free(bPose *pose)
 {
-  LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) pg_con_list_free(&pchan->constraints);
+  LISTBASE_FOREACH (bPoseChannel *, pchan, &pose->chanbase) {
+    pg_con_list_free(&pchan->constraints);
+    BKE_pose_channel_free_bbone_cache(&pchan->runtime);
+  }
   BLI_freelistN(&pose->chanbase);
 }
 
@@ -3086,6 +3821,7 @@ void pg_bke_armature_from_edit(bArmature *arm, bPose *pose)
     next = pchan->next;
     if (pchan->bone == NULL) {
       pg_con_list_free(&pchan->constraints);
+      BKE_pose_channel_free_bbone_cache(&pchan->runtime);
       BLI_freelinkN(&pose->chanbase, pchan);
     }
   }
@@ -3162,6 +3898,8 @@ void pg_bke_armature_deform_gpencil_stroke(const bArmature *arm, const bPose *po
       .pchan_from_defbase = pchan_from_defbase,
       .defbase_len = defbase_len,
   };
+  /* the depsgraph runs BKE_pose_eval_bbone_segments before the modifier reads the cache */
+  pg_bke_pose_bbone_segments((bPose *)pose);
   float obinv[4][4];
   invert_m4_m4(obinv, target_to_world);
   copy_m4_m4(data.postmat, obinv); /* obinv * armature object_to_world (identity) */
@@ -3179,9 +3917,7 @@ void pg_bke_armature_deform_gpencil_stroke(const bArmature *arm, const bPose *po
 }
 
 /* gpencil_armature.c: gpencil_object_vgroup_calc_from_armature + gpencil_add_verts_to_dgroups for
- * the frame `gpf` (not multi-frame editing). B-Bone segments are not ported: every bone counts as
- * one segment (shortcut: bones with segments > 1 bind as straight bones; port
- * BKE_pchan_bbone_spline_setup when B-Bones are added). */
+ * the frames of one layer. Blender also weights a B-Bone as its straight head-tail segment. */
 static bDeformGroup *gp_defgroup_find(bGPdata *gpd, const char *name)
 {
   return BLI_findstring(&gpd->vertex_group_names, name, offsetof(bDeformGroup, name));
@@ -3227,13 +3963,14 @@ static int gp_add_empty_groups(bGPdata *gpd, const ListBase *lb)
   return count;
 }
 
-int pg_bke_gpencil_vgroup_calc_from_armature(bGPdata *gpd, bGPDframe *gpf, const bArmature *arm,
+int pg_bke_gpencil_vgroup_calc_from_armature(bGPdata *gpd, bGPDlayer *gpl, bGPDframe *actframe,
+                                             bool is_multiedit, const bArmature *arm,
                                              const bPose *pose, const float target_to_world[4][4],
                                              int mode, float ratio, float decay)
 {
   UNUSED_VARS(pose);
   const int defbase_add = gp_add_empty_groups(gpd, &arm->bonebase);
-  if (mode != 1 /* GP_ARMATURE_AUTO */ || gpf == NULL) {
+  if (mode != 1 /* GP_ARMATURE_AUTO */ || (is_multiedit ? gpl == NULL : actframe == NULL)) {
     return defbase_add;
   }
 
@@ -3268,6 +4005,11 @@ int pg_bke_gpencil_vgroup_calc_from_armature(bGPdata *gpd, bGPDframe *gpf, const
     radsqr[j] = len_squared_v3v3(root[j], tip[j]) * ratio;
   }
 
+  /* gpencil_add_verts_to_dgroups "loop all strokes" (one layer; actframe is the frame shown, not
+   * gpl->actframe, which the Project Grease backend does not keep) */
+  bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : actframe;
+  for (bGPDframe *gpf = init_gpf; gpf; gpf = gpf->next) {
+  if ((gpf == actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
   LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
     BKE_gpencil_dvert_ensure(gps);
     float(*verts)[3] = MEM_callocN(gps->totpoints * sizeof(*verts), __func__);
@@ -3311,6 +4053,12 @@ int pg_bke_gpencil_vgroup_calc_from_armature(bGPdata *gpd, bGPDframe *gpf, const
       }
     }
     MEM_SAFE_FREE(verts);
+  }
+  }
+  /* If not multi-edit, exit loop. */
+  if (!is_multiedit) {
+    break;
+  }
   }
   MEM_freeN((void *)bonelist);
   MEM_freeN(dgrouplist);

@@ -5451,12 +5451,12 @@ int Backend::armature_bind(int mode)
     if (!has && modifier_add(index, PG_MOD_ARMATURE) < 0) return -1;
     if (mode > 0) {
       bGPDframe *gpf = held_key_at(gpl, impl_->cfra);
-      /* groups are created once (the first frame); later frames only get weights */
-      const int n = pg_arm_bind_frame(a, impl_->gpd, gpf, mode);
+      /* every frame of the layer (multi-frame bind); groups are created once */
+      const int n = pg_arm_bind_layer(a, impl_->gpd, gpl, gpf, mode);
       if (n < 0) return -1;
       added += n;
-      if (gpf) {
-        LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) BKE_gpencil_stroke_geometry_update(impl_->gpd, gps);
+      LISTBASE_FOREACH (bGPDframe *, f, &gpl->frames) {
+        LISTBASE_FOREACH (bGPDstroke *, gps, &f->strokes) BKE_gpencil_stroke_geometry_update(impl_->gpd, gps);
       }
     }
   }

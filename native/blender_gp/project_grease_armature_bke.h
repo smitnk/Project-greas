@@ -14,6 +14,7 @@ struct bPose;
 struct bPoseChannel;
 struct bGPdata;
 struct bGPDframe;
+struct bGPDlayer;
 struct bGPDstroke;
 struct EditBone;
 struct FCurve;
@@ -25,6 +26,8 @@ void pg_bke_armature_from_edit(struct bArmature *arm, struct bPose *pose);
 /* BKE_pose_where_is (with constraints and IK) is pg_bke_pose_where_is in project_grease_constraint.h. */
 void pg_bke_armature_bonelist_free(struct ListBase *lb);
 void pg_bke_pose_free(struct bPose *pose);
+/* BKE_pose_eval_bbone_segments for every channel (B-Bone segment cache of the current pose). */
+void pg_bke_pose_bbone_segments(struct bPose *pose);
 struct bPoseChannel *pg_bke_pose_channel_ensure(struct bPose *pose, const char *name);
 /* pose_bone_do_paste (pose_transform.c) without ID properties. */
 struct bPoseChannel *pg_bke_pose_bone_do_paste(struct bPose *pose, struct bPoseChannel *chan,
@@ -40,10 +43,12 @@ void pg_bke_armature_deform_gpencil_stroke(const struct bArmature *arm, const st
                                            float (*vert_coords)[3], int vert_coords_len,
                                            int deformflag, const char *defgrp_name,
                                            struct bGPDstroke *gps_target);
-/* gpencil_object_vgroup_calc_from_armature for one frame: mode GP_ARMATURE_NAME (0) creates the
+/* gpencil_object_vgroup_calc_from_armature for one layer: mode GP_ARMATURE_NAME (0) creates the
  * empty groups, GP_ARMATURE_AUTO (1) also fills them (ratio / decay as DEFAULT_RATIO 0.1 /
- * DEFAULT_DECAY 0.8). Returns the number of groups added. */
-int pg_bke_gpencil_vgroup_calc_from_armature(struct bGPdata *gpd, struct bGPDframe *gpf,
+ * DEFAULT_DECAY 0.8) in `actframe`, and with is_multiedit in every GP_FRAME_SELECT frame of `gpl`.
+ * Returns the number of groups added. */
+int pg_bke_gpencil_vgroup_calc_from_armature(struct bGPdata *gpd, struct bGPDlayer *gpl,
+                                             struct bGPDframe *actframe, bool is_multiedit,
                                              const struct bArmature *arm, const struct bPose *pose,
                                              const float target_to_world[4][4], int mode,
                                              float ratio, float decay);

@@ -120,6 +120,7 @@ PGArmature *pg_arm_dup(const PGArmature *src)
     c->next = c->prev = NULL;
     c->bone = NULL;
     c->parent = c->child = NULL;
+    memset(&c->runtime, 0, sizeof(c->runtime)); /* BKE_pose_channel_runtime_reset: own B-Bone cache */
     BLI_listbase_clear(&c->iktree);
     pg_con_list_copy(&c->constraints, &pc->constraints, &a->ob);
     BLI_addtail(&a->pose.chanbase, c);
@@ -129,6 +130,7 @@ PGArmature *pg_arm_dup(const PGArmature *src)
     c->next = c->prev = NULL;
     c->bone = NULL;
     c->parent = c->child = NULL;
+    memset(&c->runtime, 0, sizeof(c->runtime));
     BLI_listbase_clear(&c->constraints); /* the buffer holds transforms only */
     BLI_addtail(&a->copybuf, c);
   }
@@ -255,6 +257,62 @@ int pg_arm_bone_envelope(const PGArmature *a, int bone, float r[4])
   r[1] = eb->weight;
   r[2] = eb->rad_head;
   r[3] = eb->rad_tail;
+  return 1;
+}
+
+/* B-Bone properties (rna_armature.c rna_def_bone_curved_common): ease1, ease2, roll1, roll2,
+ * curve_in_x, curve_in_z, curve_out_x, curve_out_z, scale_in[3], scale_out[3]. */
+#define BBONE_FIELDS(X) \
+  X(ease1, 0) X(ease2, 1) X(roll1, 2) X(roll2, 3) X(curve_in_x, 4) X(curve_in_z, 5) \
+  X(curve_out_x, 6) X(curve_out_z, 7) X(scale_in[0], 8) X(scale_in[1], 9) X(scale_in[2], 10) \
+  X(scale_out[0], 11) X(scale_out[1], 12) X(scale_out[2], 13)
+
+static bool bbone_valid(const float v[PG_ARM_BBONE])
+{
+  for (int i = 0; i < PG_ARM_BBONE; i++) if (!isfinite(v[i])) return false;
+  return true;
+}
+
+int pg_arm_bone_set_bbone(PGArmature *a, int bone, int segments, const float v[PG_ARM_BBONE])
+{
+  EditBone *eb = ebone_at(a, bone);
+  if (!eb || !v || !bbone_valid(v)) return 0;
+  eb->segments = (short)CLAMPIS(segments, 1, 32); /* bbone_segments range 1..32 */
+#define X(f, i) eb->f = v[i];
+  BBONE_FIELDS(X)
+#undef X
+  arm_update(a);
+  return 1;
+}
+
+int pg_arm_bone_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE])
+{
+  const EditBone *eb = ebone_at(a, bone);
+  if (!eb || !r) return 0;
+#define X(f, i) r[i] = eb->f;
+  BBONE_FIELDS(X)
+#undef X
+  return eb->segments;
+}
+
+int pg_arm_pose_set_bbone(PGArmature *a, int bone, const float v[PG_ARM_BBONE])
+{
+  bPoseChannel *pc = pchan_at(a, bone);
+  if (!pc || !v || !bbone_valid(v)) return 0;
+#define X(f, i) pc->f = v[i];
+  BBONE_FIELDS(X)
+#undef X
+  pg_bke_pose_where_is(&a->ob);
+  return 1;
+}
+
+int pg_arm_pose_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE])
+{
+  const bPoseChannel *pc = pchan_at(a, bone);
+  if (!pc || !r) return 0;
+#define X(f, i) r[i] = pc->f;
+  BBONE_FIELDS(X)
+#undef X
   return 1;
 }
 
@@ -795,6 +853,7 @@ int pg_arm_pose_copy(PGArmature *a)
     c->next = c->prev = NULL;
     c->bone = NULL;
     c->parent = c->child = NULL;
+    memset(&c->runtime, 0, sizeof(c->runtime));
     BLI_listbase_clear(&c->constraints); /* the buffer holds transforms only */
     BLI_addtail(&a->copybuf, c);
   }
@@ -1092,8 +1151,32 @@ int pg_arm_bind_frame(const PGArmature *a, bGPdata *gpd, bGPDframe *gpf, int mod
   float mat[4][4];
   pg_arm_canvas_matrix(mat);
   /* DEFAULT_RATIO 0.10, DEFAULT_DECAY 0.8; PAR_ARMATURE_ENVELOPE binds as AUTO for GP */
-  return pg_bke_gpencil_vgroup_calc_from_armature(gpd, gpf, &a->arm, &a->pose, mat,
+  return pg_bke_gpencil_vgroup_calc_from_armature(gpd, NULL, gpf, false, &a->arm, &a->pose, mat,
                                                   mode == 1 ? 0 : 1, 0.10f, 0.8f);
+}
+
+int pg_arm_bind_layer(const PGArmature *a, bGPdata *gpd, bGPDlayer *gpl, bGPDframe *actframe, int mode)
+{
+  if (!a || !gpd || !gpl || mode < 0 || mode > 3) return -1;
+  if (mode == 0) return 0;
+  float mat[4][4];
+  pg_arm_canvas_matrix(mat);
+  /* gpencil_add_verts_to_dgroups in multi-frame editing with every frame selected: all the frames
+   * of the layer get weights. The selection is put back afterwards. */
+  int n = 0;
+  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) n++;
+  short *flags = MEM_mallocN(sizeof(short) * (n + 1), __func__);
+  n = 0;
+  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+    flags[n++] = gpf->flag;
+    gpf->flag |= GP_FRAME_SELECT;
+  }
+  const int added = pg_bke_gpencil_vgroup_calc_from_armature(
+      gpd, gpl, actframe, true, &a->arm, &a->pose, mat, mode == 1 ? 0 : 1, 0.10f, 0.8f);
+  n = 0;
+  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) gpf->flag = flags[n++];
+  MEM_freeN(flags);
+  return added;
 }
 
 #define PG_ARM_REGISTRY 8

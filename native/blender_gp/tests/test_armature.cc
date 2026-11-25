@@ -396,6 +396,119 @@ static void test_deform_and_bind()
   }
 }
 
+/* B-Bone deform (armature.c BKE_pchan_bbone_spline_setup / BKE_pchan_bbone_segments_cache_compute,
+ * armature_deform.c b_bone_deform): a straight bone (0,0)->(0,1) with 2 segments and Roll Out 90
+ * deg in the pose. The spline stays straight (both handles along +Y, symmetric, so the equalised
+ * middle point is y = 0.5); segment rolls are interpf(roll2, roll1, a / segments): 0 at the head,
+ * 45 deg in the middle, 90 deg at the tail. Rolling about the bone axis (armature Y) keeps y and
+ * turns x into x cos(roll). b_bone_deform blends the two matrices around y / length * segments. */
+static void test_bbone_deform()
+{
+  BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *gpf = BKE_gpencil_frame_addnew(gpl, 1);
+  PGArmature *a = pg_arm_new();
+  const float h[3] = {0, 0, 0}, t[3] = {0, 1, 0};
+  const int b = pg_arm_bone_add(a, "Bone", h, t);
+  float bb[PG_ARM_BBONE];
+  CHECK(pg_arm_bone_bbone(a, b, bb) == 1); /* ED_armature_ebone_add: 1 segment, ease 1, scale 1 */
+  NEAR(bb[0], 1.0, 0);
+  NEAR(bb[1], 1.0, 0);
+  NEAR(bb[8], 1.0, 0);
+  NEAR(bb[13], 1.0, 0);
+  CHECK(pg_arm_bone_set_bbone(a, b, 40, bb)); /* clamped to 32 */
+  CHECK(pg_arm_bone_bbone(a, b, bb) == 32);
+  CHECK(pg_arm_bone_set_bbone(a, b, 2, bb));
+  /* canvas px = arm * 1000, y down: arm (0.1, 0.5), (0.1, 0.25), (0.1, 1) */
+  const float pts[3][2] = {{100, -500}, {100, -250}, {100, -1000}};
+  bGPDstroke *gps = stroke_with_points(gpf, pts, 3);
+  pg_arm_bind_frame(a, gpd, gpf, 1);
+  BKE_gpencil_dvert_ensure(gps);
+  for (int i = 0; i < 3; i++) BKE_defvert_ensure_index(&gps->dvert[i], 0)->weight = 1.0f;
+  float pb[PG_ARM_BBONE];
+  CHECK(pg_arm_pose_bbone(a, b, pb));
+  pb[3] = (float)M_PI_2; /* roll2 (Roll Out) */
+  CHECK(pg_arm_pose_set_bbone(a, b, pb));
+  bGPDstroke *e = BKE_gpencil_stroke_duplicate(gps, true, true);
+  CHECK(pg_arm_deform_stroke(a, gpd, e, ARM_DEF_VGROUP, nullptr));
+  const double c45 = std::cos(M_PI / 4);
+  NEAR(e->points[0].x, 100.0 * c45, 1e-2);        /* y 0.5: index 1, blend 0 -> roll 45 */
+  NEAR(e->points[0].y, -500.0, 1e-2);
+  NEAR(e->points[1].x, 100.0 * (1 + c45) / 2, 1e-2); /* y 0.25: index 0, blend 0.5 */
+  NEAR(e->points[1].y, -250.0, 1e-2);
+  NEAR(e->points[2].x, 0.0, 1e-2);                /* the tail: roll 90 */
+  NEAR(std::fabs(e->points[2].z), 100.0, 1e-2);
+  BKE_gpencil_free_stroke(e);
+  /* 1 segment: no B-Bone, the roll offsets do nothing (bone->segments > 1 test) */
+  bb[0] = 1.0f;
+  CHECK(pg_arm_bone_set_bbone(a, b, 1, bb));
+  e = BKE_gpencil_stroke_duplicate(gps, true, true);
+  pg_arm_deform_stroke(a, gpd, e, ARM_DEF_VGROUP, nullptr);
+  NEAR(e->points[0].x, 100.0, 1e-3);
+  BKE_gpencil_free_stroke(e);
+  /* Curve In X 0.5 on 4 segments in the pose bends the spline: the head stays (deform matrix 0 is
+   * at the bone head with no handle change), the middle moves along +x in armature space. */
+  CHECK(pg_arm_bone_set_bbone(a, b, 4, bb));
+  pb[3] = 0.0f;
+  pb[4] = 0.5f;
+  CHECK(pg_arm_pose_set_bbone(a, b, pb));
+  e = BKE_gpencil_stroke_duplicate(gps, true, true);
+  pg_arm_deform_stroke(a, gpd, e, ARM_DEF_VGROUP, nullptr);
+  CHECK(e->points[0].x > 100.0f + 50.0f); /* the curve bulges by ~0.75 * 0.5 * 3/4 * ... */
+  BKE_gpencil_free_stroke(e);
+  /* the B-Bone values round-trip through the document JSON */
+  char *json = pg_arm_to_json(a);
+  PGArmature *r = pg_arm_from_json(json);
+  float rb[PG_ARM_BBONE], rp[PG_ARM_BBONE];
+  CHECK(pg_arm_bone_bbone(r, 0, rb) == 4);
+  CHECK(pg_arm_pose_bbone(r, 0, rp));
+  NEAR(rp[4], 0.5, 1e-6);
+  NEAR(rb[8], 1.0, 1e-6);
+  std::free(json);
+  pg_arm_free(r);
+  pg_arm_free(a);
+  BKE_gpencil_free_layers(&gpd->layers);
+  BLI_freelistN(&gpd->vertex_group_names);
+  MEM_freeN(gpd);
+}
+
+/* Bind on every frame (gpencil_add_verts_to_dgroups, multi-frame): all the frames of the layer get
+ * the Automatic Weights, the frame selection is kept. */
+static void test_multiframe_bind()
+{
+  BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
+  bGPdata *gpd = static_cast<bGPdata *>(MEM_callocN(sizeof(bGPdata), "gpd"));
+  bGPDlayer *gpl = BKE_gpencil_layer_addnew(gpd, "L", true, false);
+  bGPDframe *f1 = BKE_gpencil_frame_addnew(gpl, 1);
+  bGPDframe *f2 = BKE_gpencil_frame_addnew(gpl, 10);
+  bGPDframe *f3 = BKE_gpencil_frame_addnew(gpl, 20);
+  f1->flag &= ~GP_FRAME_SELECT;
+  f2->flag &= ~GP_FRAME_SELECT;
+  f3->flag |= GP_FRAME_SELECT;
+  PGArmature *a = pg_arm_new();
+  const float h[3] = {0, 0, 0}, t[3] = {0, 1, 0};
+  pg_arm_bone_add(a, "Bone", h, t);
+  const float on[1][2] = {{0, -500}}, near[1][2] = {{244.948974f, -500}};
+  bGPDstroke *s1 = stroke_with_points(f1, on, 1);
+  bGPDstroke *s2 = stroke_with_points(f2, near, 1);
+  bGPDstroke *s3 = stroke_with_points(f3, on, 1);
+  /* the single-frame bind only weights the frame given */
+  CHECK(pg_arm_bind_frame(a, gpd, f2, 2) == 1);
+  CHECK(s1->dvert == nullptr);
+  CHECK(pg_arm_bind_layer(a, gpd, gpl, f2, 2) == 0);
+  CHECK(s1->dvert && s3->dvert && s2->dvert);
+  NEAR(BKE_defvert_find_weight(&s1->dvert[0], 0), 1.0, 1e-6);
+  NEAR(BKE_defvert_find_weight(&s2->dvert[0], 0), 0.45, 1e-5); /* as in test_deform_and_bind */
+  NEAR(BKE_defvert_find_weight(&s3->dvert[0], 0), 1.0, 1e-6);
+  CHECK(!(f1->flag & GP_FRAME_SELECT) && !(f2->flag & GP_FRAME_SELECT) && (f3->flag & GP_FRAME_SELECT));
+  CHECK(pg_arm_bind_layer(a, gpd, gpl, nullptr, 2) == 0); /* no frame shown: still every frame */
+  pg_arm_free(a);
+  BKE_gpencil_free_layers(&gpd->layers);
+  BLI_freelistN(&gpd->vertex_group_names);
+  MEM_freeN(gpd);
+}
+
 static void test_edit_ops_and_io()
 {
   PGArmature *a = pg_arm_new();
@@ -582,6 +695,8 @@ int main()
   test_pose_evaluation();
   test_fcurves();
   test_deform_and_bind();
+  test_bbone_deform();
+  test_multiframe_bind();
   test_edit_ops_and_io();
   test_display_and_pick();
   printf("armature: %d checks, %d failures\n", checks, failures);

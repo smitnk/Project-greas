@@ -9,7 +9,7 @@ g++ "${XF[@]}" "${INC[@]}" "$ROOT/native/blender_gp/tests/test_armature.cc" "${O
 timeout 120s "$OUT/test_armature"
 
 # The deform of the device test through the real Backend + bridge (stroke, bind, pose, key, apply).
-BSRC_CXX=(gp_backend legacy_fill legacy_primitive legacy_eraser legacy_sculpt armature_bridge rig_bridge)
+BSRC_CXX=(gp_backend legacy_fill legacy_eraser armature_bridge rig_bridge)
 BSRC_C=(legacy_sbuffer blender_primitive blender_select blender_eraser document_state wm wm_layer wm_stroke)
 BOBJS=()
 for s in "${BSRC_CXX[@]}"; do o="$OUT/b_$s.o"; g++ "${XF[@]}" -D__ANDROID__ -DWITH_OPENGL "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_$s.cpp" -o "$o"; BOBJS+=("$o"); done

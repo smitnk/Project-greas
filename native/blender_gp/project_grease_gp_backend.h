@@ -135,7 +135,6 @@ class Backend {
   int history_undo_count() const; // snapshots kept, current state included
   bool history_can_redo() const;
   bool split_stroke(int index, int before_index);
-  bool create_primitive(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, const StrokeStyle& style);
   bool create_polyline(const StrokePoint* points, int count, const StrokeStyle& style, bool cyclic);
   bool erase_at(float x, float y, float radius);
   bool soft_erase_at(float x, float y, float radius, float strength);

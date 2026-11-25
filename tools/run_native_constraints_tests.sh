@@ -13,9 +13,7 @@ timeout 120s "$OUT/test_constraints"
 BSRC_CXX=(
   "$ROOT/native/blender_gp/project_grease_gp_backend.cpp"
   "$ROOT/native/blender_gp/project_grease_legacy_fill.cpp"
-  "$ROOT/native/blender_gp/project_grease_legacy_primitive.cpp"
   "$ROOT/native/blender_gp/project_grease_legacy_eraser.cpp"
-  "$ROOT/native/blender_gp/project_grease_legacy_sculpt.cpp"
   "$ROOT/native/blender_gp/project_grease_armature_bridge.cpp"
   "$ROOT/native/blender_gp/project_grease_rig_bridge.cpp"
 )

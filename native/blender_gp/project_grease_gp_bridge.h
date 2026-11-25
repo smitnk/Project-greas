@@ -131,8 +131,6 @@ int project_grease_gp_history_redo(ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_undo_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle);
-int project_grease_gp_create_primitive(ProjectGreaseGPHandle *handle, int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, int material_index, float thickness);
-int project_grease_gp_generate_primitive_preview(int type, float x0, float y0, float x1, float y1, float start_angle, float end_angle, int segments, float *xy, int capacity, int *count);
 int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic);
 int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius);
 int project_grease_gp_soft_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius, float strength);

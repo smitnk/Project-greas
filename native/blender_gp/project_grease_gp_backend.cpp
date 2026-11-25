@@ -14,7 +14,6 @@
 #include "project_grease_legacy_fill.h"
 #include "project_grease_blender_fill.h"
 #include <cstdlib>
-#include "project_grease_legacy_primitive.h"
 #include "project_grease_legacy_eraser.h"
 #include "project_grease_blender_edit.h"
 #include "project_grease_document_state.h"
@@ -1984,60 +1983,6 @@ int Backend::hit_test_stroke(float x, float y, float radius) const
   return best_index;
 }
 
-
-bool Backend::create_primitive(int type,
-                               float x0,
-                               float y0,
-                               float x1,
-                               float y1,
-                               float start_angle,
-                               float end_angle,
-                               int segments,
-                               const StrokeStyle &style)
-{
-  if (!impl_->frame || !impl_->frame_created) {
-    impl_->last_error = "frame is not created";
-    return false;
-  }
-  if (type < 0 || type > 3) {
-    impl_->last_error = "invalid primitive type";
-    return false;
-  }
-
-  const legacy_gp_primitive::Point start{x0, y0};
-  const legacy_gp_primitive::Point end{x1, y1};
-
-  // Keep final geometry on the same native Blender-3.6.23-derived
-  // primitive generator used by Android preview. The modal UI is not copied;
-  // only the primitive geometry core is shared.
-  const std::vector<legacy_gp_primitive::Point> geometry =
-      legacy_gp_primitive::generate(type, start, end, start_angle, end_angle, segments);
-  bool cyclic = (type == 1 || type == 2);
-  if (geometry.empty()) {
-    impl_->last_error = "invalid primitive type";
-    return false;
-  }
-
-  if (geometry.size() < 2) {
-    impl_->last_error = "primitive geometry contains too few points";
-    return false;
-  }
-
-  std::vector<StrokePoint> points;
-  points.reserve(geometry.size());
-  for (size_t i = 0; i < geometry.size(); ++i) {
-    points.push_back({geometry[i].x,
-                      geometry[i].y,
-                      0.0f,
-                      1.0f,
-                      1.0f,
-                      static_cast<float>(i)});
-  }
-
-  if (!create_polyline(points.data(), static_cast<int>(points.size()), style, cyclic)) return false;
-  apply_brush_vertex_color(impl_->stroke);
-  return true;
-}
 
 void Backend::set_brush_vertex_color(bool enabled, const float rgb_linear[3], float factor, int mode)
 {

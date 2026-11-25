@@ -174,8 +174,10 @@ class RigCharacterTest : SweepBase() {
             bone("Head", 0f, -58f, 0f, -100f, spine, true)
             for (side in listOf(1f, -1f)) {
                 val sfx = if (side > 0) "L" else "R"
-                val ua = bone("UpperArm.$sfx", 22f * side, -58f, 25f * side, -46f, spine)
-                bone("LowerArm.$sfx", 25f * side, -46f, 28f * side, -34f, ua, true)
+                // the elbow bent slightly outward (toward the pole): a straight IK chain is singular and
+                // cannot shorten, so Blender's solver would miss a target closer than full reach
+                val ua = bone("UpperArm.$sfx", 22f * side, -58f, 26f * side, -46f, spine)
+                bone("LowerArm.$sfx", 26f * side, -46f, 28f * side, -34f, ua, true)
                 val ul = bone("UpperLeg.$sfx", 7f * side, -27f, 8f * side, -14f, hip)
                 bone("LowerLeg.$sfx", 8f * side, -14f, 7f * side, -2f, ul, true)
             }

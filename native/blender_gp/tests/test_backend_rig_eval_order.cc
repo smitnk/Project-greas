@@ -33,6 +33,41 @@ static float info(Backend &b, int bone, int i)
   return q[i];
 }
 
+
+/* RigCharacterTest.waveAndWalkCycle's left arm (character px, s = 720 * 0.75 / 106, feet at y 648) */
+static const float S = 720.0f * 0.75f / 106.0f, OX = 640.0f, OY = 648.0f;
+static int cbone(Backend &b, const char *name, float hx, float hy, float tx, float ty, int parent = -1, bool conn = false)
+{
+  const int i = cmd(b, PG_ARM_CMD_BONE_ADD, -1, {OX + S * hx, OY + S * hy, OX + S * tx, OY + S * ty}, name);
+  if (parent >= 0) {
+    cmd(b, PG_ARM_CMD_EDIT_SELECT, i, {1, 0});
+    cmd(b, PG_ARM_CMD_EDIT_SELECT, parent, {1, 1});
+    CHECK(cmd(b, PG_ARM_CMD_PARENT_SET, -1, {conn ? 1.0f : 2.0f}) == 1);
+  }
+  return i;
+}
+static float arm_miss(float dx, float dy, float elbow_x)
+{
+  Backend b;
+  CHECK(b.initialize() && b.create_document() && b.create_layer("L") && b.create_frame(1));
+  CHECK(cmd(b, PG_ARM_CMD_CREATE, -1, {}) == 1);
+  cmd(b, PG_ARM_CMD_SET_MODE, -1, {1});
+  const int hip = cbone(b, "Hip", 0, -27, 0, -38);
+  const int spine = cbone(b, "Spine", 0, -38, 0, -58, hip, true);
+  const int ua = cbone(b, "UpperArm.L", 22, -58, elbow_x, -46, spine);
+  const int la = cbone(b, "LowerArm.L", elbow_x, -46, 28, -34, ua, true);
+  const int hand = cbone(b, "IK.Hand.L", 28, -34, 28, -28);
+  cbone(b, "Pole.Arm.L", 40, -46, 40, -40);
+  cmd(b, PG_ARM_CMD_SET_MODE, -1, {2});
+  CHECK(cmd(b, PG_ARM_CMD_CON_ADD, la, {CONSTRAINT_TYPE_KINEMATIC}) == 0);
+  CHECK(cmd(b, PG_ARM_CMD_CON_TARGET, la, {0, 0, 0}, "IK.Hand.L") == 1);
+  CHECK(cmd(b, PG_ARM_CMD_CON_TARGET, la, {0, 1, 0}, "Pole.Arm.L") == 1);
+  CHECK(cmd(b, PG_ARM_CMD_CON_SET, la, {0, 1, 0, 0, 0, 0, CONSTRAINT_IK_TIP | CONSTRAINT_IK_POS, 2, 500, 0, 1, 1}) == 1);
+  cmd(b, PG_ARM_CMD_POSE_SELECT, hand, {0});
+  cmd(b, PG_ARM_CMD_POSE_TRANSLATE, -1, {S * dx, S * dy});
+  return std::hypot(info(b, la, 29) - info(b, hand, 26), info(b, la, 30) - info(b, hand, 27));
+}
+
 int main()
 {
   { /* childOfSetAndClearInverse */
@@ -100,9 +135,23 @@ int main()
       CHECK(cmd(b, PG_ARM_CMD_PROP_SET, -1, {0, 0.75f}) == 1);
       json = b.armature_json();
     }
+    { /* ProjectDocumentCodec.restore: layers, their modifiers, then the rig (as Blender evaluates
+       * a file once all of it is read) */
+      Backend b;
+      CHECK(b.initialize() && b.create_document() && b.create_layer("Lines") && b.create_frame(1));
+      CHECK(b.create_layer("Mouth") && b.create_frame(1));
+      CHECK(b.modifier_add(1, PG_MOD_TIME) == 0);
+      CHECK(b.select_frame(1));
+      CHECK(b.armature_load_json(json.c_str()));
+      CHECK(cmd(b, PG_ARM_CMD_PROP_SET, -1, {0, 1.0f}) == 1);
+      int type = 0, en = 0;
+      float params[PG_MOD_MAX_PARAMS];
+      b.modifier_get(1, 0, &type, &en, params, PG_MOD_MAX_PARAMS);
+      NEAR(params[PG_P_TIME_OFFSET], 3, 0); /* 1.0 * 3.99; a new Time Offset is 1 */
+    }
     Backend b;
     CHECK(b.initialize() && b.create_document());
-    CHECK(b.armature_load_json(json.c_str())); /* before the layers, as ProjectDocumentCodec.restore */
+    CHECK(b.armature_load_json(json.c_str())); /* rig before the layers (an older restore order) */
     CHECK(b.create_layer("Mouth") && b.create_frame(1));
     CHECK(b.modifier_add(0, PG_MOD_TIME) == 0);
     /* a new Time Offset has offset 1 (DNA default): 1.0 * 3.99 -> 3 tells the driver ran */
@@ -114,6 +163,15 @@ int main()
     float c[16];
     pg_arm_bridge_query(b, PG_ARM_Q_DRIVER, -1, 0, c, 16);
     CHECK(((int)c[2] & DRIVER_FLAG_INVALID) == 0);
+  }
+  { /* the wave keys (6,-44) / (12,-38) from rest put the target 23.3 / 22.8 char px from the
+     * shoulder. A straight rest arm (elbow x 25) is singular for the Jacobian solver: it cannot shorten,
+     * so it misses by its spare length (24.74 - 23.32) * S = 7.2 px, as on the device and in Blender
+     * (an IK chain needs a slight rest bend). Bent toward the pole (elbow x 26) it reaches. */
+    NEAR(arm_miss(6, -44, 25), (24.739f - 23.324f) * S, 0.3);
+    CHECK(arm_miss(6, -44, 26) < 3);
+    CHECK(arm_miss(12, -38, 26) < 3);
+    CHECK(arm_miss(6, -38, 26) < 3);
   }
   printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "OK", checks, failures);
   return failures ? 1 : 0;

@@ -13,6 +13,7 @@ import com.smitnk.projectgrease.editor.ModifierType
 import com.smitnk.projectgrease.editor.RigController
 import com.smitnk.projectgrease.editor.RigController.RigIds
 import com.smitnk.projectgrease.ui.addSwap
+import androidx.compose.ui.test.onAllNodesWithTag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,7 +30,11 @@ class SweepRigUiTest : SweepBase() {
 
     private fun click(tag: String) { rule.onNodeWithTag(tag).performScrollTo().performClick(); rule.waitForIdle() }
     private fun openRig() { rule.onNodeWithContentDescription("Menu").performClick(); click("menu_rig") }
-    private fun back() { instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); rule.waitForIdle() }
+    // the first BACK only hides the keyboard when a text field (bone name, slider name) still has it
+    private fun panelOpen() = listOf("rigAdd", "rigBindEmpty").any { rule.onAllNodesWithTag(it).fetchSemanticsNodes().isNotEmpty() }
+    private fun back() {
+        repeat(3) { if (it == 0 || panelOpen()) { instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); rule.waitForIdle() } }
+    }
     private fun mode(chip: String) { rule.onNodeWithTag("studioMode").performClick(); click("modeChip_$chip") }
     private fun armature() = document().getJSONObject("armature")
     private fun boneNames(): List<String> = armature().getJSONArray("bones").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("name") } }

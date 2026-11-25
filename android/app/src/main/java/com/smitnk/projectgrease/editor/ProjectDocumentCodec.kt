@@ -281,8 +281,10 @@ object ProjectDocumentCodec {
         // Groups first: the weights of the strokes refer to them by number.
         if (parsed.vertexGroups.isNotEmpty() &&
             !native.restoreVertexGroups(parsed.vertexGroups, parsed.activeVertexGroup)) return false
-        if (parsed.armature.isNotEmpty() && !native.restoreArmature(parsed.armature)) return false
-        val layers = parsed.layers ?: return true
+        // The rig comes last, as Blender evaluates drivers once the whole file is read: a driver on
+        // layers["Mouth"] evaluated before that layer exists would be marked invalid for good.
+        fun armature() = parsed.armature.isEmpty() || native.restoreArmature(parsed.armature)
+        val layers = parsed.layers ?: return armature()
         for ((layerIndex, layer) in layers.withIndex()) {
             if (layerIndex > 0 && !native.createLayer("Layer " + (layerIndex + 1))) return false
             if (!native.selectLayer(layerIndex)) return false
@@ -315,7 +317,7 @@ object ProjectDocumentCodec {
                 if (!native.restoreLayerMasks(layerIndex, layer.useMask, layer.masks)) return false
             }
         }
-        return true
+        return armature()
     }
 
     private fun parseLayer(json: JSONObject): ParsedLayer {

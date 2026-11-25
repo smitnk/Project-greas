@@ -1694,7 +1694,7 @@ class EditorController {
     private var legacyLazyFactor = 0.9f
     private var legacyDisableStabilizer = false
     private var legacyManhattanThreshold = 1
-    private var legacyEuclideanThreshold = 1f
+    private var legacyEuclideanThreshold = 2f // U.gp_euclideandist (userdef_default.c)
     private var legacyActiveSmooth = 0f
     private var legacyJitter = 0f
     private var legacyDrawAngleFactor = 0f
@@ -1720,7 +1720,7 @@ class EditorController {
     }
     fun setSpacing(value:Float) {
         spacing=value.coerceIn(0f,100f)
-        legacyEuclideanThreshold = if (value > 0f) value else 1f // 0 restores Blender's default filter
+        legacyEuclideanThreshold = if (value > 0f) value else 2f // 0 restores Blender's default filter (U.gp_euclideandist)
     }
 
     /** Active smoothing of the Legacy GP brush (0 = off, 1 = strongest). */

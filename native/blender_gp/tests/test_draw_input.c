@@ -1,103 +1,17 @@
-/* Conformance tests of the native Draw input engine (project_grease_draw_input.c):
- * 1. golden replay: every scenario of tools/draw_input_golden (the former Kotlin engine, whose
- *    unit tests were derived from Blender 3.6.23 gpencil_paint.c) must release the same points in
- *    the same calls;
- * 2. the assertions of the former LegacyGpBrushStrokeEngineTest.kt, ported one to one;
- * 3. Blender pixel math (zoom), BLI_rng jitter sequence and sbuffer point times. */
+/* Unit checks of the Draw input (project_grease_draw_input.c over Blender's gpencil_paint.c code):
+ * 1. the assertions of the former LegacyGpBrushStrokeEngineTest.kt;
+ * 2. Blender pixel math (zoom), BLI_rng jitter sequence and sbuffer point times.
+ * The comparison with a real Blender run is test_draw_blender_parity.c. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "DNA_brush_enums.h"
 #include "project_grease_draw_input.h"
 
 static int failures = 0;
 #define CHECK(c, ...) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s:%d: ", __FILE__, __LINE__); fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
-
-static float bits(const char *s)
-{
-  unsigned int u = (unsigned int)strtol(s, NULL, 10);
-  float f;
-  memcpy(&f, &u, sizeof f);
-  return f;
-}
-static int near(float a, float b) { return fabsf(a - b) <= 1e-4f * fmaxf(1.0f, fabsf(b)); }
-
-static void golden(const char *path)
-{
-  FILE *f = fopen(path, "r");
-  CHECK(f != NULL, "cannot open %s", path);
-  if (!f) return;
-  char line[1024], name[128] = "";
-  PGDrawInput d;
-  memset(&d, 0, sizeof d);
-  PGDrawPoint expected[512];
-  int n_expected = 0, event = -1, scenarios = 0, points = 0, exact = 0;
-  float ev[4];
-  /* actual stream of (call, point) */
-  PGDrawPoint actual[512];
-  int actual_call[512], n_actual = 0, expected_call[512];
-  while (fgets(line, sizeof line, f)) {
-    char *tok[24];
-    int nt = 0;
-    for (char *t = strtok(line, " \n"); t && nt < 24; t = strtok(NULL, " \n")) tok[nt++] = t;
-    if (nt == 0 || tok[0][0] == '#') continue;
-    if (!strcmp(tok[0], "scenario")) {
-      snprintf(name, sizeof name, "%s", tok[1]);
-      n_expected = n_actual = 0;
-      event = -1;
-    }
-    else if (!strcmp(tok[0], "settings")) {
-      PGDrawSettings s;
-      pg_draw_settings_default(&s); /* px_per_unit 1, random seed: not in the golden format */
-      s.draw_strength = bits(tok[1]); s.use_pressure = atoi(tok[2]); s.use_strength_pressure = atoi(tok[3]);
-      s.pressure_curve = bits(tok[4]); s.strength_curve = bits(tok[5]); s.active_smooth = bits(tok[6]);
-      s.input_samples = atoi(tok[7]); s.lazy_enabled = atoi(tok[8]); s.smooth_stroke_radius = bits(tok[9]);
-      s.smooth_stroke_factor = bits(tok[10]); s.disable_stabilizer = atoi(tok[11]);
-      s.manhattan_threshold = atoi(tok[12]); s.euclidean_threshold = bits(tok[13]); s.jitter = bits(tok[14]);
-      s.draw_angle_factor = bits(tok[15]); s.draw_angle = bits(tok[16]); s.synthesize_fast_points = atoi(tok[17]);
-      pg_draw_input_begin(&d, &s);
-    }
-    else if (!strcmp(tok[0], "event")) {
-      event++;
-      for (int k = 0; k < 4; k++) ev[k] = bits(tok[1 + k]);
-      const PGDrawPoint *out;
-      const int n = pg_draw_input_add(&d, ev[0], ev[1], ev[2], ev[3], &out);
-      for (int k = 0; k < n && n_actual < 512; k++) { actual[n_actual] = out[k]; actual_call[n_actual++] = event; }
-    }
-    else if (!strcmp(tok[0], "out") && n_expected < 512) {
-      expected_call[n_expected] = atoi(tok[1]);
-      PGDrawPoint p = {bits(tok[2]), bits(tok[3]), bits(tok[4]), bits(tok[5]), bits(tok[6])};
-      expected[n_expected++] = p;
-    }
-    else if (!strcmp(tok[0], "end")) {
-      const PGDrawPoint *out;
-      const int n = pg_draw_input_end(&d, &out);
-      for (int k = 0; k < n && n_actual < 512; k++) { actual[n_actual] = out[k]; actual_call[n_actual++] = -1; }
-      scenarios++;
-      CHECK(n_actual == n_expected, "%s: %d points released, golden %d", name, n_actual, n_expected);
-      for (int k = 0; k < n_actual && k < n_expected; k++) {
-        const PGDrawPoint *a = &actual[k], *e = &expected[k];
-        /* Blender-faithful deviations from the Kotlin reference (not produced by Blender's code
-         * path, so the golden file is kept as is): jitter draws from BLI_rng with a run-time seed
-         * (positions differ; pressure / strength still compared) and arc points keep Blender's
-         * sbuffer times instead of interpolated ones, so `time` is checked by time_tests(). */
-        const int jitter = !strcmp(name, "jitter");
-        const int ok = actual_call[k] == expected_call[k] && (jitter || (near(a->x, e->x) && near(a->y, e->y))) &&
-                       near(a->pressure, e->pressure) && near(a->strength, e->strength);
-        CHECK(ok, "%s point %d (call %d/%d): (%g %g p%g s%g t%g) vs golden (%g %g p%g s%g t%g)", name, k,
-              actual_call[k], expected_call[k], a->x, a->y, a->pressure, a->strength, a->time, e->x, e->y,
-              e->pressure, e->strength, e->time);
-        points++;
-        exact += !memcmp(a, e, sizeof *a);
-      }
-    }
-  }
-  fclose(f);
-  pg_draw_input_free(&d);
-  CHECK(scenarios >= 20, "only %d golden scenarios", scenarios);
-  printf("draw input golden: %d scenarios, %d points (%d bit-identical)\n", scenarios, points, exact);
-}
 
 /* ---- the former Kotlin unit tests -------------------------------------------------------- */
 typedef struct Run { PGDrawPoint sent[512]; int n; PGDrawInput d; } Run;
@@ -131,18 +45,23 @@ static void kotlin_tests(void)
 
   /* firstPointerSampleIsAlwaysAccepted */
   pg_draw_input_begin(&d, &s);
-  CHECK(pg_draw_input_add(&d, 10, 20, 1, 5, &out) == 1 && out[0].x == 10 && out[0].y == 20, "first sample");
+  pg_draw_input_add(&d, 10, 20, 1, 5, &out);
+  CHECK(d.used == 1 && d.buffer[0].x == 10 && d.buffer[0].y == 20, "first sample");
   /* smallMotionUsesBlenderManhattanAndEuclideanFilter */
   pg_draw_input_begin(&d, &s);
   pg_draw_input_add(&d, 0, 0, 1, 0, &out);
-  CHECK(pg_draw_input_add(&d, 1, 0, 1, 0.01f, &out) == 0, "dx 1 filtered");
-  CHECK(pg_draw_input_add(&d, 2, 0, 1, 0.02f, &out) == 1, "dx 2 passes");
+  pg_draw_input_add(&d, 1, 0, 1, 0.01f, &out);
+  CHECK(d.used == 1, "dx 1 filtered");
+  pg_draw_input_add(&d, 2, 0, 1, 0.02f, &out);
+  CHECK(d.used == 2, "dx 2 passes");
   /* lazyMouseInterpolatesAcceptedSampleTowardPreviousPoint */
   s = defaults(); s.lazy_enabled = 1; s.smooth_stroke_radius = 5; s.smooth_stroke_factor = 0.5f;
   pg_draw_input_begin(&d, &s);
   pg_draw_input_add(&d, 0, 0, 1, 0, &out);
-  CHECK(pg_draw_input_add(&d, 10, 0, 1, 0.01f, &out) == 1 && fabsf(out[0].x - 5) < 1e-5f, "lazy interp");
-  CHECK(pg_draw_input_add(&d, 8, 0, 1, 0.02f, &out) == 0, "inside lazy radius");
+  pg_draw_input_add(&d, 10, 0, 1, 0.01f, &out);
+  CHECK(d.used == 2 && fabsf(d.buffer[1].x - 5) < 1e-5f, "lazy interp");
+  pg_draw_input_add(&d, 8, 0, 1, 0.02f, &out);
+  CHECK(d.used == 2, "inside lazy radius");
   /* arcsNeedThreeBufferedPointsAndReplaceTheLastOne */
   s = defaults(); s.input_samples = 4;
   pg_draw_input_begin(&d, &s);
@@ -168,9 +87,9 @@ static void kotlin_tests(void)
   s = defaults();
   pg_draw_input_begin(&d, &s);
   pg_draw_input_add(&d, 0, 0, 1, 100, &out);
-  CHECK(out[0].time == 0.0f, "t0");
+  CHECK(d.buffer[0].time == 0.0f, "t0");
   pg_draw_input_add(&d, 10, 0, 1, 100.5f, &out);
-  CHECK(fabsf(out[0].time - 0.5f) < 1e-5f, "t1");
+  CHECK(d.used == 2 && fabsf(d.buffer[1].time - 0.5f) < 1e-5f, "t1");
   /* pressureOneStaysOneWithoutPressureModifiers */
   run(&r, &s, (const float (*)[4])ev, line(ev, 6, 5, 100, 1));
   for (int i = 0; i < r.n; i++) CHECK(r.sent[i].pressure == 1.0f, "pressure 1");
@@ -227,7 +146,8 @@ static void kotlin_tests(void)
   pg_draw_input_cancel(&d);
   CHECK(pg_draw_input_add(&d, 10, 0, 1, 0.1f, &out) == 0 && d.used == 0, "cancel");
   pg_draw_input_begin(&d, &s);
-  CHECK(pg_draw_input_add(&d, 3, 3, 1, 0, &out) == 1, "restart");
+  pg_draw_input_add(&d, 3, 3, 1, 0, &out);
+  CHECK(d.used == 1, "restart");
   pg_draw_input_end(&d, &out);
   CHECK(pg_draw_input_add(&d, 30, 3, 1, 0.1f, &out) == 0, "after end");
   pg_draw_input_free(&d);
@@ -242,7 +162,8 @@ static int accepted(PGDrawSettings s, float zoom, float x, float y)
   s.px_per_unit = zoom;
   pg_draw_input_begin(&d, &s);
   pg_draw_input_add(&d, 0, 0, 1, 0, &out);
-  const int n = pg_draw_input_add(&d, x, y, 1, 0.1f, &out);
+  pg_draw_input_add(&d, x, y, 1, 0.1f, &out);
+  const int n = d.used - 1;
   pg_draw_input_free(&d);
   return n;
 }
@@ -288,7 +209,7 @@ static void blender_tests(void)
   }
   /* gpencil_stroke_addpoint(): one BLI_rng_get_float() per point (also for the first two, which
    * gpencil_brush_jitter() does not move); fac = (rand * 2 - 1) * (jitter + 2)^2; the diagonal
-   * movement gives mvec = (0.5, 0.5) after the cos / sin reduction, in pixels. */
+   * offset is along the movement from the previous (jittered) buffer point, in region pixels (y up). */
   for (int zoom = 1; zoom <= 2; zoom++) {
     static Run r;
     float ev[8][4];
@@ -300,10 +221,56 @@ static void blender_tests(void)
     for (int i = 0; i < r.n; i++) {
       const float rand = (float)(int)lrand48() / 0x80000000 * 2.0f - 1.0f;
       const float fac = rand * 6.25f;
-      const float off = i < 2 ? 0.0f : 0.5f * fac * 10.0f / (float)zoom;
-      CHECK(fabsf(r.sent[i].x - (100.0f * i + off)) < 2e-3f && fabsf(r.sent[i].y - (100.0f * i + off)) < 2e-3f,
-            "jitter zoom %d point %d: (%g %g) expected offset %g", zoom, i, r.sent[i].x, r.sent[i].y, off);
+      /* region pixels (x, -y) * zoom; the previous point is the jittered one in the buffer */
+      float ex = 100.0f * i * zoom, ey = -100.0f * i * zoom;
+      if (i >= 2) {
+        float mx = ex - r.sent[i - 1].x * zoom, my = ey + r.sent[i - 1].y * zoom;
+        const float l = sqrtf(mx * mx + my * my);
+        mx /= l; my /= l;
+        const float angle = acosf(my); /* angle_v2v2(mvec, (0, 1)) */
+        ex += mx * cosf(angle) * fac * 10.0f;
+        ey += my * sinf(angle) * fac * 10.0f;
+      }
+      CHECK(fabsf(r.sent[i].x - ex / zoom) < 2e-3f && fabsf(r.sent[i].y + ey / zoom) < 2e-3f,
+            "jitter zoom %d point %d: (%g %g) expected (%g %g)", zoom, i, r.sent[i].x, r.sent[i].y, ex / zoom, -ey / zoom);
     }
+    pg_draw_input_free(&r.d);
+  }
+
+  /* gpencil_apply_randomness() (GP_BRUSH_GROUP_RANDOM): per point one BLI_rng_get_float() for the
+   * pressure (value = 1 + rand * 2 * draw_random_press, clamp 0.1..1) then one for the strength
+   * (value = 1 + rand * draw_random_strength, clamp GPENCIL_STRENGTH_MIN..1). */
+  {
+    static Run r;
+    float ev[6][4];
+    for (int i = 0; i < 6; i++) { ev[i][0] = 10.0f * i; ev[i][1] = 0; ev[i][2] = 0.8f; ev[i][3] = 0.01f * i; }
+    s = defaults(); s.random_press = 0.5f; s.random_strength = 0.4f; s.draw_strength = 0.9f;
+    s.use_seed = 1; s.seed = 4242u;
+    run(&r, &s, (const float (*)[4])ev, 6);
+    CHECK(r.n == 6, "random count %d", r.n);
+    srand48(4242);
+    int varied = 0;
+    for (int i = 0; i < r.n; i++) {
+      const float r1 = (float)(int)lrand48() / 0x80000000 * 2.0f - 1.0f;
+      const float r2 = (float)(int)lrand48() / 0x80000000 * 2.0f - 1.0f;
+      float pr = 0.8f, st = 0.9f;
+      pr *= 1.0 + r1 * 2.0 * 0.5f;
+      pr = pr < 0.1f ? 0.1f : (pr > 1.0f ? 1.0f : pr);
+      st *= 1.0 + r2 * 0.4f;
+      st = st < 0.003f ? 0.003f : (st > 1.0f ? 1.0f : st);
+      CHECK(r.sent[i].pressure == pr && r.sent[i].strength == st, "random point %d: p %g s %g expected %g %g", i,
+            r.sent[i].pressure, r.sent[i].strength, pr, st);
+      varied |= pr != 0.8f;
+    }
+    CHECK(varied, "random changed nothing");
+    pg_draw_input_free(&r.d);
+    /* GP_BRUSH_USE_PRESS_AT_STROKE / GP_BRUSH_USE_STRENGTH_AT_STROKE: one factor per stroke, from
+     * ED_gpencil_init_random_settings() (BLI_hash of the first event position and the timer) */
+    s.random_flag2 = GP_BRUSH_USE_PRESS_AT_STROKE | GP_BRUSH_USE_STRENGTH_AT_STROKE;
+    run(&r, &s, (const float (*)[4])ev, 6);
+    int same = r.n == 6;
+    for (int i = 1; i < r.n; i++) same &= r.sent[i].pressure == r.sent[0].pressure && r.sent[i].strength == r.sent[0].strength;
+    CHECK(same && (r.sent[0].pressure != 0.8f || r.sent[0].strength != 0.9f), "per-stroke random: p %g s %g", r.sent[0].pressure, r.sent[0].strength);
     pg_draw_input_free(&r.d);
   }
 
@@ -327,7 +294,7 @@ static void blender_tests(void)
 
 int main(int argc, char **argv)
 {
-  golden(argc > 1 ? argv[1] : "draw_input_golden.txt");
+  (void)argc; (void)argv;
   kotlin_tests();
   blender_tests();
   if (failures) { fprintf(stderr, "%d draw input check(s) failed\n", failures); return 1; }

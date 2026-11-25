@@ -76,11 +76,12 @@ class SweepDrawTest : SweepBase() {
     }
 
     @Test fun spacing() {
-        // 60 moves of ~13 units: the default filter keeps them all, spacing 40 drops most.
-        drag(200f to 300f, 1000f to 300f, steps = 60)
+        // moves of 5 units on a wave: the default filter (2 px) keeps them all, spacing 40 drops most. A
+        // straight line would not do: Post-Processing commits it as its 2 end points whatever the spacing.
+        wavyLine(300f)
         val dense = points(strokes().single()).size
         onUi { controller.setSpacing(40f) }
-        drag(200f to 500f, 1000f to 500f, steps = 60)
+        wavyLine(500f)
         val sparse = points(strokes()[1]).size
         assertTrue("spacing 40 has fewer points ($sparse < $dense)", sparse < dense)
         shot("draw_spacing")
@@ -110,7 +111,7 @@ class SweepDrawTest : SweepBase() {
 
     // ---- eraser ----
     private fun eraserCase(mode: EraserMode, name: String, check: (Int) -> Unit) {
-        line(300f)
+        wavyLine(300f)
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(mode); controller.setEraserSize(30f) }
         undoableGesture("erase $name") { drag(600f to 200f, 600f to 400f) }
         check(strokes().size)

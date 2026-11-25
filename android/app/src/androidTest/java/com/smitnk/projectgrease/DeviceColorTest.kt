@@ -23,9 +23,9 @@ class DeviceColorTest : SweepBase() {
 
     @Test fun secondColourDoesNotRecolourFirstStroke() {
         onUi { controller.setVertexColorMode(true); controller.setMaterialColor(0xFF000000.toInt()); controller.brushes.setSize(30f) }
-        line(300f)
+        wavyLine(300f)
         onUi { controller.setMaterialColor(0xFFFF0000.toInt()) }
-        line(500f)
+        wavyLine(500f)
         val s = strokes()
         assertEquals(2, s.size)
         val p0 = points(s[0])[5]; val p1 = points(s[1])[5]
@@ -68,7 +68,7 @@ class DeviceColorTest : SweepBase() {
 
     @Test fun vertexPaintPaintsTheStroke() {
         onUi { controller.setVertexColorMode(false); controller.brushes.setSize(30f) }
-        line(300f)
+        wavyLine(300f)
         onUi { controller.setMode(GreaseMode.VERTEX_PAINT); controller.setMaterialColor(0xFFFF0000.toInt()); controller.selectTool(GreaseTool.DRAW) }
         rule.waitForIdle()
         // vertex brush: Blender's Vertex Draw (25 px, strength 0.8), not the pen size
@@ -84,7 +84,7 @@ class DeviceColorTest : SweepBase() {
     @Test fun eraserUsesItsOwnSize() {
         // The reported bug: with a big pen (Marker 150) a tap erased the whole stroke.
         onUi { controller.brushes.setSize(150f) }
-        line(300f)
+        wavyLine(300f)
         fun nativeCount() = onUi { com.smitnk.projectgrease.nativebridge.GPNative.nativeStrokeCount(controller.nativeHandle) }
         val countAfterDraw = nativeCount()
         val drawn = strokes()

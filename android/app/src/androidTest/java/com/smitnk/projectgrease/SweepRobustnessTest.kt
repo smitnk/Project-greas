@@ -104,7 +104,9 @@ class SweepRobustnessTest : SweepBase() {
     }
 
     @Test fun longStroke5000Points() {
-        val times = timedStroke(5000, 300f)
+        // a tight scribble: Blender's Post-Processing (adaptive simplify) merges a slow wave's near-collinear
+        // moves, so only a stroke with >1000 distinguishable points can commit >1000 (host replay: ~1300)
+        val times = timedStroke(5000, 300f, wave = 0.5f)
         val s = strokes().single()
         assertTrue("points ${points(s).size}", points(s).size > 1000)
         val med = median(times); val p95 = times.sorted()[times.size * 95 / 100]

@@ -60,7 +60,7 @@ class SweepL9Batch4Test : SweepBase() {
     }
 
     @Test fun gestureEraseRemovesPoints() {
-        line(300f)
+        wavyLine(300f)
         val before = points(strokes().single()).size
         onUi { controller.selectTool(GreaseTool.ERASE); controller.setEraserMode(EraserMode.HARD); controller.setEraserSize(30f) }
         drag(600f to 200f, 600f to 400f)

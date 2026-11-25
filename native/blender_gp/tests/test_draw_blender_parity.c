@@ -11,6 +11,15 @@
 
 #include "project_grease_draw_input.h"
 
+#include "BKE_gpencil_geom_legacy.h"
+#include "BKE_gpencil_legacy.h"
+#include "DNA_gpencil_legacy_types.h"
+#include "MEM_guardedalloc.h"
+
+void gpencil_subdivide_stroke(bGPdata *gpd, bGPDstroke *gps, int subdivide);
+void DRW_gpencil_batch_cache_dirty_tag(bGPdata *gpd) { (void)gpd; }
+void DRW_gpencil_batch_cache_free(bGPdata *gpd) { (void)gpd; }
+
 #define MAXP 512
 #define TOL_POS 5e-4f /* px: Blender's 3D round trip (win_to_delta, location_3d_to_region_2d) */
 #define TOL_VAL 1e-5f
@@ -20,7 +29,31 @@ typedef struct Trace {
   int nin, nout;
   float in[MAXP][4];
   float out[MAXP][5];
+  /* Blender's default Post-Processing run: enabled, smooth factor, steps, subdivide, simplify_f, px/unit, points */
+  int post_on, post_steps, post_subdiv, post_n, have_post;
+  float post_smooth, post_simplify, post_ppu;
 } Trace;
+
+/* Backend::end_stroke's Post-Processing (gpencil_stroke_newfrombuffer, gpencil_paint.c:1260-1289) on
+ * the replayed points, in region px: simplify_f is in object units, so epsilon = simplify_f * px/unit. */
+static int post_process_count(const PGDrawPoint *p, int n, const Trace *t)
+{
+  static bGPdata gpd;
+  bGPDstroke *gps = BKE_gpencil_stroke_new(0, n, 1.0f);
+  for (int i = 0; i < n; i++) {
+    gps->points[i].x = p[i].x;
+    gps->points[i].y = p[i].y;
+    gps->points[i].pressure = p[i].pressure;
+    gps->points[i].strength = p[i].strength;
+    gps->points[i].time = p[i].time;
+  }
+  if (t->post_on && t->post_subdiv > 0) gpencil_subdivide_stroke(&gpd, gps, t->post_subdiv);
+  if (t->post_on) BKE_gpencil_stroke_smooth(gps, t->post_smooth, t->post_steps, true, true, false, false, true, NULL);
+  if (t->post_on && t->post_simplify > 0.0f) BKE_gpencil_stroke_simplify_adaptive(&gpd, gps, t->post_simplify * t->post_ppu);
+  const int r = gps->totpoints;
+  BKE_gpencil_free_stroke(gps);
+  return r;
+}
 
 static int read_curve(char **save, PGCurve *c)
 {
@@ -82,6 +115,15 @@ int main(int argc, char **argv)
                 brush, t.name, m[0], m[1], m[2], m[3], m[4]);
       }
       for (int c = 0; c < 5; c++) bmax[c] = fmaxf(bmax[c], m[c]);
+      if (t.have_post) {
+        const int pn = post_process_count(got, n, &t);
+        printf("%s %s: committed points %d, Blender %d (Post-Processing %s)\n", brush, t.name, pn, t.post_n,
+               t.post_on ? "on" : "off");
+        if (pn != t.post_n) {
+          failures++;
+          fprintf(stderr, "FAIL %s %s: %d points after Post-Processing, Blender %d\n", brush, t.name, pn, t.post_n);
+        }
+      }
       traces++;
       have = 0;
     }
@@ -120,11 +162,16 @@ int main(int argc, char **argv)
       if (t.nin > MAXP || t.nout > MAXP) return 1;
       pos = 0;
       have = 1;
+      t.have_post = 0;
     }
     else if (!strncmp(l, "in ", 3)) {
       float *v = t.in[pos++];
       sscanf(l, "in %f %f %f %f", &v[0], &v[1], &v[2], &v[3]);
       if (pos == t.nin) pos = 0;
+    }
+    else if (!strncmp(l, "post ", 5)) {
+      t.have_post = sscanf(l, "post %d %f %d %d %f %f %d", &t.post_on, &t.post_smooth, &t.post_steps, &t.post_subdiv,
+                           &t.post_simplify, &t.post_ppu, &t.post_n) == 7;
     }
     else if (!strncmp(l, "out ", 4)) {
       float *v = t.out[pos++];

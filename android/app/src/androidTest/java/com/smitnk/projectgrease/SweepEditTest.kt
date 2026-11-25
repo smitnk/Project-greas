@@ -15,7 +15,7 @@ import kotlin.math.abs
 @RunWith(AndroidJUnit4::class)
 class SweepEditTest : SweepBase() {
 
-    private fun twoStrokes() { line(250f); line(450f) }
+    private fun twoStrokes() { wavyLine(250f); wavyLine(450f) }
     private fun sel() = onUi { controller.selectedPointCount() }
     private fun total() = onUi { controller.pointCount() }
     private fun editMode() = onUi { controller.setMode(GreaseMode.EDIT) }
@@ -59,7 +59,7 @@ class SweepEditTest : SweepBase() {
     }
 
     @Test fun selectSegment() {
-        line(300f); drag(600f to 150f, 600f to 450f) // crossing
+        wavyLine(300f); drag(600f to 150f, 600f to 450f) // crossing
         onUi { controller.setSelectMode(S.MODE_SEGMENT); controller.selectTool(GreaseTool.SELECT) }
         tap(400f, 300f)
         val n = sel()
@@ -68,7 +68,7 @@ class SweepEditTest : SweepBase() {
     }
 
     @Test fun selectPointMode() {
-        line(300f)
+        wavyLine(300f)
         onUi { controller.setSelectMode(S.MODE_POINT); controller.selectTool(GreaseTool.SELECT); controller.setPickEntireStrokes(false) }
         tap(600f, 300f)
         assertEquals(1, sel())
@@ -76,7 +76,7 @@ class SweepEditTest : SweepBase() {
     }
 
     @Test fun selectMenu() {
-        line(300f); line(500f)
+        wavyLine(300f); wavyLine(500f)
         editMode()
         val all = total()
         assertTrue(onUi { controller.selectAll() }); assertEquals(all, sel())
@@ -153,7 +153,7 @@ class SweepEditTest : SweepBase() {
     }
 
     // ---- stroke operations ----
-    private fun op(name: String, setup: () -> Unit = { line(300f); onUi { controller.selectStroke(0); controller.selectAll() } }, check: () -> Unit = {}, block: () -> Boolean) {
+    private fun op(name: String, setup: () -> Unit = { wavyLine(300f); onUi { controller.selectStroke(0); controller.selectAll() } }, check: () -> Unit = {}, block: () -> Boolean) {
         setup()
         undoable(name, block)
         check()
@@ -162,11 +162,13 @@ class SweepEditTest : SweepBase() {
 
     @Test fun opDuplicate() = op("duplicate", check = { assertEquals(2, strokes().size) }) { controller.duplicateSelection() }
     @Test fun opDelete() = op("delete_strokes", check = { assertEquals(0, strokes().size) }) { controller.deleteSelectedStrokes() }
+    private var drawnPoints = 0
     @Test fun opDeletePoints() = op("delete_points", setup = {
-        line(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) }
-    }, check = { assertTrue(strokes().sumOf { points(it).size } < 40) }) { controller.deleteSelectedPoints() }
+        wavyLine(300f); drawnPoints = points(strokes()[0]).size
+        onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) }
+    }, check = { assertTrue(strokes().sumOf { points(it).size } < drawnPoints - 5) }) { controller.deleteSelectedPoints() }
     @Test fun opSplit() = op("split", setup = {
-        line(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) }
+        wavyLine(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) }
     }, check = { assertEquals("gpencil split: the selected run becomes its own stroke, the rest stays in two pieces", 3, strokes().size) }) { controller.splitSelection() }
     @Test fun opSubdivide() {
         line(300f); onUi { controller.selectStroke(0); controller.selectAll() }
@@ -195,7 +197,7 @@ class SweepEditTest : SweepBase() {
     @Test fun opDash() = op("dash", check = { assertTrue(strokes().size > 1) }) { controller.dashSelection(3, 2) }
     @Test fun opMultiply() = op("multiply", check = { assertTrue(strokes().size > 1) }) { controller.multiplySelection(2, 8f) }
     @Test fun opArray() = op("array", check = { assertEquals(3, strokes().size) }) { controller.arraySelection(3, 0f, 60f) }
-    @Test fun opMergeByDistance() = op("merge_by_distance", setup = { drag(300f to 300f, 900f to 300f, steps = 60); onUi { controller.selectAll() } },
+    @Test fun opMergeByDistance() = op("merge_by_distance", setup = { wavyLine(300f, 300f, 900f); onUi { controller.selectAll() } },
         check = { assertTrue(points(strokes()[0]).size < 40) }) { controller.mergeSelectionByDistance(30f) }
     @Test fun opCaps() = op("caps") { controller.toggleSelectionCaps(S.CAPS_TOGGLE_BOTH) }
     @Test fun opStartPoint() = op("start_point", setup = {
@@ -228,9 +230,9 @@ class SweepEditTest : SweepBase() {
     @Test fun opArrange() = op("arrange", setup = { line(300f); line(320f); onUi { controller.selectStroke(0) } }) { controller.arrangeSelection(S.ARRANGE_TOP) }
     @Test fun opAssignMaterial() = op("assign_material", check = { assertEquals(2, strokes()[0].getInt("material")) }) { controller.selectMaterial(2); controller.assignActiveMaterialToSelection() }
     @Test fun opSnapToGrid() = op("snap_grid", setup = { line(313f, 207f, 993f); onUi { controller.selectAll() } }) { controller.snapSelectionToGrid() }
-    @Test fun opDissolve() = op("dissolve", setup = { line(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) } }) { controller.dissolveSelection() }
+    @Test fun opDissolve() = op("dissolve", setup = { wavyLine(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.selectBox(500f, 280f, 700f, 320f) } }) { controller.dissolveSelection() }
     @Test fun opExtrude() = op("extrude", setup = { line(300f); onUi { controller.setSelectMode(S.MODE_POINT); controller.deselectAll(); controller.selectLastPoints() } }) { controller.extrudeSelection() }
-    @Test fun opSimplify() = op("simplify", setup = { drag(200f to 300f, 1000f to 300f, steps = 60); onUi { controller.selectAll() } }) { controller.simplifySelectionFixed(1) }
+    @Test fun opSimplify() = op("simplify", setup = { wavyLine(300f); onUi { controller.selectAll() } }) { controller.simplifySelectionFixed(1) }
     @Test fun opSample() = op("sample") { controller.sampleSelection(10f) }
     @Test fun opNormalize() = op("normalize", setup = { drag(200f to 300f, 1000f to 300f, pressure = 0.5f, pen = true); onUi { controller.selectAll() } }) { controller.normalizeSelection(S.NORMALIZE_THICKNESS, 1f) }
     @Test fun opSmooth() = op("smooth", setup = { drag(200f to 300f, 400f to 200f, 600f to 400f, 800f to 200f, 1000f to 300f); onUi { controller.selectStroke(0); controller.selectAll() } }) { controller.smoothSelectedStroke(1f, 4) }

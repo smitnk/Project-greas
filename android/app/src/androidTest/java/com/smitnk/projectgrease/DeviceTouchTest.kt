@@ -79,7 +79,7 @@ class DeviceTouchTest : SweepBase() {
     }
 
     @Test fun lassoBreakOffCopyCutPaste() {
-        line(300f)
+        wavyLine(300f)
         // point select (Blender's vertex select mode): break off takes the selected points
         onUi { controller.setSelectMode(com.smitnk.projectgrease.editor.ProjectGreaseSelect.MODE_POINT) }
         val boxed = onUi { controller.selectBox(500f, 250f, 700f, 350f) }

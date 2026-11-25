@@ -170,7 +170,7 @@ class SweepModsMaterialsTest : SweepBase() {
         onUi { controller.brushes.setSize(30f) }
         for ((mode, name) in listOf(1 to "dots", 2 to "squares")) {
             undoable("line type $name") { controller.setMaterialLineType(mode) }
-            line(200f + mode * 150f)
+            wavyLine(200f + mode * 150f) // dots sit on points: a straight line commits only its 2 ends
             shot("material_$name")
             assertInk(shot("material_${name}_2"), 600f, 200f + mode * 150f, name)
         }

@@ -93,6 +93,13 @@ int main()
   const int before = draw(b, 500)->totpoints;
   CHECK(b.set_legacy_paint_settings(pencil));
   CHECK(draw(b, 600)->totpoints < before);
+  /* a straight line commits 2 points, as Blender's "line" trace (draw_blender_golden.txt) with every
+   * default brush whose Post-Processing is on */
+  CHECK(b.begin_stroke(StrokeStyle{}));
+  for (int i = 0; i < 101; i++) CHECK(b.add_point(StrokePoint{200.0f + 4 * i, 650, 0, 1, 1, 0.01f * i}));
+  CHECK(b.end_stroke());
+  CHECK(static_cast<bGPDstroke *>(static_cast<const bGPDlayer *>(b.document_data()->layers.first)->actframe->strokes.last)
+            ->totpoints == 2);
   /* subdivide 2 without simplify: (n-1)*4+1 points, as gpencil_subdivide_stroke */
   CHECK(b.set_legacy_paint_settings(subdiv_only));
   CHECK(draw(b, 700)->totpoints == (before - 1) * 4 + 1);

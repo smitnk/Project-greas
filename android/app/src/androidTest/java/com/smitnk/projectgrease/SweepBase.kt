@@ -136,10 +136,24 @@ abstract class SweepBase {
     protected fun line(y: Float, x0: Float = 200f, x1: Float = 1000f) = drag(x0 to y, x1 to y)
 
     /**
+     * A hand-drawn wavy line around canvas y (+-8 units, period 40, on y at x0 + k * 20): a move every
+     * 5 units. Blender's default brushes commit a straight line as its 2 end points (Post-Processing,
+     * adaptive simplify 0.002 units, see draw_blender_golden.txt "line"), so tests that edit, erase or
+     * paint inside a stroke draw this one, which keeps ~120 points under the same rules (host replay via test_draw_blender_parity).
+     */
+    protected fun wavyLine(y: Float, x0: Float = 200f, x1: Float = 1000f) {
+        val n = ((x1 - x0) / 5f).toInt().coerceAtLeast(1)
+        drag(*Array(n + 1) { i ->
+            val x = x0 + (x1 - x0) * i / n
+            x to y + 8f * kotlin.math.sin(2.0 * Math.PI * (x - x0) / 40.0).toFloat()
+        }, steps = 1)
+    }
+
+    /**
      * Dispatches a stroke of [n] moves straight to the surface on the main thread and returns the
      * per-event handling times in ms (input -> native session -> render -> swap: the frame time).
      */
-    protected fun timedStroke(n: Int, y: Float, x0: Float = 100f, x1: Float = 1100f): List<Double> {
+    protected fun timedStroke(n: Int, y: Float, x0: Float = 100f, x1: Float = 1100f, wave: Float = 0.05f): List<Double> {
         val v = surface()
         val a = screen(x0, y); val b = screen(x1, y)
         val loc = IntArray(2); onUi { v.getLocationOnScreen(loc) }
@@ -150,7 +164,7 @@ abstract class SweepBase {
         for (i in 1..n) {
             val t = i.toFloat() / n
             val x = a.first + (b.first - a.first) * t
-            val yy = a.second + 20f * kotlin.math.sin(i * 0.05f)
+            val yy = a.second + 20f * kotlin.math.sin(i * wave)
             val ev = local(event(MotionEvent.ACTION_MOVE, down, x, yy))
             times += onUi { val t0 = System.nanoTime(); v.dispatchTouchEvent(ev); (System.nanoTime() - t0) / 1e6 }
         }

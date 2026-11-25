@@ -36,7 +36,7 @@ class SweepPaintTest : SweepBase() {
     @Test fun sculptRandomize() = sculpt(SculptBrush.RANDOMIZE)
 
     private fun vpaint(brush: Int, name: String, prepaint: Boolean) {
-        line(300f)
+        wavyLine(300f)
         onUi { controller.setMode(GreaseMode.VERTEX_PAINT); controller.setMaterialColor(0xFFFF0000.toInt()); controller.vertexBrush.setSize(60f); controller.vertexBrush.setStrength(1f) }
         if (prepaint) drag(300f to 300f, 600f to 300f)
         // smear only moves colour between painted points (Blender keeps the alpha), so paint the far half blue first

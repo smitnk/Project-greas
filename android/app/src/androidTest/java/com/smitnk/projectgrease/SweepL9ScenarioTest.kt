@@ -75,7 +75,7 @@ class SweepL9ScenarioTest : SweepBase() {
 
         // ---- keys on frames 1, 5, 9 of Ink ----
         run { val li = layerIndex("Ink"); assertTrue(onUi { controller.selectLayer(li) && controller.animation.setFrame(1) }) }
-        line(300f)
+        wavyLine(300f) // the hard eraser below cuts it: a straight line commits only its 2 end points
         val afterFirstLine = signature(); val sFirstLine = step()
         assertEquals(1, frameStrokes("Ink", 1).size)
         assertTrue(onUi { controller.createFrame(5) })

@@ -10,8 +10,12 @@ Draws each input trace with bpy.ops.gpencil.draw(mode='DRAW', stroke=[...]) (gpe
 gpencil_draw_apply -> gpencil_stroke_addpoint per element, then gpencil_stroke_newfrombuffer) with
 the default brushes, inside a VIEW_3D override, and writes the brush settings the app needs, the
 input (region pixels, y up) and the committed points projected back to region pixels.
-Post-processing (use_settings_postprocess) is switched off: the app runs it separately in
-end_stroke (07a18dd). Random settings stay off: gpencil_session_initdata() seeds the RNG from the
+Each trace is drawn twice: with Post-Processing (use_settings_postprocess) off, for the input points,
+and with the brush's default Post-Processing (on for Pencil, Pen, Ink Pen, Marker Bold/Chisel, as
+BKE_gpencil_brush_preset_set sets GP_BRUSH_GROUP_SETTINGS), for the committed point count ("post"
+line: enabled, smooth factor, smooth steps, subdivide, simplify_f, region px per unit, points).
+simplify_f is in object units (BKE_gpencil_stroke_simplify_adaptive runs on gps->points in 3D), so the
+host test applies it as simplify_f * px per unit in region pixels. Random settings stay off: gpencil_session_initdata() seeds the RNG from the
 clock and the operator cannot fix it, so the random path is checked by the host test with a fixed
 seed instead. The exec path has no fake points (gpencil_add_fake_points runs only in the modal
 handler), so the host test replays the traces with fake points off; the view is orthographic so the
@@ -24,6 +28,7 @@ import traceback
 
 import bpy
 from bpy_extras import view3d_utils
+from mathutils import Vector
 
 BRUSHES = ["Pencil", "Pen", "Ink Pen", "Marker Bold", "Marker Chisel", "Airbrush"]
 
@@ -50,6 +55,10 @@ def traces():
         y += 2 if seg == 0 else -2
         z.append((x, y, 0.8, 0.008 * i))
     t["zigzag"] = z
+    # a straight line and a half circle at constant pressure: the default committed point counts
+    t["line"] = [(200 + 4 * i, 500, 1.0, 0.01 * i) for i in range(101)]
+    t["curve"] = [(round(700 + 150 * math.cos(i / 100 * math.pi), 3), round(300 + 150 * math.sin(i / 100 * math.pi), 3),
+                   1.0, 0.01 * i) for i in range(101)]
     return t
 
 
@@ -68,10 +77,15 @@ def main():
     ob = bpy.context.active_object
     ts = bpy.context.scene.tool_settings
     ts.gpencil_stroke_placement_view3d = "ORIGIN"
+    # px per object unit on the drawing plane (the view plane through the origin, not the XY plane)
+    o = view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ Vector((0, 0, 0)))
+    ppu = (view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ (rv3d.view_rotation @ Vector((1, 0, 0)))) - o).length
     lines = ["# Blender %s draw input reference (blender_draw_reference.py); region px, y up" % bpy.app.version_string]
     for name in BRUSHES:
         b = bpy.data.brushes[name]
         g = b.gpencil_settings
+        post = (g.use_settings_postprocess, g.pen_smooth_factor, g.pen_smooth_steps, g.pen_subdivision_steps,
+                g.simplify_factor)
         g.use_settings_postprocess = False
         g.use_settings_random = False
         g.use_settings_stabilizer = False
@@ -101,6 +115,14 @@ def main():
             for pt in s.points:
                 co = view3d_utils.location_3d_to_region_2d(region, rv3d, mw @ pt.co)
                 lines.append("out %r %r %r %r %r" % (co.x, co.y, pt.pressure, pt.strength, pt.time))
+            g.use_settings_postprocess = post[0]
+            with bpy.context.temp_override(window=win, area=area, region=region):
+                r = bpy.ops.gpencil.draw(mode="DRAW", stroke=stroke, wait_for_input=False)
+            g.use_settings_postprocess = False
+            if r != {"FINISHED"}:
+                raise RuntimeError("draw post %s %s: %s" % (name, tname, r))
+            lines.append("post %d %r %d %d %r %r %d" % (int(post[0]), post[1], post[2], post[3], post[4], ppu,
+                                                         len(frame.strokes[-1].points)))
     with open(out_path, "w") as f:
         f.write("\n".join(lines) + "\n")
     print("BLENDER-DRAW-REFERENCE written", out_path)

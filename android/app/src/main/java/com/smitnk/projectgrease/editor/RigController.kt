@@ -20,6 +20,9 @@ class RigController(private val native: NativeEditorBridge) {
         const val CMD_POSE_COPY = 21; const val CMD_POSE_PASTE = 22; const val CMD_KEY_INSERT = 23
         const val CMD_KEY_DELETE = 24; const val CMD_KEY_INTERPOLATION = 25; const val CMD_BIND = 26
         const val CMD_EVALUATE = 27; const val CMD_DISPLAY = 28; const val CMD_PICK = 29; const val CMD_KEY_MOVE = 30
+        const val CMD_MIRROR_X = 31
+        // Transform Pivot Point (V3D_AROUND_LOCAL_ORIGINS / V3D_AROUND_CENTER_MEDIAN)
+        const val AROUND_INDIVIDUAL = 2; const val AROUND_MEDIAN = 3
         // PG_ARM_Q_*
         const val Q_SUMMARY = 0; const val Q_BONE = 1; const val Q_POSE = 2; const val Q_KEYS = 3
         const val Q_KEY_INTERPOLATION = 4; const val Q_ENVELOPE = 5; const val Q_SELECTED = 6
@@ -106,8 +109,10 @@ class RigController(private val native: NativeEditorBridge) {
     fun poseSelect(bone: Int, extend: Boolean = false) = cmd(CMD_POSE_SELECT, bone, if (extend) 1f else 0f)
     fun isSelected(bone: Int) = native.armatureQuery(Q_SELECTED, bone).getOrNull(0) == 1f
     fun poseTranslate(dx: Float, dy: Float) = cmd(CMD_POSE_TRANSLATE, -1, dx, dy)
-    fun poseRotate(angle: Float) = cmd(CMD_POSE_ROTATE, -1, angle)
-    fun poseScale(factor: Float) = cmd(CMD_POSE_SCALE, -1, factor)
+    /** Pose rotate / scale pivot: Median Point (Blender's default) or Individual Origins. */
+    var pivot = AROUND_MEDIAN
+    fun poseRotate(angle: Float) = cmd(CMD_POSE_ROTATE, -1, angle, pivot.toFloat())
+    fun poseScale(factor: Float) = cmd(CMD_POSE_SCALE, -1, factor, pivot.toFloat())
     /** loc[3], quat[4] (w first), scale[3] in bone space. */
     fun pose(bone: Int) = native.armatureQuery(Q_POSE, bone)
     fun setPose(bone: Int, values: FloatArray) = cmd(CMD_POSE_SET, bone, *values)
@@ -133,6 +138,11 @@ class RigController(private val native: NativeEditorBridge) {
     fun setDisplay(type: Int, inFront: Boolean) = cmd(CMD_DISPLAY, -1, type.toFloat(), if (inFront) 1f else 0f) == 1
     val displayType get() = native.armatureQuery(Q_DISPLAY).getOrNull(0)?.toInt() ?: DISPLAY_OCTAHEDRAL
     val showInFront get() = native.armatureQuery(Q_DISPLAY).getOrNull(1) == 1f
+    /** X-Axis Mirror (Armature.use_mirror_x): edits also change the bone of the flipped name (saved with the rig). */
+    fun setMirrorX(on: Boolean) = cmd(CMD_MIRROR_X, -1, if (on) 1f else 0f) == 1
+    val mirrorX get() = native.armatureQuery(Q_DISPLAY).getOrNull(2) == 1f
+    /** The Extrude tool is armed: the next canvas drag extrudes from the selected tips (RigTouch). */
+    var extrudeNext = false
     /**
      * Tap select in Edit / Pose mode: the bone nearest to (x, y) within [dist] (Blender's
      * ED_view3d_select_dist_px); in Edit mode a head / tail joint selects that end only. A tap on

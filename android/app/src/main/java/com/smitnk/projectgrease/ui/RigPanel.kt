@@ -114,9 +114,8 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
                 val cx = controller.document.canvasWidth / 2f; val cy = controller.document.canvasHeight / 2f
                 rig.addBone(cx, cy, cx, cy - 100f); done()
             }
-            Op("Extrude", "rigExtrude", active >= 0) {
-                val b = bones[active]; rig.extrude(b.tailX - b.headX, b.tailY - b.headY); done()
-            }
+            // armature.extrude_move: armed here, the next canvas drag extrudes and puts the new tail under the finger
+            Pick("Extrude", rig.extrudeNext, "rigExtrude") { rig.extrudeNext = !rig.extrudeNext; done(false) }
             Op("Delete", "rigDelete", active >= 0) { rig.deleteSelected(); done() }
             Op("Parent: Connected", "rigParentConnected", active >= 0) { rig.parentSet(RigController.PARENT_CONNECTED); done() }
             Op("Parent: Keep Offset", "rigParentOffset", active >= 0) { rig.parentSet(RigController.PARENT_KEEP_OFFSET); done() }
@@ -127,7 +126,12 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
                 modifier = Modifier.weight(1f).testTag("rigBoneName"))
             Op("Rename", "rigRename") { rig.rename(active, name); done() }
         }
-        Text("Select a bone, then the parent last (it becomes active).", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("X-Axis Mirror", Modifier.padding(end = 8.dp))
+            Switch(rig.mirrorX, { rig.setMirrorX(it); done() }, Modifier.testTag("rigMirrorX").semantics { contentDescription = "X-Axis Mirror" })
+        }
+        Text("Select a bone, then the parent last (it becomes active). Extrude: tap Extrude then drag, or long-press a tail joint and drag.",
+            style = MaterialTheme.typography.bodySmall)
     }
 
     // ---- Pose mode (Pose menu) ----
@@ -142,6 +146,10 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
         listOf(GreaseTool.MOVE to "Move", GreaseTool.ROTATE to "Rotate", GreaseTool.SCALE to "Scale").forEach { (t, l) ->
             Pick(l, controller.tools.activeTool == t, "rigTool_$l") { controller.selectTool(t); done(false) }
         }
+    }
+    if (mode == RigController.MODE_POSE) Group("Pivot Point") { // transform_pivot_point
+        Pick("Median Point", rig.pivot == RigController.AROUND_MEDIAN, "rigPivotMedian") { rig.pivot = RigController.AROUND_MEDIAN; done(false) }
+        Pick("Individual Origins", rig.pivot == RigController.AROUND_INDIVIDUAL, "rigPivotIndividual") { rig.pivot = RigController.AROUND_INDIVIDUAL; done(false) }
     }
 
     // ---- Object Data: Viewport Display, Parent (bind) ----

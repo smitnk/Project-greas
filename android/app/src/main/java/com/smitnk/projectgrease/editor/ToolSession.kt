@@ -126,13 +126,13 @@ object ToolSession {
     }
 
     /** PG_DRAW_P_*: material, thickness, then the gpencil_paint.c input settings, the drawing guide
-     *  (GP_GUIDE_* + 1, 0 = off) and the brush CurveMapping points (empty = power curve). */
+     *  (GP_GUIDE_* + 1, 0 = off) and the brush CurveMapping points (empty = linear, BKE_curvemapping_add default). */
     data class DrawSettings(
         val material: Int, val thickness: Float, val strength: Float = 1f, val usePressure: Boolean = true,
         val useStrengthPressure: Boolean = false, val pressureCurve: Float = 1f, val strengthCurve: Float = 1f,
         val activeSmooth: Float = 0.35f, val inputSamples: Int = 0, val lazy: Boolean = false, val lazyRadius: Float = 0f,
         val lazyFactor: Float = 0f, val disableStabilizer: Boolean = false, val manhattan: Int = 1,
-        val euclidean: Float = 1f, val jitter: Float = 0f, val angleFactor: Float = 0f, val angle: Float = 0f,
+        val euclidean: Float = 2f, val jitter: Float = 0f, val angleFactor: Float = 0f, val angle: Float = 0f,
         val fakePoints: Boolean = true,
         val guideType: Int = -1, val guideX: Float = 0f, val guideY: Float = 0f, val guideAngle: Float = 0f,
         val guideSpacing: Float = 0f,

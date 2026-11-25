@@ -190,3 +190,4 @@ CXX|third_party/blender/intern/iksolver/intern/IK_QJacobianSolver.cpp
 CXX|third_party/blender/intern/iksolver/intern/IK_QSegment.cpp
 CXX|third_party/blender/intern/iksolver/intern/IK_QTask.cpp
 CXX|third_party/blender/intern/iksolver/intern/IK_Solver.cpp
+C|native/blender_gp/project_grease_blender_paint.c

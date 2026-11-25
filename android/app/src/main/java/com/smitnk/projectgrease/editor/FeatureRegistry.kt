@@ -90,7 +90,7 @@ object FeatureRegistry {
         FeatureId.STABILIZATION to wired("Lazy-mouse semantics ported; radius is in canvas units, not screen pixels. $DEVICE"),
         FeatureId.SMOOTHING to wired("Active smoothing ported but off by default (Blender's preset value not traced). $DEVICE"),
         FeatureId.SPACING to wired("Maps to Blender's Euclidean input filter, not a true spacing control. $DEVICE"),
-        FeatureId.PRESSURE_CURVE to wired("The brush curve_sensitivity / curve_strength CurveMapping (CURVE_MAPPING) with a curve editor in Advanced > Brush; the former power curve is only used by callers that set no curve. $DEVICE"),
+        FeatureId.PRESSURE_CURVE to wired("The brush curve_sensitivity / curve_strength CurveMapping (CURVE_MAPPING) with a curve editor in Advanced > Brush; callers that set no curve get the linear default (BKE_curvemapping_add). $DEVICE"),
 
         // ---- selection -----------------------------------------------------------------
         FeatureId.SELECT to wired("Blender click-select (nearest point, whole stroke by default). $DEVICE"),

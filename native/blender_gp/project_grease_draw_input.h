@@ -1,31 +1,16 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Input side of the Blender 3.6.23 Legacy GP draw operator (gpencil_paint.c), run natively by the
- * tool session for the Draw tool. Traced functions: gpencil_stroke_filtermval, gpencil_draw_apply
- * (lazy mouse), gpencil_stroke_addpoint, gpencil_brush_jitter, gpencil_brush_angle,
- * gpencil_brush_angle_segment, gpencil_smooth_buffer, gpencil_smooth_segment,
- * gpencil_add_fake_points, gpencil_add_arc_points and the trailing low-pressure truncation of
- * gpencil_stroke_newfrombuffer.
+ * Draw tool input: touch samples to stroke points by Blender 3.6.23's own gpencil_paint.c code
+ * (project_grease_blender_paint.c: gpencil_draw_apply, gpencil_stroke_filtermval,
+ * gpencil_stroke_addpoint with pressure / strength curves, jitter, randomness, angle and active
+ * smoothing, gpencil_add_fake_points / gpencil_add_arc_points, gpencil_smooth_segment and the
+ * trailing low-pressure truncation of gpencil_stroke_newfrombuffer). Checked against a real
+ * Blender run (tools/draw_input_golden/blender_draw_reference.py).
  *
- * Blender edits its stroke buffer in place: an arc REPLACES the last buffered point and the
- * smoothing passes rewrite up to the last four points. The native sbuffer is filled append-only,
- * so the engine keeps the newest points private until no later event can change them and only
- * then releases them; pg_draw_input_end() flushes the rest. The released stream equals the final
- * buffer exactly.
- *
- * This is the former Kotlin LegacyGpBrushStrokeEngine moved to native unchanged (same float
- * operations); tools/draw_input_golden holds that Kotlin reference and the generator of the
- * golden data the native test compares against. Pressure / strength curves: the brush's
- * CurveMapping (project_grease_curvemap.c, BKE_curvemapping_evaluateF) when the caller set one,
- * else the former power curve.
- *
- * Blender works on region pixels (tGPspoint.m_xy = event mval); the engine keeps canvas units and
- * converts every pixel comparison with `px_per_unit` (the view zoom): the Manhattan / Euclidean
- * and lazy-radius tests of gpencil_stroke_filtermval, the fake point distance of
- * gpencil_add_fake_points and the jitter displacement of gpencil_brush_jitter. Jitter draws from
- * BLI_rng (blender::RandomNumberGenerator, drand48 LCG) seeded as gpencil_paint_initstroke() does
- * unless the caller fixes the seed. Arc points keep Blender's sbuffer times: the first arc point
- * reuses the slot (and time) of the replaced point, the others are slots of the zeroed buffer.
+ * This file is the canvas adapter: region pixels are (x, -y) * px_per_unit, and Blender edits
+ * its sbuffer in place (arcs replace the last point, smoothing rewrites up to the last four), so
+ * points are released only once no later event can change them; pg_draw_input_end() flushes
+ * the rest. The released stream equals the final buffer exactly.
  */
 #ifndef PROJECT_GREASE_DRAW_INPUT_H
 #define PROJECT_GREASE_DRAW_INPUT_H
@@ -45,8 +30,8 @@ typedef struct PGDrawSettings {
   float draw_strength;       /* 1 */
   int use_pressure;          /* 1 */
   int use_strength_pressure; /* 0 */
-  float pressure_curve;      /* 1 */
-  float strength_curve;      /* 1 */
+  float pressure_curve;      /* ignored: Blender has no power curve, use pressure_map */
+  float strength_curve;      /* ignored: use strength_map */
   float active_smooth;       /* 0 */
   int input_samples;         /* 0 */
   int lazy_enabled;          /* 0 */
@@ -64,7 +49,9 @@ typedef struct PGDrawSettings {
   unsigned int seed;
   float random_press;         /* 0: draw_random_press */
   float random_strength;      /* 0: draw_random_strength */
-  /* Brush curve_sensitivity / curve_strength (BKE_curvemapping_evaluateF); unused while !built. */
+  float uv_random;            /* 0: uv_random */
+  unsigned int random_flag2;  /* 0: BrushGpencilSettings.flag2 (GP_BRUSH_USE_*_AT_STROKE, ...) */
+  /* Brush curve_sensitivity / curve_strength; the linear default curve while !built. */
   PGCurve pressure_map;
   PGCurve strength_map;
 } PGDrawSettings;
@@ -76,12 +63,11 @@ typedef struct PGDrawPoint {
 typedef struct PGDrawInput {
   PGDrawSettings settings;
   int active;
+  /* Blender's sbuffer converted to canvas units (valid up to `used`). */
   PGDrawPoint *buffer;
   int used, capacity;
   int released;
-  float last_input_x, last_input_y;
-  float initial_time, previous_time;
-  unsigned long long rng_x; /* blender::RandomNumberGenerator::x_ */
+  struct PGPaintSession *paint; /* project_grease_blender_paint.c */
 } PGDrawInput;
 
 void pg_draw_settings_default(PGDrawSettings *s);

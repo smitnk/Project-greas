@@ -90,3 +90,4 @@ OBJS=()
 for s in "${C_SRC[@]}"; do o="$OUT/$(basename "$s").o"; X=(); [[ "$s" == */math_matrix.c ]] && X=(-UMATH_STANDALONE)
   gcc "${CF[@]}" "${X[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
 for s in "${CXX_SRC[@]}"; do o="$OUT/$(basename "$s").o"; g++ "${XF[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
+  "$ROOT/native/blender_gp/project_grease_blender_paint.c"

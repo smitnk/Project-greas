@@ -140,7 +140,7 @@ internal class ProjectGreaseDrawingSurfaceView(
     private var rendererHandle = 0L
     // the platform slop scales with screen density; a fixed 24 px was 24 dp on mdpi phones and 6 dp on xxxhdpi
     private val tapSlopPx = android.view.ViewConfiguration.get(context).scaledTouchSlop * 1.5f
-    // Object / armature Edit / Pose touches (RigTouch.kt), Camera view only
+    // Object / armature Edit / Pose touches (RigTouch.kt); in the 3D view Edit / Pose only (handle3D)
     private val rigTouch = RigTouch(controller, ::canvasPoint) {
         RigController.SELECT_DIST_PX * resources.displayMetrics.density / pixelsPerUnit().coerceAtLeast(1e-3f) }
     // the 3D view's navigation / object touches (View3D.kt); the Camera view never reaches it
@@ -239,6 +239,7 @@ internal class ProjectGreaseDrawingSurfaceView(
 
     private fun handleTouch(event: MotionEvent): Boolean {
         if (rendererHandle == 0L) return true
+        if (View3DUi.active && rigTouch.handle3D(event)) return true // armature Edit / Pose picks through the 3D view
         if (View3DUi.active && view3dTouch.handle(event)) return true
         if (!View3DUi.active && rigTouch.handle(event)) return true
 

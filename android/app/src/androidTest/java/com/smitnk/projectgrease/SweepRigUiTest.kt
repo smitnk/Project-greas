@@ -12,6 +12,8 @@ import com.smitnk.projectgrease.editor.GreaseTool
 import com.smitnk.projectgrease.editor.ModifierType
 import com.smitnk.projectgrease.editor.RigController
 import com.smitnk.projectgrease.editor.RigController.RigIds
+import com.smitnk.projectgrease.nativebridge.View3DNative
+import com.smitnk.projectgrease.nativebridge.View3DUi
 import com.smitnk.projectgrease.ui.addSwap
 import androidx.compose.ui.test.onAllNodesWithTag
 import org.junit.Assert.assertEquals
@@ -58,8 +60,14 @@ class SweepRigUiTest : SweepBase() {
         assertEquals("EDIT", onUi { controller.studioModeName })
         click("rigBoneAdd")
         assertEquals(1, onUi { rig.boneCount })
+        // Extrude is a drag (armature.extrude_move): armed in the panel, the drag puts the new tail under the finger
         click("rigExtrude")
+        assertTrue(onUi { rig.extrudeNext })
+        back()
+        drag(cx to cy - 100f, cx + 80f to cy - 180f)
         assertEquals(2, onUi { rig.boneCount })
+        onUi { rig.bone(1)!! }.let { assertEquals(cx + 80f, it.tailX, 2f); assertEquals(cy - 180f, it.tailY, 2f) }
+        openRig()
         rule.onNodeWithTag("rigBoneName").performScrollTo().performTextReplacement("Jaw")
         click("rigRename")
         assertTrue("Jaw" in boneNames())
@@ -187,6 +195,90 @@ class SweepRigUiTest : SweepBase() {
         val saved = onUi { controller.saveDocumentJson() }!!
         onUi { assertTrue(controller.loadDocumentJson(saved)) }
         assertTrue(boneNames().containsAll(listOf("Bone", "Jaw", "Swap.Mouth")))
+    }
+
+    /** A finger held still on [at] for longer than the long-press timeout, then dragged to [to] (screen px). */
+    private fun longPressDrag(at: Pair<Float, Float>, to: Pair<Float, Float>) {
+        val down = android.os.SystemClock.uptimeMillis()
+        instrumentation.sendPointerSync(event(android.view.MotionEvent.ACTION_DOWN, down, at.first, at.second))
+        android.os.SystemClock.sleep(android.view.ViewConfiguration.getLongPressTimeout() + 300L)
+        rule.waitForIdle()
+        for (s in 1..12) {
+            val t = s / 12f
+            android.os.SystemClock.sleep(12)
+            instrumentation.sendPointerSync(event(android.view.MotionEvent.ACTION_MOVE, down,
+                at.first + (to.first - at.first) * t, at.second + (to.second - at.second) * t))
+        }
+        instrumentation.sendPointerSync(event(android.view.MotionEvent.ACTION_UP, down, to.first, to.second))
+        rule.waitForIdle()
+    }
+
+    /** View px of the 3D view -> screen px. */
+    private fun view3dScreen(x: Float, y: Float): Pair<Float, Float> {
+        val loc = IntArray(2)
+        onUi { surface().getLocationOnScreen(loc) }
+        return loc[0] + x to loc[1] + y
+    }
+
+    @Test fun extrudeMirrorAnd3DPick() {
+        val (w, h) = onUi { controller.document.canvasWidth.toFloat() to controller.document.canvasHeight.toFloat() }
+        val cx = w / 2f; val cy = h / 2f
+        openRig(); click("rigAdd")
+        onUi {
+            rig.deleteSelected()
+            // the mirror plane is armature x = 0 (canvas x 0): Arm.R lies across it, off the canvas
+            rig.addBone(cx, cy, cx + 150f, cy, "Arm.L")
+            rig.addBone(-cx, cy, -cx - 150f, cy, "Arm.R")
+            controller.history.markEdit()
+        }
+        rule.waitForIdle()
+        // X-Axis Mirror toggle (off again at the end)
+        click("rigMirrorX")
+        assertTrue(onUi { rig.mirrorX })
+        assertEquals(1, armature().getInt("mirror_x"))
+        back()
+        // long press on the Arm.L tail joint, drag: extrude_move, mirrored onto Arm.R
+        longPressDrag(screen(cx + 150f, cy), screen(cx + 250f, cy - 60f))
+        val l1 = onUi { rig.findBone("Arm.L.001") }; val r1 = onUi { rig.findBone("Arm.R.001") }
+        assertTrue("extruded: ${boneNames()}", l1 >= 0 && r1 >= 0)
+        val bl = onUi { rig.bone(l1)!! }; val br = onUi { rig.bone(r1)!! }
+        assertEquals(cx + 250f, bl.tailX, 3f); assertEquals(cy - 60f, bl.tailY, 3f)
+        assertEquals(-bl.tailX, br.tailX, 0.5f); assertEquals(bl.tailY, br.tailY, 0.5f)
+        openRig(); click("rigMirrorX"); assertTrue(!onUi { rig.mirrorX }); back()
+
+        // 3D view: pick a bone through the view's projection and rotate it on the bone plane
+        try {
+            mode("POSE")
+            onUi { View3DUi.draw = false; View3DUi.setActive(true, controller); controller.selectTool(GreaseTool.ROTATE) }
+            rule.waitForIdle()
+            val arm = onUi { rig.findBone("Arm.L") }
+            val mid = onUi { View3DNative.nativeCanvasToScreen(cx + 75f, cy, 0f) }!!
+            val tail = onUi { View3DNative.nativeCanvasToScreen(cx + 150f, cy, 0f) }!!
+            val head = onUi { View3DNative.nativeCanvasToScreen(cx, cy, 0f) }!!
+            val a = view3dScreen(mid[0], mid[1])
+            // sweep around the head on screen: from the tail a quarter turn
+            val b = view3dScreen(head[0] - (tail[1] - head[1]), head[1] + (tail[0] - head[0]))
+            quickDrag(a, b)
+            assertEquals(arm, onUi { rig.activeBone })
+            val p = onUi { rig.bone(arm)!! }
+            assertTrue("Arm.L turned in 3D: ${p.poseTailX},${p.poseTailY}", kotlin.math.abs(p.poseTailY - cy) > 20f)
+        } finally {
+            onUi { View3DUi.setActive(false, controller); View3DNative.nativeReset() }
+        }
+    }
+
+    /** A quick drag between screen points (no hold). */
+    private fun quickDrag(a: Pair<Float, Float>, b: Pair<Float, Float>) {
+        val down = android.os.SystemClock.uptimeMillis()
+        instrumentation.sendPointerSync(event(android.view.MotionEvent.ACTION_DOWN, down, a.first, a.second))
+        for (s in 1..12) {
+            val t = s / 12f
+            android.os.SystemClock.sleep(12)
+            instrumentation.sendPointerSync(event(android.view.MotionEvent.ACTION_MOVE, down,
+                a.first + (b.first - a.first) * t, a.second + (b.second - a.second) * t))
+        }
+        instrumentation.sendPointerSync(event(android.view.MotionEvent.ACTION_UP, down, b.first, b.second))
+        rule.waitForIdle()
     }
 
     @Test fun addSwapHelperThroughController() {

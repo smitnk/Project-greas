@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Project document JSON of the rig (see pg_arm_to_json in project_grease_armature.h):
- * {"version":1,"mode":0,"active":-1,"drawtype":0,"in_front":0,
+ * {"version":1,"mode":0,"active":-1,"drawtype":0,"in_front":0,"mirror_x":0,
  *  "bones":[{"name","parent","head":[3],"tail":[3],"roll","flag","inherit","dist","weight",
- *            "radHead","radTail","segments","layer"}],           (EditBone, list order)
- *  "pose":[{"name","loc":[3],"quat":[4],"scale":[3]}],
+ *            "radHead","radTail","segments","layer","bbone":[14]}], (EditBone, list order)
+ *  "pose":[{"name","loc":[3],"quat":[4],"scale":[3],"bbone":[14]}],  (bbone: PG_ARM_BBONE order)
  *  "fcurves":[{"path","index","extend","smoothing","flag",
  *              "keys":[[x,y,ipo,h1,h2,lx,ly,rx,ry,easing,keytype], ...]}],
  *  "props":[...], "drivers":[...]}  (see put_props / put_drivers)
@@ -190,6 +190,26 @@ void read_vec(const JValue *v, float *dst, int n)
   for (int i = 0; i < n && i < (int)v->arr.size(); i++) {
     if (v->arr[i].kind == JValue::NUM) dst[i] = (float)v->arr[i].num;
   }
+}
+
+/* "bbone":[PG_ARM_BBONE] (pg_arm_bone_bbone order); EditBone and bPoseChannel share the names */
+void put_bbone(std::string &s, int (*get)(const PGArmature *, int, float *), const PGArmature *a, int bone)
+{
+  float v[PG_ARM_BBONE];
+  if (!get(a, bone, v)) return;
+  s += ",\"bbone\":";
+  put_vec(s, v, PG_ARM_BBONE);
+}
+
+template<class T> void read_bbone(const JValue *jv, T *b)
+{
+  float v[PG_ARM_BBONE];
+  if (!jv || jv->kind != JValue::ARR || jv->arr.size() != PG_ARM_BBONE) return;
+  for (int i = 0; i < PG_ARM_BBONE; i++) if (jv->arr[i].kind != JValue::NUM || !std::isfinite(jv->arr[i].num)) return;
+  read_vec(jv, v, PG_ARM_BBONE);
+  b->ease1 = v[0]; b->ease2 = v[1]; b->roll1 = v[2]; b->roll2 = v[3];
+  b->curve_in_x = v[4]; b->curve_in_z = v[5]; b->curve_out_x = v[6]; b->curve_out_z = v[7];
+  copy_v3_v3(b->scale_in, v + 8); copy_v3_v3(b->scale_out, v + 11);
 }
 
 std::string read_str(const JValue *v) { return v && v->kind == JValue::STR ? v->str : std::string(); }
@@ -419,6 +439,8 @@ char *pg_arm_to_json(const PGArmature *a)
   put_num(s, a->arm.drawtype);
   s += ",\"in_front\":";
   put_num(s, a->show_in_front);
+  s += ",\"mirror_x\":";
+  put_num(s, pg_arm_mirror_x(a) ? 1 : 0);
   s += ",\"bones\":[";
   bool first = true;
   LISTBASE_FOREACH (const EditBone *, eb, &a->edbo) {
@@ -437,6 +459,7 @@ char *pg_arm_to_json(const PGArmature *a)
     s += ",\"radTail\":"; put_num(s, eb->rad_tail);
     s += ",\"segments\":"; put_num(s, eb->segments);
     s += ",\"layer\":"; put_num(s, eb->layer);
+    put_bbone(s, pg_arm_bone_bbone, a, BLI_findindex(&a->edbo, eb));
     s += '}';
   }
   s += "],\"pose\":[";
@@ -448,6 +471,7 @@ char *pg_arm_to_json(const PGArmature *a)
     s += ",\"loc\":"; put_vec(s, pc->loc, 3);
     s += ",\"quat\":"; put_vec(s, pc->quat, 4);
     s += ",\"scale\":"; put_vec(s, pc->size, 3);
+    put_bbone(s, pg_arm_pose_bbone, a, pg_arm_bone_find(a, pc->name));
     put_constraints(s, a, pg_arm_bone_find(a, pc->name));
     s += '}';
   }
@@ -496,8 +520,9 @@ PGArmature *pg_arm_from_json(const char *json)
     eb->weight = (float)jb.n("weight", eb->weight);
     eb->rad_head = (float)jb.n("radHead", eb->rad_head);
     eb->rad_tail = (float)jb.n("radTail", eb->rad_tail);
-    eb->segments = (short)jb.n("segments", 1);
+    eb->segments = (short)CLAMPIS((int)jb.n("segments", 1), 1, 32);
     eb->layer = (int)jb.n("layer", eb->layer);
+    read_bbone(jb.get("bbone"), eb);
     list.push_back(eb);
   }
   for (size_t i = 0; i < list.size(); i++) {
@@ -513,6 +538,7 @@ PGArmature *pg_arm_from_json(const char *json)
   const int active = (int)root.n("active", -1);
   a->arm.act_edbone = active >= 0 && active < (int)list.size() ? list[active] : nullptr;
   pg_arm_set_display(a, (int)root.n("drawtype", ARM_OCTA), root.n("in_front", 0) != 0);
+  pg_arm_set_mirror_x(a, root.n("mirror_x", 0) != 0);
   const int mode = (int)root.n("mode", 0);
   pg_arm_set_mode(a, mode);
   pg_arm_update(a);
@@ -524,6 +550,7 @@ PGArmature *pg_arm_from_json(const char *json)
       read_vec(jp.get("loc"), pc->loc, 3);
       read_vec(jp.get("quat"), pc->quat, 4);
       read_vec(jp.get("scale"), pc->size, 3);
+      read_bbone(jp.get("bbone"), pc);
     }
   }
   if (const JValue *curves = root.get("fcurves"); curves && curves->kind == JValue::ARR) {

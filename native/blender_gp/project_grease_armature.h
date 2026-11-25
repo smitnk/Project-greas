@@ -28,6 +28,7 @@ extern "C" {
 
 struct bGPdata;
 struct bGPDframe;
+struct bGPDlayer;
 struct bGPDstroke;
 struct FCurve;
 
@@ -63,6 +64,14 @@ int pg_arm_bone_info(const PGArmature *a, int bone, float *r);
 int pg_arm_bone_set_envelope(PGArmature *a, int bone, float dist, float weight, float rad_head,
                              float rad_tail, bool deform, bool mult_vg);
 int pg_arm_bone_envelope(const PGArmature *a, int bone, float r[4]);
+/* B-Bone: ease1, ease2, roll1, roll2, curve_in_x, curve_in_z, curve_out_x, curve_out_z,
+ * scale_in[3], scale_out[3] of the edit bone (rest shape, plus segments 1..32) or of the pose
+ * channel (animated offsets). pg_arm_bone_bbone returns the segments. */
+#define PG_ARM_BBONE 14
+int pg_arm_bone_set_bbone(PGArmature *a, int bone, int segments, const float v[PG_ARM_BBONE]);
+int pg_arm_bone_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE]);
+int pg_arm_pose_set_bbone(PGArmature *a, int bone, const float v[PG_ARM_BBONE]);
+int pg_arm_pose_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE]);
 
 /* ---- edit mode (ARMATURE_OT_*) ---- */
 /* bone_primitive_add: deselects all, adds a bone named `name` ("Bone" if empty, made unique),
@@ -74,6 +83,10 @@ int pg_arm_edit_select(PGArmature *a, int bone, int flags, bool extend);
 /* armature_extrude_exec (forked false) on the selection, then moves the new tips by delta (the
  * translate that follows E). Returns the number of new bones; the last one is active. */
 int pg_arm_extrude(PGArmature *a, const float delta[3]);
+/* X-Axis Mirror (Armature.use_mirror_x): edit transforms and extrude also change the bone with the
+ * flipped side name (Bone.L / Bone.R ...), mirrored across armature x = 0. */
+void pg_arm_set_mirror_x(PGArmature *a, bool mirror);
+bool pg_arm_mirror_x(const PGArmature *a);
 /* Transform of the selected heads / tails (TFM_TRANSLATION / TFM_ROTATION about +z / TFM_RESIZE)
  * with recalcData_edit_armature: connected heads follow, envelope radii scale with the length,
  * roll is kept relative to the bone (the "fix roll" pass). */
@@ -104,8 +117,12 @@ int pg_arm_pose_set(PGArmature *a, int bone, const float v[10]);
  * parent and are not transformed themselves): translate the head (unconnected bones), rotate about
  * +z around each bone's head, scale its local axes. */
 int pg_arm_pose_translate(PGArmature *a, const float delta[3]);
-int pg_arm_pose_rotate(PGArmature *a, float angle);
-int pg_arm_pose_scale(PGArmature *a, float factor);
+/* Transform Pivot Point (V3D_AROUND_*): Median Point (Blender's default) rotates / scales the
+ * selected bones about the mean of their heads; Individual Origins about each own head. */
+#define PG_ARM_AROUND_INDIVIDUAL 2 /* V3D_AROUND_LOCAL_ORIGINS */
+#define PG_ARM_AROUND_MEDIAN 3     /* V3D_AROUND_CENTER_MEDIAN */
+int pg_arm_pose_rotate(PGArmature *a, float angle, int around);
+int pg_arm_pose_scale(PGArmature *a, float factor, int around);
 /* POSE_OT_loc_clear / rot_clear / scale_clear on the selected channels: what = 1 loc, 2 rot, 4 scale */
 int pg_arm_pose_clear(PGArmature *a, int what);
 /* POSE_OT_copy (selected bones) / POSE_OT_paste (flipped: BLI_string_flip_side_name, x mirror) */
@@ -148,6 +165,9 @@ int pg_arm_deform_stroke(const PGArmature *a, const struct bGPdata *gpd, struct 
  * 2 With Automatic Weights, 3 With Envelope Weights (Blender 3.6 handles it like Automatic for GP).
  * Returns the number of vertex groups added, or -1. */
 int pg_arm_bind_frame(const PGArmature *a, struct bGPdata *gpd, struct bGPDframe *gpf, int mode);
+/* The same for every frame of `gpl` (multi-frame bind); actframe is the frame shown. */
+int pg_arm_bind_layer(const PGArmature *a, struct bGPdata *gpd, struct bGPDlayer *gpl,
+                      struct bGPDframe *actframe, int mode);
 
 /* ---- viewport display ---- */
 /* bArmature.drawtype (ARM_OCTA 0 default / ARM_LINE 1 stick / B-Bone 2 / Envelope 3 / Wire 4; only

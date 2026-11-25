@@ -356,8 +356,8 @@ enum {
   PG_ARM_CMD_ENVELOPE = 14,       /* bone; dist px, weight, rad head px, rad tail px, deform, mult vg */
   PG_ARM_CMD_POSE_SELECT = 15,    /* bone (-1 none); extend */
   PG_ARM_CMD_POSE_TRANSLATE = 16, /* dx, dy */
-  PG_ARM_CMD_POSE_ROTATE = 17,    /* angle */
-  PG_ARM_CMD_POSE_SCALE = 18,     /* factor */
+  PG_ARM_CMD_POSE_ROTATE = 17,    /* angle[, pivot: 3 median point (default) / 2 individual origins] */
+  PG_ARM_CMD_POSE_SCALE = 18,     /* factor[, pivot as rotate] */
   PG_ARM_CMD_POSE_SET = 19,       /* bone; loc[3], quat[4], scale[3] (bone space, Blender units) */
   PG_ARM_CMD_POSE_CLEAR = 20,     /* what: 1 loc, 2 rot, 4 scale */
   PG_ARM_CMD_POSE_COPY = 21,      /* - */
@@ -369,6 +369,7 @@ enum {
   PG_ARM_CMD_EVALUATE = 27,       /* frame */
   PG_ARM_CMD_DISPLAY = 28,        /* drawtype (ARM_OCTA 0 / ARM_LINE 1 ...), show in front */
   PG_ARM_CMD_KEY_MOVE = 30,       /* bone; frame, to (dope sheet key move) */
+  PG_ARM_CMD_MIRROR_X = 31,       /* X-Axis Mirror on (1) / off (0) */
   PG_ARM_CMD_PICK = 29,           /* x, y, dist, extend[, canvas px -> window 4x4 (16, column major)];
                                      no matrix: x, y, dist in canvas px. Returns the bone or -1 */
 };
@@ -380,7 +381,7 @@ enum {
   PG_ARM_Q_KEY_INTERPOLATION = 4, /* ipo of the bone's key at frame x, -1 none */
   PG_ARM_Q_ENVELOPE = 5, /* dist px, weight, rad head px, rad tail px */
   PG_ARM_Q_SELECTED = 6, /* 1 / 0 */
-  PG_ARM_Q_DISPLAY = 7,  /* drawtype, show in front */
+  PG_ARM_Q_DISPLAY = 7,  /* drawtype, show in front, X-Axis Mirror */
 };
 /* Constraints, custom properties and drivers (project_grease_constraint.h / project_grease_driver.h,
  * project_grease_rig_bridge.cpp). Strings go in `name`; constraint / property / driver names, paths

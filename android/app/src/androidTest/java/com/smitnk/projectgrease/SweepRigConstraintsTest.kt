@@ -100,11 +100,14 @@ class SweepRigConstraintsTest : SweepBase() {
         // the child turns 90 degrees about the parent head (600, 600): (400, 600) -> (600, 800)
         val child = onUi { rig.bone(0)!! }
         assertEquals(600f, child.poseHeadX, 0.2f); assertEquals(800f, child.poseHeadY, 0.2f)
+        // Clear Inverse (childof_evaluate: parmat * owner): the rest offset turns with the parent,
+        // (0.4, -0.6) -> (0.6, 0.4) + head (0.6, -0.6) = (1.2, -0.2) units = (1200, 200) px
         onUi { assertTrue(rig.childOfClearInverse(0, 0)) }
-        assertEquals(600f, onUi { rig.bone(0)!! }.poseHeadX, 0.2f)
-        assertEquals(600f, onUi { rig.bone(0)!! }.poseHeadY, 0.2f)
+        assertEquals(1200f, onUi { rig.bone(0)!! }.poseHeadX, 0.2f)
+        assertEquals(200f, onUi { rig.bone(0)!! }.poseHeadY, 0.2f)
         onUi { assertTrue(rig.childOfSetInverse(0, 0)) }
         assertEquals(400f, onUi { rig.bone(0)!! }.poseHeadX, 0.2f)
+        assertEquals(600f, onUi { rig.bone(0)!! }.poseHeadY, 0.2f)
     }
 
     @Test fun masterSliderDrivesBonesAndDrawingSwap() {

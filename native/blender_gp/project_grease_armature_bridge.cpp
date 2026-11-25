@@ -173,6 +173,9 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
     default:
       return -1;
   }
+  /* a pose / bone edit tags the depsgraph: the drivers reading bones run again (not the action,
+   * which would undo the edit until the next key) */
+  if (cmd != PG_ARM_CMD_EVALUATE) backend.armature_evaluate(-1.0f, false);
   backend.armature_changed();
   return r;
 }

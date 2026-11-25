@@ -2268,6 +2268,35 @@ void BKE_pose_where_is_bone(struct Depsgraph *depsgraph,
  * BKE_pose_bone_done (armature_update.c) computes. ARM_RESTPOS reads the rest pose; edit mode
  * keeps evaluating the pose (Project Grease keeps arm->edbo all the time and skips the deform in
  * edit mode instead). */
+/* The depsgraph runs a bone after its parent and after the bones its constraints target
+ * (deg_builder_relations.cc build_rig / build_constraints, bone_target_opcode BONE_DONE); the list
+ * order alone would read a stale target when the target comes later (Child Of on bone 0 targeting
+ * bone 1). IK chains keep the tree solver's order (the BONE_READY case). */
+static bool pose_dep_pending(const bPoseChannel *pchan)
+{
+  return pchan && !(pchan->flag & (POSE_DONE | POSE_IKTREE | POSE_CHAIN));
+}
+
+static void pose_where_is_bone_after_deps(Object *ob, bPoseChannel *pchan, float ctime, int depth)
+{
+  if (depth > 64) return; /* a dependency cycle: the depsgraph also evaluates it in some order */
+  if (pose_dep_pending(pchan->parent)) pose_where_is_bone_after_deps(ob, pchan->parent, ctime, depth + 1);
+  LISTBASE_FOREACH (bConstraint *, con, &pchan->constraints) {
+    const bConstraintTypeInfo *cti = BKE_constraint_typeinfo_get(con);
+    ListBase targets = {NULL, NULL};
+    if (!cti || !cti->get_constraint_targets || (con->flag & CONSTRAINT_OFF)) continue;
+    cti->get_constraint_targets(con, &targets);
+    LISTBASE_FOREACH (bConstraintTarget *, ct, &targets) {
+      bPoseChannel *t = ct->tar == ob && ct->subtarget[0] ? BKE_pose_channel_find_name(ob->pose, ct->subtarget) : NULL;
+      if (t != pchan && pose_dep_pending(t)) pose_where_is_bone_after_deps(ob, t, ctime, depth + 1);
+    }
+    if (cti->flush_constraint_targets) cti->flush_constraint_targets(con, &targets, 1);
+  }
+  if (pchan->flag & POSE_DONE) return; /* reached through a cycle */
+  BKE_pose_where_is_bone(NULL, NULL, ob, pchan, ctime, 1);
+  pchan->flag |= POSE_DONE;
+}
+
 void pg_bke_pose_where_is(Object *ob)
 {
   bArmature *arm = ob->data;
@@ -2307,7 +2336,7 @@ void pg_bke_pose_where_is(Object *ob)
       }
       /* 5. otherwise just call the normal solver */
       else if (!(pchan->flag & POSE_DONE)) {
-        BKE_pose_where_is_bone(NULL, NULL, ob, pchan, ctime, 1);
+        pose_where_is_bone_after_deps(ob, pchan, ctime, 0);
       }
     }
     /* 6. release the IK tree */

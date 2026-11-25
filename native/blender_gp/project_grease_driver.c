@@ -1577,6 +1577,22 @@ static void driver_touched(FCurve *fcu, bool expr_changed, bool varname_changed)
   BKE_driver_invalidate_expression(fcu->driver, expr_changed, varname_changed);
 }
 
+void pg_drv_evaluate_loading(PGArmature *a, float frame, const PGArmExternal *ext)
+{
+  if (!a) return;
+  const int count = BLI_listbase_count(&a->drivers);
+  short *flags = MEM_mallocN(sizeof(short) * (count + 1), __func__);
+  int i = 0;
+  LISTBASE_FOREACH (FCurve *, fcu, &a->drivers) flags[i++] = fcu->driver ? fcu->driver->flag : 0;
+  pg_arm_evaluate_ex(a, frame, ext);
+  i = 0;
+  LISTBASE_FOREACH (FCurve *, fcu, &a->drivers) {
+    if (fcu->driver) SET_FLAG_FROM_TEST(fcu->driver->flag, flags[i] & DRIVER_FLAG_INVALID, DRIVER_FLAG_INVALID);
+    i++;
+  }
+  MEM_freeN(flags);
+}
+
 int pg_arm_driver_count(const PGArmature *a) { return a ? BLI_listbase_count(&a->drivers) : 0; }
 
 int pg_arm_driver_find(const PGArmature *a, const char *path, int index)

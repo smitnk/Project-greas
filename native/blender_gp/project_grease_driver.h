@@ -99,6 +99,10 @@ void pg_drv_rename_bone(PGArmature *a, const char *oldname, const char *newname)
  * another driver reads" (cycles keep list order); a Transform Channel variable sees the pose
  * re-evaluated after the bone channels written so far; then the final pose. */
 void pg_drv_evaluate(PGArmature *a, float frame, const PGArmExternal *ext);
+/* pg_arm_evaluate_ex on a document that is still loading: a driver whose path is not there yet
+ * (a layer restored after the rig) is not marked DRIVER_FLAG_INVALID, as Blender only evaluates a
+ * file once all of it is read. */
+void pg_drv_evaluate_loading(PGArmature *a, float frame, const PGArmExternal *ext);
 /* Driver list helpers for the document IO. */
 struct FCurve *pg_drv_new_fcurve(const char *path, int index);
 void pg_drv_fcurve_free(struct FCurve *fcu);

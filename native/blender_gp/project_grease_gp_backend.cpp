@@ -5498,7 +5498,12 @@ bool Backend::armature_load_json(const char *json)
   }
   impl_->armature = arm_share(a);
   armature_changed();
-  arm_evaluate(impl_, static_cast<float>(impl_->cfra));
+  /* the document restores the rig before its layers (ProjectDocumentCodec.restore): a layer
+   * driver must not be marked invalid for a layer that is not read yet */
+  ArmExternalCtx ctx = {impl_, false};
+  const PGArmExternal ext = {&ctx, arm_external_get, arm_external_set};
+  pg_drv_evaluate_loading(a, static_cast<float>(impl_->cfra), &ext);
+  impl_->stack_revision = next_revision();
   return true;
 }
 

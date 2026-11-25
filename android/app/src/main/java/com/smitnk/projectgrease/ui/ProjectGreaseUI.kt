@@ -1625,6 +1625,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             // scrolls on short screens and at large text sizes, so no tool is ever cut off
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
                 IconButton(onClick={toolbarHidden=true},Modifier.size(48.dp).testTag("toolbarHide")){Icon(PgIcons.ChevronLeft,"Hide tools")}
+                // first, so the brush presets and mode chips are reachable without scrolling the rail
+                ToolbarButton(PgIcons.Tune,"Options",popup==StudioPopup.OPTIONS){popup=if(popup==StudioPopup.OPTIONS)StudioPopup.NONE else StudioPopup.OPTIONS}
                 // Tap a tool to use it; tap the active tool again for its options.
                 fun pick(t:GreaseTool){ if(tool==t) popup=StudioPopup.OPTIONS else { controller.selectTool(t); popup=StudioPopup.NONE }; redraw() }
                 ToolbarButton(PgIcons.Brush,"Brush",tool==GreaseTool.DRAW||tool==GreaseTool.SCULPT){pick(if(controller.mode==GreaseMode.SCULPT)GreaseTool.SCULPT else GreaseTool.DRAW)}
@@ -1652,7 +1654,6 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
                 // quick Copy / Paste: the selection, or the whole frame when nothing is selected
                 IconButton(onClick={val ok=controller.quickCopy();com.smitnk.projectgrease.CrashLog.event("QUICK COPY -> $ok");toast(context,if(ok)"Copied" else "Nothing to copy on this frame")},Modifier.testTag("quickCopy")){Icon(PgIcons.ContentCopy,"Copy")}
                 IconButton(onClick={val ok=controller.pasteStrokes();com.smitnk.projectgrease.CrashLog.event("QUICK PASTE frame ${controller.animation.currentFrame} -> $ok");toast(context,if(ok)"Pasted on frame ${controller.animation.currentFrame}" else "Nothing to paste (copy first)");redraw()},Modifier.testTag("quickPaste")){Icon(PgIcons.ContentPaste,"Paste")}
-                ToolbarButton(PgIcons.Tune,"Options",popup==StudioPopup.OPTIONS){popup=if(popup==StudioPopup.OPTIONS)StudioPopup.NONE else StudioPopup.OPTIONS}
             }
         }
 

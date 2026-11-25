@@ -132,8 +132,10 @@ class RigTouch(
      * translate. [follow] false: the new tail jumps under the finger at (x, y) first.
      */
     private fun startExtrude(x: Float, y: Float, follow: Boolean): Boolean {
-        if (rig.extrude(0f, 0f) <= 0) return false
+        // not (0, 0): pg_bke_armature_from_edit (run by every arm_update) drops zero-length bones, so a bare extrude vanishes
+        if (rig.extrude(1f, 0f) <= 0) return false
         extruding = true
+        if (follow) lastX += 1f // the new tail starts 1 px right of the tip: the drag deltas take that back out
         if (!follow) rig.bone(rig.activeBone)?.let { rig.editTranslate(x - it.tailX, y - it.tailY) }
         controller.render()
         return true

@@ -473,8 +473,8 @@ static void test_bbone_deform()
   MEM_freeN(gpd);
 }
 
-/* Bind on every frame (gpencil_add_verts_to_dgroups, multi-frame): all the frames of the layer get
- * the Automatic Weights, the frame selection is kept. */
+/* Bind frames (gpencil_add_verts_to_dgroups): the active frame, and with multi-frame editing the
+ * selected frames too. */
 static void test_multiframe_bind()
 {
   BKE_gpencil_batch_cache_dirty_tag_cb = no_cache;
@@ -496,13 +496,18 @@ static void test_multiframe_bind()
   /* the single-frame bind only weights the frame given */
   CHECK(pg_arm_bind_frame(a, gpd, f2, 2) == 1);
   CHECK(s1->dvert == nullptr);
-  CHECK(pg_arm_bind_layer(a, gpd, gpl, f2, 2) == 0);
-  CHECK(s1->dvert && s3->dvert && s2->dvert);
+  /* layer bind, multi-frame editing off: the active frame only (Blender's parent_set default) */
+  CHECK(pg_arm_bind_layer(a, gpd, gpl, f1, 2) == 0);
+  CHECK(s1->dvert && s3->dvert == nullptr);
   NEAR(BKE_defvert_find_weight(&s1->dvert[0], 0), 1.0, 1e-6);
-  NEAR(BKE_defvert_find_weight(&s2->dvert[0], 0), 0.45, 1e-5); /* as in test_deform_and_bind */
+  /* on: the active frame and the GP_FRAME_SELECT ones (f3), not the unselected f2 again */
+  BKE_defvert_ensure_index(&s2->dvert[0], 0)->weight = 0.0f;
+  gpd->flag |= GP_DATA_STROKE_MULTIEDIT | GP_DATA_STROKE_EDITMODE; /* GPENCIL_MULTIEDIT_SESSIONS_ON */
+  CHECK(pg_arm_bind_layer(a, gpd, gpl, f1, 2) == 0);
+  CHECK(s3->dvert != nullptr);
   NEAR(BKE_defvert_find_weight(&s3->dvert[0], 0), 1.0, 1e-6);
+  NEAR(BKE_defvert_find_weight(&s2->dvert[0], 0), 0.0, 0);
   CHECK(!(f1->flag & GP_FRAME_SELECT) && !(f2->flag & GP_FRAME_SELECT) && (f3->flag & GP_FRAME_SELECT));
-  CHECK(pg_arm_bind_layer(a, gpd, gpl, nullptr, 2) == 0); /* no frame shown: still every frame */
   pg_arm_free(a);
   BKE_gpencil_free_layers(&gpd->layers);
   BLI_freelistN(&gpd->vertex_group_names);

@@ -1232,22 +1232,10 @@ int pg_arm_bind_layer(const PGArmature *a, bGPdata *gpd, bGPDlayer *gpl, bGPDfra
   if (mode == 0) return 0;
   float mat[4][4];
   pg_arm_canvas_matrix(mat);
-  /* gpencil_add_verts_to_dgroups in multi-frame editing with every frame selected: all the frames
-   * of the layer get weights. The selection is put back afterwards. */
-  int n = 0;
-  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) n++;
-  short *flags = MEM_mallocN(sizeof(short) * (n + 1), __func__);
-  n = 0;
-  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
-    flags[n++] = gpf->flag;
-    gpf->flag |= GP_FRAME_SELECT;
-  }
-  const int added = pg_bke_gpencil_vgroup_calc_from_armature(
-      gpd, gpl, actframe, true, &a->arm, &a->pose, mat, mode == 1 ? 0 : 1, 0.10f, 0.8f);
-  n = 0;
-  LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) gpf->flag = flags[n++];
-  MEM_freeN(flags);
-  return added;
+  /* gpencil_add_verts_to_dgroups: the active frame, plus the selected frames in multi-frame editing */
+  const bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+  return pg_bke_gpencil_vgroup_calc_from_armature(
+      gpd, gpl, actframe, is_multiedit, &a->arm, &a->pose, mat, mode == 1 ? 0 : 1, 0.10f, 0.8f);
 }
 
 #define PG_ARM_REGISTRY 8

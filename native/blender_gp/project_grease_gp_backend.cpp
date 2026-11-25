@@ -5437,7 +5437,7 @@ int Backend::armature_bind(int mode)
     if (!has && modifier_add(index, PG_MOD_ARMATURE) < 0) return -1;
     if (mode > 0) {
       bGPDframe *gpf = held_key_at(gpl, impl_->cfra);
-      /* every frame of the layer (multi-frame bind); groups are created once */
+      /* the shown frame, plus the selected frames in multi-frame editing; groups are created once */
       const int n = pg_arm_bind_layer(a, impl_->gpd, gpl, gpf, mode);
       if (n < 0) return -1;
       added += n;

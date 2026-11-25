@@ -165,7 +165,8 @@ int pg_arm_deform_stroke(const PGArmature *a, const struct bGPdata *gpd, struct 
  * 2 With Automatic Weights, 3 With Envelope Weights (Blender 3.6 handles it like Automatic for GP).
  * Returns the number of vertex groups added, or -1. */
 int pg_arm_bind_frame(const PGArmature *a, struct bGPdata *gpd, struct bGPDframe *gpf, int mode);
-/* The same for every frame of `gpl` (multi-frame bind); actframe is the frame shown. */
+/* The same for a layer as Blender: actframe (the frame shown), and with multi-frame editing on
+ * (GP_DATA_STROKE_MULTIEDIT) also every GP_FRAME_SELECT frame of `gpl`. */
 int pg_arm_bind_layer(const PGArmature *a, struct bGPdata *gpd, struct bGPDlayer *gpl,
                       struct bGPDframe *actframe, int mode);
 

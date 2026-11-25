@@ -15,7 +15,7 @@ BOBJS=()
 for s in "${BSRC_CXX[@]}"; do o="$OUT/b_$s.o"; g++ "${XF[@]}" -D__ANDROID__ -DWITH_OPENGL "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_$s.cpp" -o "$o"; BOBJS+=("$o"); done
 for s in "${BSRC_C[@]}"; do o="$OUT/b_$s.o"; gcc "${CF[@]}" -D__ANDROID__ "${INC[@]}" -c "$ROOT/native/blender_gp/project_grease_$s.c" -o "$o"; BOBJS+=("$o"); done
 gcc "${CF[@]}" "${INC[@]}" -c "$B/source/blender/blenlib/intern/math_color.c" -o "$OUT/b_math_color.o"; BOBJS+=("$OUT/b_math_color.o")
-for T in test_backend_rig_deform test_backend_rig_eval_order; do
+for T in test_backend_rig_deform test_backend_rig_eval_order test_backend_rig_extrude_ui; do
 g++ "${XF[@]}" -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/$T.cc" \
   "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/$T" > "$OUT/link2.txt" 2>&1 || {
   grep -E "error|undefined reference|multiple definition" "$OUT/link2.txt" | sort | uniq -c | sort -rn | head -40; exit 1; }

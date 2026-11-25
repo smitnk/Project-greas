@@ -119,10 +119,10 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
       r = pg_arm_pose_translate(a, v0);
       break;
     case PG_ARM_CMD_POSE_ROTATE:
-      r = pg_arm_pose_rotate(a, arg(args, n, 0));
+      r = pg_arm_pose_rotate(a, arg(args, n, 0), (int)arg(args, n, 1, PG_ARM_AROUND_MEDIAN));
       break;
     case PG_ARM_CMD_POSE_SCALE:
-      r = pg_arm_pose_scale(a, arg(args, n, 0, 1.0f));
+      r = pg_arm_pose_scale(a, arg(args, n, 0, 1.0f), (int)arg(args, n, 1, PG_ARM_AROUND_MEDIAN));
       break;
     case PG_ARM_CMD_POSE_SET:
       if (n < 10) return -1;
@@ -148,6 +148,10 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
       break;
     case PG_ARM_CMD_KEY_MOVE:
       r = pg_arm_key_move(a, bone, arg(args, n, 0, 1.0f), arg(args, n, 1, 1.0f));
+      break;
+    case PG_ARM_CMD_MIRROR_X:
+      pg_arm_set_mirror_x(a, arg(args, n, 0) != 0.0f);
+      r = 1;
       break;
     case PG_ARM_CMD_DISPLAY:
       pg_arm_set_display(a, (int)arg(args, n, 0), arg(args, n, 1) != 0.0f);
@@ -238,7 +242,8 @@ int pg_arm_bridge_query(Backend &backend, int what, int bone, float x, float *ou
     case PG_ARM_Q_DISPLAY:
       tmp[0] = (float)pg_arm_display_type(a);
       tmp[1] = pg_arm_show_in_front(a) ? 1.0f : 0.0f;
-      n = 2;
+      tmp[2] = pg_arm_mirror_x(a) ? 1.0f : 0.0f;
+      n = 3;
       break;
     case PG_ARM_Q_SELECTED:
       tmp[0] = pg_arm_bone_selected(a, bone) ? 1.0f : 0.0f;

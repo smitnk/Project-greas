@@ -83,6 +83,10 @@ int pg_arm_edit_select(PGArmature *a, int bone, int flags, bool extend);
 /* armature_extrude_exec (forked false) on the selection, then moves the new tips by delta (the
  * translate that follows E). Returns the number of new bones; the last one is active. */
 int pg_arm_extrude(PGArmature *a, const float delta[3]);
+/* X-Axis Mirror (Armature.use_mirror_x): edit transforms and extrude also change the bone with the
+ * flipped side name (Bone.L / Bone.R ...), mirrored across armature x = 0. */
+void pg_arm_set_mirror_x(PGArmature *a, bool mirror);
+bool pg_arm_mirror_x(const PGArmature *a);
 /* Transform of the selected heads / tails (TFM_TRANSLATION / TFM_ROTATION about +z / TFM_RESIZE)
  * with recalcData_edit_armature: connected heads follow, envelope radii scale with the length,
  * roll is kept relative to the bone (the "fix roll" pass). */
@@ -113,8 +117,12 @@ int pg_arm_pose_set(PGArmature *a, int bone, const float v[10]);
  * parent and are not transformed themselves): translate the head (unconnected bones), rotate about
  * +z around each bone's head, scale its local axes. */
 int pg_arm_pose_translate(PGArmature *a, const float delta[3]);
-int pg_arm_pose_rotate(PGArmature *a, float angle);
-int pg_arm_pose_scale(PGArmature *a, float factor);
+/* Transform Pivot Point (V3D_AROUND_*): Median Point (Blender's default) rotates / scales the
+ * selected bones about the mean of their heads; Individual Origins about each own head. */
+#define PG_ARM_AROUND_INDIVIDUAL 2 /* V3D_AROUND_LOCAL_ORIGINS */
+#define PG_ARM_AROUND_MEDIAN 3     /* V3D_AROUND_CENTER_MEDIAN */
+int pg_arm_pose_rotate(PGArmature *a, float angle, int around);
+int pg_arm_pose_scale(PGArmature *a, float factor, int around);
 /* POSE_OT_loc_clear / rot_clear / scale_clear on the selected channels: what = 1 loc, 2 rot, 4 scale */
 int pg_arm_pose_clear(PGArmature *a, int what);
 /* POSE_OT_copy (selected bones) / POSE_OT_paste (flipped: BLI_string_flip_side_name, x mirror) */

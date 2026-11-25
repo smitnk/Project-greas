@@ -67,6 +67,10 @@ void pg_bke_editbone_clear_parent(struct EditBone *ebone, int mode);
 int pg_bke_insert_vert_fcurve(struct FCurve *fcu, float x, float y);
 void pg_bke_fcurve_handles_recalc(struct FCurve *fcu);
 void pg_bke_edit_sync_selection(struct ListBase *edbo);
+/* X-Axis Mirror (armature_utils.c): the bone named as the flipped side (BLI_string_flip_side_name),
+ * and ED_armature_edit_transform_mirror_update after a transform (arm->flag ARM_MIRROR_EDIT). */
+struct EditBone *ED_armature_ebone_get_mirrored(const struct ListBase *edbo, struct EditBone *ebo);
+void pg_bke_edit_transform_mirror_update(struct bArmature *arm);
 float pg_bke_ebone_roll_to_vector(const struct EditBone *bone, const float align_axis[3], bool axis_only);
 void pg_bke_ebone_to_mat3(struct EditBone *ebone, float r_mat[3][3]);
 float pg_bke_distfactor_to_bone(const float vec[3], const float b1[3], const float b2[3], float rad1,

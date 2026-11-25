@@ -3224,6 +3224,180 @@ EditBone *ED_armature_ebone_find_name(const ListBase *edbo, const char *name)
 /* END VERBATIM */
 
 /* BEGIN VERBATIM source/blender/editors/armature/armature_utils.c */
+EditBone *ED_armature_ebone_get_mirrored(const ListBase *edbo, EditBone *ebo)
+{
+  char name_flip[MAXBONENAME];
+
+  if (ebo == NULL) {
+    return NULL;
+  }
+
+  BLI_string_flip_side_name(name_flip, ebo->name, false, sizeof(name_flip));
+
+  if (!STREQ(name_flip, ebo->name)) {
+    return ED_armature_ebone_find_name(edbo, name_flip);
+  }
+
+  return NULL;
+}
+
+/* ------------------------------------- */
+
+void armature_select_mirrored_ex(bArmature *arm, const int flag)
+{
+  BLI_assert((flag & ~(BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) == 0);
+  /* Select mirrored bones */
+  if (arm->flag & ARM_MIRROR_EDIT) {
+    EditBone *curBone, *ebone_mirr;
+
+    for (curBone = arm->edbo->first; curBone; curBone = curBone->next) {
+      if (arm->layer & curBone->layer) {
+        if (curBone->flag & flag) {
+          ebone_mirr = ED_armature_ebone_get_mirrored(arm->edbo, curBone);
+          if (ebone_mirr) {
+            ebone_mirr->flag |= (curBone->flag & flag);
+          }
+        }
+      }
+    }
+  }
+}
+
+void armature_select_mirrored(bArmature *arm)
+{
+  armature_select_mirrored_ex(arm, BONE_SELECTED);
+}
+
+void armature_tag_select_mirrored(bArmature *arm)
+{
+  EditBone *curBone;
+
+  /* always untag */
+  for (curBone = arm->edbo->first; curBone; curBone = curBone->next) {
+    curBone->flag &= ~BONE_DONE;
+  }
+
+  /* Select mirrored bones */
+  if (arm->flag & ARM_MIRROR_EDIT) {
+    for (curBone = arm->edbo->first; curBone; curBone = curBone->next) {
+      if (arm->layer & curBone->layer) {
+        if (curBone->flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) {
+          EditBone *ebone_mirr = ED_armature_ebone_get_mirrored(arm->edbo, curBone);
+          if (ebone_mirr && (ebone_mirr->flag & BONE_SELECTED) == 0) {
+            ebone_mirr->flag |= BONE_DONE;
+          }
+        }
+      }
+    }
+
+    for (curBone = arm->edbo->first; curBone; curBone = curBone->next) {
+      if (curBone->flag & BONE_DONE) {
+        EditBone *ebone_mirr = ED_armature_ebone_get_mirrored(arm->edbo, curBone);
+        curBone->flag |= ebone_mirr->flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL);
+      }
+    }
+  }
+}
+
+void armature_tag_unselect(bArmature *arm)
+{
+  EditBone *curBone;
+
+  for (curBone = arm->edbo->first; curBone; curBone = curBone->next) {
+    if (curBone->flag & BONE_DONE) {
+      curBone->flag &= ~(BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL | BONE_DONE);
+    }
+  }
+}
+
+/* ------------------------------------- */
+
+void ED_armature_ebone_transform_mirror_update(bArmature *arm, EditBone *ebo, bool check_select)
+{
+  /* TODO: When this function is called by property updates,
+   * canceling the value change will not restore mirrored bone correctly. */
+
+  /* Currently check_select==true when this function is called from a transform operator,
+   * eg. from 3d viewport. */
+
+  /* no layer check, correct mirror is more important */
+  if (!check_select || ebo->flag & (BONE_TIPSEL | BONE_ROOTSEL)) {
+    EditBone *eboflip = ED_armature_ebone_get_mirrored(arm->edbo, ebo);
+    if (eboflip) {
+      /* We assume X-axis flipping for now. */
+
+      /* Always mirror roll, since it can be changed by moving either head or tail. */
+      eboflip->roll = -ebo->roll;
+
+      if (!check_select || ebo->flag & BONE_TIPSEL) {
+        /* Mirror tail properties. */
+
+        eboflip->tail[0] = -ebo->tail[0];
+        eboflip->tail[1] = ebo->tail[1];
+        eboflip->tail[2] = ebo->tail[2];
+        eboflip->rad_tail = ebo->rad_tail;
+        eboflip->curve_out_x = -ebo->curve_out_x;
+        eboflip->curve_out_z = ebo->curve_out_z;
+        copy_v3_v3(eboflip->scale_out, ebo->scale_out);
+        eboflip->ease2 = ebo->ease2;
+        eboflip->roll2 = -ebo->roll2;
+
+        /* Also move connected children, in case children's name aren't mirrored properly. */
+        EditBone *children;
+        for (children = arm->edbo->first; children; children = children->next) {
+          if (children->parent == eboflip && children->flag & BONE_CONNECTED) {
+            copy_v3_v3(children->head, eboflip->tail);
+            children->rad_head = ebo->rad_tail;
+          }
+        }
+      }
+
+      if (!check_select || ebo->flag & BONE_ROOTSEL) {
+        /* Mirror head properties. */
+        eboflip->head[0] = -ebo->head[0];
+        eboflip->head[1] = ebo->head[1];
+        eboflip->head[2] = ebo->head[2];
+        eboflip->rad_head = ebo->rad_head;
+
+        eboflip->curve_in_x = -ebo->curve_in_x;
+        eboflip->curve_in_z = ebo->curve_in_z;
+        copy_v3_v3(eboflip->scale_in, ebo->scale_in);
+        eboflip->ease1 = ebo->ease1;
+        eboflip->roll1 = -ebo->roll1;
+
+        /* Also move connected parent, in case parent's name isn't mirrored properly. */
+        if (eboflip->parent && eboflip->flag & BONE_CONNECTED) {
+          EditBone *parent = eboflip->parent;
+          copy_v3_v3(parent->tail, eboflip->head);
+          parent->rad_tail = ebo->rad_head;
+        }
+      }
+
+      if (!check_select || ebo->flag & BONE_SELECTED) {
+        /* Mirror bone body properties (both head and tail are selected). */
+        /* TODO: These values can also be changed from pose mode,
+         * so only mirroring them in edit mode is not ideal. */
+        eboflip->dist = ebo->dist;
+        eboflip->weight = ebo->weight;
+
+        eboflip->segments = ebo->segments;
+        eboflip->xwidth = ebo->xwidth;
+        eboflip->zwidth = ebo->zwidth;
+      }
+    }
+  }
+}
+/* END VERBATIM */
+
+/* ED_armature_edit_transform_mirror_update (armature_utils.c:436-442) on the bArmature. */
+void pg_bke_edit_transform_mirror_update(bArmature *arm)
+{
+  LISTBASE_FOREACH (EditBone *, ebo, arm->edbo) {
+    ED_armature_ebone_transform_mirror_update(arm, ebo, true);
+  }
+}
+
+/* BEGIN VERBATIM source/blender/editors/armature/armature_utils.c */
 static void armature_finalize_restpose(ListBase *bonelist, ListBase *editbonelist)
 {
   Bone *curBone;

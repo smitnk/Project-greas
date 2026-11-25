@@ -143,7 +143,7 @@ static void test_pose_evaluation()
   pg_arm_pose_set(a, r, ident);
   pg_arm_pose_set(a, c, ident);
   pg_arm_pose_select(a, r, false);
-  CHECK(pg_arm_pose_rotate(a, float(M_PI_2)) == 1);
+  CHECK(pg_arm_pose_rotate(a, float(M_PI_2), PG_ARM_AROUND_MEDIAN) == 1);
   pg_arm_bone_info(a, c, info);
   NEAR(info[29], -2.0, 1e-5);
   NEAR(info[30], 0.0, 1e-5);
@@ -159,7 +159,7 @@ static void test_pose_evaluation()
   pg_arm_bone_info(a, r, info);
   NEAR(info[26], 0.25, 1e-6);
   /* clear (pchan_clear_loc / rot / scale) */
-  pg_arm_pose_scale(a, 2.0f);
+  pg_arm_pose_scale(a, 2.0f, PG_ARM_AROUND_MEDIAN);
   pg_arm_pose_clear(a, 1 | 2 | 4);
   pg_arm_pose_get(a, r, v);
   for (int i = 0; i < 10; i++) NEAR(v[i], ident[i], 0);
@@ -509,6 +509,107 @@ static void test_multiframe_bind()
   MEM_freeN(gpd);
 }
 
+/* X-Axis Mirror (armature_utils.c ED_armature_ebone_get_mirrored /
+ * ED_armature_ebone_transform_mirror_update, armature_add.c armature_extrude_exec): moving the tip of
+ * Arm.L also moves the tip of Arm.R to (-x, y, z) and sets its roll to -roll; extrude makes the
+ * mirrored bone too. */
+static void test_mirror_edit()
+{
+  PGArmature *a = pg_arm_new();
+  const float lh[3] = {0.2f, 0, 0}, lt[3] = {0.5f, 0, 0}, rh[3] = {-0.2f, 0, 0}, rt[3] = {-0.5f, 0, 0};
+  const int l = pg_arm_bone_add(a, "Arm.L", lh, lt);
+  const int r = pg_arm_bone_add(a, "Arm.R", rh, rt);
+  float info[PG_ARM_BONE_INFO];
+  const float up[3] = {0, 0.3f, 0};
+  /* off: the other side stays */
+  pg_arm_edit_select(a, l, BONE_TIPSEL, false);
+  pg_arm_edit_translate(a, up);
+  pg_arm_bone_info(a, r, info);
+  NEAR(info[4], 0.0, 0);
+  pg_arm_edit_translate(a, (const float[3]){0, -0.3f, 0});
+  /* on */
+  pg_arm_set_mirror_x(a, true);
+  CHECK(pg_arm_mirror_x(a));
+  CHECK(pg_arm_edit_translate(a, up) == 1);
+  pg_arm_bone_info(a, r, info);
+  NEAR(info[0], -0.2, 1e-6); /* head not selected: stays */
+  NEAR(info[3], -0.5, 1e-6);
+  NEAR(info[4], 0.3, 1e-6);
+  float linfo[PG_ARM_BONE_INFO];
+  pg_arm_bone_info(a, l, linfo);
+  NEAR(info[6], -linfo[6], 1e-6); /* roll */
+  /* whole bone selected: head too */
+  pg_arm_edit_select(a, l, BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL, false);
+  pg_arm_edit_translate(a, (const float[3]){0.1f, 0, 0});
+  pg_arm_bone_info(a, r, info);
+  NEAR(info[0], -0.3, 1e-6);
+  NEAR(info[3], -0.6, 1e-6);
+  /* extrude from the tip of Arm.L: Arm.L.001 and its mirror Arm.R.001 (parented to Arm.R) */
+  pg_arm_edit_select(a, l, BONE_TIPSEL, false);
+  CHECK(pg_arm_extrude(a, (const float[3]){0.2f, 0.1f, 0}) == 2);
+  const int l1 = pg_arm_bone_find(a, "Arm.L.001"), r1 = pg_arm_bone_find(a, "Arm.R.001");
+  CHECK(l1 >= 0 && r1 >= 0);
+  pg_arm_bone_info(a, l1, linfo);
+  pg_arm_bone_info(a, r1, info);
+  NEAR(linfo[3], 0.8, 1e-6);
+  NEAR(linfo[4], 0.4, 1e-6);
+  NEAR(info[0], -0.6, 1e-6);
+  NEAR(info[3], -0.8, 1e-6);
+  NEAR(info[4], 0.4, 1e-6);
+  CHECK((int)info[7] == r);
+  /* saved with the document */
+  char *json = pg_arm_to_json(a);
+  PGArmature *b = pg_arm_from_json(json);
+  CHECK(pg_arm_mirror_x(b));
+  std::free(json);
+  pg_arm_free(b);
+  pg_arm_free(a);
+}
+
+/* Pose rotate / scale pivot (transform_generics.c calculateCenterMedian, transform_mode.c
+ * ElementRotation_ex / ElementResize): two unconnected bones with heads at (0,0) and (2,0) turn 90
+ * deg about their median (1,0): the heads go to (1,-1) and (1,1). Individual Origins keeps them. */
+static void test_pose_pivot()
+{
+  PGArmature *a = pg_arm_new();
+  const float h1[3] = {0, 0, 0}, t1[3] = {0, 1, 0}, h2[3] = {2, 0, 0}, t2[3] = {2, 1, 0};
+  const int b1 = pg_arm_bone_add(a, "A", h1, t1);
+  const int b2 = pg_arm_bone_add(a, "B", h2, t2);
+  pg_arm_set_mode(a, PG_ARM_MODE_POSE);
+  pg_arm_pose_select(a, b1, false);
+  pg_arm_pose_select(a, b2, true);
+  float info[PG_ARM_BONE_INFO];
+  CHECK(pg_arm_pose_rotate(a, float(M_PI_2), PG_ARM_AROUND_MEDIAN) == 2);
+  pg_arm_bone_info(a, b1, info);
+  NEAR(info[26], 1.0, 1e-5);
+  NEAR(info[27], -1.0, 1e-5);
+  NEAR(info[29], 0.0, 1e-5); /* tail: head + (-1, 0) */
+  NEAR(info[30], -1.0, 1e-5);
+  pg_arm_bone_info(a, b2, info);
+  NEAR(info[26], 1.0, 1e-5);
+  NEAR(info[27], 1.0, 1e-5);
+  /* scale 2 about the median (1,0): heads (1,-1) -> (1,-2), (1,1) -> (1,2); size 2 */
+  CHECK(pg_arm_pose_scale(a, 2.0f, PG_ARM_AROUND_MEDIAN) == 2);
+  pg_arm_bone_info(a, b1, info);
+  NEAR(info[26], 1.0, 1e-5);
+  NEAR(info[27], -2.0, 1e-5);
+  float v[10];
+  pg_arm_pose_get(a, b1, v);
+  NEAR(v[7], 2.0, 1e-6);
+  /* Individual Origins: each about its own head */
+  pg_arm_pose_rotate(a, float(-M_PI_2), PG_ARM_AROUND_INDIVIDUAL);
+  pg_arm_bone_info(a, b1, info);
+  NEAR(info[26], 1.0, 1e-5);
+  NEAR(info[27], -2.0, 1e-5);
+  NEAR(info[29], 1.0, 1e-5); /* back along +y, length 1 * scale 2 */
+  NEAR(info[30], 0.0, 1e-5);
+  pg_arm_pose_scale(a, 0.5f, PG_ARM_AROUND_INDIVIDUAL);
+  pg_arm_bone_info(a, b2, info);
+  NEAR(info[26], 1.0, 1e-5);
+  NEAR(info[27], 2.0, 1e-5);
+  pg_arm_free(a);
+}
+
 static void test_edit_ops_and_io()
 {
   PGArmature *a = pg_arm_new();
@@ -683,7 +784,7 @@ static void test_display_and_pick()
   CHECK(pg_arm_bone_selected(a, 1) && !pg_arm_bone_selected(a, 0));
   /* pose mode follows the posed bone: rotate bone 0 by 90 degrees about its head */
   pg_arm_pose_select(a, 0, false);
-  pg_arm_pose_rotate(a, float(M_PI_2));
+  pg_arm_pose_rotate(a, float(M_PI_2), PG_ARM_AROUND_MEDIAN);
   const float posed[2] = {100, 0}; /* the tail swung up the canvas (-y) */
   CHECK(pg_arm_pick(a, m, posed, 10.0f, false) == 0);
   pg_arm_free(a);
@@ -697,6 +798,8 @@ int main()
   test_deform_and_bind();
   test_bbone_deform();
   test_multiframe_bind();
+  test_mirror_edit();
+  test_pose_pivot();
   test_edit_ops_and_io();
   test_display_and_pick();
   printf("armature: %d checks, %d failures\n", checks, failures);

@@ -148,6 +148,13 @@ PGArmature *pg_arm_dup(const PGArmature *src)
 
 int pg_arm_mode(const PGArmature *a) { return a ? a->mode : 0; }
 
+/* Armature.use_mirror_x (rna_armature.c): ARM_MIRROR_EDIT */
+void pg_arm_set_mirror_x(PGArmature *a, bool mirror)
+{
+  if (a) SET_FLAG_FROM_TEST(a->arm.flag, mirror, ARM_MIRROR_EDIT);
+}
+bool pg_arm_mirror_x(const PGArmature *a) { return a && (a->arm.flag & ARM_MIRROR_EDIT); }
+
 void pg_arm_set_mode(PGArmature *a, int mode)
 {
   if (a && mode >= PG_ARM_MODE_OBJECT && mode <= PG_ARM_MODE_POSE) a->mode = mode;
@@ -387,7 +394,7 @@ static void fn_scale(float co[3], const float *arg)
 }
 
 /* createTransArmatureVerts + the transform + recalcData_edit_armature (transform_convert_armature.c)
- * for translation / rotation / resize, without X-mirror editing and snapping. */
+ * for translation / rotation / resize, with X-Axis Mirror, without snapping. */
 static int edit_transform(PGArmature *a, PointFn fn, const float *arg)
 {
   if (!a) return 0;
@@ -457,6 +464,8 @@ static int edit_transform(PGArmature *a, PointFn fn, const float *arg)
     ebo->roll = angle_compat_rad(roll, td[i].ival);
   }
   MEM_freeN(td);
+  /* recalcData_edit_armature */
+  if (a->arm.flag & ARM_MIRROR_EDIT) pg_bke_edit_transform_mirror_update(&a->arm);
   arm_update(a);
   return count;
 }
@@ -492,9 +501,9 @@ int pg_arm_edit_scale(PGArmature *a, float factor, const float pivot[3])
 int pg_arm_extrude(PGArmature *a, const float delta[3])
 {
   if (!a) return 0;
-  /* armature_extrude_exec, forked = false, no X-mirror */
+  /* armature_extrude_exec, forked = false */
   bArmature *arm = &a->arm;
-  EditBone *newbone = NULL, *ebone, *first = NULL;
+  EditBone *newbone = NULL, *ebone, *flipbone, *first = NULL;
   int totbone = 0, do_extrude;
   for (ebone = arm->edbo->first; ebone; ebone = ebone->next) {
     if (ebone->flag & BONE_ROOTSEL) {
@@ -516,49 +525,72 @@ int pg_arm_extrude(PGArmature *a, const float delta[3])
       }
     }
     if (!do_extrude) continue;
-    totbone++;
-    newbone = MEM_callocN(sizeof(EditBone), "extrudebone");
-    if (do_extrude == true) {
-      copy_v3_v3(newbone->head, ebone->tail);
-      copy_v3_v3(newbone->tail, newbone->head);
-      newbone->parent = ebone;
-      newbone->flag = ebone->flag & (BONE_TIPSEL | BONE_RELATIVE_PARENTING);
-      if (newbone->parent) {
-        newbone->flag |= BONE_CONNECTED;
+    /* we re-use code for mirror editing... */
+    flipbone = NULL;
+    if (arm->flag & ARM_MIRROR_EDIT) {
+      flipbone = ED_armature_ebone_get_mirrored(arm->edbo, ebone);
+      if (flipbone) {
+        if (flipbone->flag & (BONE_TIPSEL | BONE_ROOTSEL | BONE_SELECTED)) {
+          /* don't want this bone to be selected... */
+          flipbone->flag &= ~(BONE_TIPSEL | BONE_SELECTED | BONE_ROOTSEL);
+        }
       }
     }
-    else {
-      copy_v3_v3(newbone->head, ebone->head);
-      copy_v3_v3(newbone->tail, ebone->head);
-      newbone->parent = ebone->parent;
-      newbone->flag = BONE_TIPSEL;
-      if (newbone->parent && (ebone->flag & BONE_CONNECTED)) {
-        newbone->flag |= BONE_CONNECTED;
+    for (int i = 0; i < 2; i++) {
+      if (i == 1) {
+        if (flipbone == NULL) {
+          break;
+        }
+        SWAP(EditBone *, flipbone, ebone);
       }
-    }
-    newbone->weight = ebone->weight;
-    newbone->dist = ebone->dist;
-    newbone->xwidth = ebone->xwidth;
-    newbone->zwidth = ebone->zwidth;
-    newbone->rad_head = ebone->rad_tail;
-    newbone->rad_tail = ebone->rad_tail;
-    newbone->segments = 1;
-    newbone->layer = ebone->layer;
-    newbone->roll1 = ebone->roll1;
-    newbone->roll2 = ebone->roll2;
-    newbone->curve_in_x = ebone->curve_in_x;
-    newbone->curve_in_z = ebone->curve_in_z;
-    newbone->curve_out_x = ebone->curve_out_x;
-    newbone->curve_out_z = ebone->curve_out_z;
-    newbone->ease1 = ebone->ease1;
-    newbone->ease2 = ebone->ease2;
-    copy_v3_v3(newbone->scale_in, ebone->scale_in);
-    copy_v3_v3(newbone->scale_out, ebone->scale_out);
-    STRNCPY(newbone->name, ebone->name);
-    pg_bke_ebone_unique_name(arm->edbo, newbone->name, NULL);
-    BLI_addtail(arm->edbo, newbone);
-    if (!first) {
-      first = newbone;
+      totbone++;
+      newbone = MEM_callocN(sizeof(EditBone), "extrudebone");
+      if (do_extrude == true) {
+        copy_v3_v3(newbone->head, ebone->tail);
+        copy_v3_v3(newbone->tail, newbone->head);
+        newbone->parent = ebone;
+        newbone->flag = ebone->flag & (BONE_TIPSEL | BONE_RELATIVE_PARENTING);
+        if (newbone->parent) {
+          newbone->flag |= BONE_CONNECTED;
+        }
+      }
+      else {
+        copy_v3_v3(newbone->head, ebone->head);
+        copy_v3_v3(newbone->tail, ebone->head);
+        newbone->parent = ebone->parent;
+        newbone->flag = BONE_TIPSEL;
+        if (newbone->parent && (ebone->flag & BONE_CONNECTED)) {
+          newbone->flag |= BONE_CONNECTED;
+        }
+      }
+      newbone->weight = ebone->weight;
+      newbone->dist = ebone->dist;
+      newbone->xwidth = ebone->xwidth;
+      newbone->zwidth = ebone->zwidth;
+      newbone->rad_head = ebone->rad_tail;
+      newbone->rad_tail = ebone->rad_tail;
+      newbone->segments = 1;
+      newbone->layer = ebone->layer;
+      newbone->roll1 = ebone->roll1;
+      newbone->roll2 = ebone->roll2;
+      newbone->curve_in_x = ebone->curve_in_x;
+      newbone->curve_in_z = ebone->curve_in_z;
+      newbone->curve_out_x = ebone->curve_out_x;
+      newbone->curve_out_z = ebone->curve_out_z;
+      newbone->ease1 = ebone->ease1;
+      newbone->ease2 = ebone->ease2;
+      copy_v3_v3(newbone->scale_in, ebone->scale_in);
+      copy_v3_v3(newbone->scale_out, ebone->scale_out);
+      STRNCPY(newbone->name, ebone->name);
+      pg_bke_ebone_unique_name(arm->edbo, newbone->name, NULL);
+      BLI_addtail(arm->edbo, newbone);
+      if (!first) {
+        first = newbone;
+      }
+      /* restore ebone if we were flipping */
+      if (i == 1 && flipbone) {
+        SWAP(EditBone *, flipbone, ebone);
+      }
     }
     ebone->flag &= ~(BONE_TIPSEL | BONE_SELECTED | BONE_ROOTSEL);
   }
@@ -760,32 +792,66 @@ static bool pchan_is_transform_root(const bPoseChannel *pc)
   return true;
 }
 
+/* pose space -> bone space of the location (td->smtx of the pose bone) */
+static void pose_loc_add(bPoseChannel *pc, const float delta[3])
+{
+  BoneParentTransform bpt;
+  float m[3][3], d[3];
+  BKE_bone_parent_transform_calc_from_pchan(pc, &bpt);
+  BKE_bone_parent_transform_invert(&bpt);
+  copy_m3_m4(m, bpt.loc_mat);
+  mul_v3_m3v3(d, m, delta);
+  add_v3_v3(pc->loc, d);
+}
+
+/* calculateCenterMedian (transform_generics.c): the mean of the td->center (pose head) of the
+ * transformed channels. */
+static void pose_center_median(const PGArmature *a, float r_center[3])
+{
+  float partial[3] = {0.0f, 0.0f, 0.0f};
+  int total = 0;
+  LISTBASE_FOREACH (const bPoseChannel *, pc, &a->pose.chanbase) {
+    if (!pchan_is_transform_root(pc)) continue;
+    add_v3_v3(partial, pc->pose_mat[3]);
+    total++;
+  }
+  if (total) mul_v3_fl(partial, 1.0f / (float)total);
+  copy_v3_v3(r_center, partial);
+}
+
+/* The location part of ElementRotation_ex / ElementResize (transform_mode.c) for a pose bone:
+ * td->center moved by `mat` about `center`, written into loc (connected bones ignore loc). */
+static void pose_center_transform(bPoseChannel *pc, const float mat[3][3], const float center[3])
+{
+  float vec[3];
+  if (pc->bone->flag & BONE_CONNECTED) return;
+  sub_v3_v3v3(vec, pc->pose_mat[3], center);
+  mul_m3_v3(mat, vec);
+  add_v3_v3(vec, center);
+  sub_v3_v3(vec, pc->pose_mat[3]);
+  pose_loc_add(pc, vec);
+}
+
 int pg_arm_pose_translate(PGArmature *a, const float delta[3])
 {
   if (!a || !delta) return 0;
   int n = 0;
   LISTBASE_FOREACH (bPoseChannel *, pc, &a->pose.chanbase) {
     if (!pchan_is_transform_root(pc) || (pc->bone->flag & BONE_CONNECTED)) continue;
-    /* pose space -> bone space of the location (td->smtx of the pose bone) */
-    BoneParentTransform bpt;
-    float m[3][3], d[3];
-    BKE_bone_parent_transform_calc_from_pchan(pc, &bpt);
-    BKE_bone_parent_transform_invert(&bpt);
-    copy_m3_m4(m, bpt.loc_mat);
-    mul_v3_m3v3(d, m, delta);
-    add_v3_v3(pc->loc, d);
+    pose_loc_add(pc, delta);
     n++;
   }
   pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
-int pg_arm_pose_rotate(PGArmature *a, float angle)
+int pg_arm_pose_rotate(PGArmature *a, float angle, int around)
 {
   if (!a) return 0;
   int n = 0;
-  float rot[3][3];
+  float rot[3][3], center[3];
   axis_angle_normalized_to_mat3(rot, (const float[3]){0.0f, 0.0f, 1.0f}, angle);
+  pose_center_median(a, center);
   LISTBASE_FOREACH (bPoseChannel *, pc, &a->pose.chanbase) {
     if (!pchan_is_transform_root(pc)) continue;
     /* new pose matrix: rotated about the head in pose space, back to the channel (bone space) */
@@ -799,21 +865,26 @@ int pg_arm_pose_rotate(PGArmature *a, float angle)
     copy_qt_qt(oldq, pc->quat);
     copy_v3_v3(loc, pc->loc);
     BKE_pchan_apply_mat4(pc, chan, false);
-    copy_v3_v3(pc->loc, loc); /* the head does not move */
+    copy_v3_v3(pc->loc, loc); /* the rotation alone does not move the head */
     if (dot_qtqt(oldq, pc->quat) < 0.0f) mul_qt_fl(pc->quat, -1.0f); /* keep keys interpolating the short way */
+    if (around != PG_ARM_AROUND_INDIVIDUAL) pose_center_transform(pc, rot, center);
     n++;
   }
   pg_bke_pose_where_is(&a->ob);
   return n;
 }
 
-int pg_arm_pose_scale(PGArmature *a, float factor)
+int pg_arm_pose_scale(PGArmature *a, float factor, int around)
 {
   if (!a) return 0;
   int n = 0;
+  float center[3], mat[3][3];
+  scale_m3_fl(mat, factor);
+  pose_center_median(a, center);
   LISTBASE_FOREACH (bPoseChannel *, pc, &a->pose.chanbase) {
     if (!pchan_is_transform_root(pc)) continue;
     mul_v3_fl(pc->size, factor);
+    if (around != PG_ARM_AROUND_INDIVIDUAL) pose_center_transform(pc, mat, center);
     n++;
   }
   pg_bke_pose_where_is(&a->ob);

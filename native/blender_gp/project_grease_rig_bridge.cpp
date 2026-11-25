@@ -67,8 +67,7 @@ int pg_arm_rig_command(Backend &backend, PGArmature *a, int cmd, int bone, const
     default:
       return INT_MIN;
   }
-  backend.armature_evaluate(-1.0f, false); /* drivers and pose at the scene frame */
-  return r;
+  return r; /* the caller tags the depsgraph (Backend::armature_changed) */
 }
 
 /* -1 when what is not one of these. */

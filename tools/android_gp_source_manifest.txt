@@ -183,6 +183,8 @@ CXX|native/blender_gp/project_grease_armature_bridge.cpp
 C|native/blender_gp/project_grease_constraint.c
 C|native/blender_gp/project_grease_driver.c
 CXX|native/blender_gp/project_grease_rig_bridge.cpp
+# L10 depsgraph: Blender 3.6.23 depsgraph subset (builder, flush, single-threaded evaluation) for the rig + GP object.
+CXX|native/blender_gp/project_grease_depsgraph.cc
 C|third_party/blender/source/blender/ikplugin/intern/iksolver_plugin.c
 C|third_party/blender/source/blender/blenlib/intern/expr_pylike_eval.c
 CXX|third_party/blender/intern/iksolver/intern/IK_QJacobian.cpp

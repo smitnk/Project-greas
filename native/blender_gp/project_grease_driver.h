@@ -39,7 +39,8 @@ typedef struct PGArmExternal {
   bool (*set)(void *user, const char *path, int index, float value);
 } PGArmExternal;
 
-/* The action, then the drivers in dependency order (see pg_drv_evaluate), then the pose. */
+/* The rig at `frame` through a one-shot active depsgraph (project_grease_depsgraph.h): the action,
+ * the drivers and the pose in dependency order, results flushed back to `a`. */
 void pg_arm_evaluate_ex(PGArmature *a, float frame, const PGArmExternal *ext);
 
 /* ---- custom properties (WM_OT_properties_add / _edit / _remove) ---- */
@@ -95,14 +96,26 @@ const char *pg_arm_driver_expression(const PGArmature *a, int driver);
 void pg_drv_free_all(PGArmature *a);
 void pg_drv_copy_all(PGArmature *dst, const PGArmature *src);
 void pg_drv_rename_bone(PGArmature *a, const char *oldname, const char *newname);
-/* Pose, then each driver (BKE_animsys_eval_driver) in a topological order of "writes a property
- * another driver reads" (cycles keep list order); a Transform Channel variable sees the pose
- * re-evaluated after the bone channels written so far; then the final pose. */
-void pg_drv_evaluate(PGArmature *a, float frame, const PGArmExternal *ext);
-/* pg_arm_evaluate_ex on a document that is still loading: a driver whose path is not there yet
- * (a layer restored after the rig) is not marked DRIVER_FLAG_INVALID, as Blender only evaluates a
- * file once all of it is read. */
-void pg_drv_evaluate_loading(PGArmature *a, float frame, const PGArmExternal *ext);
+/* ---- evaluation, called by the depsgraph's operations (project_grease_depsgraph.cc) ---- */
+/* What a path names (the RNA subset above); with_index: a variable path with a trailing [i]. */
+enum {
+  PG_DRV_PATH_INVALID = 0,
+  PG_DRV_PATH_BONE_LOC,
+  PG_DRV_PATH_BONE_QUAT,
+  PG_DRV_PATH_BONE_EUL,
+  PG_DRV_PATH_BONE_SCALE,
+  PG_DRV_PATH_BONE_PROP,
+  PG_DRV_PATH_OB_PROP,
+  PG_DRV_PATH_EXTERNAL,
+};
+int pg_drv_path_info(const char *path, bool with_index, char r_bone[64], char r_prop[64]);
+/* BKE_driver_expression_depends_on_time */
+bool pg_drv_depends_on_time(struct ChannelDriver *driver);
+/* BKE_animsys_eval_animdata / BKE_animsys_eval_driver on the evaluated rig `a` of the graph. */
+struct Depsgraph;
+void pg_animsys_eval_animdata(struct Depsgraph *depsgraph, PGArmature *a);
+void pg_animsys_eval_driver(struct Depsgraph *depsgraph, PGArmature *a, int driver_index,
+                            struct FCurve *fcu_orig);
 /* Driver list helpers for the document IO. */
 struct FCurve *pg_drv_new_fcurve(const char *path, int index);
 void pg_drv_fcurve_free(struct FCurve *fcu);

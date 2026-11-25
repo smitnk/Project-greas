@@ -8,8 +8,8 @@
  *   no cyclic offset) and action.c BKE_pose_update_constraint_flags.
  * - ikplugin/intern/ikplugin_api.c dispatch (only the default "Standard" iksolver plugin); the
  *   solver itself is ikplugin/intern/iksolver_plugin.c and intern/iksolver, compiled unmodified.
- * There is no depsgraph or copy-on-write: the rig's Object is the original, so Child Of's
- * "Set Inverse" writes its own data (constraint_find_original_for_update returns NULL). */
+ * The depsgraph (project_grease_depsgraph.cc) runs the per-bone steps in dependency order on its
+ * copy-on-write rig; Child Of's "Set Inverse" writes back to the original as constraint.c does. */
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
@@ -42,6 +42,7 @@
 
 #include "project_grease_armature_bke.h"
 #include "project_grease_constraint.h"
+#include "project_grease_depsgraph.h"
 
 typedef struct Depsgraph Depsgraph;
 #define CLOG_WARN(...) ((void)0)
@@ -49,11 +50,67 @@ typedef struct Depsgraph Depsgraph;
 #define VALID_CONS_TARGET(ct) ((ct) && (ct->tar))
 
 static void damptrack_do_transform(float matrix[4][4], const float tarvec[3], int track_axis);
-/* No copy-on-write here: the evaluated constraint is the original. */
-static bConstraint *constraint_find_original_for_update(bConstraintOb *UNUSED(cob),
-                                                        bConstraint *UNUSED(con))
+/* constraint.c:6087-6145 constraint_find_original / constraint_find_original_for_update.
+ * ADAPTED: no DEG_id_tag_update of the original: its evaluated copy holds the same values. */
+static bConstraint *constraint_find_original(Object *ob,
+                                             bPoseChannel *pchan,
+                                             bConstraint *con,
+                                             Object **r_orig_ob)
 {
+  Object *orig_ob = (Object *)pg_deg_get_original_id(&ob->id);
+
+  if (ELEM(orig_ob, NULL, ob)) {
+    return NULL;
+  }
+
+  /* Find which constraint list to use. */
+  ListBase *constraints, *orig_constraints;
+
+  if (pchan != NULL) {
+    bPoseChannel *orig_pchan = pchan->orig_pchan;
+
+    if (orig_pchan == NULL) {
+      return NULL;
+    }
+
+    constraints = &pchan->constraints;
+    orig_constraints = &orig_pchan->constraints;
+  }
+  else {
+    constraints = &ob->constraints;
+    orig_constraints = &orig_ob->constraints;
+  }
+
+  /* Lookup the original constraint by index. */
+  int index = BLI_findindex(constraints, con);
+
+  if (index >= 0) {
+    bConstraint *orig_con = BLI_findlink(orig_constraints, index);
+
+    /* Verify it has correct type and name. */
+    if (orig_con && orig_con->type == con->type && STREQ(orig_con->name, con->name)) {
+      if (r_orig_ob != NULL) {
+        *r_orig_ob = orig_ob;
+      }
+
+      return orig_con;
+    }
+  }
+
   return NULL;
+}
+
+static bConstraint *constraint_find_original_for_update(bConstraintOb *cob, bConstraint *con)
+{
+  /* Write the computed distance back to the master copy if in COW evaluation. */
+  if (!pg_deg_is_active(cob->depsgraph)) {
+    return NULL;
+  }
+
+  Object *orig_ob = NULL;
+  bConstraint *orig_con = constraint_find_original(cob->ob, cob->pchan, con, &orig_ob);
+
+  return orig_con;
 }
 
 /* object.cc BKE_object_to_mat4 (no parent, delta transforms or quaternion modes: the rig object
@@ -2261,98 +2318,6 @@ void BKE_pose_where_is_bone(struct Depsgraph *depsgraph,
   copy_v3_v3(pchan->pose_head, pchan->pose_mat[3]);
   /* calculate tail */
   BKE_pose_where_is_bone_tail(pchan);
-}
-
-/* armature.c:2544-2620 BKE_pose_where_is for the rig object (no Scene: ctime only reaches the
- * constraint callbacks, which ignore it; no Spline IK), then the deform dual quaternions that
- * BKE_pose_bone_done (armature_update.c) computes. ARM_RESTPOS reads the rest pose; edit mode
- * keeps evaluating the pose (Project Grease keeps arm->edbo all the time and skips the deform in
- * edit mode instead). */
-/* The depsgraph runs a bone after its parent and after the bones its constraints target
- * (deg_builder_relations.cc build_rig / build_constraints, bone_target_opcode BONE_DONE); the list
- * order alone would read a stale target when the target comes later (Child Of on bone 0 targeting
- * bone 1). IK chains keep the tree solver's order (the BONE_READY case). */
-static bool pose_dep_pending(const bPoseChannel *pchan)
-{
-  return pchan && !(pchan->flag & (POSE_DONE | POSE_IKTREE | POSE_CHAIN));
-}
-
-static void pose_where_is_bone_after_deps(Object *ob, bPoseChannel *pchan, float ctime, int depth)
-{
-  if (depth > 64) return; /* a dependency cycle: the depsgraph also evaluates it in some order */
-  if (pose_dep_pending(pchan->parent)) pose_where_is_bone_after_deps(ob, pchan->parent, ctime, depth + 1);
-  LISTBASE_FOREACH (bConstraint *, con, &pchan->constraints) {
-    const bConstraintTypeInfo *cti = BKE_constraint_typeinfo_get(con);
-    ListBase targets = {NULL, NULL};
-    if (!cti || !cti->get_constraint_targets || (con->flag & CONSTRAINT_OFF)) continue;
-    cti->get_constraint_targets(con, &targets);
-    LISTBASE_FOREACH (bConstraintTarget *, ct, &targets) {
-      bPoseChannel *t = ct->tar == ob && ct->subtarget[0] ? BKE_pose_channel_find_name(ob->pose, ct->subtarget) : NULL;
-      if (t != pchan && pose_dep_pending(t)) pose_where_is_bone_after_deps(ob, t, ctime, depth + 1);
-    }
-    if (cti->flush_constraint_targets) cti->flush_constraint_targets(con, &targets, 1);
-  }
-  if (pchan->flag & POSE_DONE) return; /* reached through a cycle */
-  BKE_pose_where_is_bone(NULL, NULL, ob, pchan, ctime, 1);
-  pchan->flag |= POSE_DONE;
-}
-
-void pg_bke_pose_where_is(Object *ob)
-{
-  bArmature *arm = ob->data;
-  bPose *pose = ob->pose;
-  bPoseChannel *pchan;
-  float imat[4][4];
-  const float ctime = 0.0f;
-
-  BKE_pose_update_constraint_flags(pose);
-
-  if (arm->flag & ARM_RESTPOS) {
-    for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
-      Bone *bone = pchan->bone;
-      if (bone) {
-        copy_m4_m4(pchan->pose_mat, bone->arm_mat);
-        copy_v3_v3(pchan->pose_head, bone->arm_head);
-        copy_v3_v3(pchan->pose_tail, bone->arm_tail);
-      }
-    }
-  }
-  else {
-    invert_m4_m4(ob->world_to_object, ob->object_to_world); /* world_to_object is needed */
-
-    /* 1. clear flags */
-    for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
-      pchan->flag &= ~(POSE_DONE | POSE_CHAIN | POSE_IKTREE | POSE_IKSPLINE);
-    }
-
-    /* 2a. construct the IK tree (standard IK) */
-    BIK_init_tree(NULL, NULL, ob, ctime);
-
-    /* 3. the main loop, channels are already hierarchical sorted from root to children */
-    for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
-      /* 4a. if we find an IK root, we handle it separated */
-      if (pchan->flag & POSE_IKTREE) {
-        BIK_execute_tree(NULL, NULL, ob, pchan, ctime);
-      }
-      /* 5. otherwise just call the normal solver */
-      else if (!(pchan->flag & POSE_DONE)) {
-        pose_where_is_bone_after_deps(ob, pchan, ctime, 0);
-      }
-    }
-    /* 6. release the IK tree */
-    BIK_release_tree(NULL, ob, ctime);
-  }
-
-  /* calculating deform matrices */
-  for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
-    if (pchan->bone) {
-      invert_m4_m4(imat, pchan->bone->arm_mat);
-      mul_m4_m4m4(pchan->chan_mat, pchan->pose_mat, imat);
-      if (!(pchan->bone->flag & BONE_NO_DEFORM)) {
-        mat4_to_dquat(&pchan->runtime.deform_dual_quat, pchan->bone->arm_mat, pchan->chan_mat);
-      }
-    }
-  }
 }
 
 /* ---------------------------------------------------------------------------------------- */

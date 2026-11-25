@@ -901,7 +901,8 @@ void draw_frame(const bGPdata*gpd,const bGPDlayer*layer,const bGPDframe*frame,in
 } // namespace
 
 // Optional live-modifier hook (see project_grease_modifier_stack.h): maps a layer's current frame
-// to the evaluated copy that is drawn instead. Onion-skin frames are always drawn unmodified.
+// to the evaluated copy that is drawn instead. An onion-skin key is passed with its frame number
+// negated: evaluated as itself at its own frame (its Armature modifier uses that frame's pose).
 typedef const bGPDframe*(*FrameEvaluator)(void*,const bGPDlayer*,const bGPDframe*,int);
 // Shader effects of a layer (project_grease_shader_fx.h): the provider returns the layer's effect list.
 typedef int(*FxProvider)(void*,const bGPDlayer*,const PGFxEntry**);
@@ -1413,7 +1414,8 @@ bool engine_draw_canvas(const bGPdata*gpd,int frame_number,int w,int h){
     if(current&&onion&&(l->onion_flag&GP_LAYER_ONIONSKIN)){
       for(const bGPDframe*f=static_cast<const bGPDframe*>(l->frames.first);f;f=f->next){
         const bGPDframe*src=f;
-        if(f==current&&g_frame_evaluator){const bGPDframe*e=g_frame_evaluator(g_frame_evaluator_user,l,current,frame_number);if(e)src=e;}
+        // onion keys: evaluated at their own frame (negative number: as themselves, no Time Offset)
+        if(g_frame_evaluator){const bGPDframe*e=g_frame_evaluator(g_frame_evaluator_user,l,f,f==current?frame_number:-f->framenum);if(e)src=e;}
         bGPDframe&cf=frames[fi++];
         std::memcpy(&cf,src,sizeof(bGPDframe));
         cf.next=cf.prev=nullptr;
@@ -1700,7 +1702,9 @@ static int present_gp_document_impl(const bGPdata* gpd,int frame_number){
         g_ghost_tint=(gpd->onion_flag&(before?GP_ONION_GHOST_PREVCOL:GP_ONION_GHOST_NEXTCOL))!=0;
         const float*col=before?gpd->gcolor_prev:gpd->gcolor_next;
         for(int c=0;c<3;c++)g_ghost_rgb[c]=col[c];
-        draw_frame(gpd,layer,frames[i],w,h,pg_gp_onion_alpha(delta,fade,gpd->onion_factor));
+        // the ghost with the pose of its own frame (negative number: the key as itself)
+        const bGPDframe*ghost_frame=g_frame_evaluator?g_frame_evaluator(g_frame_evaluator_user,layer,frames[i],-frames[i]->framenum):nullptr;
+        draw_frame(gpd,layer,ghost_frame?ghost_frame:frames[i],w,h,pg_gp_onion_alpha(delta,fade,gpd->onion_factor));
         g_ghost_tint=false;
         drawn[i]=1;
       };

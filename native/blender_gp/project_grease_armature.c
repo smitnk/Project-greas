@@ -31,6 +31,7 @@
 #include "project_grease_armature_bke.h"
 #include "project_grease_armature_intern.h"
 #include "project_grease_constraint.h"
+#include "project_grease_depsgraph.h"
 #include "project_grease_driver.h"
 
 
@@ -1174,18 +1175,8 @@ void pg_arm_evaluate(PGArmature *a, float frame) { pg_arm_evaluate_ex(a, frame, 
 
 void pg_arm_evaluate_ex(PGArmature *a, float frame, const PGArmExternal *ext)
 {
-  if (!a) return;
-  /* animsys_evaluate_fcurves on the pose channels the action drives */
-  LISTBASE_FOREACH (bPoseChannel *, pc, &a->pose.chanbase) {
-    for (int c = 0; c < PG_ARM_CHANNELS; c++) {
-      FCurve *fcu = fcurve_find(a, pc->name, c);
-      if (fcu && fcu->totvert > 0 && !(fcu->flag & FCURVE_MUTED)) {
-        *channel_value(pc, c) = pg_bke_fcurve_eval_keyframes(fcu, frame);
-      }
-    }
-  }
-  /* then the drivers (BKE_animsys_eval_driver), which end with the pose evaluation */
-  pg_drv_evaluate(a, frame, ext);
+  /* the action (animsys), the drivers and the pose, in the depsgraph's order */
+  pg_deg_rig_evaluate(a, frame, ext);
 }
 
 void pg_arm_update(PGArmature *a)

@@ -281,8 +281,9 @@ object ProjectDocumentCodec {
         // Groups first: the weights of the strokes refer to them by number.
         if (parsed.vertexGroups.isNotEmpty() &&
             !native.restoreVertexGroups(parsed.vertexGroups, parsed.activeVertexGroup)) return false
-        // The rig comes last, as Blender evaluates drivers once the whole file is read: a driver on
-        // layers["Mouth"] evaluated before that layer exists would be marked invalid for good.
+        // The rig comes last by habit only: the native side tags a loaded rig in its depsgraph and
+        // evaluates it at the next refresh, once the whole file is read (as Blender does), so a
+        // driver on layers["Mouth"] resolves whichever comes first.
         fun armature() = parsed.armature.isEmpty() || native.restoreArmature(parsed.armature)
         val layers = parsed.layers ?: return armature()
         for ((layerIndex, layer) in layers.withIndex()) {

@@ -22,6 +22,7 @@
 #include "project_grease_tool_brushes.h"
 #include "project_grease_shader_fx.h"
 #include "project_grease_armature.h"
+#include "project_grease_depsgraph.h"
 #include "project_grease_driver.h"
 
 #include <algorithm>
@@ -244,6 +245,7 @@ struct EvalCacheEntry {
   const bGPDlayer *layer = nullptr;
   const bGPDframe *source = nullptr;
   int cfra = 0;
+  bool ghost = false; /* an onion-skin key (one entry per key), else the layer's shown frame */
   // The key is (layer, source) pointers AND these ids: a freed layer / frame whose address is reused
   // by a new one never matches, because every edit moves revision and every replacement doc_generation.
   uint64_t revision = 0;
@@ -313,6 +315,9 @@ struct Backend::Impl {
   // The rig (project_grease_armature.h), null until one is created. Registered for gpd so the
   // Armature modifier (PG_MOD_ARMATURE) finds it.
   std::shared_ptr<PGArmature> armature;
+  // The scene's (active) depsgraph of the rig and the document; its evaluated rig deforms.
+  Depsgraph *depsgraph = nullptr;
+  bool arm_ext_changed = false; /* a driver changed a layer or modifier value: the document is tagged */
   std::atomic<uint64_t> stack_revision{next_revision()};
   // Bumped whenever the document's strokes/layers are replaced or freed (undo/redo restore, reset,
   // create, shutdown): sessions that hold stroke pointers compare it instead of the gpd pointer,
@@ -391,18 +396,23 @@ static std::vector<PGFxEntry> *layer_fx(Backend::Impl *impl, int layer_index)
                                                               const bGPDframe *current,
                                                               int frame_number)
 {
+  /* a negative frame number is an onion-skin key at its own frame (android_gp_presentation.cpp) */
+  if (frame_number < 0) return static_cast<Backend *>(user)->evaluated_frame(layer, current, -frame_number, true);
   return static_cast<Backend *>(user)->evaluated_frame(layer, current, frame_number);
 }
+
+static void arm_refresh(Backend::Impl *impl);
 
 /* The evaluated copy of `current` for `layer`, or `current` itself when the layer has no enabled
  * modifier. The copy is cached until an edit, a frame change or a stack change. */
 const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDframe *current,
-                                          int frame_number)
+                                          int frame_number, bool ghost)
 {
   Impl *impl = impl_;
   if (!impl || !impl->gpd || !layer || !current) {
     return current;
   }
+  arm_refresh(impl); /* deg_evaluate_on_refresh before drawing */
   const int index = layer_index_of(impl->gpd, layer);
   if (index < 0 || static_cast<size_t>(index) >= impl->stacks.size()) {
     return current;
@@ -420,7 +430,8 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   // Time Offset (MOD_gpencil_legacy_time.c): the layer shows the keyframe at the remapped frame
   // number; before the first keyframe nothing is shown (an empty evaluated frame).
   bool empty_source = false;
-  if (time_offset) {
+  const bGPDframe *key = current;
+  if (time_offset && !ghost) {
     const int f = pg_mod_time_frame(stack.data(), static_cast<int>(stack.size()), frame_number);
     const bGPDframe *found = nullptr;
     for (const bGPDframe *gpf = static_cast<const bGPDframe *>(layer->frames.first); gpf; gpf = gpf->next) {
@@ -431,7 +442,7 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   }
   EvalCacheEntry *target = nullptr;
   for (auto &entry : impl->eval_cache) {
-    if (entry->layer == layer) {
+    if (entry->layer == layer && entry->ghost == ghost && (!ghost || entry->source == key)) {
       target = entry.get();
       break;
     }
@@ -446,6 +457,7 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
     impl->eval_cache.push_back(std::make_unique<EvalCacheEntry>());
     target = impl->eval_cache.back().get();
     target->layer = layer;
+    target->ghost = ghost;
   }
   else {
     pg_mod_eval_free(&target->frame);
@@ -610,11 +622,43 @@ static std::shared_ptr<PGArmature> arm_share(PGArmature *a)
   return std::shared_ptr<PGArmature>(a, pg_arm_free);
 }
 
-/* The rig changed (or was replaced): register it for the document and re-evaluate modifiers. */
-static void arm_sync(Backend::Impl *impl)
+static bool arm_external_get(void *user, const char *path, int index, float *r_value);
+static bool arm_external_set(void *user, const char *path, int index, float value);
+
+/* The GP object's GEOMETRY_EVAL (BKE_gpencil_modifiers_calc): the evaluated frames are made again,
+ * lazily (evaluated_frame); a value a driver wrote into the document tags it. */
+static void arm_geometry_eval(void *user)
+{
+  Backend::Impl *impl = static_cast<Backend::Impl *>(user);
+  impl->stack_revision = next_revision();
+  if (impl->arm_ext_changed && impl->gpd) project_grease_gp_tag(impl->gpd);
+  impl->arm_ext_changed = false;
+}
+
+/* The scene's depsgraph, hooked to the current document. */
+static Depsgraph *arm_graph(Backend::Impl *impl)
 {
   if (impl->gpd) pg_arm_register(impl->gpd, impl->armature.get());
+  if (!impl->depsgraph) impl->depsgraph = pg_deg_new(true);
+  const PGArmExternal ext = {impl, arm_external_get, arm_external_set};
+  pg_deg_set_gpencil(impl->depsgraph, impl->gpd, &ext, arm_geometry_eval, impl);
+  pg_deg_set_scene_frame(impl->depsgraph, impl->cfra);
+  return impl->depsgraph;
+}
+
+/* The rig was replaced (created, undo, load, removed): a new ID for the depsgraph. defer: the
+ * update waits for the next refresh (a document still being read). */
+static void arm_sync(Backend::Impl *impl, bool defer = false)
+{
+  pg_deg_set_rig(arm_graph(impl), impl->armature.get(), defer);
   impl->stack_revision = next_revision();
+}
+
+static void arm_refresh(Backend::Impl *impl)
+{
+  if (!impl->depsgraph) return;
+  pg_deg_set_scene_frame(impl->depsgraph, impl->cfra);
+  pg_deg_evaluate_on_refresh(impl->depsgraph);
 }
 
 /* Driver paths outside the rig (project_grease_driver.h): layers["L"].opacity / hide and
@@ -666,14 +710,9 @@ static bGPDlayer *arm_external_layer(Backend::Impl *impl, const char *path)
   return static_cast<bGPDlayer *>(BLI_findstring(&impl->gpd->layers, name.c_str(), offsetof(bGPDlayer, info)));
 }
 
-struct ArmExternalCtx {
-  Backend::Impl *impl;
-  bool changed; /* a layer or modifier value changed: the document is tagged */
-};
-
 static bool arm_external_get(void *user, const char *path, int index, float *r_value)
 {
-  Backend::Impl *impl = static_cast<ArmExternalCtx *>(user)->impl;
+  Backend::Impl *impl = static_cast<Backend::Impl *>(user);
   bool is_bool, is_int;
   float lo, hi;
   float *v = arm_external_value(impl, path, &is_bool, &lo, &hi, &is_int);
@@ -691,8 +730,7 @@ static bool arm_external_get(void *user, const char *path, int index, float *r_v
 
 static bool arm_external_set(void *user, const char *path, int index, float value)
 {
-  ArmExternalCtx *ctx = static_cast<ArmExternalCtx *>(user);
-  Backend::Impl *impl = ctx->impl;
+  Backend::Impl *impl = static_cast<Backend::Impl *>(user);
   bool is_bool, is_int;
   float lo, hi;
   float *v = arm_external_value(impl, path, &is_bool, &lo, &hi, &is_int);
@@ -702,32 +740,25 @@ static bool arm_external_set(void *user, const char *path, int index, float valu
     if (!gpl) return false;
     /* ANIMSYS_FLOAT_AS_BOOL */
     const int flag = value > (1.0f - FLT_EPSILON) ? (gpl->flag | GP_LAYER_HIDE) : (gpl->flag & ~GP_LAYER_HIDE);
-    ctx->changed |= flag != gpl->flag;
+    impl->arm_ext_changed |= flag != gpl->flag;
     gpl->flag = (short)flag;
     return true;
   }
   if (!v) return false;
   if (is_int) value = (float)(int)value; /* (int)value, then RNA_property_int_clamp */
   value = std::min(std::max(value, lo), hi);
-  ctx->changed |= *v != value;
+  impl->arm_ext_changed |= *v != value;
   *v = value;
   return true;
 }
 
-/* The action (unless only the drivers are wanted) and the drivers at `frame`, then the pose. */
-static void arm_evaluate(Backend::Impl *impl, float frame, bool action = true)
+/* Scene frame changed: deg_evaluate_on_framechange (the action drives the pose). */
+static void arm_frame_changed(Backend::Impl *impl)
 {
-  if (!impl->armature) return;
-  ArmExternalCtx ctx = {impl, false};
-  const PGArmExternal ext = {&ctx, arm_external_get, arm_external_set};
-  if (action) pg_arm_evaluate_ex(impl->armature.get(), frame, &ext);
-  else pg_drv_evaluate(impl->armature.get(), frame, &ext);
-  impl->stack_revision = next_revision();
-  if (ctx.changed && impl->gpd) project_grease_gp_tag(impl->gpd);
+  if (!impl->depsgraph) return;
+  pg_deg_set_scene_frame(impl->depsgraph, impl->cfra);
+  pg_deg_evaluate_on_framechange(impl->depsgraph, static_cast<float>(impl->cfra));
 }
-
-/* Scene frame changed: the action drives the pose (animsys). */
-static void arm_frame_changed(Backend::Impl *impl) { arm_evaluate(impl, static_cast<float>(impl->cfra)); }
 
 static void stroke_discard(Backend::Impl *impl)
 {
@@ -980,6 +1011,8 @@ void Backend::shutdown()
   impl_->fx_stacks.clear();
   if (impl_->gpd) pg_arm_register(impl_->gpd, nullptr);
   impl_->armature.reset();
+  pg_deg_free(impl_->depsgraph);
+  impl_->depsgraph = nullptr;
 
   // Android does not create a Blender Main/ID database. Free the minimal
   // legacy GP containers directly after releasing their GPU cache.
@@ -1085,6 +1118,7 @@ bool Backend::reset_document()
   impl_->fx_stacks.clear();
   if (impl_->gpd) pg_arm_register(impl_->gpd, nullptr);
   impl_->armature.reset(); /* a new document starts without a rig */
+  if (impl_->depsgraph) pg_deg_set_rig(impl_->depsgraph, nullptr, false);
   impl_->stack_revision = next_revision();
   pg_annot_free(impl_->annotations); /* a new document starts without annotations */
   impl_->annotations = nullptr;
@@ -3938,6 +3972,7 @@ bool Backend::render_with_gpu_context()
       impl_->eval_cache.erase(impl_->eval_cache.begin() + static_cast<std::ptrdiff_t>(i));
     }
   }
+  arm_refresh(impl_); /* the overlay draws the rig as evaluated */
   project_grease_android_set_frame_evaluator(eval_frame_trampoline, this);
   project_grease_android_set_fx_provider(fx_provider_trampoline, this);
   // The engine's batch cache is rebuilt when either revision moves (edits, undo / redo, stacks).
@@ -5391,14 +5426,25 @@ PGArmature *Backend::armature(bool create)
   return impl_->armature.get();
 }
 
-void Backend::armature_evaluate(float frame, bool action)
+void Backend::armature_evaluate(float frame)
 {
-  arm_evaluate(impl_, frame < 0.0f ? static_cast<float>(impl_->cfra) : frame, action);
+  if (!impl_->armature) return;
+  Depsgraph *graph = arm_graph(impl_);
+  pg_deg_evaluate_on_framechange(graph, frame < 0.0f ? static_cast<float>(impl_->cfra) : frame);
 }
 
+void Backend::armature_refresh() { arm_refresh(impl_); }
+
+/* An edit of the rig: DEG_relations_tag_update (bones, constraints, drivers may be new) and
+ * DEG_id_tag_update(ID_RECALC_GEOMETRY), as the pose / armature operators do; the action is not
+ * evaluated again (an edit is not undone until the next frame change). */
 void Backend::armature_changed()
 {
-  arm_sync(impl_);
+  Depsgraph *graph = arm_graph(impl_);
+  pg_deg_relations_tag_update(graph);
+  pg_deg_id_tag_update(graph, PG_DEG_ID_RIG, ID_RECALC_GEOMETRY);
+  arm_refresh(impl_);
+  impl_->stack_revision = next_revision();
   if (impl_->gpd) project_grease_gp_tag(impl_->gpd);
 }
 
@@ -5406,7 +5452,8 @@ void Backend::armature_remove()
 {
   if (impl_->gpd) pg_arm_register(impl_->gpd, nullptr);
   impl_->armature.reset();
-  armature_changed();
+  arm_sync(impl_);
+  if (impl_->gpd) project_grease_gp_tag(impl_->gpd);
 }
 
 int Backend::armature_bind(int mode)
@@ -5472,13 +5519,10 @@ bool Backend::armature_load_json(const char *json)
     return false;
   }
   impl_->armature = arm_share(a);
-  armature_changed();
-  /* the document restores the rig before its layers (ProjectDocumentCodec.restore): a layer
-   * driver must not be marked invalid for a layer that is not read yet */
-  ArmExternalCtx ctx = {impl_, false};
-  const PGArmExternal ext = {&ctx, arm_external_get, arm_external_set};
-  pg_drv_evaluate_loading(a, static_cast<float>(impl_->cfra), &ext);
-  impl_->stack_revision = next_revision();
+  /* a new ID: evaluated at the next refresh (drawing, a rig command or query), once the whole
+   * document is read, so a driver on a layer restored after the rig resolves */
+  arm_sync(impl_, true);
+  if (impl_->gpd) project_grease_gp_tag(impl_->gpd);
   return true;
 }
 

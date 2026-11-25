@@ -44,6 +44,7 @@
 #include "project_grease_curvemap.h"
 #include "project_grease_modifier_stack.h"
 #include "project_grease_modifier_gen.h"
+#include "project_grease_depsgraph.h"
 #include "project_grease_armature.h"
 
 static float m2_clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -998,7 +999,10 @@ int pg_mod2_deform_stroke(const PGModContext *ctx, const PGModEntry *e, bGPDstro
                        (p[PG_P_ARMATURE_USE_ENVELOPE] != 0.0f ? ARM_DEF_ENVELOPE : 0) |
                        (p[PG_P_ARMATURE_PRESERVE_VOLUME] != 0.0f ? ARM_DEF_QUATERNION : 0) |
                        (p[PG_P_ARMATURE_INVERT_VGROUP] != 0.0f ? ARM_DEF_INVERT_VGROUP : 0);
-      return pg_arm_deform_stroke(pg_arm_for_gpd(ctx->gpd), ctx->gpd, gps, flag, dg ? dg->name : NULL);
+      /* the evaluated rig of the frame being evaluated (copy-on-write per frame, so onion skin and
+       * export frames deform with their own pose) */
+      return pg_arm_deform_stroke(pg_deg_rig_for_frame(ctx->gpd, ctx->cfra), ctx->gpd, gps, flag,
+                                  dg ? dg->name : NULL);
     }
     default:
       return 0;

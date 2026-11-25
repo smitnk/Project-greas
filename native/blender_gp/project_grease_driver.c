@@ -7,7 +7,9 @@
  *   dtar_get_prop_val reads through the path subset of project_grease_driver.h instead of RNA.
  * - blenkernel/intern/fcurve.c evaluate_fcurve_driver / evaluate_fcurve_ex / calculate_fcurve.
  * - blenkernel/intern/fmodifier.c: the Generator modifier and evaluate_value_fmodifiers.
- * - blenkernel/intern/anim_sys.c BKE_animsys_eval_driver / BKE_animsys_write_to_rna_path.
+ * - blenkernel/intern/anim_sys.c BKE_animsys_eval_driver / BKE_animsys_eval_animdata /
+ *   animsys_write_orig_anim_rna / BKE_animsys_write_to_rna_path, run by the depsgraph's DRIVER and
+ *   ANIMATION_EVAL operations (project_grease_depsgraph.cc) in its order.
  * - editors/animation/drivers.c alloc_driver_fcurve.
  * The expression evaluator is blenlib/intern/expr_pylike_eval.c, compiled unmodified.
  * Not ported: Python expressions (an expression the simple evaluator rejects gives 0, as a
@@ -43,9 +45,11 @@
 #include "project_grease_armature_bke.h"
 #include "project_grease_armature_intern.h"
 #include "project_grease_constraint.h"
+#include "project_grease_depsgraph.h"
 #include "project_grease_driver.h"
 
 #define CLOG_ERROR(...) ((void)0)
+#define CLOG_WARN(...) ((void)0)
 
 void BKE_object_to_mat4(Object *ob, float r_mat[4][4]); /* project_grease_constraint.c */
 
@@ -54,6 +58,9 @@ typedef struct AnimationEvalContext {
   PGArmature *arm;
   const PGArmExternal *ext;
   float eval_time;
+  /* false in a non-active depsgraph: there is no evaluated copy of the GP data to write to.
+   * shortcut: such writes are resolved and dropped, upgrade with a copy-on-write GP data. */
+  bool write_external;
 } AnimationEvalContext;
 
 /* fcurve_driver.c:35-51 (BKE_fcurve_driver.h) */
@@ -86,6 +93,7 @@ typedef enum PathKind {
   PATH_OB_PROP,
   PATH_EXTERNAL,
 } PathKind;
+_Static_assert(PATH_EXTERNAL == PG_DRV_PATH_EXTERNAL, "PathKind is PG_DRV_PATH_*");
 
 typedef struct PGPath {
   PathKind kind;
@@ -205,6 +213,10 @@ static bool path_read(const AnimationEvalContext *ctx, const PGPath *p, int inde
 static bool path_write(const AnimationEvalContext *ctx, const PGPath *p, int index, float value)
 {
   if (p->kind == PATH_EXTERNAL) {
+    if (!ctx->write_external) {
+      float unused;
+      return path_read(ctx, p, index, &unused);
+    }
     return ctx->ext && ctx->ext->set && ctx->ext->set(ctx->ext->user, p->base, index, value);
   }
   PGProp *prop;
@@ -1353,128 +1365,137 @@ void pg_drv_rename_bone(PGArmature *a, const char *oldname, const char *newname)
 }
 
 /* ---------------------------------------------------------------------------------------- */
-/* evaluation                                                                                */
+/* evaluation: the depsgraph's ANIMATION_EVAL and DRIVER operations (project_grease_depsgraph.cc) */
 
-/* What a driver writes / reads, for the dependency order. */
-static bool driver_writes_bone_transform(const FCurve *fcu, char r_bone[64])
+int pg_drv_path_info(const char *path, bool with_index, char r_bone[64], char r_prop[64])
 {
   PGPath p;
-  if (!path_parse(fcu->rna_path, &p, false)) return false;
-  if (!ELEM(p.kind, PATH_BONE_LOC, PATH_BONE_QUAT, PATH_BONE_EUL, PATH_BONE_SCALE)) return false;
-  BLI_strncpy(r_bone, p.bone, 64);
-  return true;
+  if (!path || !path_parse(path, &p, with_index)) return PG_DRV_PATH_INVALID;
+  if (r_bone) BLI_strncpy(r_bone, p.bone, 64);
+  if (r_prop) BLI_strncpy(r_prop, p.prop, 64);
+  return (int)p.kind;
 }
 
-static bool bone_is_or_below(const PGArmature *a, const char *bone, const char *ancestor)
+/* fcurve_driver.c:1170-1186 BKE_driver_expression_depends_on_time; the variables never depend on
+ * time (no Context Property variables). A non-simple expression is never evaluated here (no
+ * Python), so it depends on nothing. */
+bool pg_drv_depends_on_time(ChannelDriver *driver)
 {
-  for (bPoseChannel *pc = BKE_pose_channel_find_name(&a->pose, bone); pc; pc = pc->parent) {
-    if (STREQ(pc->name, ancestor)) return true;
+  if (driver->type != DRIVER_TYPE_PYTHON) {
+    return false;
+  }
+  if (driver_compile_simple_expr(driver)) {
+    /* Shortcut for simple expressions. */
+    return BLI_expr_pylike_is_using_param(driver->expr_simple, VAR_INDEX_FRAME);
   }
   return false;
 }
 
-/* true when driver `reader` reads what `writer` writes */
-static bool driver_depends_on(const PGArmature *a, const FCurve *reader, const FCurve *writer)
+/* BKE_animsys_rna_path_resolve; an external path the caller writes resolves by the write itself
+ * (PGArmExternal.set returns false for a path it cannot resolve). */
+static bool path_resolves(const AnimationEvalContext *ctx, const PGPath *p, int index)
 {
-  char wbone[64];
-  const bool w_transform = driver_writes_bone_transform(writer, wbone);
-  LISTBASE_FOREACH (const DriverVar *, dvar, &reader->driver->variables) {
-    const DriverTarget *dtar = &dvar->targets[0];
-    if (dvar->type == DVAR_TYPE_SINGLE_PROP && dtar->rna_path) {
-      PGPath p;
-      if (!path_parse(dtar->rna_path, &p, true)) continue;
-      const int ri = p.index < 0 ? 0 : p.index;
-      if (STREQ(p.base, writer->rna_path) && ri == writer->array_index) return true;
-    }
-    else if (dvar->type == DVAR_TYPE_TRANSFORM_CHAN && w_transform) {
-      /* the matrix of a bone follows its own channels and its parents' */
-      if (dtar->pchan_name[0] && bone_is_or_below(a, dtar->pchan_name, wbone)) return true;
-    }
-  }
-  return false;
+  if (p->kind == PATH_EXTERNAL && ctx->write_external) return true;
+  float unused;
+  return path_read(ctx, p, index, &unused);
 }
 
-static bool driver_reads_pose(const FCurve *fcu)
+/* anim_sys.c:563-577 animsys_write_orig_anim_rna: the external paths are the original GP data
+ * already (the active graph writes them in place). */
+static void animsys_write_orig_anim_rna(struct Depsgraph *depsgraph, const PGPath *p, int index,
+                                        float value)
 {
-  LISTBASE_FOREACH (const DriverVar *, dvar, &fcu->driver->variables) {
-    if (dvar->type == DVAR_TYPE_TRANSFORM_CHAN) return true;
-  }
-  return false;
+  PGArmature *orig = pg_deg_rig_original(depsgraph);
+  if (!orig || p->kind == PATH_EXTERNAL) return;
+  const AnimationEvalContext octx = {orig, NULL, 0.0f, false};
+  path_write(&octx, p, index, value);
 }
 
-void pg_drv_evaluate(PGArmature *a, float frame, const PGArmExternal *ext)
+/* anim_sys.c:4142-4154 BKE_animsys_eval_animdata (the action's F-Curves, animsys_evaluate_fcurves
+ * at anim_sys.c:584-603) */
+void pg_animsys_eval_animdata(struct Depsgraph *depsgraph, PGArmature *a)
 {
-  pg_bke_pose_where_is(&a->ob);
-  const int count = BLI_listbase_count(&a->drivers);
-  if (count == 0) return;
-
-  /* Kahn's topological sort on "reader depends on writer"; a cycle keeps list order. */
-  FCurve **list = MEM_mallocN(sizeof(FCurve *) * count, __func__);
-  FCurve **order = MEM_mallocN(sizeof(FCurve *) * count, __func__);
-  int *indegree = MEM_callocN(sizeof(int) * count, __func__);
-  bool *done = MEM_callocN(sizeof(bool) * count, __func__);
-  bool *dep = MEM_callocN(sizeof(bool) * count * count, __func__); /* dep[r * count + w] */
-  int i = 0;
-  LISTBASE_FOREACH (FCurve *, fcu, &a->drivers) list[i++] = fcu;
-  for (int r = 0; r < count; r++) {
-    for (int w = 0; w < count; w++) {
-      if (r != w && driver_depends_on(a, list[r], list[w])) {
-        dep[r * count + w] = true;
-        indegree[r]++;
-      }
-    }
-  }
-  for (int n = 0; n < count; n++) {
-    int pick = -1;
-    for (int k = 0; k < count && pick < 0; k++) {
-      if (!done[k] && indegree[k] == 0) pick = k;
-    }
-    for (int k = 0; k < count && pick < 0; k++) {
-      if (!done[k]) pick = k; /* cycle */
-    }
-    done[pick] = true;
-    order[n] = list[pick];
-    for (int r = 0; r < count; r++) {
-      if (dep[r * count + pick]) indegree[r]--;
-    }
-  }
-
-  const AnimationEvalContext ctx = {a, ext, frame};
-  bool pose_dirty = false;
-  for (int n = 0; n < count; n++) {
-    FCurve *fcu = order[n];
-    ChannelDriver *driver = fcu->driver;
-    /* anim_sys.c BKE_animsys_eval_driver */
-    if ((fcu->flag & (FCURVE_MUTED | FCURVE_DISABLED)) || !driver ||
-        (driver->flag & DRIVER_FLAG_INVALID))
+  const bool flush_to_original = pg_deg_is_active(depsgraph);
+  const AnimationEvalContext anim_eval_context = {
+      a, pg_deg_external(depsgraph), pg_deg_get_ctime(depsgraph), flush_to_original};
+  LISTBASE_FOREACH (FCurve *, fcu, &a->curves) {
+    /* is_fcurve_evaluatable */
+    if ((fcu->flag & (FCURVE_MUTED | FCURVE_DISABLED)) ||
+        (fcu->totvert == 0 && BLI_listbase_is_empty(&fcu->modifiers)))
     {
       continue;
     }
-    if (pose_dirty && driver_reads_pose(fcu)) {
-      pg_bke_pose_where_is(&a->ob);
-      pose_dirty = false;
-    }
     PGPath path;
-    bool ok = false;
-    if (path_parse(fcu->rna_path, &path, false)) {
-      /* calculate_fcurve: a driver F-Curve is never "empty" */
-      const float curval = evaluate_fcurve_driver(fcu, driver, &ctx);
+    if (path_parse(fcu->rna_path, &path, false) && path_resolves(&anim_eval_context, &path, fcu->array_index)) {
+      /* calculate_fcurve */
+      const float curval = evaluate_fcurve_ex(fcu, anim_eval_context.eval_time, 0.0f);
       fcu->curval = curval;
-      ok = path_write(&ctx, &path, fcu->array_index, curval);
-      char bone[64];
-      if (ok && driver_writes_bone_transform(fcu, bone)) pose_dirty = true;
-    }
-    /* set error-flag if evaluation failed */
-    if (!ok) {
-      driver->flag |= DRIVER_FLAG_INVALID;
+      path_write(&anim_eval_context, &path, fcu->array_index, curval);
+      if (flush_to_original) {
+        animsys_write_orig_anim_rna(depsgraph, &path, fcu->array_index, curval);
+      }
     }
   }
-  MEM_freeN(list);
-  MEM_freeN(order);
-  MEM_freeN(indegree);
-  MEM_freeN(done);
-  MEM_freeN(dep);
-  pg_bke_pose_where_is(&a->ob);
+}
+
+/* anim_sys.c:4176-4250 BKE_animsys_eval_driver */
+void pg_animsys_eval_driver(struct Depsgraph *depsgraph, PGArmature *a, int driver_index,
+                            FCurve *fcu_orig)
+{
+  bool ok = false;
+  FCurve *fcu = BLI_findlink(&a->drivers, driver_index);
+  if (fcu == NULL || fcu_orig == NULL) {
+    return;
+  }
+
+  /* check if this driver's curve should be skipped */
+  if ((fcu->flag & (FCURVE_MUTED | FCURVE_DISABLED)) == 0) {
+    /* check if driver itself is tagged for recalculation */
+    ChannelDriver *driver_orig = fcu_orig->driver;
+    if ((driver_orig) && !(driver_orig->flag & DRIVER_FLAG_INVALID)) {
+      const bool is_active = pg_deg_is_active(depsgraph);
+      const AnimationEvalContext anim_eval_context = {
+          a, pg_deg_external(depsgraph), pg_deg_get_ctime(depsgraph), is_active};
+      PGPath path;
+      if (path_parse(fcu->rna_path, &path, false) &&
+          path_resolves(&anim_eval_context, &path, fcu->array_index))
+      {
+        /* Evaluate driver, and write results to COW-domain destination */
+        const float curval = evaluate_fcurve_driver(fcu, driver_orig, &anim_eval_context);
+        fcu->curval = curval;
+        ok = path_write(&anim_eval_context, &path, fcu->array_index, curval);
+
+        /* Flush results & status codes to original data for UI (#59984) */
+        if (ok && is_active) {
+          animsys_write_orig_anim_rna(depsgraph, &path, fcu->array_index, curval);
+
+          /* curval is displayed in the UI, and flag contains error-status codes */
+          fcu_orig->curval = fcu->curval;
+          driver_orig->curval = fcu->driver->curval;
+          driver_orig->flag = fcu->driver->flag;
+
+          DriverVar *dvar_orig = driver_orig->variables.first;
+          DriverVar *dvar = fcu->driver->variables.first;
+          for (; dvar_orig && dvar; dvar_orig = dvar_orig->next, dvar = dvar->next) {
+            DriverTarget *dtar_orig = &dvar_orig->targets[0];
+            DriverTarget *dtar = &dvar->targets[0];
+            for (int i = 0; i < MAX_DRIVER_TARGETS; i++, dtar_orig++, dtar++) {
+              dtar_orig->flag = dtar->flag;
+            }
+
+            dvar_orig->curval = dvar->curval;
+            dvar_orig->flag = dvar->flag;
+          }
+        }
+      }
+
+      /* set error-flag if evaluation failed */
+      if (ok == 0) {
+        CLOG_WARN(&LOG, "invalid driver - %s[%d]", fcu->rna_path, fcu->array_index);
+        driver_orig->flag |= DRIVER_FLAG_INVALID;
+      }
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------------------------- */
@@ -1575,22 +1596,6 @@ static void driver_touched(FCurve *fcu, bool expr_changed, bool varname_changed)
 {
   fcu->driver->flag &= ~DRIVER_FLAG_INVALID;
   BKE_driver_invalidate_expression(fcu->driver, expr_changed, varname_changed);
-}
-
-void pg_drv_evaluate_loading(PGArmature *a, float frame, const PGArmExternal *ext)
-{
-  if (!a) return;
-  const int count = BLI_listbase_count(&a->drivers);
-  short *flags = MEM_mallocN(sizeof(short) * (count + 1), __func__);
-  int i = 0;
-  LISTBASE_FOREACH (FCurve *, fcu, &a->drivers) flags[i++] = fcu->driver ? fcu->driver->flag : 0;
-  pg_arm_evaluate_ex(a, frame, ext);
-  i = 0;
-  LISTBASE_FOREACH (FCurve *, fcu, &a->drivers) {
-    if (fcu->driver) SET_FLAG_FROM_TEST(fcu->driver->flag, flags[i] & DRIVER_FLAG_INVALID, DRIVER_FLAG_INVALID);
-    i++;
-  }
-  MEM_freeN(flags);
 }
 
 int pg_arm_driver_count(const PGArmature *a) { return a ? BLI_listbase_count(&a->drivers) : 0; }

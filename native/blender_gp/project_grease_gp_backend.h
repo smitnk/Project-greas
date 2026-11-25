@@ -210,12 +210,16 @@ class Backend {
 
   // Rig (project_grease_armature.h): the document's armature, part of undo snapshots and the saved
   // document. armature(true) creates an empty one. After editing it with pg_arm_* call
-  // armature_changed() so the Armature modifiers re-evaluate. The pose follows the scene frame.
+  // armature_changed() (DEG_relations_tag_update + DEG_id_tag_update, then the update) so the
+  // drivers, the pose and the Armature modifiers re-evaluate. The pose follows the scene frame
+  // through the depsgraph (project_grease_depsgraph.h).
   PGArmature* armature(bool create);
   void armature_changed();
-  // The action (action false: not, as after a property edit) and the drivers (layer opacity /
-  // hide and Time Offset modifiers included) at `frame` (< 0: the scene frame), then the pose.
-  void armature_evaluate(float frame = -1.0f, bool action = true);
+  // deg_evaluate_on_framechange at `frame` (< 0: the scene frame): the action, the drivers (layer
+  // opacity / hide and Time Offset modifiers included) and the pose.
+  void armature_evaluate(float frame = -1.0f);
+  // deg_evaluate_on_refresh: runs what is tagged (a loaded rig waits for this, see load_json).
+  void armature_refresh();
   void armature_remove();
   // Parent with ... (pg_arm_bind_frame mode 0..3) on every layer's frame at the scene frame; adds
   // an Armature modifier to the layers without one (ED_gpencil_add_armature). Groups added or -1.
@@ -242,7 +246,10 @@ class Backend {
   bool modifier_apply(int layer_index, int modifier_index);
   // The frame to draw for `layer`: an evaluated copy of `current` when the layer has enabled
   // modifiers (cached until an edit, frame change or stack change), else `current` itself.
-  const bGPDframe* evaluated_frame(const bGPDlayer* layer, const bGPDframe* current, int frame_number);
+  // ghost: `current` is an onion-skin key shown as itself (no Time Offset remap), evaluated at
+  // frame_number (its own number), so its Armature modifier uses the pose of that frame.
+  const bGPDframe* evaluated_frame(const bGPDlayer* layer, const bGPDframe* current, int frame_number,
+                                   bool ghost = false);
   // Number of stack evaluations run so far (cache hits do not count); for tests.
   uint64_t modifier_eval_count() const;
   // Per-layer shader effects (2D post-pass over the rendered layer, see project_grease_shader_fx.h).

@@ -179,13 +179,13 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
   }
   /* a pose / bone edit tags the depsgraph: the drivers reading bones run again (not the action,
    * which would undo the edit until the next key) */
-  if (cmd != PG_ARM_CMD_EVALUATE) backend.armature_evaluate(-1.0f, false);
-  backend.armature_changed();
+  if (cmd != PG_ARM_CMD_EVALUATE) backend.armature_changed();
   return r;
 }
 
 int pg_arm_bridge_query(Backend &backend, int what, int bone, float x, float *out, int cap)
 {
+  backend.armature_refresh(); /* the queries read the evaluated values flushed to the rig */
   const PGArmature *a = backend.armature(false);
   float tmp[PG_ARM_BONE_INFO];
   if (!a) {

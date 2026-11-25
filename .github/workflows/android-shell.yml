@@ -294,6 +294,11 @@ jobs:
           PG_REQUIRE_BLENDER_SOURCE: "1"
         run: bash tools/run_native_constraints_tests.sh
 
+      - name: Run native depsgraph tests (rig + GP object, Blender 3.6.23 depsgraph build / flush / eval, per-frame copy-on-write)
+        env:
+          PG_REQUIRE_BLENDER_SOURCE: "1"
+        run: bash tools/run_native_depsgraph_tests.sh
+
       - name: Run native modifier stack tests
         env:
           PG_REQUIRE_BLENDER_SOURCE: "1"

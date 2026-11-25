@@ -42,6 +42,7 @@ C_SRC=(
   "$ROOT/native/blender_gp/project_grease_transform.c"
   "$ROOT/native/blender_gp/project_grease_tool_session.c"
   "$ROOT/native/blender_gp/project_grease_draw_input.c"
+  "$ROOT/native/blender_gp/project_grease_blender_paint.c"
   "$ROOT/native/blender_gp/project_grease_tool_util.c"
   "$ROOT/native/blender_gp/project_grease_tool_sculpt.c"
   "$ROOT/native/blender_gp/project_grease_tool_vertex_paint.c"
@@ -83,6 +84,7 @@ CXX_SRC=(
   "$B/intern/iksolver/intern/IK_QSegment.cpp" "$B/intern/iksolver/intern/IK_QTask.cpp"
   "$B/intern/iksolver/intern/IK_Solver.cpp"
   "$B/intern/eigen/intern/matrix.cc" "$B/intern/eigen/intern/svd.cc" "$B/intern/eigen/intern/eigenvalues.cc"
+  "$ROOT/native/blender_gp/project_grease_depsgraph.cc"
 )
 OBJS=()
 # math_matrix.c is built as Android builds it (no MATH_STANDALONE: interp_m4_m4m4 and the polar
@@ -90,4 +92,3 @@ OBJS=()
 for s in "${C_SRC[@]}"; do o="$OUT/$(basename "$s").o"; X=(); [[ "$s" == */math_matrix.c ]] && X=(-UMATH_STANDALONE)
   gcc "${CF[@]}" "${X[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
 for s in "${CXX_SRC[@]}"; do o="$OUT/$(basename "$s").o"; g++ "${XF[@]}" "${INC[@]}" -c "$s" -o "$o"; OBJS+=("$o"); done
-  "$ROOT/native/blender_gp/project_grease_blender_paint.c"

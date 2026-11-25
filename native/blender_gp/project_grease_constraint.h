@@ -16,7 +16,9 @@ struct Object;
 struct ListBase;
 typedef struct PGArmature PGArmature;
 
-/* BKE_pose_where_is for the rig object (ob->data the bArmature, ob->pose the bPose). */
+/* The pose of the rig object (ob->data the bArmature, ob->pose the bPose) evaluated in place by a
+ * pose-only depsgraph (project_grease_depsgraph.cc: build_rig's operations in dependency order,
+ * no drivers or action), the BKE_pose_where_is of edit operations. */
 void pg_bke_pose_where_is(struct Object *ob);
 /* BKE_constraints_free / BKE_constraints_copy (targets are remapped to `owner` when set). */
 void pg_con_list_free(struct ListBase *list);

@@ -171,9 +171,10 @@ internal class ProjectGreaseDrawingSurfaceView(
             var propStartDistance = 0f
             var propStartSize = 1f
         }
-        class Move(var lastX: Float, var lastY: Float) : Transform()
-        class Rotate(val cx: Float, val cy: Float, var lastAngle: Float) : Transform()
-        class Scale(val cx: Float, val cy: Float, var lastRadius: Float) : Transform()
+        /** Move / Rotate / Scale run Blender's transform modal: each move sends the total value since the touch. */
+        class Move(val startX: Float, val startY: Float) : Transform()
+        class Rotate(val cx: Float, val cy: Float, var lastAngle: Float) : Transform() { var total = 0f }
+        class Scale(val cx: Float, val cy: Float, val startRadius: Float) : Transform()
         class Mirror(val cx: Float, val cy: Float, val startX: Float, val startY: Float) : Transform()
         /** Two or more fingers: zoom / pan / rotate while [pinching]; a quick tap undoes (2) or redoes (3). */
         class Multi(var fingers: Int, var startMs: Long) : Gesture() {
@@ -492,40 +493,22 @@ internal class ProjectGreaseDrawingSurfaceView(
                             val changed = eraseAlongPath(g, x, y)
                             if (changed) controller.render()
                         }
-                        is Gesture.Move -> {
-                            val dx = x - g.lastX
-                            val dy = y - g.lastY
-                            if (dx != 0f || dy != 0f) {
-                                controller.translateSelectedStroke(dx, dy)
-                                g.lastX = x
-                                g.lastY = y
-                                controller.render()
-                            }
-                        }
+                        is Gesture.Move -> controller.updateTransform(x - g.startX, y - g.startY)
                         is Gesture.Rotate -> {
+                            // the finger's turn about the pivot, unwrapped; canvas y points down, so a
+                            // counter-clockwise canvas angle is Blender's negative rotate value
                             val angle = atan2(y - g.cy, x - g.cx)
                             var delta = angle - g.lastAngle
                             if (delta > PI.toFloat()) delta -= 2f * PI.toFloat()
                             else if (delta < -PI.toFloat()) delta += 2f * PI.toFloat()
-                            if (delta != 0f) {
-                                if (controller.rotateSelectedStrokeAround(delta, g.cx, g.cy)) {
-                                    g.lastAngle = angle
-                                    controller.render()
-                                }
-                            }
+                            g.lastAngle = angle
+                            g.total += delta
+                            controller.updateTransform(-g.total, 0f)
                         }
                         is Gesture.Scale -> {
                             val radius = hypot(x - g.cx, y - g.cy)
-                            if (radius >= 1f && g.lastRadius >= 1f) {
-                                var factor = radius / g.lastRadius
-                                factor = factor.coerceIn(0.8f, 1.25f)
-                                if (factor != 1f) {
-                                    if (controller.scaleSelectedStrokeAround(factor, factor, g.cx, g.cy)) {
-                                        g.lastRadius = radius
-                                        controller.render()
-                                    }
-                                }
-                            }
+                            val factor = radius / g.startRadius
+                            controller.updateTransform(factor, factor)
                         }
                         is Gesture.Mirror -> {
                             // Mirror is committed on release so a drag cannot
@@ -636,6 +619,7 @@ internal class ProjectGreaseDrawingSurfaceView(
             }
             MotionEvent.ACTION_CANCEL -> {
                 val g = gesture
+                if (g is Gesture.Transform) controller.endTransform(cancel = true)
                 endSession(cancel = g is Gesture.Session && g.tool == com.smitnk.projectgrease.editor.ToolSession.TOOL_DRAW)
                 if (g is Gesture.Erase) controller.endErase()
                 if (g is Gesture.Stroke) controller.cancelStroke()
@@ -649,16 +633,19 @@ internal class ProjectGreaseDrawingSurfaceView(
 
     /** The transform the tool's drag runs, about the selection pivot (null: nothing to turn / scale about). */
     private fun transformFor(tool: com.smitnk.projectgrease.editor.GreaseTool, start: Pair<Float, Float>): Gesture.Transform? {
-        if (tool == com.smitnk.projectgrease.editor.GreaseTool.MOVE) return Gesture.Move(start.first, start.second)
-        val center = controller.selectionPivot() ?: controller.selectedStrokeCenter()
+        val S = com.smitnk.projectgrease.editor.ProjectGreaseSelect
+        val center = controller.transformCenter()
         if (center == null || center.size < 2) return null
         val cx = center[0]; val cy = center[1]
-        return when (tool) {
+        val g = when (tool) {
+            com.smitnk.projectgrease.editor.GreaseTool.MOVE -> Gesture.Move(start.first, start.second)
             com.smitnk.projectgrease.editor.GreaseTool.ROTATE -> Gesture.Rotate(cx, cy, atan2(start.second - cy, start.first - cx))
             com.smitnk.projectgrease.editor.GreaseTool.SCALE ->
                 hypot(start.first - cx, start.second - cy).let { r -> if (r < 1f) null else Gesture.Scale(cx, cy, r) }
-            else -> Gesture.Mirror(cx, cy, start.first, start.second)
-        }
+            else -> return Gesture.Mirror(cx, cy, start.first, start.second) // one-shot on release
+        } ?: return null
+        val mode = when (g) { is Gesture.Rotate -> S.XFORM_ROTATE; is Gesture.Scale -> S.XFORM_SCALE; else -> S.XFORM_TRANSLATE }
+        return if (controller.beginTransform(mode)) g else null
     }
 
     private fun commitMirror(g: Gesture.Mirror, x: Float, y: Float) {
@@ -803,7 +790,7 @@ internal class ProjectGreaseDrawingSurfaceView(
         }
     }
     private fun resetGestureState() {
-        if (gesture is Gesture.Transform) controller.history.endBatch()
+        if (gesture is Gesture.Transform) { controller.endTransform(); controller.history.endBatch() }
         gesture = Gesture.Idle
         activePointerId = MotionEvent.INVALID_POINTER_ID
     }

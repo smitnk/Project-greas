@@ -442,6 +442,17 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTransformSelected(JNIE
   return project_grease_gp_transform_selected(from_handle(handle), m) != 0;
 }
 
+/* Stroke transform modal: phase 0 begin / 1 update / 2 confirm / 3 cancel (project_grease_gp_bridge.h). */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTransformModal(JNIEnv *env, jobject, jlong handle, jint phase, jfloatArray args)
+{
+  const jsize n = args ? env->GetArrayLength(args) : 0;
+  if (n > 16) return JNI_FALSE;
+  float a[16] = {0};
+  if (n > 0) env->GetFloatArrayRegion(args, 0, n, a);
+  return project_grease_gp_transform_modal(from_handle(handle), phase, a, n) != 0;
+}
+
 /* Lasso warp (Blender lattice deform): begin returns the selection box, update takes the lattice's
  * points (2 * nu * nv canvas floats), end keeps (or cancels) the deform. */
 extern "C" JNIEXPORT jfloatArray JNICALL

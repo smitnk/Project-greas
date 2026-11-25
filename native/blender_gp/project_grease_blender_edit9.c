@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * See project_grease_blender_edit9.h. Proportional editing follows transform_generics.c
- * calculatePropRatio (Blender 3.6.23): selected points weigh 1, others by the falloff of
- * (size - distance) / size, nothing beyond the radius; connected mode measures along the stroke. */
+ * See project_grease_blender_edit9.h. */
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -18,120 +16,9 @@
 #include "BKE_gpencil_legacy.h"
 #include "project_grease_blender_edit9.h"
 
-float pg_prop_falloff(int f, float d, float size)
-{
-  /* td->rdist > t->prop_size -> 0 (strictly greater: at d == size Constant still gives 1) */
-  if (size <= 0 || d > size) return 0.0f;
-  float t = (size - d) / size; /* "dist" in calculatePropRatio: 1 at the selection, 0 at the edge */
-  if (t < 0.0f) t = 0.0f;
-  switch (f) {
-    case PG_PROP_SHARP: return t * t;
-    case PG_PROP_SMOOTH: return 3.0f * t * t - 2.0f * t * t * t;
-    case PG_PROP_ROOT: return sqrtf(t);
-    case PG_PROP_LIN: return t;
-    case PG_PROP_CONST: return 1.0f;
-    case PG_PROP_SPHERE: return sqrtf(2.0f * t - t * t);
-    case PG_PROP_INVSQUARE: return t * (2.0f - t);
-    default: return 1.0f; /* calculatePropRatio's default */
-  }
-}
-
 static bool pe9_layer_ok(const bGPDlayer *gpl, const bGPDlayer *only)
 {
   return (only == NULL || gpl == only) && BKE_gpencil_layer_is_editable(gpl) && gpl->actframe;
-}
-
-static void pe9_apply(const PGTransform *t, float px, float py, float w, float cx, float cy, float *rx, float *ry)
-{
-  float x = px, y = py;
-  if (t->type == PG_XFORM_TRANSLATE) { x += t->a * w; y += t->b * w; }
-  else if (t->type == PG_XFORM_ROTATE) {
-    float a = t->a * w, c = cosf(a), s = sinf(a), dx = px - cx, dy = py - cy;
-    x = cx + dx * c - dy * s; y = cy + dx * s + dy * c;
-  }
-  else { /* scale: interpolate the factor by the weight */
-    float sx = 1.0f + (t->a - 1.0f) * w, sy = 1.0f + (t->b - 1.0f) * w;
-    x = cx + (px - cx) * sx; y = cy + (py - cy) * sy;
-  }
-  *rx = x; *ry = y;
-}
-
-int pg_gp_transform(bGPdata *gpd, const bGPDlayer *only, const PGTransform *t)
-{
-  if (gpd == NULL || t == NULL || !isfinite(t->a) || !isfinite(t->b) || t->type < 0 || t->type > 2) return 0;
-  /* pivot over all selected points */
-  double sx = 0, sy = 0; long n = 0;
-  float minx = 1e30f, miny = 1e30f, maxx = -1e30f, maxy = -1e30f;
-  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
-    if (!pe9_layer_ok(gpl, only)) continue;
-    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
-      if (!(gps->flag & GP_STROKE_SELECT)) continue;
-      for (int i = 0; i < gps->totpoints; i++) {
-        const bGPDspoint *p = &gps->points[i];
-        if (!(p->flag & GP_SPOINT_SELECT)) continue;
-        sx += p->x; sy += p->y; n++;
-        minx = fminf(minx, p->x); maxx = fmaxf(maxx, p->x); miny = fminf(miny, p->y); maxy = fmaxf(maxy, p->y);
-      }
-    }
-  }
-  if (n == 0) return 0;
-  float cx = (float)(sx / n), cy = (float)(sy / n);
-  if (t->pivot == PG_PIVOT_BOUNDS) { cx = 0.5f * (minx + maxx); cy = 0.5f * (miny + maxy); }
-  else if (t->pivot == PG_PIVOT_CURSOR) { cx = t->cursor[0]; cy = t->cursor[1]; }
-
-  int changed = 0;
-  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
-    if (!pe9_layer_ok(gpl, only)) continue;
-    LISTBASE_FOREACH (bGPDstroke *, gps, &gpl->actframe->strokes) {
-      const bool sel = (gps->flag & GP_STROKE_SELECT) != 0;
-      if (!sel && !t->proportional) continue;
-      float lcx = cx, lcy = cy;
-      if (t->pivot == PG_PIVOT_INDIVIDUAL && sel) { /* each stroke about its own selected-points median */
-        double ax = 0, ay = 0; int m = 0;
-        for (int i = 0; i < gps->totpoints; i++) if (gps->points[i].flag & GP_SPOINT_SELECT) { ax += gps->points[i].x; ay += gps->points[i].y; m++; }
-        if (m) { lcx = (float)(ax / m); lcy = (float)(ay / m); }
-      }
-      /* proportional weights: distance to the nearest selected point (straight, or along the stroke) */
-      float *w = malloc(sizeof(float) * (size_t)gps->totpoints);
-      if (w == NULL) continue;
-      for (int i = 0; i < gps->totpoints; i++) w[i] = (gps->points[i].flag & GP_SPOINT_SELECT) && sel ? 1.0f : 0.0f;
-      if (t->proportional) {
-        for (int i = 0; i < gps->totpoints; i++) {
-          if (w[i] == 1.0f) continue;
-          float best = 1e30f;
-          if (t->connected) {
-            if (!sel) continue; /* connected: only within strokes that have selected points */
-            float acc = 0; /* walk both directions along the stroke */
-            for (int j = i - 1; j >= 0; j--) { acc += hypotf(gps->points[j + 1].x - gps->points[j].x, gps->points[j + 1].y - gps->points[j].y);
-              if (gps->points[j].flag & GP_SPOINT_SELECT) { best = fminf(best, acc); break; } }
-            acc = 0;
-            for (int j = i + 1; j < gps->totpoints; j++) { acc += hypotf(gps->points[j].x - gps->points[j - 1].x, gps->points[j].y - gps->points[j - 1].y);
-              if (gps->points[j].flag & GP_SPOINT_SELECT) { best = fminf(best, acc); break; } }
-          }
-          else {
-            LISTBASE_FOREACH (bGPDlayer *, l2, &gpd->layers) {
-              if (!pe9_layer_ok(l2, only)) continue;
-              LISTBASE_FOREACH (bGPDstroke *, s2, &l2->actframe->strokes) {
-                if (!(s2->flag & GP_STROKE_SELECT)) continue;
-                for (int j = 0; j < s2->totpoints; j++) if (s2->points[j].flag & GP_SPOINT_SELECT)
-                  best = fminf(best, hypotf(s2->points[j].x - gps->points[i].x, s2->points[j].y - gps->points[i].y));
-              }
-            }
-          }
-          w[i] = pg_prop_falloff(t->falloff, best, t->size);
-        }
-      }
-      bool touched = false;
-      for (int i = 0; i < gps->totpoints; i++) {
-        if (w[i] <= 0.0f) continue;
-        pe9_apply(t, gps->points[i].x, gps->points[i].y, w[i], lcx, lcy, &gps->points[i].x, &gps->points[i].y);
-        touched = true;
-      }
-      free(w);
-      if (touched) { BKE_gpencil_stroke_geometry_update(gpd, gps); changed = 1; }
-    }
-  }
-  return changed;
 }
 
 /* ---- dope sheet ---------------------------------------------------------------------- */
@@ -293,7 +180,6 @@ int pg_gp_dash_segments(bGPdata *gpd, const bGPDlayer *only, const int *dash, co
 }
 
 /* ---- command dispatch (routed by the bridge, ids PG_EDIT9_CMD_FIRST..LAST) ------------- */
-static float pe9_snap(float v, float inc) { return inc > 0.0f ? roundf(v / inc) * inc : v; }
 
 static MaterialGPencilStyle *pe9_style(bGPdata *gpd, int slot)
 {
@@ -341,21 +227,6 @@ int pg_gp_edit9_dispatch(bGPdata *gpd, bGPDlayer *active_layer, int command, con
 #define ONLY(k) (arg_count > (k) && args[k] != 0.0f ? NULL : active_layer)
   int changed = 0;
   switch (command) {
-    case PG_EDIT9_CMD_TRANSFORM: {
-      NEED(10);
-      PGTransform t;
-      t.type = I(0); t.a = args[1]; t.b = args[2]; t.pivot = I(3);
-      t.cursor[0] = args[4]; t.cursor[1] = args[5];
-      t.proportional = args[6] != 0.0f; t.connected = args[7] != 0.0f;
-      t.falloff = I(8); t.size = args[9];
-      if (t.pivot < PG_PIVOT_MEDIAN || t.pivot > PG_PIVOT_CURSOR) return 0;
-      /* increment snapping (snap_increment): translate by grid steps, rotate by 5 degree steps */
-      const float inc = arg_count > 10 ? args[10] : 0.0f;
-      if (inc > 0.0f && t.type == PG_XFORM_TRANSLATE) { t.a = pe9_snap(t.a, inc); t.b = pe9_snap(t.b, inc); }
-      else if (inc > 0.0f && t.type == PG_XFORM_ROTATE) t.a = pe9_snap(t.a, (float)(M_PI / 36.0));
-      changed = pg_gp_transform(gpd, ONLY(11), &t);
-      break;
-    }
     case PG_EDIT9_CMD_FRAMES_SELECT_RANGE:
       NEED(2);
       changed = pg_gp_frames_select_range(gpd, ONLY(3), I(0), I(1), arg_count > 2 && args[2] != 0.0f);

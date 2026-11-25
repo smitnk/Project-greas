@@ -2,6 +2,7 @@
 #include <chrono>
 #include "project_grease_gp_backend.h"
 #include "project_grease_blender_lattice.h"
+#include "project_grease_transform.h"
 #if defined(__has_include)
 #if __has_include(<android/log.h>)
 #include <android/log.h>
@@ -297,6 +298,8 @@ struct Backend::Impl {
   struct LatticePoint { bGPDstroke *gps; int index; float x, y; };
   std::vector<LatticePoint> lattice_points;
   float lattice_bounds[4] = {0, 0, 0, 0};
+  PGTransInfo *xform = nullptr;  // open stroke transform (transform_begin)
+  uint64_t xform_generation = 0; // doc_generation it was built on: strokes freed since = discard
   float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f, fill_map_rotation = 0.0f;
   // Brush fill_factor ("Precision"), Blender default 1.
   float fill_factor = 1.0f;
@@ -828,6 +831,7 @@ Backend::Backend() : impl_(new Impl()) {}
 Backend::~Backend()
 {
   shutdown();
+  pg_transform_discard(impl_->xform);
   delete impl_;
 }
 
@@ -1343,6 +1347,10 @@ bool Backend::lattice_active() const { return !impl_->lattice_points.empty(); }
 
 bool Backend::modal_confirm()
 {
+  if (transform_active()) {
+    transform_end(false);
+    return true;
+  }
   if (impl_->lattice_points.empty()) return false;
   lattice_end(true);
   return true;
@@ -1359,6 +1367,42 @@ void Backend::lattice_end(bool keep)
   }
   impl_->lattice_points.clear();
 }
+
+// ---- stroke transform (project_grease_transform.c) ----
+static bool xform_stale(Backend::Impl *impl)
+{
+  if (impl->xform && impl->xform_generation != impl->doc_generation) {
+    pg_transform_discard(impl->xform); // its strokes were freed (undo / new document)
+    impl->xform = nullptr;
+  }
+  return impl->xform == nullptr;
+}
+
+bool Backend::transform_begin(int mode, const void *opts)
+{
+  transform_end(false);
+  if (!impl_->gpd || !opts) return false;
+  impl_->xform = pg_transform_begin(impl_->gpd, mode, static_cast<const PGTransformOptions *>(opts));
+  impl_->xform_generation = impl_->doc_generation;
+  return impl_->xform != nullptr;
+}
+
+bool Backend::transform_update(const float values[2])
+{
+  if (xform_stale(impl_) || !pg_transform_apply(impl_->xform, values)) return false;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+void Backend::transform_end(bool cancel)
+{
+  if (xform_stale(impl_)) return;
+  pg_transform_end(impl_->xform, cancel ? 1 : 0);
+  impl_->xform = nullptr;
+  project_grease_gp_tag(impl_->gpd);
+}
+
+bool Backend::transform_active() const { return !xform_stale(impl_); }
 
 bool Backend::selected_points_bounds(float r_bounds[4]) const
 {

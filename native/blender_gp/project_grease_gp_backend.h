@@ -70,7 +70,14 @@ class Backend {
   bool lattice_begin(float r_bounds[4]);
   bool lattice_update(int nu, int nv, const float *ctrl, int interp);
   void lattice_end(bool keep);
-  bool modal_confirm(); // ends a running Lasso Warp, keeping its result
+  bool modal_confirm(); // ends a running Lasso Warp or stroke transform, keeping its result
+  // Stroke transform (Blender's transform modal, project_grease_transform.c): begin builds the
+  // TransData of the selection (mode PG_TFM_*, opts a PGTransformOptions), update applies the
+  // gesture's total value from the initial positions, end confirms or cancels.
+  bool transform_begin(int mode, const void *opts);
+  bool transform_update(const float values[2]);
+  void transform_end(bool cancel);
+  bool transform_active() const;
   bool lattice_active() const; // a Lasso Warp is open
   bool set_layer_visibility(int index, bool visible);
   bool set_layer_locked(int index, bool locked);

@@ -482,7 +482,6 @@ object ProjectGreaseSelect {
     fun easingParams(amplitude: Float, period: Float) = Command(CMD_EASING_PARAMS, floatArrayOf(amplitude, period))
 
     /** edit9 (project_grease_blender_edit9.h): proportional transform, pivots, dope-sheet frame ops, dash segments. */
-    const val CMD_TRANSFORM = 117
     const val CMD_FRAMES_SELECT_RANGE = 118
     const val CMD_FRAMES_MOVE = 119
     const val CMD_FRAMES_SCALE = 120
@@ -513,15 +512,17 @@ object ProjectGreaseSelect {
     const val XFORM_TRANSLATE = 0
     const val XFORM_ROTATE = 1
     const val XFORM_SCALE = 2
+    /** Mirror (TFM_MIRROR); only the native transform modal (GPNative.nativeTransformModal) takes it. */
+    const val XFORM_MIRROR = 3
     /** Pivot point (V3D_AROUND_*) order of PG_PIVOT_*. */
     const val PIVOT_MEDIAN = 0
     const val PIVOT_BOUNDS = 1
     const val PIVOT_INDIVIDUAL = 2
     const val PIVOT_CURSOR = 3
     val PIVOT_LABELS = listOf("Median Point", "Bounding Box Center", "Individual Origins", "2D Cursor")
-    /** Proportional falloff (PROP_*), RANDOM (6) is not offered. */
-    val FALLOFF_VALUES = intArrayOf(0, 1, 2, 3, 4, 5, 7)
-    val FALLOFF_LABELS = listOf("Smooth", "Sphere", "Root", "Sharp", "Linear", "Constant", "Inverse Square")
+    /** Proportional falloff (PROP_*), in Blender's menu order; Random is reseeded each transform, as Blender's. */
+    val FALLOFF_VALUES = intArrayOf(0, 1, 2, 7, 3, 4, 5, 6)
+    val FALLOFF_LABELS = listOf("Smooth", "Sphere", "Root", "Inverse Square", "Sharp", "Linear", "Constant", "Random")
 
     data class TransformSettings(
         val pivot: Int = PIVOT_MEDIAN,
@@ -533,15 +534,8 @@ object ProjectGreaseSelect {
         val size: Float = 100f,
         val snapIncrement: Float = 0f,
     ) {
-        /** True when the plain (non-edit9) transform path would give a different result. */
-        val needsEdit9: Boolean get() = proportional || pivot != PIVOT_MEDIAN || snapIncrement > 0f
     }
 
-    fun transform(type: Int, a: Float, b: Float, s: TransformSettings): Command? {
-        if (type !in XFORM_TRANSLATE..XFORM_SCALE || s.pivot !in PIVOT_MEDIAN..PIVOT_CURSOR || !a.isFinite() || !b.isFinite()) return null
-        return Command(CMD_TRANSFORM, floatArrayOf(type.toFloat(), a, b, s.pivot.toFloat(), s.cursorX, s.cursorY,
-            if (s.proportional) 1f else 0f, if (s.connected) 1f else 0f, s.falloff.toFloat(), s.size, 0f))
-    }
     fun framesSelectRange(fmin: Int, fmax: Int, extend: Boolean = false, allLayers: Boolean = false) =
         Command(CMD_FRAMES_SELECT_RANGE, floatArrayOf(minOf(fmin, fmax).toFloat(), maxOf(fmin, fmax).toFloat(), if (extend) 1f else 0f, if (allLayers) 1f else 0f))
     fun framesMove(offset: Int, allLayers: Boolean = false) = Command(CMD_FRAMES_MOVE, floatArrayOf(offset.toFloat(), if (allLayers) 1f else 0f))

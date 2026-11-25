@@ -17,6 +17,8 @@
 #include "project_grease_blender_edit5.h"
 #include "project_grease_blender_edit8.h"
 #include "project_grease_blender_edit9.h"
+#include "project_grease_transform.h"
+#include <cmath>
 #include "project_grease_blender_interp.h"
 #include "project_grease_blender_edit10.h"
 #include "project_grease_blender_edit7.h"
@@ -505,6 +507,25 @@ int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int 
 void project_grease_gp_context_reset(ProjectGreaseGPHandle *handle)
 {
   if (ensure_ready(handle)) handle->backend.gpu_context_reset();
+}
+
+int project_grease_gp_transform_modal(ProjectGreaseGPHandle *handle, int phase, const float *args, int n)
+{
+  if (phase == 0) {
+    if (!args || n < 11 || !ensure_operator(handle)) return 0;
+    for (int i = 0; i < 11; i++) if (!std::isfinite(args[i])) return 0;
+    PGTransformOptions o{};
+    o.pivot = int(args[1]); o.cursor[0] = args[2]; o.cursor[1] = args[3];
+    o.prop_edit = args[4] != 0; o.prop_connected = args[5] != 0; o.prop_mode = int(args[6]); o.prop_size = args[7];
+    o.multiframe_falloff = args[8] != 0; o.snap = args[9] != 0; o.snap_translate = args[10];
+    return handle->backend.transform_begin(int(args[0]), &o) ? 1 : 0;
+  }
+  if (!ensure_ready(handle)) return 0;
+  if (phase == 1) return args && n >= 2 && handle->backend.transform_update(args) ? 1 : 0;
+  if (phase != 2 && phase != 3) return 0;
+  const bool open = handle->backend.transform_active();
+  handle->backend.transform_end(phase == 3);
+  return open ? 1 : 0;
 }
 
 int project_grease_gp_lattice_active(const ProjectGreaseGPHandle *handle)
@@ -1456,6 +1477,7 @@ int project_grease_gp_cancel_tool_session(ProjectGreaseGPHandle *handle)
   const bool stale = tool_session_stale(handle);
   const int result = tool_abort(handle, !stale);
   handle->backend.lattice_end(false); // an open Lasso Warp is a modal too: revert it
+  handle->backend.transform_end(true); // so is an open stroke transform
   return (result & PG_TOOL_RESULT_ENDED) != 0 ? 1 : 0;
 }
 

@@ -230,6 +230,18 @@ jobs:
             bash tools/run_native_rig_blender_parity_tests.sh | tee build/qa/blender_rig_compare_full.txt
           grep BLENDER-RUN build/qa/blender_rig_compare.txt
 
+      - name: Blender 3.6.23 binary vs PG stroke transform (real Blender run under Xvfb, translate / rotate / resize / mirror with pivots, proportional editing, multi-frame falloff compared)
+        run: |
+          set -euo pipefail
+          mkdir -p build/qa
+          command -v xvfb-run >/dev/null || sudo apt-get install -y xvfb
+          # a window is needed: under -b the transform ignores the pivot point (see the script's header)
+          xvfb-run -a build/blender-3.6.23/blender --factory-startup \
+            --python tools/transform_reference/blender_transform_reference.py -- build/qa/blender_transform_run.json
+          TRANSFORM_BLENDER_RUN=build/qa/blender_transform_run.json TRANSFORM_BLENDER_REPORT=build/qa/blender_transform_compare.txt \
+            bash tools/run_native_transform_blender_parity_tests.sh | tee build/qa/blender_transform_compare_full.txt
+          grep BLENDER-RUN build/qa/blender_transform_compare.txt
+
       - name: Cache glslang 14.3.0 (GLES shader validator)
         id: glslang-cache
         uses: actions/cache@v4

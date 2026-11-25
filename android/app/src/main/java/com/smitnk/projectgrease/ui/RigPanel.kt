@@ -169,8 +169,8 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
     }
 
     if (active >= 0) ConstraintsPanel(controller, active, bones.map { it.name }, ::done)
-    DopeKeysPanel(controller, ::done)
-    SwapPanel(controller, ::done)
+    DopeKeysPanel(controller, tick, ::done)
+    SwapPanel(controller, tick, ::done)
     SliderPanel(controller, bones.map { it.name }, ::done)
 }
 
@@ -230,7 +230,7 @@ private val SPACES = listOf(RigIds.SPACE_WORLD to "World", RigIds.SPACE_POSE to 
 }
 
 /** Dope sheet keys of the active bone: tap a key, move it a frame, set Key > Interpolation Mode. */
-@Composable private fun DopeKeysPanel(controller: EditorController, done: (Boolean) -> Unit) {
+@Composable private fun DopeKeysPanel(controller: EditorController, tick: Int, done: (Boolean) -> Unit) {
     val rig = controller.rig
     val bone = rig.activeBone
     if (bone < 0) return
@@ -254,8 +254,9 @@ private val SPACES = listOf(RigIds.SPACE_WORLD to "World", RigIds.SPACE_POSE to 
 }
 
 /** Drawing swap on the active layer: Time Offset (Fixed Frame) driven by the "Swap.<layer>" bone. */
-@Composable private fun SwapPanel(controller: EditorController, done: (Boolean) -> Unit) {
+@Composable private fun SwapPanel(controller: EditorController, tick: Int, done: (Boolean) -> Unit) {
     val rig = controller.rig
+    tick // the swap bone is native state: recompose after each edit, or the chips never replace "Add Swap"
     val layer = controller.selectedLayer
     val name = controller.layerName(layer)
     val hasSwap = rig.findBone("Swap.$name") >= 0

@@ -155,7 +155,10 @@ internal class View3DTouch(
                     if (!moved && hypot(e.x - downX, e.y - downY) > slopPx) {
                         moved = true
                         // Blender's select-and-drag: a drag that starts on an origin selects and moves that object
-                        dragObject = View3DNative.nativeHitAt(downX, downY, density) >= 0
+                        // the drag must start on the origin (75 px, ED_view3d_select_dist_px at pixelsize 1): with the
+                        // tap radius scaled by density (~200 px) a drag near the view centre moved the GP object
+                        // instead of orbiting
+                        dragObject = View3DNative.nativeHitAt(downX, downY, 1f) >= 0
                         if (dragObject) View3DNative.nativeSelectAt(downX, downY, false, density)
                     }
                     if (moved) {

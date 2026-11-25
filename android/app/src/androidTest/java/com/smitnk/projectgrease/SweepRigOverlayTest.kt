@@ -38,7 +38,7 @@ class SweepRigOverlayTest : SweepBase() {
         if (mode == RigController.MODE_EDIT) { rig.editSelect(1); rig.editSelect(2, extend = true) }
         else { rig.poseSelect(1); rig.poseSelect(2, extend = true) }
         assertEquals(2, rig.activeBone)
-        controller.history.markEdit()
+        controller.history.markEdit(); controller.render()
     }
 
     /** The outline of bone b: near its widest point (10 % of the length, 0.1 x length off the axis). */
@@ -58,7 +58,7 @@ class SweepRigOverlayTest : SweepBase() {
         val c = pixel(bmp, 350f, ys[0])
         assertTrue("grey solid ${Integer.toHexString(c)}", abs(Color.red(c) - Color.blue(c)) < 16 && Color.red(c) in 70..210)
 
-        onUi { rig.setMode(RigController.MODE_POSE); rig.poseSelect(1); rig.poseSelect(2, extend = true); controller.history.markEdit() }
+        onUi { rig.setMode(RigController.MODE_POSE); rig.poseSelect(1); rig.poseSelect(2, extend = true); controller.history.markEdit(); controller.render() }
         bmp = shot("rig_overlay_octa_pose")
         assertTrue("active pose bone (bone_pose_active)", hasColour(bmp, 2, 140, 255, 255))
         assertTrue("selected pose bone (bone_pose)", hasColour(bmp, 1, 80, 200, 255))
@@ -67,7 +67,7 @@ class SweepRigOverlayTest : SweepBase() {
 
     @Test fun stickDisplaySavedWithTheRig() {
         threeBones(RigController.MODE_POSE)
-        onUi { assertTrue(rig.setDisplay(RigController.DISPLAY_STICK, false)); controller.history.markEdit() }
+        onUi { assertTrue(rig.setDisplay(RigController.DISPLAY_STICK, false)); controller.history.markEdit(); controller.render() }
         val bmp = shot("rig_overlay_stick_pose")
         // overlay_armature_stick: the wire around the stick in the pose colours, 10 px from the axis
         assertTrue("active stick", inkNear(bmp, 550f, ys[2], 14) { near(it, 140, 255, 255) })
@@ -86,7 +86,7 @@ class SweepRigOverlayTest : SweepBase() {
         threeBones(RigController.MODE_POSE)
         var bmp = shot("rig_overlay_behind")
         assertTrue("bone under the stroke", isDark(pixel(bmp, 350f, ys[0])))
-        onUi { assertTrue(rig.setDisplay(RigController.DISPLAY_OCTAHEDRAL, true)); controller.history.markEdit() }
+        onUi { assertTrue(rig.setDisplay(RigController.DISPLAY_OCTAHEDRAL, true)); controller.history.markEdit(); controller.render() }
         assertTrue(onUi { rig.showInFront })
         bmp = shot("rig_overlay_in_front")
         assertFalse("bone over the stroke", isDark(pixel(bmp, 350f, ys[0])))

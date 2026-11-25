@@ -28,7 +28,12 @@ import org.junit.runner.RunWith
 class SweepRigUiTest : SweepBase() {
     private val rig get() = controller.rig
 
-    private fun click(tag: String) { rule.onNodeWithTag(tag).performScrollTo().performClick(); rule.waitForIdle() }
+    // performScrollTo throws for nodes outside a scroll container (e.g. the timeline key buttons)
+    private fun click(tag: String) {
+        val n = rule.onNodeWithTag(tag)
+        try { n.performScrollTo() } catch (_: AssertionError) {}
+        n.performClick(); rule.waitForIdle()
+    }
     private fun openRig() { rule.onNodeWithContentDescription("Menu").performClick(); click("menu_rig") }
     // the first BACK only hides the keyboard when a text field (bone name, slider name) still has it
     private fun panelOpen() = listOf("rigAdd", "rigBindEmpty").any { rule.onAllNodesWithTag(it).fetchSemanticsNodes().isNotEmpty() }

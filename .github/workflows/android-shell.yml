@@ -234,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/qa
-          command -v xvfb-run >/dev/null || sudo apt-get install -y xvfb
+          sudo apt-get update -qq && sudo apt-get install -y xvfb libegl1 libgl1 libgl1-mesa-dri libglu1-mesa libxi6 libxkbcommon0 libxrender1 libxxf86vm1 libxfixes3 libsm6
           # a window is needed: under -b the transform ignores the pivot point (see the script's header)
           xvfb-run -a build/blender-3.6.23/blender --factory-startup \
             --python tools/transform_reference/blender_transform_reference.py -- build/qa/blender_transform_run.json
@@ -561,7 +561,7 @@ jobs:
           mkdir -p build/qa
           bash tools/run_native_draw_blender_parity_tests.sh
           # gpencil_paint_strokeend() needs a GL context: run with a window under Xvfb, not -b
-          command -v xvfb-run >/dev/null || sudo apt-get install -y xvfb
+          sudo apt-get update -qq && sudo apt-get install -y xvfb libegl1 libgl1 libgl1-mesa-dri libglu1-mesa libxi6 libxkbcommon0 libxrender1 libxxf86vm1 libxfixes3 libsm6
           timeout 600 xvfb-run -a build/blender-3.6.23/blender --factory-startup \
             --python tools/draw_input_golden/blender_draw_reference.py -- build/qa/blender_draw_run.txt
           DRAW_BLENDER_RUN=build/qa/blender_draw_run.txt DRAW_BLENDER_REPORT=build/qa/blender_draw_compare.txt \

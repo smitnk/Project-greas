@@ -249,6 +249,9 @@ object GPNative {
     external fun nativeSetEngine(handle: Long, enabled: Boolean)
     external fun nativeSetOverlayUnselected(handle: Long, show: Boolean)
     external fun nativeSetReferenceTransform(handle: Long, dx: Float, dy: Float, scale: Float, rot: Float, sx: Float, sy: Float)
+    /** Stroke transform modal (Blender's transform): phase 0 begin (mode, pivot, cursor x, y, proportional,
+     *  connected, falloff, size, multi-frame falloff, snap, snap increment), 1 update (total value), 2 confirm, 3 cancel. */
+    external fun nativeTransformModal(handle: Long, phase: Int, args: FloatArray?): Boolean
     external fun nativeLatticeBegin(handle: Long): FloatArray?
     external fun nativeLatticeUpdate(handle: Long, nu: Int, nv: Int, ctrl: FloatArray, interp: Int): Boolean
     external fun nativeLatticeEnd(handle: Long, keep: Boolean)

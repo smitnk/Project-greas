@@ -1720,6 +1720,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             StudioPopup.OPTIONS->StudioCard({popup=StudioPopup.NONE}){
                 ModeBrushBar(controller,redraw)
                 if(tool==GreaseTool.LASSO||tool in com.smitnk.projectgrease.editor.SELECTION_TOOLS) LassoActions(controller,redraw)
+                if(tool in com.smitnk.projectgrease.editor.SELECTION_TOOLS) TransformOptionsSection(controller,redraw) // pivot, proportional, snap
                 if(tool in com.smitnk.projectgrease.editor.SELECTION_TOOLS||controller.mode==GreaseMode.EDIT) SelectionActionsPanel(controller,redraw)
             }
             StudioPopup.COLOR->StudioCard({popup=StudioPopup.NONE}){

@@ -3593,13 +3593,7 @@ class EditorController {
         runOperator("GPENCIL_OT_select_grouped", 0f)
     fun selectGroupedByMaterial():Boolean =
         runOperator("GPENCIL_OT_select_grouped", 1f)
-    fun moveSelectedStroke(dx:Float,dy:Float):Boolean {
-        val i=selection.selectedStroke
-        if(i<0) return false
-        val ok=native.translateStroke(i,dx,dy,0f)
-        if(ok){history.markEdit();document.markDirty();render()}
-        return ok
-    }
+    fun moveSelectedStroke(dx:Float,dy:Float):Boolean = translateSelectedStroke(dx,dy)
     fun hitTestAndSelectStroke(x:Float, y:Float, radius:Float = 24f):Boolean {
         // The select tool is a plain Blender click-select.
         if (tools.activeTool == GreaseTool.SELECT) return pickSelect(x, y)
@@ -3741,7 +3735,8 @@ class EditorController {
     fun deleteSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.deleteStroke(i);if(ok){selection.clear();history.markEdit();document.markDirty();render()};return ok}
     fun deleteLastStroke():Boolean{val ok=native.deleteLastStroke();if(ok){history.markEdit();document.markDirty();render()};return ok}
     fun duplicateSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.duplicateStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun translateSelectedStroke(dx:Float,dy:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return edit9Translate(dx,dy);if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.translate(dx,dy));val i=selection.selectedStroke;if(i<0)return false;val ok=native.translateStroke(i,dx,dy,0f);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    /** Move (G) of the selected points by (dx, dy): one Blender transform (project_grease_transform.c). */
+    fun translateSelectedStroke(dx:Float,dy:Float):Boolean = transformOnce(ProjectGreaseSelect.XFORM_TRANSLATE,dx,dy)
     fun flipSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.flipStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
     /** Median of every selected point (native stroke_center(-1)); null when nothing is selected. */
     fun selectionPivot():FloatArray? = native.strokeCenter(-1)?.takeIf { it.size >= 2 }
@@ -4166,12 +4161,16 @@ class EditorController {
         paintOp("GPENCIL_OT_vertex_color_hsv", mode.toFloat(), h, s, v)
     fun selectionVertexColorLevels(offset:Float, gain:Float, mode:Int=vertexPaintTarget) =
         paintOp("GPENCIL_OT_vertex_color_levels", mode.toFloat(), offset, gain)
-    fun rotateSelectedStroke(radians:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStroke(i,radians);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_ROTATE,snapRotation(radians),0f,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.rotate(radians,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.rotateStrokeAbout(i,radians,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStroke(i,scaleX,scaleY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean{if(transformSettings.needsEdit9&&selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_SCALE,scaleX,scaleY,transformSettings));if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.scale(scaleX,scaleY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.scaleStrokeAbout(i,scaleX,scaleY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun mirrorSelectedStroke(mirrorX:Boolean,mirrorY:Boolean):Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStroke(i,mirrorX,mirrorY);if(ok){history.markEdit();document.markDirty();render()};return ok}
-    fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean{if(selectionPivot()!=null)return runSelectCommand(ProjectGreaseSelect.mirror(mirrorX,mirrorY,floatArrayOf(centerX,centerY)));val i=selection.selectedStroke;if(i<0)return false;val ok=native.mirrorStrokeAbout(i,mirrorX,mirrorY,centerX,centerY);if(ok){history.markEdit();document.markDirty();render()};return ok}
+    /** Rotate (R) by [radians] (counter-clockwise in canvas coordinates) about the pivot point setting. */
+    fun rotateSelectedStroke(radians:Float):Boolean = transformOnce(ProjectGreaseSelect.XFORM_ROTATE,-radians,0f)
+    /** The centre is the pivot point setting's (Blender has no centre argument); kept for the callers. */
+    fun rotateSelectedStrokeAround(radians:Float,centerX:Float,centerY:Float):Boolean = rotateSelectedStroke(radians)
+    fun scaleSelectedStroke(scaleX:Float,scaleY:Float):Boolean = transformOnce(ProjectGreaseSelect.XFORM_SCALE,scaleX,scaleY)
+    fun scaleSelectedStrokeAround(scaleX:Float,scaleY:Float,centerX:Float,centerY:Float):Boolean = scaleSelectedStroke(scaleX,scaleY)
+    fun mirrorSelectedStroke(mirrorX:Boolean,mirrorY:Boolean):Boolean = mirrorSelectedStrokeAround(mirrorX,mirrorY,0f,0f)
+    /** Mirror (Ctrl M, X / Y axis) about the pivot point setting. */
+    fun mirrorSelectedStrokeAround(mirrorX:Boolean,mirrorY:Boolean,centerX:Float,centerY:Float):Boolean =
+        (mirrorX && transformOnce(ProjectGreaseSelect.XFORM_MIRROR,0f,0f)) or (mirrorY && transformOnce(ProjectGreaseSelect.XFORM_MIRROR,1f,0f))
     /** GPENCIL_OT_stroke_subdivide: a point between each pair of selected points, `level` times. */
     fun subdivideSelectedStroke(level:Int=1):Boolean = runOperator("GPENCIL_OT_stroke_subdivide", level.coerceIn(1, 10).toFloat())
     fun closeSelectedStroke():Boolean{val i=selection.selectedStroke;if(i<0)return false;val ok=native.closeStroke(i);if(ok){history.markEdit();document.markDirty();render()};return ok}
@@ -4258,9 +4257,6 @@ class EditorController {
     var transformSettings by androidx.compose.runtime.mutableStateOf(ProjectGreaseSelect.TransformSettings())
     /** Next canvas tap places the 2D cursor (pivot "2D Cursor"). */
     var placingCursor2D = false
-    private var snapRemX = 0f
-    private var snapRemY = 0f
-    private var snapRemRot = 0f
     fun setPivot(pivot:Int):Boolean { if (pivot !in ProjectGreaseSelect.PIVOT_MEDIAN..ProjectGreaseSelect.PIVOT_CURSOR) return false; transformSettings = transformSettings.copy(pivot = pivot); render(); return true }
     /** 2D cursor placement (tap with the 2D Cursor pivot). */
     fun setCursor2D(x:Float, y:Float) { if (x.isFinite() && y.isFinite()) { transformSettings = transformSettings.copy(cursorX = x, cursorY = y); render() } }
@@ -4268,27 +4264,62 @@ class EditorController {
     fun setProportionalConnected(on:Boolean) { transformSettings = transformSettings.copy(connected = on) }
     fun setProportionalFalloff(falloff:Int):Boolean { if (falloff !in ProjectGreaseSelect.FALLOFF_VALUES) return false; transformSettings = transformSettings.copy(falloff = falloff); return true }
     /** Proportional size (pinch while transforming), clamped like Blender's 0.00001..5000 range. */
-    fun setProportionalSize(size:Float) { if (size.isFinite()) { transformSettings = transformSettings.copy(size = size.coerceIn(0.00001f, 5000f)); render() } }
-    fun setSnapIncrement(increment:Float) { transformSettings = transformSettings.copy(snapIncrement = if (increment.isFinite() && increment > 0f) increment else 0f); snapRemX = 0f; snapRemY = 0f; snapRemRot = 0f }
-    /** Incremental drag deltas are accumulated so snapping moves in whole increments without losing motion. */
-    private fun edit9Translate(dx:Float, dy:Float):Boolean {
-        val inc = transformSettings.snapIncrement
-        var mx = dx; var my = dy
-        if (inc > 0f) {
-            snapRemX += dx; snapRemY += dy
-            mx = kotlin.math.round(snapRemX / inc) * inc; my = kotlin.math.round(snapRemY / inc) * inc
-            snapRemX -= mx; snapRemY -= my
-            if (mx == 0f && my == 0f) return false
-        }
-        return runSelectCommand(ProjectGreaseSelect.transform(ProjectGreaseSelect.XFORM_TRANSLATE, mx, my, transformSettings))
+    fun setProportionalSize(size:Float) { if (size.isFinite()) { transformSettings = transformSettings.copy(size = size.coerceIn(0.00001f, 5000f)); restartTransform(); render() } }
+    fun setSnapIncrement(increment:Float) { transformSettings = transformSettings.copy(snapIncrement = if (increment.isFinite() && increment > 0f) increment else 0f) }
+    // ---- Stroke transform: Blender 3.6.23's transform modal (native project_grease_transform.c) ----
+    private var transformMode = -1
+    private var transformValue = floatArrayOf(0f, 0f)
+    val transformOpen:Boolean get() = transformMode >= 0
+    /** Opens the transform of the selection (mode XFORM_*): TransData, proportional factors and pivot
+     *  are made once, from the settings now; false when nothing is selected. */
+    fun beginTransform(mode:Int):Boolean {
+        endTransform()
+        val s = transformSettings
+        fun f(b:Boolean) = if (b) 1f else 0f
+        val args = floatArrayOf(mode.toFloat(), s.pivot.toFloat(), s.cursorX, s.cursorY, f(s.proportional), f(s.connected),
+            s.falloff.toFloat(), s.size, f(sculpt.frameFalloff), f(s.snapIncrement > 0f), s.snapIncrement)
+        if (native.handle == 0L || !GPNative.nativeTransformModal(native.handle, 0, args)) return false
+        transformMode = mode; transformValue = floatArrayOf(if (mode == ProjectGreaseSelect.XFORM_SCALE) 1f else 0f, if (mode == ProjectGreaseSelect.XFORM_SCALE) 1f else 0f)
+        return true
     }
-    private fun snapRotation(radians:Float):Float {
-        if (transformSettings.snapIncrement <= 0f) return radians
-        val step = (Math.PI / 36.0).toFloat()
-        snapRemRot += radians
-        val r = kotlin.math.round(snapRemRot / step) * step
-        snapRemRot -= r
-        return r
+    /** The gesture's total value since begin: (dx, dy), (angle in Blender's sign, 0), (sx, sy), (axis, 0). */
+    fun updateTransform(a:Float, b:Float):Boolean {
+        if (!transformOpen || !a.isFinite() || !b.isFinite()) return false
+        transformValue = floatArrayOf(a, b)
+        val ok = GPNative.nativeTransformModal(native.handle, 1, transformValue)
+        if (ok) render()
+        return ok
+    }
+    /** Confirm (one undo step) or cancel (the points go back). */
+    fun endTransform(cancel:Boolean = false):Boolean {
+        if (!transformOpen) return false
+        transformMode = -1
+        val ok = native.handle != 0L && GPNative.nativeTransformModal(native.handle, if (cancel) 3 else 2, null)
+        if (ok && !cancel) { history.markEdit(); document.markDirty() }
+        render()
+        return ok
+    }
+    /** Blender recomputes the proportional factors when the size changes mid-transform. */
+    private fun restartTransform() {
+        if (!transformOpen || native.handle == 0L) return
+        val mode = transformMode; val v = transformValue
+        transformMode = -1
+        GPNative.nativeTransformModal(native.handle, 3, null)
+        if (beginTransform(mode)) updateTransform(v[0], v[1])
+    }
+    private fun transformOnce(mode:Int, a:Float, b:Float):Boolean {
+        if (!beginTransform(mode)) return false
+        val ok = updateTransform(a, b)
+        return endTransform(cancel = !ok) && ok
+    }
+    /** The transform centre of the pivot setting, for the gesture's angle / radius (Blender's center2d). */
+    fun transformCenter():FloatArray? {
+        val s = transformSettings
+        return when (s.pivot) {
+            ProjectGreaseSelect.PIVOT_CURSOR -> floatArrayOf(s.cursorX, s.cursorY)
+            ProjectGreaseSelect.PIVOT_BOUNDS -> selectionBounds()?.takeIf { it.size >= 4 }?.let { b -> floatArrayOf((b[0] + b[2]) / 2f, (b[1] + b[3]) / 2f) }
+            else -> selectionPivot()
+        }
     }
     /** Dope sheet (action editor) frame operators; each is one undo step. */
     private fun runFrameCommand(c:ProjectGreaseSelect.Command?):Boolean {

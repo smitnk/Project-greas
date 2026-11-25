@@ -141,6 +141,10 @@ int project_grease_gp_selected_bounds(const ProjectGreaseGPHandle *handle, float
 int project_grease_gp_lattice_begin(ProjectGreaseGPHandle *handle, float r_bounds[4]);
 int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int nv, const float *ctrl, int interp);
 void project_grease_gp_lattice_end(ProjectGreaseGPHandle *handle, int keep);
+/* Stroke transform modal (project_grease_transform.h). phase 0 begin: args = mode, pivot, cursor x, y,
+ * proportional, connected, falloff, size, multi-frame falloff, snap, snap increment; 1 update:
+ * args = the total value (2 floats); 2 confirm; 3 cancel. Returns 1 on success. */
+int project_grease_gp_transform_modal(ProjectGreaseGPHandle *handle, int phase, const float *args, int n);
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness);
 /* Eraser drag as Blender's modal GPENCIL_OT_draw (eraser): phase 0 begin / 1 move / 2 end / 3 cancel;

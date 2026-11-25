@@ -41,6 +41,7 @@ C|native/blender_gp/project_grease_blender_edit6.c
 C|native/blender_gp/project_grease_blender_edit7.c
 C|native/blender_gp/project_grease_blender_edit8.c
 C|native/blender_gp/project_grease_blender_edit9.c
+C|native/blender_gp/project_grease_transform.c
 C|native/blender_gp/project_grease_wm.c
 C|native/blender_gp/project_grease_wm_layer.c
 C|native/blender_gp/project_grease_wm_stroke.c

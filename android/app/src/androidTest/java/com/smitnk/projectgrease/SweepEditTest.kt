@@ -134,11 +134,12 @@ class SweepEditTest : SweepBase() {
     @Test fun transformMirror() {
         drag(200f to 300f, 1000f to 200f); onUi { controller.selectAll() }
         val first = points(strokes()[0])[0][1]
+        val cy = onUi { controller.selectionPivot() }!![1].toDouble()
         onUi { controller.selectTool(GreaseTool.MIRROR) }
         undoableGesture("mirror") { drag(600f to 250f, 600f to 500f) } // press on the stroke, drag vertically
-        // A vertical drag reflects across the stroke's horizontal centre line: y 300 <-> 200.
-        // about the median of the stroke's points (Blender's transform pivot), close to y 250
-        assertEquals("mirrored y", 200.0, points(strokes()[0])[0][1], 10.0)
+        // A vertical drag is Blender's Y-axis mirror about the pivot (Median Point by default: the
+        // mean of the selected points, which depends on the point spacing, not exactly y 250).
+        assertEquals("mirrored y", 2 * cy - first, points(strokes()[0])[0][1], 0.5)
         shot("transform_mirror"); assertTrue(first > 0)
     }
 

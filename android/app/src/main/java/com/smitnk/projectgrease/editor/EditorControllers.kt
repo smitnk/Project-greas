@@ -2057,6 +2057,7 @@ class EditorController {
         stopPlayback()
         runCatching {
             if (warpActive) endWarp(false)
+            if (transformOpen) endTransform(cancel = true) // else transformOpen stays true after the native cancel below
             if (eraseGestureChanged || eraseGestureMarks > 0) endErase() // records the part already erased
             if (rendererHandle != 0L && sessionTool >= 0) cancelStroke() // records a changed brush gesture
             else cancelPendingStrokeState()

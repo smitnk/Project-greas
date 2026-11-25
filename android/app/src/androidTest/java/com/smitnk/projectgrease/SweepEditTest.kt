@@ -238,7 +238,8 @@ class SweepEditTest : SweepBase() {
     @Test fun opSmooth() = op("smooth", setup = { drag(200f to 300f, 400f to 200f, 600f to 400f, 800f to 200f, 1000f to 300f); onUi { controller.selectStroke(0); controller.selectAll() } }) { controller.smoothSelectedStroke(1f, 4) }
     @Test fun opOutline() = op("outline", check = { assertTrue(strokes()[0].getBoolean("cyclic")) }) { controller.outlineSelection(2) }
     @Test fun opShrink() = op("shrink") { controller.shrinkSelectedStroke(50f, 1) } // BKE_gpencil_stroke_shrink mode 1 = start
-    @Test fun opUniformSubdivide() = op("uniform_subdivide", check = { assertEquals(64, points(strokes()[0]).size) }) { controller.uniformSubdivideSelectedStroke(64) }
+    // BKE_gpencil_stroke_uniform_subdivide returns early when totpoints >= target: the wavy line has ~120 points
+    @Test fun opUniformSubdivide() = op("uniform_subdivide", check = { assertEquals(512, points(strokes()[0]).size) }) { controller.uniformSubdivideSelectedStroke(512) }
     @Test fun opRandomizeColor() = op("randomize_color") { controller.randomizeSelectedStrokeColor() }
     @Test fun opMirrorCopy() = op("mirror_copy", check = { assertEquals(2, strokes().size) }) { controller.mirrorSelectionCopy(true, false) }
     @Test fun opCleanLoose() = op("clean_loose", setup = { line(300f); tap(600f, 500f); onUi { controller.selectAll() } }) { controller.cleanLoosePoints(1) }

@@ -80,3 +80,7 @@ g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/te
 g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/test_backend_transform.cc" \
   "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_backend_transform"
 "$OUT/test_backend_transform" 2>/dev/null
+# Draw commit Post-Processing (gpencil_stroke_newfrombuffer) against Blender's own functions.
+g++ "${XF[@]}" -Wall -D__ANDROID__ "${INC[@]}" "$ROOT/native/blender_gp/tests/test_backend_paint_post.cc" \
+  "${BOBJS[@]}" "${OBJS[@]}" -Wl,--gc-sections -ldl -lpthread -lm -o "$OUT/test_backend_paint_post"
+"$OUT/test_backend_paint_post" 2>/dev/null

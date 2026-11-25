@@ -508,21 +508,25 @@ enum class BrushPreset(
     val inputSamples: Int = 10, val activeSmooth: Float = 0.35f, val angle: Float = 0f, val angleFactor: Float = 0f,
     val hardness: Float = 1f, val randomPressure: Float = 0f,
     val pressureCurve: List<Pair<Float, Float>> = listOf(0f to 0f, 1f to 1f), val strengthCurve: List<Pair<Float, Float>> = listOf(0f to 0f, 1f to 1f),
-    val kind: Kind = Kind.DRAW, val eraser: EraserMode? = null
+    val kind: Kind = Kind.DRAW, val eraser: EraserMode? = null,
+    /** Post-Processing: GP_BRUSH_GROUP_SETTINGS, draw_smoothfac, draw_smoothlvl, draw_subdivide, simplify_f. */
+    val postProcess: Boolean = true, val postSmoothFactor: Float = 0f, val postSmoothSteps: Int = 1,
+    val postSubdivide: Int = 0, val postSimplify: Float = 0.002f
 ) {
     PENCIL("Pencil", 20f, 0.6f, true, true),
-    PENCIL_SOFT("Pencil Soft", 80f, 0.4f, true, true, hardness = 0.8f),
-    INK_PEN("Ink Pen", 60f, 1.0f, true, false, pressureCurve = listOf(0f to 0f, 0.63448f to 0.375f, 1f to 1f)),
+    PENCIL_SOFT("Pencil Soft", 80f, 0.4f, true, true, hardness = 0.8f, postSimplify = 0f),
+    INK_PEN("Ink Pen", 60f, 1.0f, true, false, postSmoothFactor = 0.1f, pressureCurve = listOf(0f to 0f, 0.63448f to 0.375f, 1f to 1f)),
     INK_PEN_ROUGH("Ink Pen Rough", 60f, 1.0f, true, false, randomPressure = 0.6f,
+        postProcess = false, postSmoothSteps = 2, postSimplify = 0f,
         pressureCurve = listOf(0f to 0f, 0.55f to 0.45f, 0.85f to 1f)),
-    MARKER_BOLD("Marker Bold", 150f, 0.3f, false, false,
+    MARKER_BOLD("Marker Bold", 150f, 0.3f, false, false, postSmoothFactor = 0.1f,
         pressureCurve = listOf(0f to 0f, 0.38f to 0.22f, 0.65f to 0.68f, 1f to 1f)),
     MARKER_CHISEL("Marker Chisel", 150f, 1.0f, true, false, activeSmooth = 0.3f,
         angle = (35.0 * Math.PI / 180.0).toFloat(), angleFactor = 0.5f,
         pressureCurve = listOf(0f to 0f, 0.25f to 0.40f, 1f to 1f),
         strengthCurve = listOf(0f to 0f, 0.31f to 0.22f, 0.61f to 0.88f, 1f to 1f)),
-    PEN("Pen", 25f, 1.0f, false, false),
-    AIRBRUSH("Airbrush", 300f, 0.4f, true, true, hardness = 0.9f),
+    PEN("Pen", 25f, 1.0f, false, false, postSubdivide = 1),
+    AIRBRUSH("Airbrush", 300f, 0.4f, true, true, hardness = 0.9f, postProcess = false, postSimplify = 0f),
     FILL_AREA("Fill Area", 5f, 1.0f, false, false, kind = Kind.FILL),
     ERASER_SOFT("Eraser Soft", 30f, 0.5f, true, true, kind = Kind.ERASE, eraser = EraserMode.SOFT),
     ERASER_HARD("Eraser Hard", 30f, 1.0f, false, false, kind = Kind.ERASE, eraser = EraserMode.SOFT),
@@ -1089,7 +1093,7 @@ class EditorController {
         } else if (tool != sessionTool) {
             return 0
         }
-        if (phase == ToolSession.PHASE_BEGIN && tool == ToolSession.TOOL_DRAW) jitterStrokeColor()
+        if (phase == ToolSession.PHASE_BEGIN && tool == ToolSession.TOOL_DRAW) { jitterStrokeColor(); pushBrushPostProcess() }
         // sculpt / vertex / weight paint on a held frame key it first (gpencil_sculpt_paint auto-keying)
         if (phase == ToolSession.PHASE_BEGIN && tool != ToolSession.TOOL_DRAW) autokeyHeld()
         val params = if (phase == ToolSession.PHASE_BEGIN) sessionParams(tool, pxPerUnit) else null
@@ -1629,6 +1633,13 @@ class EditorController {
         hsv[1] = (hsv[1] + r() * randomSaturation).coerceIn(0f, 1f)
         hsv[2] = (hsv[2] + r() * randomValue).coerceIn(0f, 1f)
         pushBrushVertexColor(android.graphics.Color.HSVToColor(hsv))
+    }
+    /** The Draw commit's Post-Processing (gpencil_stroke_newfrombuffer) for the selected preset. */
+    private fun pushBrushPostProcess() {
+        if (native.handle == 0L) return
+        val p = brushes.preset
+        GPNative.nativeSetBrushPostProcess(native.handle, p.postProcess, p.postSmoothSteps, p.postSmoothFactor,
+            p.postSubdivide, p.postSimplify, false)
     }
     private fun pushBrushVertexColor(argb: Int = materials.colorArgb) {
         if (native.handle == 0L) return

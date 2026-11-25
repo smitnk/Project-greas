@@ -128,11 +128,12 @@ int project_grease_gp_set_legacy_paint_settings(
   }
 
   project_grease::gp::Backend::LegacyPaintSettings native_settings{};
+  native_settings.group_settings = settings.group_settings != 0;
   native_settings.draw_smooth_level = settings.draw_smooth_level;
   native_settings.draw_smooth_factor = settings.draw_smooth_factor;
-  native_settings.input_samples = settings.input_samples;
-  native_settings.smooth_position = settings.smooth_position != 0;
-  native_settings.smooth_strength = settings.smooth_strength != 0;
+  native_settings.draw_subdivide = settings.draw_subdivide;
+  native_settings.simplify_f = settings.simplify_f;
+  native_settings.trim = settings.trim != 0;
   return handle->backend.set_legacy_paint_settings(native_settings) ? 1 : 0;
 }
 

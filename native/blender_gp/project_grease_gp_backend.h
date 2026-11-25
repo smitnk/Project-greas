@@ -361,12 +361,14 @@ class Backend {
   // Blender 3.6.23 Legacy GP paint-stage settings used when committing the
   // real tGPspoint buffer into bGPDstroke data. The processing below calls
   // Blender's own GP geometry functions rather than a Project Grease smoother.
+  // Brush Post-Processing panel (BrushGpencilSettings), read by gpencil_stroke_newfrombuffer().
   struct LegacyPaintSettings {
-    int draw_smooth_level = 0;
-    float draw_smooth_factor = 0.0f;
-    int input_samples = 0;
-    bool smooth_position = true;
-    bool smooth_strength = true;
+    bool group_settings = false;     // GP_BRUSH_GROUP_SETTINGS: the panel's enable switch
+    int draw_smooth_level = 0;       // draw_smoothlvl
+    float draw_smooth_factor = 0.0f; // draw_smoothfac
+    int draw_subdivide = 0;          // draw_subdivide
+    float simplify_f = 0.0f;         // simplify_f (adaptive simplify, object units)
+    bool trim = false;               // GP_BRUSH_TRIM_STROKE
   };
 
   bool set_legacy_paint_settings(const LegacyPaintSettings& settings);

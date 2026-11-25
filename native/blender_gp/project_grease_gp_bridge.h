@@ -25,12 +25,14 @@ typedef struct ProjectGreaseGPStrokeStyle {
 ProjectGreaseGPHandle *project_grease_gp_create(void);
 void project_grease_gp_destroy(ProjectGreaseGPHandle *handle);
 
+/* Brush Post-Processing panel (BrushGpencilSettings) applied by the Draw commit. */
 typedef struct ProjectGreaseGPLegacyPaintSettings {
+  int group_settings; /* GP_BRUSH_GROUP_SETTINGS */
   int draw_smooth_level;
   float draw_smooth_factor;
-  int input_samples;
-  int smooth_position;
-  int smooth_strength;
+  int draw_subdivide;
+  float simplify_f;
+  int trim; /* GP_BRUSH_TRIM_STROKE */
 } ProjectGreaseGPLegacyPaintSettings;
 
 int project_grease_gp_set_legacy_paint_settings(

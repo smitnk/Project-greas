@@ -669,11 +669,11 @@ int main() {
 
   std::fprintf(stderr, "[PAINT-STAGE] Blender Legacy GP brush commit smoothing\n");
   project_grease::gp::Backend::LegacyPaintSettings paint_settings{};
+  paint_settings.group_settings = true;
   paint_settings.draw_smooth_level = 2;
   paint_settings.draw_smooth_factor = 0.5f;
-  paint_settings.input_samples = 5;
-  paint_settings.smooth_position = true;
-  paint_settings.smooth_strength = true;
+  paint_settings.draw_subdivide = 1;
+  paint_settings.simplify_f = 0.002f;
   if (!backend.set_legacy_paint_settings(paint_settings) ||
       !backend.begin_stroke({0, 7.0f}) ||
       !backend.add_point({40.0f, 50.0f, 0.0f, 1.0f, 1.0f, 0.0f}) ||

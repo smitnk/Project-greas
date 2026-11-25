@@ -448,6 +448,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSoftEraseAt(
              from_handle(handle), x, y, radius, strength) != 0;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetBrushPostProcess(
+    JNIEnv *, jobject, jlong handle, jboolean enabled, jint smooth_level, jfloat smooth_factor,
+    jint subdivide, jfloat simplify, jboolean trim)
+{
+  ProjectGreaseGPLegacyPaintSettings s{enabled ? 1 : 0, smooth_level, smooth_factor, subdivide, simplify, trim ? 1 : 0};
+  return project_grease_gp_set_legacy_paint_settings(from_handle(handle), s) != 0;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeSetBrushVertexColor(
     JNIEnv *, jobject, jlong handle, jboolean enabled, jfloat r, jfloat g, jfloat b, jfloat factor, jint mode)

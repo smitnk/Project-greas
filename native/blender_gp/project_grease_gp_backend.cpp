@@ -3619,12 +3619,17 @@ bool Backend::delete_last_stroke() {
 }
 
 
+// gpencil_intern.h; Blender's body is in project_grease_legacy_sbuffer.c (VERBATIM).
+extern "C" void gpencil_subdivide_stroke(bGPdata *gpd, bGPDstroke *gps, int subdivide);
+
 bool Backend::set_legacy_paint_settings(const LegacyPaintSettings &settings)
 {
-  if (settings.draw_smooth_level < 0 ||
-      settings.draw_smooth_factor < 0.0f ||
-      settings.draw_smooth_factor > 1.0f ||
-      settings.input_samples < 0) {
+  // RNA ranges of BrushGpencilSettings (rna_brush.c:1503-1536): pen_smooth_steps 0..100,
+  // pen_smooth_factor 0..2, pen_subdivision_steps 0..3, simplify_factor 0..100.
+  if (!(settings.draw_smooth_level >= 0 && settings.draw_smooth_level <= 100) ||
+      !(settings.draw_smooth_factor >= 0.0f && settings.draw_smooth_factor <= 2.0f) ||
+      !(settings.draw_subdivide >= 0 && settings.draw_subdivide <= 3) ||
+      !(settings.simplify_f >= 0.0f && settings.simplify_f <= 100.0f)) {
     impl_->last_error = "invalid Legacy GP paint settings";
     return false;
   }
@@ -3787,44 +3792,25 @@ bool Backend::end_stroke() {
     std::memcpy(dst.vert_color, src.vert_color, sizeof(dst.vert_color));
   }
 
-  /*
-   * Blender 3.6.23's Legacy paint commit performs brush-driven smoothing on
-   * the freshly created stroke before the editor finishes the stroke. Keep
-   * that stage Blender-backed: every geometry operation below is a real BKE
-   * Legacy GP callback.
-   */
-  /*
-   * Match Blender 3.6.23 gpencil_stroke_newfrombuffer() paint post-process:
-   * one stroke-wide smooth callback using draw_smoothfac/draw_smoothlvl,
-   * followed by per-point input-sample smoothing when depth projection is
-   * active. Project Grease does not invent a second smoothing algorithm.
-   */
-  const int smooth_level = std::max(0, impl_->paint_settings.draw_smooth_level);
-  if (smooth_level > 0 &&
-      (impl_->paint_settings.smooth_position || impl_->paint_settings.smooth_strength)) {
-    BKE_gpencil_stroke_smooth(impl_->stroke,
-                              std::max(0.0f, impl_->paint_settings.draw_smooth_factor),
-                              smooth_level,
-                              impl_->paint_settings.smooth_position,
-                              impl_->paint_settings.smooth_strength,
-                              false,
-                              false,
-                              true,
-                              nullptr);
+  /* gpencil_stroke_newfrombuffer() post-process (gpencil_paint.c:1260-1289, 1349-1353), in Blender's
+   * order: subdivide, smooth, adaptive simplify, then trim once the stroke is in the frame. The
+   * GP_PROJECT_DEPTH_STROKE input-sample smoothing is left out: a 2D canvas has no depth projection.
+   * Not done: Outline (needs the view), auto-merge (GP_TOOL_FLAG_AUTOMERGE_STROKE). */
+  const LegacyPaintSettings &pp = impl_->paint_settings;
+  if (pp.group_settings && pp.draw_subdivide > 0) {
+    gpencil_subdivide_stroke(impl_->gpd, impl_->stroke, pp.draw_subdivide);
   }
-
-  if (impl_->paint_settings.input_samples > 0) {
-    const float ifac = static_cast<float>(impl_->paint_settings.input_samples) / 10.0f;
-    const float sfac = 1.0f + (0.2f - 1.0f) * std::min(ifac, 1.0f);
-    for (int i = 0; i < impl_->stroke->totpoints; ++i) {
-      if (impl_->paint_settings.smooth_position) {
-        BKE_gpencil_stroke_smooth_point(
-            impl_->stroke, i, sfac, 2, false, true, impl_->stroke);
-      }
-      if (impl_->paint_settings.smooth_strength) {
-        BKE_gpencil_stroke_smooth_strength(impl_->stroke, i, sfac, 2, impl_->stroke);
-      }
-    }
+  if (pp.group_settings) {
+    BKE_gpencil_stroke_smooth(impl_->stroke, pp.draw_smooth_factor, pp.draw_smooth_level, true, true,
+                              false, false, true, nullptr);
+  }
+  if (pp.group_settings && pp.simplify_f > 0.0f) {
+    // simplify_f is a distance in object units; the canvas has PG_MOD_PIXELS_PER_UNIT px per unit
+    // (as the Simplify modifier runs, project_grease_modifier_stack.c).
+    BKE_gpencil_stroke_simplify_adaptive(impl_->gpd, impl_->stroke, pp.simplify_f * PG_MOD_PIXELS_PER_UNIT);
+  }
+  if (pp.group_settings && pp.trim) {
+    BKE_gpencil_stroke_trim(impl_->gpd, impl_->stroke);
   }
 
   apply_brush_vertex_color(impl_->stroke);

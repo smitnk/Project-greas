@@ -170,6 +170,10 @@ object GPNative {
     external fun nativeCreatePolyline(handle: Long, pointsXY: FloatArray, count: Int, materialIndex: Int, thickness: Float, cyclic: Boolean): Boolean
     external fun nativeEraseAt(handle: Long, x: Float, y: Float, radius: Float): Boolean
     external fun nativeSoftEraseAt(handle: Long, x: Float, y: Float, radius: Float, strength: Float): Boolean
+    /** Brush Post-Processing (GP_BRUSH_GROUP_SETTINGS, draw_smoothlvl / draw_smoothfac / draw_subdivide /
+     *  simplify_f / GP_BRUSH_TRIM_STROKE) applied when a Draw stroke is committed. */
+    external fun nativeSetBrushPostProcess(handle: Long, enabled: Boolean, smoothLevel: Int, smoothFactor: Float,
+                                           subdivide: Int, simplify: Float, trim: Boolean): Boolean
     external fun nativeSetBrushVertexColor(handle: Long, enabled: Boolean, r: Float, g: Float, b: Float, factor: Float, mode: Int)
     external fun nativeActiveLayer(handle: Long): Int
     external fun nativeErase(handle: Long, x: Float, y: Float, radius: Float, mode: Int, drawStrength: Float,

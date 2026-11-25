@@ -104,11 +104,15 @@ class SweepRobustnessTest : SweepBase() {
     }
 
     @Test fun longStroke5000Points() {
-        // a tight scribble: Blender's Post-Processing (adaptive simplify) merges a slow wave's near-collinear
-        // moves, so only a stroke with >1000 distinguishable points can commit >1000 (host replay: ~1300)
-        val times = timedStroke(5000, 300f, wave = 0.5f)
+        // 5000 samples must commit as one whole stroke. Blender's default Post-Processing (adaptive simplify)
+        // legitimately merges near-collinear points (host replay of this input: ~524), so check that nothing was
+        // truncated (the stroke spans the whole drag) rather than a raw point count.
+        val times = timedStroke(5000, 300f)
         val s = strokes().single()
-        assertTrue("points ${points(s).size}", points(s).size > 1000)
+        val p = points(s)
+        assertTrue("points ${p.size}", p.size > 400)
+        assertTrue("stroke starts at the drag start: ${p.first()[0]}", kotlin.math.abs(p.first()[0] - 100.0) < 20.0)
+        assertTrue("stroke reaches the drag end: ${p.last()[0]}", kotlin.math.abs(p.last()[0] - 1100.0) < 20.0)
         val med = median(times); val p95 = times.sorted()[times.size * 95 / 100]
         Log.i(TAG, "FRAMETIME long_stroke_5000 median=%.2f p95=%.2f max=%.2f".format(med, p95, times.maxOrNull() ?: 0.0))
         assertInk(shot("long_stroke_5000"), 600f, 300f, "long stroke")

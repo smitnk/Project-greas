@@ -136,7 +136,9 @@ class RigTouch(
         if (rig.extrude(0f, 0f) <= 0) return false
         extruding = true
         // the extrude_move translate: the new tip jumps under the finger, then follows the drag
-        rig.bone(rig.activeBone)?.let { rig.editTranslate(x - it.tailX, y - it.tailY) }
+        // from the new tip nearest the finger: with X-Axis Mirror the active bone is the mirrored copy (armature_extrude_exec)
+        rig.bones().filter { (it.flag and RigController.SELECT_TAIL) != 0 }.minByOrNull { hypot(x - it.tailX, y - it.tailY) }
+            ?.let { rig.editTranslate(x - it.tailX, y - it.tailY) }
         controller.render()
         return true
     }

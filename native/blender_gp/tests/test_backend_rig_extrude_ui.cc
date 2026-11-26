@@ -44,7 +44,8 @@ int main()
   b.history_record();
   CHECK(summary(b, 0) == 1);
   printf("before extrude: count %g active %g mode %g\n", summary(b, 0), summary(b, 1), summary(b, 2));
-  const int ext = cmd(b, PG_ARM_CMD_EXTRUDE, -1, {1, 0});
+  const int ext = cmd(b, PG_ARM_CMD_EXTRUDE, -1, {0, 0});
+  cmd(b, PG_ARM_CMD_EDIT_TRANSLATE, -1, {0, 0}); /* the jump under the finger (on the new head) */
   printf("extrude -> %d, count %g active %g\n", ext, summary(b, 0), summary(b, 1));
   CHECK(ext == 1);
   CHECK(summary(b, 0) == 2);
@@ -67,7 +68,7 @@ int main()
   }
   /* the fixed RigTouch path: the finger is on the new head, so the 1 px tail stays and the drag
    * deltas (taken from down + 1 px) move it: tail = head + (finger - down) */
-  float lastx = downx + 1, lasty = downy;
+  float lastx = downx, lasty = downy;
   for (int s = 1; s <= 12; s++) {
     const float mx = downx + 80.0f * s / 12, my = downy - 80.0f * s / 12;
     cmd(b, PG_ARM_CMD_EDIT_TRANSLATE, -1, {mx - lastx, my - lasty});

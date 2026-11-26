@@ -231,9 +231,9 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
         NumSlider("Segments", segs, 1f..32f, "rigBBoneSegmentsSlider", steps = 30, format = "%.0f",
             onChange = { segs = it; live(setRest(segments = Math.round(it))) }, onDone = { done(true) })
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Op("-", "rigBBoneSegmentsLess", bb.segments > 1) { done(setRest(segments = bb.segments - 1)) }
+            Op("-", "rigBBoneSegmentsLess", bb.segments > 1) { done(setRest(segments = ((rig.bbone(bone) ?: bb).segments - 1).coerceAtLeast(1))) } // fresh: a typed value does not recompose
             NumField("Segments", bb.segments.toFloat(), "rigBBoneSegments", tick, 1f, 32f) { live(setRest(segments = Math.round(it))) }
-            Op("+", "rigBBoneSegmentsMore", bb.segments < 32) { done(setRest(segments = bb.segments + 1)) }
+            Op("+", "rigBBoneSegmentsMore", bb.segments < 32) { done(setRest(segments = ((rig.bbone(bone) ?: bb).segments + 1).coerceAtMost(32))) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             NumField("Display Size X", bb.displayX, "rigBBoneDisplayX", tick, 0f) { live(setRest(x = it)) }

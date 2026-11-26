@@ -158,7 +158,13 @@ bool pg_arm_mirror_x(const PGArmature *a) { return a && (a->arm.flag & ARM_MIRRO
 
 void pg_arm_set_mode(PGArmature *a, int mode)
 {
-  if (a && mode >= PG_ARM_MODE_OBJECT && mode <= PG_ARM_MODE_POSE) a->mode = mode;
+  if (!a || mode < PG_ARM_MODE_OBJECT || mode > PG_ARM_MODE_POSE) return;
+  /* ED_armature_edit_free -> ED_armature_from_edit: leaving Edit mode drops zero sized bones */
+  if (a->mode == PG_ARM_MODE_EDIT && mode != PG_ARM_MODE_EDIT) {
+    pg_bke_armature_remove_zero_bones(&a->arm);
+    arm_update(a);
+  }
+  a->mode = mode;
 }
 
 void pg_arm_canvas_to_arm(const float px[3], float r_arm[3])
@@ -321,6 +327,56 @@ int pg_arm_pose_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE])
 #define X(f, i) r[i] = pc->f;
   BBONE_FIELDS(X)
 #undef X
+  return 1;
+}
+
+int pg_arm_bone_set_bbone_size(PGArmature *a, int bone, float x, float z)
+{
+  EditBone *eb = ebone_at(a, bone);
+  if (!eb || !isfinite(x) || !isfinite(z)) return 0;
+  /* rna_armature.c bbone_x / bbone_z: ui range 0..1000 (no hard limit; negative is kept off) */
+  eb->xwidth = MAX2(x, 0.0f);
+  eb->zwidth = MAX2(z, 0.0f);
+  arm_update(a);
+  return 1;
+}
+
+int pg_arm_bone_bbone_size(const PGArmature *a, int bone, float r[2])
+{
+  const EditBone *eb = ebone_at(a, bone);
+  if (!eb || !r) return 0;
+  r[0] = eb->xwidth;
+  r[1] = eb->zwidth;
+  return 1;
+}
+
+/* overlay_armature.cc draw_bone_update_disp_matrix_bbone: per segment the spline matrix
+ * (BKE_pchan_bbone_spline_setup, for_deform false) times size (xwidth, length / segments,
+ * zwidth), in armature space by pose_mat (rest arm_mat in edit mode).
+ * shortcut: edit mode uses the rest spline of the Bone (its values are the edit bone's after
+ * arm_update) instead of ebone_spline_preview; same shape unless custom handles are set. */
+int pg_arm_bone_bbone_matrices(const PGArmature *a, int bone, float (*r)[4][4], int cap)
+{
+  const EditBone *eb = ebone_at(a, bone);
+  bPoseChannel *pc = pchan_at(a, bone);
+  if (!eb || !pc || !pc->bone || !r || cap < 1) return 0;
+  const bool edit = a->mode == PG_ARM_MODE_EDIT;
+  const float(*bone_mat)[4] = edit ? (const float(*)[4])pc->bone->arm_mat : (const float(*)[4])pc->pose_mat;
+  const int segs = MIN2(eb->segments, cap);
+  const float length = len_v3v3(eb->head, eb->tail);
+  float s[4][4];
+  const float size[3] = {eb->xwidth, length / (float)eb->segments, eb->zwidth};
+  size_to_mat4(s, size);
+  if (eb->segments > 1 && segs == eb->segments) {
+    Mat4 mats[MAX_BBONE_SUBDIV + 1];
+    BKE_pchan_bbone_spline_setup(pc, edit, false, mats);
+    for (int i = 0; i < segs; i++) {
+      mul_m4_m4m4(mats[i].mat, mats[i].mat, s);
+      mul_m4_m4m4(r[i], bone_mat, mats[i].mat);
+    }
+    return segs;
+  }
+  mul_m4_m4m4(r[0], bone_mat, s);
   return 1;
 }
 

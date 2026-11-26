@@ -49,18 +49,20 @@ int main()
   CHECK(ext == 1);
   CHECK(summary(b, 0) == 2);
   /* the DOWN lands on bone 0's tail = the new bone's head (cx, cy - 100): jumping the new tail under
-   * the finger there makes it zero length, and pg_bke_armature_from_edit (every armature_changed) drops it */
+   * the finger there makes it zero length, which Edit mode keeps (ED_armature_from_edit runs on exit) */
   float info[64] = {};
   pg_arm_bridge_query(b, PG_ARM_Q_BONE, 1, 0, info, 64);
   const float downx = cx, downy = cy - 100;
   CHECK(std::fabs(info[0] - downx) < 0.01f && std::fabs(info[1] - downy) < 0.01f);
   b.history_record();
   {
-    Backend z; /* the old RigTouch path, on a copy of the sequence: the bone vanishes */
+    Backend z; /* the tail jumped onto its head, on a copy of the sequence: the bone stays in Edit mode */
     CHECK(z.initialize() && z.create_document() && z.create_layer("L") && z.create_frame(1));
     cmd(z, PG_ARM_CMD_CREATE, -1, {}); cmd(z, PG_ARM_CMD_SET_MODE, -1, {1});
     cmd(z, PG_ARM_CMD_BONE_ADD, -1, {cx, cy, cx, cy - 100}); cmd(z, PG_ARM_CMD_EXTRUDE, -1, {1, 0});
     cmd(z, PG_ARM_CMD_EDIT_TRANSLATE, -1, {downx - (downx + 1), 0});
+    CHECK(summary(z, 0) == 2);
+    cmd(z, PG_ARM_CMD_SET_MODE, -1, {0});
     CHECK(summary(z, 0) == 1);
   }
   /* the fixed RigTouch path: the finger is on the new head, so the 1 px tail stays and the drag

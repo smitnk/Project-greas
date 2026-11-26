@@ -3912,15 +3912,12 @@ static int rebuild_pose_bone(bPose *pose, Bone *bone, bPoseChannel *parchan, int
   return counter;
 }
 
-/* ED_armature_from_edit (armature_utils.c) without Main / ID properties / B-Bone handles, then
- * BKE_pose_rebuild. The edit bones stay (arm->edbo is Project Grease's editable rest pose). */
-void pg_bke_armature_from_edit(bArmature *arm, bPose *pose)
+/* The "Remove zero sized bones" step of ED_armature_from_edit (armature_utils.c). Blender runs it
+ * only when the edit bones are flushed (leaving Edit mode), so it is not in pg_bke_armature_from_edit,
+ * which runs on every update: a bone dragged to zero length must survive the drag. */
+void pg_bke_armature_remove_zero_bones(bArmature *arm)
 {
   EditBone *eBone, *neBone;
-  Bone *newBone;
-
-  pg_bke_armature_bonelist_free(&arm->bonebase);
-  arm->act_bone = NULL;
 
   /* Remove zero sized bones, this gives unstable rest-poses. */
   for (eBone = arm->edbo->first; eBone; eBone = neBone) {
@@ -3936,6 +3933,18 @@ void pg_bke_armature_from_edit(bArmature *arm, bPose *pose)
       bone_free(arm, eBone);
     }
   }
+
+}
+
+/* ED_armature_from_edit (armature_utils.c) without Main / ID properties / B-Bone handles, then
+ * BKE_pose_rebuild. The edit bones stay (arm->edbo is Project Grease's editable rest pose). */
+void pg_bke_armature_from_edit(bArmature *arm, bPose *pose)
+{
+  EditBone *eBone, *neBone;
+  Bone *newBone;
+
+  pg_bke_armature_bonelist_free(&arm->bonebase);
+  arm->act_bone = NULL;
 
   for (eBone = arm->edbo->first; eBone; eBone = eBone->next) {
     newBone = MEM_callocN(sizeof(Bone), "bone");

@@ -23,6 +23,7 @@ struct ListBase;
 /* ED_armature_from_edit + BKE_pose_rebuild: rebuilds arm->bonebase (rest matrices) from arm->edbo
  * and makes `pose` hold one channel per bone in hierarchy order, keeping existing channels' values. */
 void pg_bke_armature_from_edit(struct bArmature *arm, struct bPose *pose);
+void pg_bke_armature_remove_zero_bones(struct bArmature *arm);
 /* BKE_pose_where_is (with constraints and IK) is pg_bke_pose_where_is in project_grease_constraint.h. */
 void pg_bke_armature_bonelist_free(struct ListBase *lb);
 void pg_bke_pose_free(struct bPose *pose);

@@ -22,6 +22,7 @@
 
 #include "project_grease_armature.h"
 #include "project_grease_armature_bke.h"
+#include "project_grease_armature_intern.h"
 #include "project_grease_modifier_stack.h"
 
 static int failures = 0;
@@ -814,6 +815,33 @@ static void test_touch_extrude()
   pg_arm_free(a);
 }
 
+/* ED_armature_from_edit removes zero sized bones only when Edit mode is left: a tail dragged onto its head
+ * keeps the bone (and the Bone / pose lists stay finite) until then, and re-entering shows no ghost. */
+static void test_zero_length_until_exit()
+{
+  PGArmature *a = pg_arm_new();
+  pg_arm_set_mode(a, PG_ARM_MODE_EDIT);
+  const float h[3] = {0, 0, 0}, t[3] = {0, 0.1f, 0};
+  pg_arm_bone_add(a, "Bone", h, t);
+  const float zero[3] = {0, 0, 0};
+  CHECK(pg_arm_extrude(a, zero) == 1);
+  CHECK(pg_arm_bone_count(a) == 2);
+  const float d[3] = {0.05f, 0, 0};
+  CHECK(pg_arm_edit_translate(a, d) > 0);
+  const float back[3] = {-0.05f, 0, 0};
+  CHECK(pg_arm_edit_translate(a, back) > 0); /* tail back onto its head */
+  CHECK(pg_arm_bone_count(a) == 2);
+  CHECK(BLI_listbase_count(&a->arm.bonebase) == 1 && BLI_listbase_count(&a->pose.chanbase) == 2);
+  LISTBASE_FOREACH (bPoseChannel *, pc, &a->pose.chanbase) CHECK(isfinite(pc->pose_mat[3][1]) && isfinite(pc->pose_mat[0][0]));
+  pg_arm_set_mode(a, PG_ARM_MODE_OBJECT);
+  CHECK(pg_arm_bone_count(a) == 1);
+  CHECK(BLI_listbase_count(&a->pose.chanbase) == 1);
+  pg_arm_set_mode(a, PG_ARM_MODE_EDIT);
+  CHECK(pg_arm_bone_count(a) == 1);
+  CHECK(BLI_listbase_count(&a->pose.chanbase) == 1);
+  pg_arm_free(a);
+}
+
 int main()
 {
   test_bone_matrices();
@@ -827,6 +855,7 @@ int main()
   test_edit_ops_and_io();
   test_display_and_pick();
   test_touch_extrude();
+  test_zero_length_until_exit();
   printf("armature: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

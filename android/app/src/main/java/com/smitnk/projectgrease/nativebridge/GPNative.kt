@@ -250,8 +250,10 @@ object GPNative {
     external fun nativeSetOverlayUnselected(handle: Long, show: Boolean)
     external fun nativeSetReferenceTransform(handle: Long, dx: Float, dy: Float, scale: Float, rot: Float, sx: Float, sy: Float)
     /** Stroke transform modal (Blender's transform): phase 0 begin (mode, pivot, cursor x, y, proportional,
-     *  connected, falloff, size, multi-frame falloff, snap, snap increment), 1 update (total value), 2 confirm, 3 cancel. */
+     *  connected, falloff, size, multi-frame falloff, snap, snap increment), 1 update (total value), 2 confirm, 3 cancel, 4 axis constraint (axes X 1 | Y 2 | Z 4, orientation 0 Global / 1 Local). */
     external fun nativeTransformModal(handle: Long, phase: Int, args: FloatArray?): Boolean
+    /** One numeric input key (an ASCII char, 8 Backspace, 9 Tab) of the open transform: Blender's numinput text, or null when unused. */
+    external fun nativeTransformNumInput(handle: Long, key: Int): String?
     external fun nativeLatticeBegin(handle: Long): FloatArray?
     external fun nativeLatticeUpdate(handle: Long, nu: Int, nv: Int, ctrl: FloatArray, interp: Int): Boolean
     external fun nativeLatticeEnd(handle: Long, keep: Boolean)
@@ -305,6 +307,10 @@ object GPNative {
     external fun nativeHistoryCanUndo(handle: Long): Boolean
     external fun nativeHistoryUndoCount(handle: Long): Int
     external fun nativeHistoryCanRedo(handle: Long): Boolean
+    external fun nativeHistoryPush(handle: Long, name: String): Boolean
+    external fun nativeHistoryActiveIndex(handle: Long): Int
+    external fun nativeHistoryStepName(handle: Long, index: Int): String
+    external fun nativeHistoryJump(handle: Long, index: Int): Boolean
 
     /** Ends any open tool session on the current document; true when it changed the document (record an undo step). */
     external fun nativeCancelToolSession(handle: Long): Boolean

@@ -99,6 +99,7 @@ fun ProjectGreaseEglViewport(
         }
     }
     TransformOverlay(controller, Modifier.matchParentSize())
+    TransformAxisBar(controller, Modifier.align(androidx.compose.ui.Alignment.TopStart)) // X / Y / Z locks, Type value
     com.smitnk.projectgrease.ui.RigHandleOverlay(controller, Modifier.matchParentSize())
     View3DBar(controller, Modifier.align(androidx.compose.ui.Alignment.TopEnd)) // Camera / 3D switch
   }

@@ -997,6 +997,9 @@ class EditorController {
         // Sculpt is one thing: the Sculpt tool is Sculpt mode (mode follows the tool), and any other tool leaves it.
         // The Draw brush is not an Edit-mode tool: picking it goes back to Draw mode.
         if (!tools.select(tool)) return false
+        // the axis chips / Type value of the transform tools (Move G, Rotate R, Scale S)
+        transformBarMode = when (tool) { GreaseTool.MOVE -> ProjectGreaseSelect.XFORM_TRANSLATE; GreaseTool.ROTATE -> ProjectGreaseSelect.XFORM_ROTATE
+            GreaseTool.SCALE -> ProjectGreaseSelect.XFORM_SCALE; else -> -1 }
         if (!tool.allowedIn(mode)) setMode(GreaseMode.DRAW)
         // Re-render so the edit overlay follows the tool at once.
         render()
@@ -4268,9 +4271,35 @@ class EditorController {
     fun setProportionalSize(size:Float) { if (size.isFinite()) { transformSettings = transformSettings.copy(size = size.coerceIn(0.00001f, 5000f)); restartTransform(); render() } }
     fun setSnapIncrement(increment:Float) { transformSettings = transformSettings.copy(snapIncrement = if (increment.isFinite() && increment > 0f) increment else 0f) }
     // ---- Stroke transform: Blender 3.6.23's transform modal (native project_grease_transform.c) ----
-    private var transformMode = -1
+    private var transformMode by androidx.compose.runtime.mutableIntStateOf(-1)
     private var transformValue = floatArrayOf(0f, 0f)
     val transformOpen:Boolean get() = transformMode >= 0
+    /** The transform of the active Move / Rotate / Scale tool, during and after its drags (the lock chips show for it); -1: none. */
+    var transformBarMode by androidx.compose.runtime.mutableIntStateOf(-1)
+    /** Axis constraint (transform_constraints.c): X 1 | Y 2 | Z 4, two axes = a plane lock (Shift+the other); kept for the next drags. */
+    var transformAxes by androidx.compose.runtime.mutableIntStateOf(0); private set
+    /** TransformKeys.ORIENT_GLOBAL / LOCAL (V3D_ORIENT_*). */
+    var transformOrient by androidx.compose.runtime.mutableIntStateOf(TransformKeys.ORIENT_GLOBAL); private set
+    /** Blender's numinput header text while values are typed; null when no typing. */
+    var transformNumText by androidx.compose.runtime.mutableStateOf<String?>(null); private set
+    /** Sets the constraint (live on the open transform). axes 0 removes it. */
+    fun setTransformConstraint(axes:Int, orient:Int = transformOrient):Boolean {
+        if (axes !in 0..7 || orient !in TransformKeys.ORIENT_GLOBAL..TransformKeys.ORIENT_LOCAL) return false
+        transformAxes = axes; transformOrient = orient
+        if (!transformOpen) return true
+        val ok = GPNative.nativeTransformModal(native.handle, 4, floatArrayOf(axes.toFloat(), orient.toFloat()))
+        if (ok) render()
+        return ok
+    }
+    /** Typed value (Blender's numinput): opens the transform of [mode] if none is open, then one key
+     *  (digit, '.', '-' negate, '=' expression, + * / ( ), TransformKeys.BACKSPACE / TAB). Applies live. */
+    fun transformNumKey(key:Int, mode:Int = transformBarMode):Boolean {
+        if (!transformOpen && (mode !in ProjectGreaseSelect.XFORM_TRANSLATE..ProjectGreaseSelect.XFORM_SCALE || !beginTransform(mode))) return false
+        val text = GPNative.nativeTransformNumInput(native.handle, key) ?: return false
+        transformNumText = text
+        render()
+        return true
+    }
     /** Opens the transform of the selection (mode XFORM_*): TransData, proportional factors and pivot
      *  are made once, from the settings now; false when nothing is selected. */
     fun beginTransform(mode:Int):Boolean {
@@ -4280,6 +4309,7 @@ class EditorController {
         val args = floatArrayOf(mode.toFloat(), s.pivot.toFloat(), s.cursorX, s.cursorY, f(s.proportional), f(s.connected),
             s.falloff.toFloat(), s.size, f(sculpt.frameFalloff), f(s.snapIncrement > 0f), s.snapIncrement)
         if (native.handle == 0L || !GPNative.nativeTransformModal(native.handle, 0, args)) return false
+        if (transformAxes != 0) GPNative.nativeTransformModal(native.handle, 4, floatArrayOf(transformAxes.toFloat(), transformOrient.toFloat()))
         transformMode = mode; transformValue = floatArrayOf(if (mode == ProjectGreaseSelect.XFORM_SCALE) 1f else 0f, if (mode == ProjectGreaseSelect.XFORM_SCALE) 1f else 0f)
         return true
     }
@@ -4295,6 +4325,7 @@ class EditorController {
     fun endTransform(cancel:Boolean = false):Boolean {
         if (!transformOpen) return false
         transformMode = -1
+        transformNumText = null
         val ok = native.handle != 0L && GPNative.nativeTransformModal(native.handle, if (cancel) 3 else 2, null)
         if (ok && !cancel) { history.markEdit(); document.markDirty() }
         render()
@@ -4546,4 +4577,12 @@ class EditorController {
     /** Box being dragged (canvas units, x0 y0 x1 y1) for the overlay, or null. */
     var boxSelectRect:FloatArray? = null; private set
     fun circleSelectRadius():Float = brushes.size.coerceAtLeast(4f)
+}
+
+/** Constants of the transform's constraint / numeric input (project_grease_transform.h, project_grease_numinput.h). */
+object TransformKeys {
+    const val ORIENT_GLOBAL = 0 // V3D_ORIENT_GLOBAL
+    const val ORIENT_LOCAL = 1  // V3D_ORIENT_LOCAL
+    const val BACKSPACE = 8     // PG_NUM_KEY_BACKSPACE
+    const val TAB = 9           // PG_NUM_KEY_TAB
 }

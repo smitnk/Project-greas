@@ -372,6 +372,9 @@ enum {
   PG_ARM_CMD_DISPLAY = 28,        /* drawtype (ARM_OCTA 0 / ARM_LINE 1 ...), show in front */
   PG_ARM_CMD_KEY_MOVE = 30,       /* bone; frame, to (dope sheet key move) */
   PG_ARM_CMD_MIRROR_X = 31,       /* X-Axis Mirror on (1) / off (0) */
+  PG_ARM_CMD_BBONE = 32,          /* bone; segments, display x, z, then the PG_ARM_BBONE values of
+                                     the edit bone (Blender units, radians) */
+  PG_ARM_CMD_POSE_BBONE = 33,     /* bone; the PG_ARM_BBONE values of the pose channel */
   PG_ARM_CMD_PICK = 29,           /* x, y, dist, extend[, canvas px -> window 4x4 (16, column major)];
                                      no matrix: x, y, dist in canvas px. Returns the bone or -1 */
 };
@@ -384,6 +387,8 @@ enum {
   PG_ARM_Q_ENVELOPE = 5, /* dist px, weight, rad head px, rad tail px */
   PG_ARM_Q_SELECTED = 6, /* 1 / 0 */
   PG_ARM_Q_DISPLAY = 7,  /* drawtype, show in front, X-Axis Mirror */
+  PG_ARM_Q_BBONE = 8,    /* segments, display x, z, PG_ARM_BBONE values (edit bone) */
+  PG_ARM_Q_POSE_BBONE = 9, /* PG_ARM_BBONE values (pose channel) */
 };
 /* Constraints, custom properties and drivers (project_grease_constraint.h / project_grease_driver.h,
  * project_grease_rig_bridge.cpp). Strings go in `name`; constraint / property / driver names, paths

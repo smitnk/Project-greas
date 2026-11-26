@@ -2,12 +2,13 @@
  * Project document JSON of the rig (see pg_arm_to_json in project_grease_armature.h):
  * {"version":1,"mode":0,"active":-1,"drawtype":0,"in_front":0,"mirror_x":0,
  *  "bones":[{"name","parent","head":[3],"tail":[3],"roll","flag","inherit","dist","weight",
- *            "radHead","radTail","segments","layer","bbone":[14]}], (EditBone, list order)
+ *            "radHead","radTail","segments","bboneX","bboneZ","layer","bbone":[14]}], (EditBone, list order)
  *  "pose":[{"name","loc":[3],"quat":[4],"scale":[3],"bbone":[14]}],  (bbone: PG_ARM_BBONE order)
  *  "fcurves":[{"path","index","extend","smoothing","flag",
  *              "keys":[[x,y,ipo,h1,h2,lx,ly,rx,ry,easing,keytype], ...]}],
  *  "props":[...], "drivers":[...]}  (see put_props / put_drivers)
  * A pose channel also carries "constraints" (put_constraints). */
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -458,6 +459,8 @@ char *pg_arm_to_json(const PGArmature *a)
     s += ",\"radHead\":"; put_num(s, eb->rad_head);
     s += ",\"radTail\":"; put_num(s, eb->rad_tail);
     s += ",\"segments\":"; put_num(s, eb->segments);
+    s += ",\"bboneX\":"; put_num(s, eb->xwidth);
+    s += ",\"bboneZ\":"; put_num(s, eb->zwidth);
     s += ",\"layer\":"; put_num(s, eb->layer);
     put_bbone(s, pg_arm_bone_bbone, a, BLI_findindex(&a->edbo, eb));
     s += '}';
@@ -521,6 +524,8 @@ PGArmature *pg_arm_from_json(const char *json)
     eb->rad_head = (float)jb.n("radHead", eb->rad_head);
     eb->rad_tail = (float)jb.n("radTail", eb->rad_tail);
     eb->segments = (short)CLAMPIS((int)jb.n("segments", 1), 1, 32);
+    eb->xwidth = std::max(0.0f, (float)jb.n("bboneX", eb->xwidth));
+    eb->zwidth = std::max(0.0f, (float)jb.n("bboneZ", eb->zwidth));
     eb->layer = (int)jb.n("layer", eb->layer);
     read_bbone(jb.get("bbone"), eb);
     list.push_back(eb);

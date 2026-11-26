@@ -72,6 +72,12 @@ int pg_arm_bone_set_bbone(PGArmature *a, int bone, int segments, const float v[P
 int pg_arm_bone_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE]);
 int pg_arm_pose_set_bbone(PGArmature *a, int bone, const float v[PG_ARM_BBONE]);
 int pg_arm_pose_bbone(const PGArmature *a, int bone, float r[PG_ARM_BBONE]);
+/* bbone_x / bbone_z (EditBone xwidth / zwidth, "Display Size"), armature units. */
+int pg_arm_bone_set_bbone_size(PGArmature *a, int bone, float x, float z);
+int pg_arm_bone_bbone_size(const PGArmature *a, int bone, float r[2]);
+/* The B-Bone display matrices of the bone's segments (armature space, the box spans local
+ * -1..1 x / z and 0..1 y): draw_bone_update_disp_matrix_bbone. Returns the segment count. */
+int pg_arm_bone_bbone_matrices(const PGArmature *a, int bone, float (*r)[4][4], int cap);
 
 /* ---- edit mode (ARMATURE_OT_*) ---- */
 /* bone_primitive_add: deselects all, adds a bone named `name` ("Bone" if empty, made unique),
@@ -172,7 +178,7 @@ int pg_arm_bind_layer(const PGArmature *a, struct bGPdata *gpd, struct bGPDlayer
 
 /* ---- viewport display ---- */
 /* bArmature.drawtype (ARM_OCTA 0 default / ARM_LINE 1 stick / B-Bone 2 / Envelope 3 / Wire 4; only
- * Octahedral and Stick are drawn, the others draw as Octahedral) and the rig object's In Front
+ * Octahedral, Stick, B-Bone and Wire are drawn, Envelope draws as Octahedral) and the rig object's In Front
  * (Object.dtx OB_DRAW_IN_FRONT, DNA default off). Both are saved with the rig. */
 int pg_arm_display_type(const PGArmature *a);
 bool pg_arm_show_in_front(const PGArmature *a);

@@ -2,9 +2,12 @@
  * android_gp_view3d.inc): Blender 3.6.23's bone drawing in the 2D Camera view and the 3D view.
  *
  *   draw/engines/overlay/overlay_armature.cc   draw_bone_octahedral, draw_bone_line, draw_points,
+ *                                              draw_bone_box (B-Bone), draw_bone_wire (Wire),
+ *                                              draw_bone_update_disp_matrix_bbone,
  *                                              get_bone_solid / wire / hint colour, set_pchan_color,
  *                                              draw_bone_update_disp_matrix_default
  *   draw/intern/draw_cache.c                   DRW_cache_bone_octahedral_get (+ _wire_get adjacency),
+ *                                              DRW_cache_bone_box_get (+ _wire_get adjacency),
  *                                              DRW_cache_bone_stick_get
  *   draw/intern/draw_common.c                  DRW_globals_update (bone colours, default theme)
  *   overlay_armature_shape_solid_vert/frag, overlay_armature_shape_outline_vert_no_geom +
@@ -14,6 +17,9 @@
  * under the strokes (drawn before the GP engine image); on, over them. Head / tail spheres of the
  * octahedral display are screen circles (sphere solid + outline seen face on).
  * shortcut: needs a GLES 3 context (ES 3.00 shaders); on GLES 2 no bones are drawn. */
+#include <array>
+
+constexpr int ARM_MAX_BBONE_SUBDIV = 32; /* BKE_armature.h MAX_BBONE_SUBDIV */
 #include "DNA_armature_types.h"
 #include "project_grease_armature.h"
 
@@ -123,7 +129,7 @@ const char *arm_stick_fs =
 struct ArmGL {
   bool tried = false, ok = false;
   GLuint solid = 0, outline = 0, stick = 0;
-  GLuint solid_vbo = 0, outline_vbo = 0, stick_vbo = 0;
+  GLuint solid_vbo = 0, outline_vbo = 0, stick_vbo = 0, box_solid_vbo = 0, box_outline_vbo = 0;
   int outline_verts = 0, stick_verts = 0;
 };
 ArmGL g_arm;
@@ -164,6 +170,19 @@ const float OCT_TRI_NOR[8][3] = {{0.70710678f, -0.70710678f, 0}, {0, -0.70710678
                                  {-0.99388373f, 0.11043154f, 0}, {0, 0.11043154f, 0.99388373f}};
 const unsigned OCT_ADJ[12][4] = {{0, 1, 2, 6}, {0, 12, 1, 6}, {0, 3, 12, 6}, {0, 2, 3, 6}, {1, 6, 2, 3}, {1, 12, 6, 3},
                                  {1, 0, 12, 3}, {1, 2, 0, 3}, {2, 0, 1, 12}, {2, 3, 0, 12}, {2, 6, 3, 12}, {2, 1, 6, 12}};
+/* draw_cache.c: bone_box_verts / _smooth_normals / _solid_tris / _solid_normals /
+ * _wire_lines_adjacency */
+constexpr float SQ3 = 0.57735027f; /* M_SQRT3 of draw_cache.c is 1 / sqrt(3) */
+const float BOX_VERTS[8][3] = {{1, 0, 1}, {1, 0, -1}, {-1, 0, -1}, {-1, 0, 1}, {1, 1, 1}, {1, 1, -1}, {-1, 1, -1}, {-1, 1, 1}};
+const float BOX_SNOR[8][3] = {{SQ3, -SQ3, SQ3}, {SQ3, -SQ3, -SQ3}, {-SQ3, -SQ3, -SQ3}, {-SQ3, -SQ3, SQ3},
+                              {SQ3, SQ3, SQ3},  {SQ3, SQ3, -SQ3},  {-SQ3, SQ3, -SQ3},  {-SQ3, SQ3, SQ3}};
+const unsigned BOX_TRIS[12][3] = {{0, 2, 1}, {0, 3, 2}, {0, 1, 5}, {0, 5, 4}, {1, 2, 6}, {1, 6, 5},
+                                  {2, 3, 7}, {2, 7, 6}, {3, 0, 4}, {3, 4, 7}, {4, 5, 6}, {4, 6, 7}};
+const float BOX_TRI_NOR[12][3] = {{0, -1, 0}, {0, -1, 0}, {1, 0, 0},  {1, 0, 0},  {0, 0, -1}, {0, 0, -1},
+                                  {-1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, 1}, {0, 1, 0},  {0, 1, 0}};
+const unsigned BOX_ADJ[12][4] = {{4, 2, 0, 11},   {0, 1, 2, 8},    {2, 4, 1, 14},  {1, 0, 4, 20},
+                                 {0, 8, 11, 14},  {2, 14, 8, 20},  {1, 20, 14, 11}, {4, 11, 20, 8},
+                                 {20, 0, 11, 2},  {11, 2, 8, 1},   {8, 1, 14, 4},   {14, 4, 20, 0}};
 enum { STK_COL_WIRE = 1, STK_COL_HEAD = 2, STK_COL_TAIL = 4, STK_COL_BONE = 8, STK_POS_HEAD = 16, STK_POS_TAIL = 32, STK_POS_BONE = 64 };
 
 bool arm_gl()
@@ -174,24 +193,30 @@ bool arm_gl()
   g_arm.outline = arm_link(arm_outline_vs, arm_flat_fs, {"pos0", "pos1", "pos2", "pos3", "snor0", "snor1", "snor2", "snor3", "corner"});
   g_arm.stick = arm_link(arm_stick_vs, arm_stick_fs, {"pos", "flag_f"});
   if (!g_arm.solid || !g_arm.outline || !g_arm.stick) return false;
-  /* the 24 solid vertices: pos, nor (snor of the outline comes with the adjacency below) */
-  std::vector<float> solid, snor_pos;
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 3; j++) {
-      const unsigned v = OCT_TRIS[i][j];
-      solid.insert(solid.end(), {OCT_VERTS[v][0], OCT_VERTS[v][1], OCT_VERTS[v][2], OCT_TRI_NOR[i][0], OCT_TRI_NOR[i][1], OCT_TRI_NOR[i][2]});
-      snor_pos.insert(snor_pos.end(), {OCT_VERTS[v][0], OCT_VERTS[v][1], OCT_VERTS[v][2], OCT_SNOR[v][0], OCT_SNOR[v][1], OCT_SNOR[v][2]});
-    }
-  /* outline: per adjacency line 6 vertices (a quad), each 4 x (pos, snor) + corner */
-  std::vector<float> outline;
-  const float corners[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
-  for (const auto &l : OCT_ADJ)
-    for (const auto &c : corners) {
-      for (int k = 0; k < 4; k++) outline.insert(outline.end(), &snor_pos[l[k] * 6], &snor_pos[l[k] * 6] + 3);
-      for (int k = 0; k < 4; k++) outline.insert(outline.end(), &snor_pos[l[k] * 6 + 3], &snor_pos[l[k] * 6 + 3] + 3);
-      outline.insert(outline.end(), {c[0], c[1]});
-    }
-  g_arm.outline_verts = 12 * 6;
+  /* the solid vertices: pos, nor (snor of the outline comes with the adjacency below); outline:
+   * per adjacency line 6 vertices (a quad), each 4 x (pos, snor) + corner */
+  auto shape = [](int ntri, const unsigned (*tris)[3], const float (*verts)[3], const float (*tri_nor)[3], const float (*snor)[3],
+                  const unsigned (*adj)[4], std::vector<float> &solid, std::vector<float> &outline) {
+    std::vector<float> snor_pos;
+    for (int i = 0; i < ntri; i++)
+      for (int j = 0; j < 3; j++) {
+        const unsigned v = tris[i][j];
+        solid.insert(solid.end(), {verts[v][0], verts[v][1], verts[v][2], tri_nor[i][0], tri_nor[i][1], tri_nor[i][2]});
+        snor_pos.insert(snor_pos.end(), {verts[v][0], verts[v][1], verts[v][2], snor[v][0], snor[v][1], snor[v][2]});
+      }
+    const float corners[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
+    for (int li = 0; li < 12; li++)
+      for (const auto &c : corners) {
+        const unsigned *l = adj[li];
+        for (int k = 0; k < 4; k++) outline.insert(outline.end(), &snor_pos[l[k] * 6], &snor_pos[l[k] * 6] + 3);
+        for (int k = 0; k < 4; k++) outline.insert(outline.end(), &snor_pos[l[k] * 6 + 3], &snor_pos[l[k] * 6 + 3] + 3);
+        outline.insert(outline.end(), {c[0], c[1]});
+      }
+  };
+  std::vector<float> solid, outline, box_solid, box_outline;
+  shape(8, OCT_TRIS, OCT_VERTS, OCT_TRI_NOR, OCT_SNOR, OCT_ADJ, solid, outline);
+  shape(12, BOX_TRIS, BOX_VERTS, BOX_TRI_NOR, BOX_SNOR, BOX_ADJ, box_solid, box_outline);
+  g_arm.outline_verts = 12 * 6; /* both shapes have 12 outline edges */
   /* stick: the triangle fans (head circle, tail circle, bone rectangle) as triangles */
   std::vector<float> fan_v;
   auto vert = [&](float x, float y, unsigned f) { fan_v.insert(fan_v.end(), {x, y, float(f)}); };
@@ -215,8 +240,14 @@ bool arm_gl()
   }
   for (int i = 1; i < 5; i++) tri(rb, rb + i, rb + i + 1);
   g_arm.stick_verts = int(stick.size() / 3);
-  GLuint b[3];
-  glGenBuffers(3, b);
+  GLuint b[5];
+  glGenBuffers(5, b);
+  g_arm.box_solid_vbo = b[3];
+  g_arm.box_outline_vbo = b[4];
+  glBindBuffer(GL_ARRAY_BUFFER, b[3]);
+  glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(box_solid.size() * sizeof(float)), box_solid.data(), GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, b[4]);
+  glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(box_outline.size() * sizeof(float)), box_outline.data(), GL_STATIC_DRAW);
   g_arm.solid_vbo = b[0];
   g_arm.outline_vbo = b[1];
   g_arm.stick_vbo = b[2];
@@ -258,6 +289,7 @@ struct ArmBoneDraw {
   float head[3], tail[3];
   int flag; /* EditBone flag | BONE_DRAW_ACTIVE */
   bool head_shown;
+  std::vector<std::array<float, 16>> segs; /* world display matrices: disp_mat, or the B-Bone segments */
 };
 
 /* get_bone_wire_color (no bone colour sets, no constraints) */
@@ -284,6 +316,44 @@ void arm_disc(std::vector<Vertex> &out, const float c[2], float r, int w, int h)
   }
 }
 
+/* draw_points: head (when not connected) and tail spheres, radius PT_DEFAULT_RAD of the
+ * length, solid colour with the wire colour (vertex_select for a selected edit joint) around */
+void arm_draw_points(const std::vector<ArmBoneDraw> &bones, int mode, const float viewmat[4][4], const float winmat[4][4], int w,
+                     int h, float px)
+{
+  const float vscale = len_v3(viewmat[0]);
+  for (const ArmBoneDraw &b : bones) {
+    float wire[4];
+    arm_wire_color(mode, b.flag, wire);
+    for (int end = 0; end < 2; end++) {
+      if (end == 0 && !b.head_shown) continue;
+      float col_wire[4];
+      if (mode == PG_ARM_MODE_POSE) copy_v4_v4(col_wire, wire);
+      else {
+        copy_v3_v3(col_wire, ARM_VERTEX);
+        col_wire[3] = wire[3];
+        if (mode == PG_ARM_MODE_EDIT && (b.flag & (end == 0 ? BONE_ROOTSEL : BONE_TIPSEL))) copy_v3_v3(col_wire, ARM_VERTEX_SELECT);
+      }
+      const float *c = end == 0 ? b.head : b.tail;
+      float v[4] = {c[0], c[1], c[2], 1.0f}, vv[4];
+      mul_v4_m4v4(vv, viewmat, v);
+      const float rad = 0.05f * len_v3(b.disp_mat[1]) * vscale; /* world length of the bone */
+      float q[4] = {vv[0] + rad, vv[1], vv[2], 1.0f}, pc[4], pq[4];
+      mul_v4_m4v4(pc, winmat, vv);
+      mul_v4_m4v4(pq, winmat, q);
+      if (pc[3] <= 0.0f) continue;
+      const float s[2] = {(pc[0] / pc[3] * 0.5f + 0.5f) * float(w), (pc[1] / pc[3] * 0.5f + 0.5f) * float(h)};
+      const float r = std::fabs((pq[0] / pq[3] - pc[0] / pc[3]) * 0.5f * float(w));
+      std::vector<Vertex> ring, dot;
+      arm_disc(ring, s, r + col_wire[3] * px, w, h);
+      arm_disc(dot, s, r, w, h);
+      col_wire[3] = 1.0f;
+      draw_vertices(ring, col_wire, false);
+      draw_vertices(dot, ARM_BONE_SOLID, false);
+    }
+  }
+}
+
 /* The bones of `a` with obmat (armature space -> world, the rig object's object_to_world), viewmat
  * and winmat, in a w x h window; px is U.pixelsize. */
 void arm_draw(const PGArmature *a, const float obmat[4][4], const float viewmat[4][4], const float winmat[4][4], int w, int h,
@@ -292,7 +362,10 @@ void arm_draw(const PGArmature *a, const float obmat[4][4], const float viewmat[
   const int nb = pg_arm_bone_count(a);
   if (nb <= 0 || !arm_gl()) return;
   const int mode = pg_arm_mode(a), active = pg_arm_active_bone(a);
-  const bool stick = pg_arm_display_type(a) == ARM_LINE;
+  const int drawtype = pg_arm_display_type(a);
+  const bool stick = drawtype == ARM_LINE;
+  /* Envelope is not ported: drawn as Octahedral */
+  const bool bbone = drawtype == ARM_B_BONE, wire_draw = drawtype == eArmature_Drawtype::ARM_WIRE; /* ARM_WIRE is also the wire colour here */
   std::vector<ArmBoneDraw> bones;
   bones.reserve(size_t(nb));
   float info[PG_ARM_BONE_INFO];
@@ -311,6 +384,20 @@ void arm_draw(const PGArmature *a, const float obmat[4][4], const float viewmat[
     mul_m4_v3(obmat, b.tail);
     b.flag = int(info[8]) | (i == active ? BONE_DRAW_ACTIVE_FLAG : 0);
     b.head_shown = !(info[7] >= 0.0f && (b.flag & BONE_CONNECTED));
+    if (bbone || wire_draw) {
+      float segm[ARM_MAX_BBONE_SUBDIV][4][4];
+      const int ns = pg_arm_bone_bbone_matrices(a, i, segm, ARM_MAX_BBONE_SUBDIV);
+      for (int k = 0; k < ns; k++) {
+        std::array<float, 16> o;
+        mul_m4_m4m4(reinterpret_cast<float(*)[4]>(o.data()), obmat, segm[k]);
+        b.segs.push_back(o);
+      }
+    }
+    else {
+      std::array<float, 16> o;
+      std::memcpy(o.data(), b.disp_mat, sizeof b.disp_mat);
+      b.segs.push_back(o);
+    }
     bones.push_back(b);
   }
   const float vp[4] = {float(w), float(h), 1.0f / float(w), 1.0f / float(h)};
@@ -350,24 +437,62 @@ void arm_draw(const PGArmature *a, const float obmat[4][4], const float viewmat[
     }
     arm_attribs_off(2);
   }
+  else if (wire_draw) {
+    /* draw_bone_wire: a line per segment (drw_shgroup_bone_wire, head = mat[3], tail = head +
+     * mat[1]) in the wire colour, line width get_bone_wire_thickness * pixelsize; draw_points in
+     * edit mode only */
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
+    float persmat[4][4];
+    mul_m4_m4m4(persmat, winmat, viewmat);
+    for (const ArmBoneDraw &b : bones) {
+      float wire[4];
+      arm_wire_color(mode, b.flag, wire);
+      std::vector<Vertex> quads;
+      for (const auto &m : b.segs) {
+        const float(*mm)[4] = reinterpret_cast<const float(*)[4]>(m.data());
+        float p0[4] = {mm[3][0], mm[3][1], mm[3][2], 1.0f}, p1[4] = {mm[3][0] + mm[1][0], mm[3][1] + mm[1][1], mm[3][2] + mm[1][2], 1.0f};
+        mul_m4_v4(persmat, p0);
+        mul_m4_v4(persmat, p1);
+        if (p0[3] <= 0.0f || p1[3] <= 0.0f) continue;
+        const float s0[2] = {(p0[0] / p0[3] * 0.5f + 0.5f) * float(w), (p0[1] / p0[3] * 0.5f + 0.5f) * float(h)};
+        const float s1[2] = {(p1[0] / p1[3] * 0.5f + 0.5f) * float(w), (p1[1] / p1[3] * 0.5f + 0.5f) * float(h)};
+        float d[2] = {s1[0] - s0[0], s1[1] - s0[1]};
+        const float l = std::max(1e-6f, std::hypot(d[0], d[1]));
+        const float hw = 0.5f * wire[3] * px;
+        const float nx = -d[1] / l * hw, ny = d[0] / l * hw;
+        auto n = [&](float x, float y) { return Vertex{2.0f * x / float(w) - 1.0f, 2.0f * y / float(h) - 1.0f}; };
+        quads.insert(quads.end(), {n(s0[0] + nx, s0[1] + ny), n(s1[0] + nx, s1[1] + ny), n(s1[0] - nx, s1[1] - ny),
+                                   n(s0[0] + nx, s0[1] + ny), n(s1[0] - nx, s1[1] - ny), n(s0[0] - nx, s0[1] - ny)});
+      }
+      float c[4] = {wire[0], wire[1], wire[2], 1.0f};
+      draw_vertices(quads, c, false);
+    }
+    glDisable(GL_BLEND);
+    if (mode != PG_ARM_MODE_EDIT) return;
+    arm_draw_points(bones, mode, viewmat, winmat, w, h, px);
+    return;
+  }
   else {
-    /* draw_bone_octahedral: solid (hint / solid colour), then the outlines (wire colour) */
+    /* draw_bone_octahedral / draw_bone_box: solid (hint / solid colour), then the outlines (wire colour) */
     GLuint p = g_arm.solid;
     glUseProgram(p);
     glUniformMatrix4fv(glGetUniformLocation(p, "viewmat"), 1, GL_FALSE, &viewmat[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(p, "winmat"), 1, GL_FALSE, &winmat[0][0]);
     glUniform1f(glGetUniformLocation(p, "alpha"), 1.0f);
-    glBindBuffer(GL_ARRAY_BUFFER, g_arm.solid_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, bbone ? g_arm.box_solid_vbo : g_arm.solid_vbo);
     const int sz_s[2] = {3, 3};
     arm_attribs(2, sz_s);
     for (const ArmBoneDraw &b : bones) {
       float wire[4], hint[4];
       arm_wire_color(mode, b.flag, wire);
       bone_hint_color_shade(hint, wire);
-      glUniformMatrix4fv(glGetUniformLocation(p, "model_mat"), 1, GL_FALSE, &b.disp_mat[0][0]);
       glUniform4fv(glGetUniformLocation(p, "bone_color"), 1, ARM_BONE_SOLID);
       glUniform4fv(glGetUniformLocation(p, "state_color"), 1, hint);
-      glDrawArrays(GL_TRIANGLES, 0, 24);
+      for (const auto &m : b.segs) {
+        glUniformMatrix4fv(glGetUniformLocation(p, "model_mat"), 1, GL_FALSE, m.data());
+        glDrawArrays(GL_TRIANGLES, 0, bbone ? 36 : 24);
+      }
     }
     arm_attribs_off(2);
     p = g_arm.outline;
@@ -376,57 +501,25 @@ void arm_draw(const PGArmature *a, const float obmat[4][4], const float viewmat[
     glUniformMatrix4fv(glGetUniformLocation(p, "winmat"), 1, GL_FALSE, &winmat[0][0]);
     glUniform4fv(glGetUniformLocation(p, "sizeViewport"), 1, vp);
     glUniform1f(glGetUniformLocation(p, "alpha"), 1.0f);
-    glBindBuffer(GL_ARRAY_BUFFER, g_arm.outline_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, bbone ? g_arm.box_outline_vbo : g_arm.outline_vbo);
     const int sz_o[9] = {3, 3, 3, 3, 3, 3, 3, 3, 2};
     arm_attribs(9, sz_o);
     for (const ArmBoneDraw &b : bones) {
       float wire[4];
       arm_wire_color(mode, b.flag, wire);
-      glUniformMatrix4fv(glGetUniformLocation(p, "model_mat"), 1, GL_FALSE, &b.disp_mat[0][0]);
       glUniform4fv(glGetUniformLocation(p, "color"), 1, wire);
       glUniform1f(glGetUniformLocation(p, "thickness"), wire[3] * px);
-      glDrawArrays(GL_TRIANGLES, 0, g_arm.outline_verts);
+      for (const auto &m : b.segs) {
+        glUniformMatrix4fv(glGetUniformLocation(p, "model_mat"), 1, GL_FALSE, m.data());
+        glDrawArrays(GL_TRIANGLES, 0, g_arm.outline_verts);
+      }
     }
     arm_attribs_off(9);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
     glDisable(GL_BLEND);
-    /* draw_points: head (when not connected) and tail spheres, radius PT_DEFAULT_RAD of the
-     * length, solid colour with the wire colour (vertex_select for a selected edit joint) around */
-    float persmat[4][4];
-    mul_m4_m4m4(persmat, winmat, viewmat);
-    const float vscale = len_v3(viewmat[0]);
-    for (const ArmBoneDraw &b : bones) {
-      float wire[4];
-      arm_wire_color(mode, b.flag, wire);
-      for (int end = 0; end < 2; end++) {
-        if (end == 0 && !b.head_shown) continue;
-        float col_wire[4];
-        if (mode == PG_ARM_MODE_POSE) copy_v4_v4(col_wire, wire);
-        else {
-          copy_v3_v3(col_wire, ARM_VERTEX);
-          col_wire[3] = wire[3];
-          if (mode == PG_ARM_MODE_EDIT && (b.flag & (end == 0 ? BONE_ROOTSEL : BONE_TIPSEL))) copy_v3_v3(col_wire, ARM_VERTEX_SELECT);
-        }
-        const float *c = end == 0 ? b.head : b.tail;
-        float v[4] = {c[0], c[1], c[2], 1.0f}, vv[4];
-        mul_v4_m4v4(vv, viewmat, v);
-        const float rad = 0.05f * len_v3(b.disp_mat[1]) * vscale; /* world length of the bone */
-        float q[4] = {vv[0] + rad, vv[1], vv[2], 1.0f}, pc[4], pq[4];
-        mul_v4_m4v4(pc, winmat, vv);
-        mul_v4_m4v4(pq, winmat, q);
-        if (pc[3] <= 0.0f) continue;
-        const float s[2] = {(pc[0] / pc[3] * 0.5f + 0.5f) * float(w), (pc[1] / pc[3] * 0.5f + 0.5f) * float(h)};
-        const float r = std::fabs((pq[0] / pq[3] - pc[0] / pc[3]) * 0.5f * float(w));
-        std::vector<Vertex> ring, dot;
-        arm_disc(ring, s, r + col_wire[3] * px, w, h);
-        arm_disc(dot, s, r, w, h);
-        col_wire[3] = 1.0f;
-        draw_vertices(ring, col_wire, false);
-        draw_vertices(dot, ARM_BONE_SOLID, false);
-      }
-    }
-    (void)persmat;
+    /* draw_bone_box draws the points in edit mode only */
+    if (!bbone || mode == PG_ARM_MODE_EDIT) arm_draw_points(bones, mode, viewmat, winmat, w, h, px);
     return;
   }
   glBindBuffer(GL_ARRAY_BUFFER, 0);

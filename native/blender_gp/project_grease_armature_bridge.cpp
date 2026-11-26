@@ -153,6 +153,15 @@ int pg_arm_bridge_command(Backend &backend, int cmd, int bone, const float *args
       pg_arm_set_mirror_x(a, arg(args, n, 0) != 0.0f);
       r = 1;
       break;
+    case PG_ARM_CMD_BBONE:
+      if (n < 3 + PG_ARM_BBONE) return -1;
+      r = pg_arm_bone_set_bbone_size(a, bone, args[1], args[2]) &&
+          pg_arm_bone_set_bbone(a, bone, (int)args[0], args + 3);
+      break;
+    case PG_ARM_CMD_POSE_BBONE:
+      if (n < PG_ARM_BBONE) return -1;
+      r = pg_arm_pose_set_bbone(a, bone, args);
+      break;
     case PG_ARM_CMD_DISPLAY:
       pg_arm_set_display(a, (int)arg(args, n, 0), arg(args, n, 1) != 0.0f);
       r = 1;
@@ -244,6 +253,17 @@ int pg_arm_bridge_query(Backend &backend, int what, int bone, float x, float *ou
       tmp[1] = pg_arm_show_in_front(a) ? 1.0f : 0.0f;
       tmp[2] = pg_arm_mirror_x(a) ? 1.0f : 0.0f;
       n = 3;
+      break;
+    case PG_ARM_Q_BBONE: {
+      const int segs = pg_arm_bone_bbone(a, bone, tmp + 3);
+      if (!segs || !pg_arm_bone_bbone_size(a, bone, tmp + 1)) return 0;
+      tmp[0] = (float)segs;
+      n = 3 + PG_ARM_BBONE;
+      break;
+    }
+    case PG_ARM_Q_POSE_BBONE:
+      if (!pg_arm_pose_bbone(a, bone, tmp)) return 0;
+      n = PG_ARM_BBONE;
       break;
     case PG_ARM_Q_SELECTED:
       tmp[0] = pg_arm_bone_selected(a, bone) ? 1.0f : 0.0f;

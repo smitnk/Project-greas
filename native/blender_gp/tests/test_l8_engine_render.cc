@@ -367,6 +367,58 @@ static void view3d_and_rig(bGPdata *gpd)
       c = centre(0);
       std::printf("  rig %s in front on: bone 0 centre %d %d %d\n", v3d ? "3D" : "2D", c[0], c[1], c[2]);
       CHECK(c[0] > 60);
+      /* L10 B-Bone (draw_bone_box with draw_bone_update_disp_matrix_bbone): bone 1 with 4 segments
+       * bent by Curve In / Out X. The middle of segment 1 (local y 0.5 of its display matrix, from
+       * BKE_pchan_bbone_spline_setup) has the selected outline around it; the straight bone's middle is now empty. Wire
+       * (draw_bone_wire) draws the same curve in the selected pose wire colour. */
+      {
+        pg_arm_set_mode(a, PG_ARM_MODE_POSE);
+        select_rig();
+        float bb[PG_ARM_BBONE] = {1, 1, 0, 0, 0.02f, 0, 0.02f, 0, 1, 1, 1, 1, 1, 1};
+        CHECK(pg_arm_bone_set_bbone_size(a, 1, 0.003f, 0.003f) == 1);
+        CHECK(pg_arm_bone_set_bbone(a, 1, 4, bb) == 1);
+        float segm[32][4][4];
+        CHECK(pg_arm_bone_bbone_matrices(a, 1, segm, 32) == 4);
+        float mid[3], cpx[3], sm[2], ss[2];
+        for (int k = 0; k < 3; k++) mid[k] = segm[1][3][k] + 0.5f * segm[1][1][k];
+        pg_arm_arm_to_canvas(mid, cpx);
+        std::printf("  rig %s b-bone: segment 1 middle at canvas %.1f %.1f (straight y %.0f)\n", v3d ? "3D" : "2D", cpx[0], cpx[1], ys[1]);
+        CHECK(std::fabs(cpx[1] - ys[1]) > 8.0f); /* bent off the straight line by more than the box */
+        auto at = [&](const float s2[2]) { return &img[((size_t)(H - 1 - int(s2[1] + 0.5f)) * W + int(s2[0] + 0.5f)) * 4]; };
+        /* selected pose outline (bone_pose) pixels within 4 px: the background here is grey too */
+        auto blue = [&](const float s2[2]) {
+          int n = 0;
+          for (int dy = -4; dy <= 4; dy++)
+            for (int dx = -4; dx <= 4; dx++) {
+              const int x = int(s2[0] + 0.5f) + dx, y = H - 1 - int(s2[1] + 0.5f) - dy;
+              if (x < 0 || x >= W || y < 0 || y >= H) continue;
+              const unsigned char *q = &img[((size_t)y * W + x) * 4];
+              if (std::abs(q[0] - C_PSEL[0]) <= 20 && std::abs(q[1] - C_PSEL[1]) <= 20 && std::abs(q[2] - C_PSEL[2]) <= 20) n++;
+            }
+          return n;
+        };
+        pg_arm_set_display(a, ARM_B_BONE, true);
+        frame();
+        screen(cpx[0], cpx[1], sm);
+        screen(100, ys[1], ss);
+        int nb = blue(sm), n0 = blue(ss);
+        std::printf("    b-bone outline px: at the curve middle %d, at the straight middle %d\n", nb, n0);
+        CHECK(nb > 3 && n0 == 0);
+        pg_arm_set_display(a, ARM_OCTA, true); /* the octahedral bone stays straight */
+        frame();
+        nb = blue(sm);
+        n0 = blue(ss);
+        std::printf("    octahedral outline px: at the curve middle %d, at the straight middle %d\n", nb, n0);
+        CHECK(nb == 0 && n0 > 3);
+        pg_arm_set_display(a, ARM_WIRE, true);
+        frame();
+        const unsigned char *q = at(sm);
+        std::printf("    wire mid %d %d %d\n", q[0], q[1], q[2]);
+        CHECK(std::abs(q[0] - C_PSEL[0]) <= 20 && std::abs(q[1] - C_PSEL[1]) <= 20 && std::abs(q[2] - C_PSEL[2]) <= 20);
+        const float flat[PG_ARM_BBONE] = {1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1};
+        CHECK(pg_arm_bone_set_bbone(a, 1, 1, flat) == 1);
+        pg_arm_set_display(a, ARM_OCTA, true);
+      }
     }
     project_grease_view3d_set_active(0);
     pg_arm_register(gpd, nullptr);

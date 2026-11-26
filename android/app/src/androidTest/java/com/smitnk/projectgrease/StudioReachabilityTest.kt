@@ -52,7 +52,7 @@ class StudioReachabilityTest : SweepBase() {
         rule.onNodeWithTag("studioTool_Rig").performScrollTo().performClick(); rule.onNodeWithTag("rigSheet").assertExists()
         rule.onNodeWithTag("rigHelp").performClick(); rule.onNodeWithTag("rigGuide").assertExists()
         rule.onNodeWithTag("rigGuideClose").performClick(); back()
-        rule.onNodeWithTag("studioMode").performClick(); rule.onNodeWithTag("modeChip_POSE").performClick()
+        rule.onNodeWithTag("studioMode").performClick(); rule.onNodeWithTag("modeChip_POSE").performScrollTo().performClick() // last chip: clipped in the scrolling row
         rule.onNodeWithTag("needRig").assertExists(); rule.onNodeWithTag("needRigAdd").performClick()
         rule.waitUntil(5_000) { onUi { controller.rig.exists } }
         rule.onNodeWithTag("rigSheet").assertExists()

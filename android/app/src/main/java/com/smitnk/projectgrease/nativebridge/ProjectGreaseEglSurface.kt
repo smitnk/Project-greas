@@ -11,7 +11,9 @@ import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.min
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
 import com.smitnk.projectgrease.editor.EditorController
@@ -99,7 +101,8 @@ fun ProjectGreaseEglViewport(
         }
     }
     TransformOverlay(controller, Modifier.matchParentSize())
-    TransformAxisBar(controller, Modifier.align(androidx.compose.ui.Alignment.TopStart)) // X / Y / Z locks, Type value
+    // top 60 dp: below the floating Menu / Mode / Fit / All-tools bar, which otherwise sits over the X chip and eats its taps
+    TransformAxisBar(controller, Modifier.align(androidx.compose.ui.Alignment.TopStart).padding(top = 60.dp)) // X / Y / Z locks, Type value
     com.smitnk.projectgrease.ui.RigHandleOverlay(controller, Modifier.matchParentSize())
     View3DBar(controller, Modifier.align(androidx.compose.ui.Alignment.TopEnd)) // Camera / 3D switch
   }

@@ -7,6 +7,7 @@
  *    bone (not the action), onion-skin keys N-1 / N+1 deform with the pose of their own frame
  *    (copy-on-write per frame, the original untouched) and an exported frame K with the pose at K.
  * Built by tools/run_native_depsgraph_tests.sh. */
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -404,6 +405,118 @@ static void test_per_frame_cow()
   CHECK(same(points(b.evaluated_frame(l, key_at(l, 3), 3, true)), at_frame[1]));
 }
 
+/* A driven swap: layer "Mouth" keys 1, 2, 3 hold drawings 3, 2, 1 (drawing d: a stroke at x = 100 d);
+ * its Time Offset (Fixed Frame) offset = round(Swap's Loc X), keyed 3 at 1 and 1 at 3, so frame f
+ * shows drawing f. Onion keys and exported frames use the swap of their own frame (their depsgraph's
+ * evaluated GP copy); the document keeps the scene frame's value. */
+static float first_x(const bGPDframe *f) { const std::vector<float> p = points(f); return p.empty() ? -1.0f : p[0]; }
+static void test_per_frame_swap()
+{
+  Backend b;
+  CHECK(b.initialize());
+  CHECK(b.create_document() && b.create_layer("Mouth"));
+  PGStrokeInfo info = {};
+  info.thickness = 10;
+  for (int k = 1; k <= 3; k++) {
+    StrokePoint pts[2] = {};
+    for (int i = 0; i < 2; i++) { pts[i].x = 100.0f * (4 - k); pts[i].y = 300 + 100 * i; pts[i].pressure = pts[i].strength = 1; }
+    CHECK(b.create_frame(k) && b.select_frame(k) && b.add_stroke(pts, 2, info));
+  }
+  CHECK(b.modifier_add(0, PG_MOD_TIME) == 0);
+  int type = 0, enabled = 0;
+  float params[PG_MOD_MAX_PARAMS];
+  b.modifier_get(0, 0, &type, &enabled, params, PG_MOD_MAX_PARAMS);
+  params[PG_P_TIME_MODE] = 2; /* GP_TIME_MODE_FIX */
+  CHECK(b.modifier_set_params(0, 0, params, PG_MOD_MAX_PARAMS));
+  CHECK(cmd(b, PG_ARM_CMD_CREATE, -1, {}) == 1);
+  CHECK(cmd(b, PG_ARM_CMD_BONE_ADD, -1, {800, 600, 800, 300}, "Swap.Mouth") == 0);
+  CHECK(cmd(b, PG_ARM_CMD_DRIVER_ADD, -1, {0, DRIVER_TYPE_PYTHON, 0}, "layers[\"Mouth\"].modifiers[0].offset") == 0);
+  CHECK(cmd(b, PG_ARM_CMD_DRIVER_VAR_ADD, -1, {0, DVAR_TYPE_SINGLE_PROP}, "swap") == 0);
+  CHECK(cmd(b, PG_ARM_CMD_DRIVER_VAR_PATH, -1, {0, 0}, "pose.bones[\"Swap.Mouth\"].location[0]") == 1);
+  CHECK(cmd(b, PG_ARM_CMD_DRIVER_EXPRESSION, -1, {0}, "round(swap)") == 1);
+  CHECK(cmd(b, PG_ARM_CMD_SET_MODE, -1, {2}) == 1);
+  cmd(b, PG_ARM_CMD_POSE_SELECT, 0, {0});
+  for (int f : {1, 3}) {
+    CHECK(b.select_frame(f));
+    float q[64];
+    CHECK(pg_arm_bridge_query(b, PG_ARM_Q_POSE, 0, 0, q, 64) == 10);
+    q[0] = 4.0f - f;
+    CHECK(pg_arm_bridge_command(b, PG_ARM_CMD_POSE_SET, 0, q, 10, nullptr) >= 0);
+    CHECK(cmd(b, PG_ARM_CMD_KEY_INSERT, -1, {(float)f}) > 0);
+  }
+  bGPDlayer *l = layer_at(b, 0);
+  /* each frame as the scene frame shows drawing f */
+  for (int f = 1; f <= 3; f++) {
+    CHECK(b.select_frame(f));
+    NEAR(time_offset(b, 0), 4 - f, 0);
+    NEAR(first_x(b.evaluated_frame(l, key_at(l, f), f)), 100 * f, 1e-3);
+  }
+  /* scene at 2: the onion keys 1 and 3 show drawings 1 and 3 */
+  CHECK(b.select_frame(2));
+  NEAR(first_x(b.evaluated_frame(l, key_at(l, 1), 1, true)), 100, 1e-3);
+  NEAR(first_x(b.evaluated_frame(l, key_at(l, 3), 3, true)), 300, 1e-3);
+  /* export of frame 3 (scene still at 2) shows drawing 3 */
+  NEAR(first_x(b.evaluated_frame(l, key_at(l, 3), 3)), 300, 1e-3);
+  /* the original: the scene frame's offset, its strokes, and the shown frame */
+  NEAR(time_offset(b, 0), 2, 0);
+  NEAR(first_x(key_at(l, 1)), 300, 0);
+  NEAR(first_x(key_at(l, 3)), 100, 0);
+  NEAR(first_x(b.evaluated_frame(l, key_at(l, 2), 2)), 200, 1e-3);
+  /* a modifier edit drops the other frames' copies: Time Offset off, the ghost is its own key */
+  CHECK(b.modifier_set_enabled(0, 0, false));
+  NEAR(first_x(b.evaluated_frame(l, key_at(l, 1), 1, true)), 300, 1e-3);
+}
+
+/* Benchmark (printed, not checked): 3000 strokes on keys 1..8 of a layer with a bound Armature
+ * modifier and a driven Time Offset; the shown frame plus 3 onion keys each side, cold (after a
+ * scene frame change, every cache dropped) and warm (drawn again unchanged), and the shown frame
+ * alone (2D drawing without onion skin). */
+static double now_ms() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+static void bench_onion()
+{
+  Backend b;
+  CHECK(b.initialize());
+  CHECK(b.create_document() && b.create_layer("Body"));
+  PGStrokeInfo info = {};
+  info.thickness = 4;
+  CHECK(cmd(b, PG_ARM_CMD_CREATE, -1, {}) == 1);
+  CHECK(cmd(b, PG_ARM_CMD_BONE_ADD, -1, {500, 900, 500, 100}, "Arm") == 0);
+  for (int k = 1; k <= 8; k++) {
+    CHECK(b.create_frame(k) && b.select_frame(k));
+    for (int s = 0; s < 375; s++) {
+      StrokePoint pts[8] = {};
+      for (int i = 0; i < 8; i++) { pts[i].x = 100 + (s % 25) * 30 + i * 3; pts[i].y = 100 + (s / 25) * 50 + i * 4; pts[i].pressure = pts[i].strength = 1; }
+      CHECK(b.add_stroke(pts, 8, info));
+    }
+  }
+  CHECK(cmd(b, PG_ARM_CMD_BIND, -1, {2}) >= 0);
+  CHECK(b.modifier_add(0, PG_MOD_TIME) >= 0);
+  CHECK(cmd(b, PG_ARM_CMD_DRIVER_ADD, -1, {0, DRIVER_TYPE_PYTHON, 0}, "layers[\"Body\"].modifiers[1].offset") == 0);
+  CHECK(cmd(b, PG_ARM_CMD_DRIVER_EXPRESSION, -1, {0}, "0") == 1);
+  CHECK(cmd(b, PG_ARM_CMD_SET_MODE, -1, {2}) == 1);
+  cmd(b, PG_ARM_CMD_POSE_SELECT, 0, {0});
+  CHECK(b.select_frame(1) && cmd(b, PG_ARM_CMD_KEY_INSERT, -1, {1}) > 0);
+  CHECK(cmd(b, PG_ARM_CMD_POSE_ROTATE, -1, {0.5f}) == 1 && cmd(b, PG_ARM_CMD_KEY_INSERT, -1, {8}) > 0);
+  bGPDlayer *l = layer_at(b, 0);
+  const int runs = 10;
+  double cold = 0, warm = 0, plain = 0;
+  for (int r = 0; r < runs; r++) {
+    const int c = 4 + (r & 1);
+    CHECK(b.select_frame(c));
+    double t = now_ms();
+    for (int f = c - 3; f <= c + 3; f++) b.evaluated_frame(l, key_at(l, f), f, f != c);
+    cold += now_ms() - t;
+    t = now_ms();
+    for (int f = c - 3; f <= c + 3; f++) b.evaluated_frame(l, key_at(l, f), f, f != c);
+    warm += now_ms() - t;
+    t = now_ms();
+    b.evaluated_frame(l, key_at(l, c), c);
+    plain += now_ms() - t;
+  }
+  printf("BENCH onion 3+3, 3000 strokes: cold %.2f ms, warm %.3f ms, shown frame alone %.4f ms\n",
+         cold / runs, warm / runs, plain / runs);
+}
+
 int main()
 {
   float fwd[8], rev[8];
@@ -415,6 +528,8 @@ int main()
   test_load_then_evaluate(json, false);
   test_pose_edit_refreshes_drivers();
   test_per_frame_cow();
+  test_per_frame_swap();
+  bench_onion();
   printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "OK", checks, failures);
   return failures ? 1 : 0;
 }

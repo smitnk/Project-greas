@@ -5,7 +5,9 @@
  * update tags flushed as deg_eval_flush.cc and operations run in dependency order as deg_eval.cc's
  * single-threaded pass. Each graph owns a copy-on-write copy of the rig (the evaluated object);
  * the active graph (the scene's) flushes results back to the original as Blender does for
- * DEG_is_active, others (another frame: onion skin, export) leave the original untouched.
+ * DEG_is_active, others (another frame: onion skin, export) leave the original untouched and
+ * write the GP values their drivers set (layer opacity / hide, Time Offset) into their own
+ * evaluated copy of the GP data (PGDegGPencilCopy, the ID_GD copy-on-write).
  * Names keep the pg_ prefix where the link closure already has a DEG_ stub. */
 #pragma once
 
@@ -41,6 +43,18 @@ void pg_deg_set_rig(struct Depsgraph *graph, PGArmature *orig, bool defer);
 void pg_deg_set_gpencil(struct Depsgraph *graph, const struct bGPdata *gpd,
                         const struct PGArmExternal *ext, void (*geometry_eval)(void *user),
                         void *user);
+/* The copy-on-write of the GP data (ID_GD) in the graphs of other frames: copy makes the evaluated
+ * copy of the caller's document (gpencil_copy_structure_for_eval: the structure the drivers write,
+ * strokes shared with the original), get / set resolve the driver paths on that copy, free drops it.
+ * Without one (or for the active graph) the external paths are the original document (ext above). */
+typedef struct PGDegGPencilCopy {
+  void *user;
+  void *(*copy)(void *user);
+  void (*free)(void *copy);
+  bool (*get)(void *copy, const char *path, int index, float *r_value);
+  bool (*set)(void *copy, const char *path, int index, float value);
+} PGDegGPencilCopy;
+void pg_deg_set_gpencil_copy(struct Depsgraph *graph, const PGDegGPencilCopy *cow);
 /* DEG_relations_tag_update: rebuild before the next evaluation. */
 void pg_deg_relations_tag_update(struct Depsgraph *graph);
 /* DEG_id_tag_update: id PG_DEG_ID_*, recalc ID_RECALC_* (DNA_ID.h). */
@@ -59,6 +73,13 @@ PGArmature *pg_deg_rig_evaluated(struct Depsgraph *graph);
  * kept until the original changes). Without a registered graph, the rig pg_arm_register gave. */
 const PGArmature *pg_deg_rig_for_frame(const struct bGPdata *gpd, int frame);
 
+/* The evaluated GP copy (PGDegGPencilCopy.copy's result) of the non-active graph of `frame`, its
+ * drivers evaluated at `frame` (made and cached as pg_deg_rig_for_frame's rig, the same graph).
+ * NULL at the scene frame, without a rig, or without a registered copy callback. */
+void *pg_deg_gpencil_for_frame(const struct bGPdata *gpd, int frame);
+/* Drops the cached graphs of other frames (an edit the depsgraph is not told about). */
+void pg_deg_free_frames(struct Depsgraph *graph);
+
 /* A one-shot active graph of `a` at `frame` (pg_arm_evaluate_ex): action, drivers and pose in
  * dependency order, flushed back to `a`. */
 void pg_deg_rig_evaluate(PGArmature *a, float frame, const struct PGArmExternal *ext);
@@ -69,6 +90,9 @@ float pg_deg_get_ctime(const struct Depsgraph *graph);
 struct ID *pg_deg_get_original_id(struct ID *id);
 /* The external paths of the graph (NULL: none). */
 const struct PGArmExternal *pg_deg_external(const struct Depsgraph *graph);
+/* Whether drivers write the external paths: the active graph (into the original) or a graph with
+ * its own GP copy. */
+bool pg_deg_writes_external(const struct Depsgraph *graph);
 
 /* Debug (tests): the operations the last evaluation ran, in order, as "OPCODE(name)" separated by
  * spaces ("BONE_DONE(Arm)", "DRIVER(pose.bones[\"B\"].location[1])"); returns the length. */

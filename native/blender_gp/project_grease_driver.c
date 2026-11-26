@@ -1417,7 +1417,7 @@ void pg_animsys_eval_animdata(struct Depsgraph *depsgraph, PGArmature *a)
 {
   const bool flush_to_original = pg_deg_is_active(depsgraph);
   const AnimationEvalContext anim_eval_context = {
-      a, pg_deg_external(depsgraph), pg_deg_get_ctime(depsgraph), flush_to_original};
+      a, pg_deg_external(depsgraph), pg_deg_get_ctime(depsgraph), pg_deg_writes_external(depsgraph)};
   LISTBASE_FOREACH (FCurve *, fcu, &a->curves) {
     /* is_fcurve_evaluatable */
     if ((fcu->flag & (FCURVE_MUTED | FCURVE_DISABLED)) ||
@@ -1455,7 +1455,7 @@ void pg_animsys_eval_driver(struct Depsgraph *depsgraph, PGArmature *a, int driv
     if ((driver_orig) && !(driver_orig->flag & DRIVER_FLAG_INVALID)) {
       const bool is_active = pg_deg_is_active(depsgraph);
       const AnimationEvalContext anim_eval_context = {
-          a, pg_deg_external(depsgraph), pg_deg_get_ctime(depsgraph), is_active};
+          a, pg_deg_external(depsgraph), pg_deg_get_ctime(depsgraph), pg_deg_writes_external(depsgraph)};
       PGPath path;
       if (path_parse(fcu->rna_path, &path, false) &&
           path_resolves(&anim_eval_context, &path, fcu->array_index))

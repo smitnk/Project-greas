@@ -185,6 +185,9 @@ struct Depsgraph {
   int cycles = 0;
   /* Non-active graphs of other frames (pg_deg_rig_for_frame). */
   std::map<int, Depsgraph *> frames;
+  /* ID_GD copy-on-write: the callbacks (the graph of the scene) and, in a frame's graph, its copy. */
+  PGDegGPencilCopy gp_cow_cb{};
+  void *gp_cow = nullptr;
 
   Object *eval_object() { return inplace ? inplace : (cow ? &cow->ob : nullptr); }
   Object *orig_object() { return inplace ? inplace : (orig ? &orig->ob : nullptr); }
@@ -1355,6 +1358,7 @@ void pg_deg_free(Depsgraph *g)
   free_frames(g);
   graph_clear(g);
   if (g->cow) pg_arm_free(g->cow);
+  if (g->gp_cow && g->gp_cow_cb.free) g->gp_cow_cb.free(g->gp_cow);
   delete g;
 }
 
@@ -1449,26 +1453,64 @@ void pg_deg_set_scene_frame(Depsgraph *g, int frame)
 PGArmature *pg_deg_rig_evaluated(Depsgraph *g) { return g ? g->cow : nullptr; }
 PGArmature *pg_deg_rig_original(Depsgraph *g) { return g ? g->orig : nullptr; }
 
-const PGArmature *pg_deg_rig_for_frame(const bGPdata *gpd, int frame)
+/* The non-active graph of `frame` (made once, kept until the original changes). Its GP data is
+ * copied first (deg_update_copy_on_write_datablock of ID_GD), so its drivers write into the copy. */
+static Depsgraph *frame_graph(Depsgraph *g, int frame)
+{
+  auto it = g->frames.find(frame);
+  if (it != g->frames.end()) return it->second;
+  /* shortcut: at most 32 other frames are kept, all are dropped past that */
+  if (g->frames.size() >= 32) free_frames(g);
+  Depsgraph *f = pg_deg_new(false);
+  if (g->gp_cow_cb.copy) {
+    f->gp_cow_cb = g->gp_cow_cb;
+    f->gp_cow = g->gp_cow_cb.copy(g->gp_cow_cb.user);
+    const PGArmExternal ext = {f->gp_cow, g->gp_cow_cb.get, g->gp_cow_cb.set};
+    pg_deg_set_gpencil(f, nullptr, &ext, nullptr, nullptr);
+  }
+  else {
+    pg_deg_set_gpencil(f, nullptr, g->has_ext ? &g->ext : nullptr, nullptr, nullptr);
+  }
+  pg_deg_set_rig(f, g->orig, false);
+  pg_deg_evaluate_on_framechange(f, (float)frame);
+  return g->frames.emplace(frame, f).first->second;
+}
+
+static Depsgraph *registered_graph(const bGPdata *gpd)
 {
   Depsgraph *g = nullptr;
   for (const Registry &r : g_registry) {
     if (r.gpd == gpd) g = r.graph;
   }
+  return g;
+}
+
+const PGArmature *pg_deg_rig_for_frame(const bGPdata *gpd, int frame)
+{
+  Depsgraph *g = registered_graph(gpd);
   if (!g) return pg_arm_for_gpd(gpd);
   if (!g->orig) return nullptr;
   if (frame == g->scene_frame) return g->cow ? g->cow : g->orig;
-  auto it = g->frames.find(frame);
-  if (it == g->frames.end()) {
-    /* shortcut: at most 32 other frames are kept, all are dropped past that */
-    if (g->frames.size() >= 32) free_frames(g);
-    Depsgraph *f = pg_deg_new(false);
-    pg_deg_set_gpencil(f, nullptr, g->has_ext ? &g->ext : nullptr, nullptr, nullptr);
-    pg_deg_set_rig(f, g->orig, false);
-    pg_deg_evaluate_on_framechange(f, (float)frame);
-    it = g->frames.emplace(frame, f).first;
-  }
-  return it->second->cow;
+  return frame_graph(g, frame)->cow;
+}
+
+void *pg_deg_gpencil_for_frame(const bGPdata *gpd, int frame)
+{
+  Depsgraph *g = registered_graph(gpd);
+  if (!g || !g->orig || !g->gp_cow_cb.copy || frame == g->scene_frame) return nullptr;
+  return frame_graph(g, frame)->gp_cow;
+}
+
+void pg_deg_set_gpencil_copy(Depsgraph *g, const PGDegGPencilCopy *cow)
+{
+  if (!g) return;
+  free_frames(g);
+  g->gp_cow_cb = cow ? *cow : PGDegGPencilCopy{};
+}
+
+void pg_deg_free_frames(Depsgraph *g)
+{
+  if (g) free_frames(g);
 }
 
 bool pg_deg_is_active(const Depsgraph *g) { return g && g->is_active; }
@@ -1479,6 +1521,7 @@ ID *pg_deg_get_original_id(ID *id)
   return id->orig_id;
 }
 const PGArmExternal *pg_deg_external(const Depsgraph *g) { return g && g->has_ext ? &g->ext : nullptr; }
+bool pg_deg_writes_external(const Depsgraph *g) { return g && (g->is_active || g->gp_cow); }
 
 int pg_deg_debug_last_order(const Depsgraph *g, char *buf, int cap)
 {

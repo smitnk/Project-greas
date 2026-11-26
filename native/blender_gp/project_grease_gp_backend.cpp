@@ -244,6 +244,7 @@ struct HistorySnapshot {
 struct EvalCacheEntry {
   const bGPDlayer *layer = nullptr;
   const bGPDframe *source = nullptr;
+  const bGPDframe *key = nullptr; /* the key asked for (source: the one Time Offset picked) */
   int cfra = 0;
   bool ghost = false; /* an onion-skin key (one entry per key), else the layer's shown frame */
   // The key is (layer, source) pointers AND these ids: a freed layer / frame whose address is reused
@@ -402,6 +403,9 @@ static std::vector<PGFxEntry> *layer_fx(Backend::Impl *impl, int layer_index)
 }
 
 static void arm_refresh(Backend::Impl *impl);
+struct GPEvalCopy;
+static const GPEvalCopy *gp_copy_for_frame(Backend::Impl *impl, int frame);
+static const std::vector<PGModEntry> *gp_copy_stack(const GPEvalCopy *c, int index, bool *r_hidden);
 
 /* The evaluated copy of `current` for `layer`, or `current` itself when the layer has no enabled
  * modifier. The copy is cached until an edit, a frame change or a stack change. */
@@ -417,7 +421,12 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   if (index < 0 || static_cast<size_t>(index) >= impl->stacks.size()) {
     return current;
   }
-  const std::vector<PGModEntry> &stack = impl->stacks[static_cast<size_t>(index)];
+  /* Another frame (an onion key, an exported frame): its depsgraph's evaluated GP copy, with the
+   * values its drivers set at that frame (a driven swap, opacity, hide). */
+  const GPEvalCopy *cow = frame_number != impl->cfra ? gp_copy_for_frame(impl, frame_number) : nullptr;
+  bool hidden = false;
+  const std::vector<PGModEntry> *cow_stack = gp_copy_stack(cow, index, &hidden);
+  const std::vector<PGModEntry> &stack = cow_stack ? *cow_stack : impl->stacks[static_cast<size_t>(index)];
   bool any_enabled = false;
   bool time_offset = false;
   for (const PGModEntry &e : stack) {
@@ -428,10 +437,12 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
     return current;
   }
   // Time Offset (MOD_gpencil_legacy_time.c): the layer shows the keyframe at the remapped frame
-  // number; before the first keyframe nothing is shown (an empty evaluated frame).
-  bool empty_source = false;
+  // number; before the first keyframe nothing is shown (an empty evaluated frame). An onion key is
+  // drawn as itself (Blender draws ghosts unmodified), except that with a rig its frame's driven
+  // swap picks the drawing, as its pose deforms it: the ghost shows what frame N shows.
+  bool empty_source = hidden; /* hidden at that frame by a driver */
   const bGPDframe *key = current;
-  if (time_offset && !ghost) {
+  if (time_offset && (!ghost || cow)) {
     const int f = pg_mod_time_frame(stack.data(), static_cast<int>(stack.size()), frame_number);
     const bGPDframe *found = nullptr;
     for (const bGPDframe *gpf = static_cast<const bGPDframe *>(layer->frames.first); gpf; gpf = gpf->next) {
@@ -442,7 +453,7 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   }
   EvalCacheEntry *target = nullptr;
   for (auto &entry : impl->eval_cache) {
-    if (entry->layer == layer && entry->ghost == ghost && (!ghost || entry->source == key)) {
+    if (entry->layer == layer && entry->ghost == ghost && (!ghost || entry->key == key)) {
       target = entry.get();
       break;
     }
@@ -458,6 +469,7 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
     target = impl->eval_cache.back().get();
     target->layer = layer;
     target->ghost = ghost;
+    target->key = key;
   }
   else {
     pg_mod_eval_free(&target->frame);
@@ -624,6 +636,10 @@ static std::shared_ptr<PGArmature> arm_share(PGArmature *a)
 
 static bool arm_external_get(void *user, const char *path, int index, float *r_value);
 static bool arm_external_set(void *user, const char *path, int index, float value);
+static void *gp_copy_make(void *user);
+static void gp_copy_free(void *c);
+static bool gp_copy_get(void *c, const char *path, int index, float *r_value);
+static bool gp_copy_set(void *c, const char *path, int index, float value);
 
 /* The GP object's GEOMETRY_EVAL (BKE_gpencil_modifiers_calc): the evaluated frames are made again,
  * lazily (evaluated_frame); a value a driver wrote into the document tags it. */
@@ -639,7 +655,11 @@ static void arm_geometry_eval(void *user)
 static Depsgraph *arm_graph(Backend::Impl *impl)
 {
   if (impl->gpd) pg_arm_register(impl->gpd, impl->armature.get());
-  if (!impl->depsgraph) impl->depsgraph = pg_deg_new(true);
+  if (!impl->depsgraph) {
+    impl->depsgraph = pg_deg_new(true);
+    const PGDegGPencilCopy cow = {impl, gp_copy_make, gp_copy_free, gp_copy_get, gp_copy_set};
+    pg_deg_set_gpencil_copy(impl->depsgraph, &cow);
+  }
   const PGArmExternal ext = {impl, arm_external_get, arm_external_set};
   pg_deg_set_gpencil(impl->depsgraph, impl->gpd, &ext, arm_geometry_eval, impl);
   pg_deg_set_scene_frame(impl->depsgraph, impl->cfra);
@@ -661,14 +681,48 @@ static void arm_refresh(Backend::Impl *impl)
   pg_deg_evaluate_on_refresh(impl->depsgraph);
 }
 
+/* Where the driver paths outside the rig resolve: the document itself (the active graph) or the
+ * evaluated GP copy of another frame (GPEvalCopy: per-layer flag / opacity and modifier stacks). */
+struct ExtTarget {
+  const bGPdata *gpd;
+  ModifierStacks *stacks;
+  short *flag;    /* per layer, or null: bGPDlayer.flag */
+  float *opacity; /* per layer, or null: bGPDlayer.opacity */
+  bool *changed;
+};
+
+/* The evaluated copy of the GP data in the depsgraph of another frame (onion skin, export): the
+ * values drivers write (gpencil_copy_structure_for_eval copies the structure, not the strokes;
+ * here the strokes, layers and frames stay the original's and only the driven values are copied).
+ * The ids say which document state it was copied from. */
+struct GPEvalCopy {
+  std::vector<short> flag;
+  std::vector<float> opacity;
+  ModifierStacks stacks;
+  uint64_t revision = 0, stack_revision = 0, doc_generation = 0;
+  bool changed = false;
+  const bGPdata *gpd = nullptr;
+};
+
+static ExtTarget ext_target(Backend::Impl *impl)
+{
+  if (impl->gpd) impl->stacks.resize(static_cast<size_t>(layer_total(impl->gpd)));
+  return {impl->gpd, &impl->stacks, nullptr, nullptr, &impl->arm_ext_changed};
+}
+static ExtTarget ext_target(GPEvalCopy *c)
+{
+  return {c->gpd, &c->stacks, c->flag.data(), c->opacity.data(), &c->changed};
+}
+
 /* Driver paths outside the rig (project_grease_driver.h): layers["L"].opacity / hide and
  * layers["L"].modifiers[N].offset / frame_scale (the Time Offset modifier N of layer L). Values are
  * coerced as BKE_animsys_write_to_rna_path does with the RNA ranges of rna_gpencil_legacy.c and
- * rna_gpencil_legacy_modifier.c. */
-static float *arm_external_value(Backend::Impl *impl, const char *path, bool *r_bool, float *r_min,
-                                 float *r_max, bool *r_int)
+ * rna_gpencil_legacy_modifier.c. r_flag: the layer's flag (hide). */
+static float *arm_external_value(const ExtTarget &t, const char *path, bool *r_bool, float *r_min,
+                                 float *r_max, bool *r_int, short **r_flag)
 {
-  if (!impl->gpd || std::strncmp(path, "layers[\"", 8) != 0) return nullptr;
+  *r_flag = nullptr;
+  if (!t.gpd || std::strncmp(path, "layers[\"", 8) != 0) return nullptr;
   const char *p = path + 8;
   std::string name;
   while (*p && *p != '"') {
@@ -679,48 +733,41 @@ static float *arm_external_value(Backend::Impl *impl, const char *path, bool *r_
   p += 2;
   int index = 0;
   bGPDlayer *gpl = nullptr;
-  LISTBASE_FOREACH_INDEX (bGPDlayer *, l, &impl->gpd->layers, index) {
+  LISTBASE_FOREACH_INDEX (bGPDlayer *, l, &t.gpd->layers, index) {
     if (name == l->info) { gpl = l; break; }
   }
-  if (!gpl) return nullptr;
+  if (!gpl || index >= (int)t.stacks->size()) return nullptr;
   *r_bool = *r_int = false;
-  if (std::strcmp(p, ".opacity") == 0) { *r_min = 0.0f; *r_max = 1.0f; return &gpl->opacity; }
-  if (std::strcmp(p, ".hide") == 0) { *r_bool = true; return nullptr; }
+  if (std::strcmp(p, ".opacity") == 0) {
+    *r_min = 0.0f; *r_max = 1.0f;
+    return t.opacity ? &t.opacity[index] : &gpl->opacity;
+  }
+  if (std::strcmp(p, ".hide") == 0) {
+    *r_bool = true;
+    *r_flag = t.flag ? &t.flag[index] : &gpl->flag;
+    return nullptr;
+  }
   int mod = -1, used = 0;
   char prop[32] = "";
   if (std::sscanf(p, ".modifiers[%d].%31s%n", &mod, prop, &used) != 2 || p[used] != '\0') return nullptr;
-  std::vector<PGModEntry> *stack = layer_stack(impl, index);
-  if (!stack || mod < 0 || mod >= (int)stack->size() || (*stack)[(size_t)mod].type != PG_MOD_TIME) return nullptr;
-  float *params = (*stack)[(size_t)mod].params;
+  std::vector<PGModEntry> &stack = (*t.stacks)[(size_t)index];
+  if (mod < 0 || mod >= (int)stack.size() || stack[(size_t)mod].type != PG_MOD_TIME) return nullptr;
+  float *params = stack[(size_t)mod].params;
   if (std::strcmp(prop, "offset") == 0) { *r_int = true; *r_min = -32768.0f; *r_max = 32767.0f; return &params[PG_P_TIME_OFFSET]; }
   if (std::strcmp(prop, "frame_scale") == 0) { *r_min = 0.001f; *r_max = 100.0f; return &params[PG_P_TIME_SCALE]; }
   return nullptr;
 }
 
-static bGPDlayer *arm_external_layer(Backend::Impl *impl, const char *path)
+static bool ext_get(const ExtTarget &t, const char *path, int index, float *r_value)
 {
-  bool b, i;
-  float lo, hi;
-  if (!arm_external_value(impl, path, &b, &lo, &hi, &i) && !b) return nullptr;
-  std::string name;
-  for (const char *p = path + 8; *p && *p != '"'; p++) {
-    if (*p == '\\' && p[1]) p++;
-    name += *p;
-  }
-  return static_cast<bGPDlayer *>(BLI_findstring(&impl->gpd->layers, name.c_str(), offsetof(bGPDlayer, info)));
-}
-
-static bool arm_external_get(void *user, const char *path, int index, float *r_value)
-{
-  Backend::Impl *impl = static_cast<Backend::Impl *>(user);
   bool is_bool, is_int;
   float lo, hi;
-  float *v = arm_external_value(impl, path, &is_bool, &lo, &hi, &is_int);
+  short *flag;
+  float *v = arm_external_value(t, path, &is_bool, &lo, &hi, &is_int, &flag);
   if (index > 0) return false;
   if (is_bool) {
-    bGPDlayer *gpl = arm_external_layer(impl, path);
-    if (!gpl) return false;
-    *r_value = (gpl->flag & GP_LAYER_HIDE) ? 1.0f : 0.0f;
+    if (!flag) return false;
+    *r_value = (*flag & GP_LAYER_HIDE) ? 1.0f : 0.0f;
     return true;
   }
   if (!v) return false;
@@ -728,28 +775,90 @@ static bool arm_external_get(void *user, const char *path, int index, float *r_v
   return true;
 }
 
-static bool arm_external_set(void *user, const char *path, int index, float value)
+static bool ext_set(const ExtTarget &t, const char *path, int index, float value)
 {
-  Backend::Impl *impl = static_cast<Backend::Impl *>(user);
   bool is_bool, is_int;
   float lo, hi;
-  float *v = arm_external_value(impl, path, &is_bool, &lo, &hi, &is_int);
+  short *flag;
+  float *v = arm_external_value(t, path, &is_bool, &lo, &hi, &is_int, &flag);
   if (index > 0) return false;
   if (is_bool) {
-    bGPDlayer *gpl = arm_external_layer(impl, path);
-    if (!gpl) return false;
+    if (!flag) return false;
     /* ANIMSYS_FLOAT_AS_BOOL */
-    const int flag = value > (1.0f - FLT_EPSILON) ? (gpl->flag | GP_LAYER_HIDE) : (gpl->flag & ~GP_LAYER_HIDE);
-    impl->arm_ext_changed |= flag != gpl->flag;
-    gpl->flag = (short)flag;
+    const int f = value > (1.0f - FLT_EPSILON) ? (*flag | GP_LAYER_HIDE) : (*flag & ~GP_LAYER_HIDE);
+    *t.changed |= f != *flag;
+    *flag = (short)f;
     return true;
   }
   if (!v) return false;
   if (is_int) value = (float)(int)value; /* (int)value, then RNA_property_int_clamp */
   value = std::min(std::max(value, lo), hi);
-  impl->arm_ext_changed |= *v != value;
+  *t.changed |= *v != value;
   *v = value;
   return true;
+}
+
+static bool arm_external_get(void *user, const char *path, int index, float *r_value)
+{
+  return ext_get(ext_target(static_cast<Backend::Impl *>(user)), path, index, r_value);
+}
+static bool arm_external_set(void *user, const char *path, int index, float value)
+{
+  return ext_set(ext_target(static_cast<Backend::Impl *>(user)), path, index, value);
+}
+
+/* PGDegGPencilCopy: deg_update_copy_on_write_datablock of the document for another frame's graph. */
+static void *gp_copy_make(void *user)
+{
+  Backend::Impl *impl = static_cast<Backend::Impl *>(user);
+  GPEvalCopy *c = new GPEvalCopy();
+  c->gpd = impl->gpd;
+  if (impl->gpd) {
+    impl->stacks.resize(static_cast<size_t>(layer_total(impl->gpd)));
+    LISTBASE_FOREACH (const bGPDlayer *, l, &impl->gpd->layers) {
+      c->flag.push_back(l->flag);
+      c->opacity.push_back(l->opacity);
+    }
+  }
+  c->stacks = impl->stacks;
+  c->revision = g_gp_data_revision;
+  c->stack_revision = impl->stack_revision;
+  c->doc_generation = impl->doc_generation;
+  return c;
+}
+static void gp_copy_free(void *c) { delete static_cast<GPEvalCopy *>(c); }
+static bool gp_copy_get(void *c, const char *path, int index, float *r_value)
+{
+  return ext_get(ext_target(static_cast<GPEvalCopy *>(c)), path, index, r_value);
+}
+static bool gp_copy_set(void *c, const char *path, int index, float value)
+{
+  return ext_set(ext_target(static_cast<GPEvalCopy *>(c)), path, index, value);
+}
+
+/* The evaluated GP data at `frame` (another frame's depsgraph), or null (the scene frame, no rig).
+ * A copy made before an edit the depsgraph was not tagged with (strokes, layers, a modifier) is
+ * dropped with every other frame's graph. */
+static const std::vector<PGModEntry> *gp_copy_stack(const GPEvalCopy *c, int index, bool *r_hidden)
+{
+  if (!c || index < 0 || (size_t)index >= c->stacks.size()) return nullptr;
+  *r_hidden = (c->flag[(size_t)index] & GP_LAYER_HIDE) != 0;
+  return &c->stacks[(size_t)index];
+}
+
+static const GPEvalCopy *gp_copy_for_frame(Backend::Impl *impl, int frame)
+{
+  if (!impl->depsgraph || !impl->gpd) return nullptr;
+  for (int pass = 0; pass < 2; pass++) {
+    const GPEvalCopy *c = static_cast<const GPEvalCopy *>(pg_deg_gpencil_for_frame(impl->gpd, frame));
+    if (!c || (c->revision == g_gp_data_revision && c->stack_revision == impl->stack_revision &&
+               c->doc_generation == impl->doc_generation && c->flag.size() == (size_t)layer_total(impl->gpd)))
+    {
+      return c;
+    }
+    pg_deg_free_frames(impl->depsgraph);
+  }
+  return nullptr;
 }
 
 /* Scene frame changed: deg_evaluate_on_framechange (the action drives the pose). */

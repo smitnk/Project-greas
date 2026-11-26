@@ -57,8 +57,9 @@ class SweepRigUiTest : SweepBase() {
         val cx = w / 2f; val cy = h / 2f
 
         // 1. Pose needs an armature; Object mode works without one
-        mode("POSE"); assertEquals("DRAW", onUi { controller.studioModeName })
-        mode("OBJECT"); assertEquals("OBJECT", onUi { controller.studioModeName })
+        // each opens the "No armature yet" prompt; dismiss it as a user would (Compose clicks pass through a dialog window, real touches don't)
+        mode("POSE"); assertEquals("DRAW", onUi { controller.studioModeName }); click("needRigNotNow")
+        mode("OBJECT"); assertEquals("OBJECT", onUi { controller.studioModeName }); click("needRigNotNow")
 
         // 2. armature panel: add, add bone, extrude, rename, parent, display, In Front
         openRig(); click("rigAdd")

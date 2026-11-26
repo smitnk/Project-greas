@@ -1779,11 +1779,12 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             }
             StudioPopup.NONE->Unit
         }
-        needRig?.let{label->
+        // stale once an armature exists (added from the panel while the prompt was still up): it would eat the next canvas touch
+        needRig?.takeIf{!controller.rig.exists}?.let{label->
             AlertDialog(onDismissRequest={needRig=null},modifier=Modifier.testTag("needRig"),
                 title={Text("No armature yet")},text={Text("$label mode needs an armature. Add one first.")},
                 confirmButton={TextButton({needRig=null;addArmature(controller,redraw);onSheet(Sheet.RIG)},Modifier.testTag("needRigAdd")){Text("Add Armature")}},
-                dismissButton={TextButton({needRig=null}){Text("Not now")}})
+                dismissButton={TextButton({needRig=null},Modifier.testTag("needRigNotNow")){Text("Not now")}})
         }
     }
 }

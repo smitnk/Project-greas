@@ -20,7 +20,7 @@ import org.junit.Test
  */
 class StudioReachabilityTest : SweepBase() {
     private val menuItems = listOf("save", "project", "tools", "materials", "draw", "advanced", "layers", "effects",
-        "onion", "timeline", "edit", "importPhoto", "importVideo", "importAudio", "rotoscope", "audio", "settings", "crash", "activity")
+        "onion", "timeline", "edit", "importPhoto", "importVideo", "importAudio", "rotoscope", "audio", "settings", "crash", "activity", "rigGuide")
     // pickers, leaving the editor, and dialogs nested in the menu: presence only (one Back must close what opened)
     private val noClick = setOf("save", "importPhoto", "importVideo", "importAudio", "settings", "crash", "activity")
 
@@ -29,7 +29,7 @@ class StudioReachabilityTest : SweepBase() {
     @Test fun railAndTopBarReachable() {
         listOf("Menu", "Mode", "Fit canvas", "All tools", "Hide tools", "Undo", "Redo", "Copy", "Paste")
             .forEach { rule.onNodeWithContentDescription(it).assertExists() }
-        listOf("Brush", "Eraser", "Lasso", "Fill", "Brush size", "Layers", "Perspective", "Options")
+        listOf("Brush", "Eraser", "Lasso", "Fill", "Brush size", "Layers", "Rig", "Perspective", "Options")
             .forEach { rule.onNodeWithTag("studioTool_$it").performScrollTo().assertHasClickAction() }
         rule.onNodeWithTag("studioColor").performScrollTo().assertHasClickAction()
         rule.onNodeWithTag("toolbarHide").performScrollTo().performClick(); rule.onNodeWithTag("toolbarShow").assertExists()
@@ -46,6 +46,16 @@ class StudioReachabilityTest : SweepBase() {
         rule.onNodeWithTag("modeChip_EDIT").performClick()
         rule.waitUntil(5_000) { onUi { controller.mode.name == "EDIT" } }
         shot("StudioReachability_modes")
+    }
+
+    @Test fun rigDiscoverable() {
+        rule.onNodeWithTag("studioTool_Rig").performScrollTo().performClick(); rule.onNodeWithTag("rigSheet").assertExists()
+        rule.onNodeWithTag("rigHelp").performClick(); rule.onNodeWithTag("rigGuide").assertExists()
+        rule.onNodeWithTag("rigGuideClose").performClick(); back()
+        rule.onNodeWithTag("studioMode").performClick(); rule.onNodeWithTag("modeChip_POSE").performClick()
+        rule.onNodeWithTag("needRig").assertExists(); rule.onNodeWithTag("needRigAdd").performClick()
+        rule.waitUntil(5_000) { onUi { controller.rig.exists } }
+        rule.onNodeWithTag("rigSheet").assertExists()
     }
 
     @Test fun timelineDragsToFull() {

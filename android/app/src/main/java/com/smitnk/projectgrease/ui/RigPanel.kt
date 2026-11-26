@@ -81,7 +81,12 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
     fun done(ok: Boolean = true) { if (ok) controller.history.markEdit(); controller.render(); tick++; redraw() }
     tick // re-reads the native rig after each edit
 
-    Text("Armature", style = MaterialTheme.typography.titleLarge)
+    var guide by remember { mutableStateOf(false) }
+    if (guide) RigGuide { guide = false }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Armature", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        androidx.compose.material3.TextButton({ guide = true }, Modifier.heightIn(min = 48.dp).semantics { contentDescription = "How to rig" }.testTag("rigHelp")) { Text("?") }
+    }
     if (!rig.exists) {
         Op("Add Armature", "rigAdd") { // object.armature_add with Enter Edit Mode: the same mode switch as the mode chip (leaves Object mode)
             if (rig.create()) { controller.setActiveObject(true); controller.modeToggle("GPENCIL_OT_editmode_toggle") }; done() }

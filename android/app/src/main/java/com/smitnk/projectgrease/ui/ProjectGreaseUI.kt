@@ -51,7 +51,7 @@ private val CanvasBg = Color(0xFF121315)
 private enum class Screen { HOME, NEW, EDITOR, SETTINGS }
 /** The 3D reference / Line Art screen (OBJ + camera): off until it's wanted again. */
 private const val SHOW_3D_REFERENCE = false
-private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS, AUDIO, IMPORT_PHOTO, IMPORT_VIDEO, IMPORT_AUDIO, RIG }
+private enum class Sheet { NONE, PROJECT, TOOLS, LAYERS, MATERIALS, ONION, ADVANCED, MORE, REFERENCE, ROTOSCOPE, LAYER_ADVANCED, MENU, DRAW_SETTINGS, TIMELINE, EFFECTS, AUDIO, IMPORT_PHOTO, IMPORT_VIDEO, IMPORT_AUDIO, RIG, RIG_GUIDE }
 private data class Preset(val name:String,val width:Int,val height:Int,val fps:Int)
 private data class ToolEntry(val tool:GreaseTool,val icon:ImageVector,val label:String,val feature:FeatureId)
 
@@ -480,6 +480,7 @@ fun ProjectGreaseApp(controller:EditorController,blenderViewport:@Composable Box
         Sheet.EFFECTS->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom=20.dp)){LayerEffectsSection(controller,::redraw)}}
         Sheet.TIMELINE->ModalBottomSheet(onDismissRequest={sheet=Sheet.NONE}){Timeline(controller,::redraw,{fpsDialog=true},{sheet=Sheet.AUDIO})}
         Sheet.RIG->RigSheet(controller,{sheet=Sheet.NONE},::redraw)
+        Sheet.RIG_GUIDE->RigGuide{sheet=Sheet.NONE}
         Sheet.NONE->Unit
     }
 }
@@ -1572,6 +1573,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
 @Composable private fun StudioLayout(controller:EditorController,refresh:Int,overlayTick:Int,redraw:()->Unit,
                                      onSheet:(Sheet)->Unit,viewport:@Composable BoxScope.()->Unit,onFps:()->Unit={}){
     var popup by remember{mutableStateOf(StudioPopup.NONE)}
+    var needRig by remember{mutableStateOf<String?>(null)}
     val context=LocalContext.current
     var layersOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(false)}
     var stripOpen by androidx.compose.runtime.saveable.rememberSaveable{mutableStateOf(true)}
@@ -1638,6 +1640,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
                     .clickable{popup=if(popup==StudioPopup.COLOR)StudioPopup.NONE else StudioPopup.COLOR}.testTag("studioColor"))
                 ToolbarButton(PgIcons.TripOrigin,"Brush size",popup==StudioPopup.BRUSH){popup=if(popup==StudioPopup.BRUSH)StudioPopup.NONE else StudioPopup.BRUSH}
                 ToolbarButton(PgIcons.Layers,"Layers",layersOpen){layersOpen=!layersOpen}
+                ToolbarButton(PgIcons.Animation,"Rig",false){onSheet(Sheet.RIG)}
                 // one-point perspective: Blender's radial guide on/off, its vanishing point at the canvas centre at first
                 ToolbarButton(PgIcons.Architecture,"Perspective",controller.view.guideType==1){
                     val v=controller.view
@@ -1739,7 +1742,8 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             StudioPopup.MODE->StudioCard({popup=StudioPopup.NONE}){
                 ModeSwitcher(controller.studioModeName,{m->
                     // Blender's mode operators; Pose needs an armature (Menu > Rig > Add Armature)
-                    if(controller.studioModeName!=m.name){ if(controller.modeToggle(m.op)) redraw() else toast(context,"${m.label}: add an armature first") }
+                    if(controller.studioModeName!=m.name){ if(controller.modeToggle(m.op)) redraw() else needRig=m.label
+                        if(!controller.rig.exists&&(m.name=="OBJECT"||m.name=="POSE")) needRig=m.label }
                     popup=StudioPopup.NONE},Modifier.padding(horizontal=8.dp))
             }
             StudioPopup.BRUSH->StudioCard({popup=StudioPopup.NONE}){
@@ -1747,6 +1751,12 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
                     {controller.brushes.setSize(it);redraw()},{controller.setBrushStrength(it);redraw()},{popup=StudioPopup.COLOR})
             }
             StudioPopup.NONE->Unit
+        }
+        needRig?.let{label->
+            AlertDialog(onDismissRequest={needRig=null},modifier=Modifier.testTag("needRig"),
+                title={Text("No armature yet")},text={Text("$label mode needs an armature. Add one first.")},
+                confirmButton={TextButton({needRig=null;addArmature(controller,redraw);onSheet(Sheet.RIG)},Modifier.testTag("needRigAdd")){Text("Add Armature")}},
+                dismissButton={TextButton({needRig=null}){Text("Not now")}})
         }
     }
 }
@@ -1956,6 +1966,7 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             item(PgIcons.AutoAwesome,"Effects (whole drawing)","Blur, colorize, glow, shadow, … shown in the Rendered view","effects"){onSheet(Sheet.EFFECTS)}
             item(PgIcons.Animation,"Onion skin","Ghosts before / after, mode, colours, filter","onion"){onSheet(Sheet.ONION)}
             item(PgIcons.Animation,"Rig","Armature, bones, constraints, pose, swaps, sliders","rig"){onSheet(Sheet.RIG)}
+            item(PgIcons.Animation,"How to rig","8 short steps: armature, bones, bind, pose, keys","rigGuide"){onSheet(Sheet.RIG_GUIDE)}
             item(PgIcons.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
             item(PgIcons.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
             item(PgIcons.Image,"Import photo","A picture to draw over: then resize, squash, rotate it with the box","importPhoto"){onSheet(Sheet.IMPORT_PHOTO)}

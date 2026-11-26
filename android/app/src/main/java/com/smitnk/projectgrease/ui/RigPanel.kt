@@ -157,11 +157,16 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
         Pick("Individual Origins", rig.pivot == RigController.AROUND_INDIVIDUAL, "rigPivotIndividual") { rig.pivot = RigController.AROUND_INDIVIDUAL; done(false) }
     }
 
+    if (active >= 0) BendyBonesPanel(controller, active, mode, tick, ::done)
+
     // ---- Object Data: Viewport Display, Parent (bind) ----
     Group("Display As") {
         val front = rig.showInFront
         Pick("Octahedral", rig.displayType == RigController.DISPLAY_OCTAHEDRAL, "rigDisplayOcta") { rig.setDisplay(RigController.DISPLAY_OCTAHEDRAL, front); done() }
         Pick("Stick", rig.displayType == RigController.DISPLAY_STICK, "rigDisplayStick") { rig.setDisplay(RigController.DISPLAY_STICK, front); done() }
+        // Armature.display_type is per armature: B-Bone / Wire apply to all its bones
+        Pick("B-Bone", rig.displayType == RigController.DISPLAY_BBONE, "rigDisplayBBone") { rig.setDisplay(RigController.DISPLAY_BBONE, front); done() }
+        Pick("Wire", rig.displayType == RigController.DISPLAY_WIRE, "rigDisplayWire") { rig.setDisplay(RigController.DISPLAY_WIRE, front); done() }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("In Front", Modifier.padding(end = 8.dp))
             Switch(front, { rig.setDisplay(rig.displayType, it); done() }, Modifier.testTag("rigInFront").semantics { contentDescription = "In Front" })
@@ -177,6 +182,91 @@ import com.smitnk.projectgrease.editor.RigController.RigIds
     DopeKeysPanel(controller, tick, ::done)
     SwapPanel(controller, tick, ::done)
     SliderPanel(controller, bones.map { it.name }, ::done)
+}
+
+/** A number field (Blender's property field): applies each value that parses, clamped to [min]..[max]. */
+@Composable private fun NumField(label: String, value: Float, tag: String, tick: Int, min: Float = -Float.MAX_VALUE,
+                                 max: Float = Float.MAX_VALUE, modifier: Modifier = Modifier, onSet: (Float) -> Unit) {
+    var text by remember(tag, tick) { mutableStateOf("%.3f".format(value).trimEnd('0').trimEnd('.').ifEmpty { "0" }) }
+    OutlinedTextField(text, { t -> text = t; t.toFloatOrNull()?.takeIf { it.isFinite() }?.let { onSet(it.coerceIn(min, max)) } },
+        label = { Text(label) }, singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+        modifier = modifier.widthIn(min = 96.dp, max = 160.dp).heightIn(min = 48.dp).testTag(tag).semantics { contentDescription = label })
+}
+
+/** A slider over Blender's soft (ui) range with its value in the label. */
+@Composable private fun NumSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, tag: String, steps: Int = 0,
+                                  format: String = "%.3f", onChange: (Float) -> Unit, onDone: () -> Unit) {
+    Text("$label ${format.format(value)}")
+    Slider(value.coerceIn(range.start, range.endInclusive), onChange, valueRange = range, steps = steps, onValueChangeFinished = onDone,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag).semantics { contentDescription = label })
+}
+
+/**
+ * Bone properties > Bendy Bones (properties_data_bone.py BONE_PT_curved): Segments and Display Size
+ * of the bone, then Curve In / Out, Roll In / Out, Scale In / Out and Ease In / Out. In Pose mode
+ * these are the pose bone's values (rna_pose.c), as Blender shows ob.pose.bones; else the bone's.
+ * Ranges: bbone_segments 1..32; the rest are rna_armature.c soft ranges (ease -5..5, roll +-360 deg).
+ */
+@Composable private fun BendyBonesPanel(controller: EditorController, bone: Int, mode: Int, tick: Int, done: (Boolean) -> Unit) {
+    val rig = controller.rig
+    val bb = rig.bbone(bone) ?: return
+    val pose = mode == RigController.MODE_POSE
+    val v = (if (pose) rig.poseBBone(bone) else null) ?: bb.values
+    // read the rig again on each set: live edits do not recompose, so bb / v can be stale
+    fun setRest(segments: Int? = null, x: Float? = null, z: Float? = null): Boolean {
+        val c = rig.bbone(bone) ?: return false
+        return rig.setBBone(bone, segments ?: c.segments, x ?: c.displayX, z ?: c.displayZ, c.values)
+    }
+    fun setValue(i: Int, x: Float): Boolean {
+        val c = rig.bbone(bone) ?: return false
+        val n = ((if (pose) rig.poseBBone(bone) else null) ?: c.values).copyOf(); n[i] = x
+        return if (pose) rig.setPoseBBone(bone, n) else rig.setBBone(bone, c.segments, c.displayX, c.displayZ, n)
+    }
+    /** a live edit (text / slider drag): redraw now, the history step when it ends */
+    fun live(ok: Boolean) { if (ok) { controller.overlayTick++; controller.render() } }
+    Column(Modifier.fillMaxWidth().testTag("rigBendyBones")) {
+        Text(if (pose) "Bendy Bones (Pose)" else "Bendy Bones", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+        var segs by remember(bone, tick) { mutableStateOf(bb.segments.toFloat()) }
+        NumSlider("Segments", segs, 1f..32f, "rigBBoneSegmentsSlider", steps = 30, format = "%.0f",
+            onChange = { segs = it; live(setRest(segments = Math.round(it))) }, onDone = { done(true) })
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Op("-", "rigBBoneSegmentsLess", bb.segments > 1) { done(setRest(segments = bb.segments - 1)) }
+            NumField("Segments", bb.segments.toFloat(), "rigBBoneSegments", tick, 1f, 32f) { live(setRest(segments = Math.round(it))) }
+            Op("+", "rigBBoneSegmentsMore", bb.segments < 32) { done(setRest(segments = bb.segments + 1)) }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            NumField("Display Size X", bb.displayX, "rigBBoneDisplayX", tick, 0f) { live(setRest(x = it)) }
+            NumField("Display Size Z", bb.displayZ, "rigBBoneDisplayZ", tick, 0f) { live(setRest(z = it)) }
+        }
+        // topcol.active = bbone_segments > 1: shown, but they only bend a bone with segments
+        if (bb.segments <= 1) Text("Curve, Roll, Scale and Ease bend the bone when Segments is above 1.", style = MaterialTheme.typography.bodySmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            NumField("Curve In X", v[RigController.BB_CURVE_IN_X], "rigBBoneCurveInX", tick) { live(setValue(RigController.BB_CURVE_IN_X, it)) }
+            NumField("Curve In Z", v[RigController.BB_CURVE_IN_Z], "rigBBoneCurveInZ", tick) { live(setValue(RigController.BB_CURVE_IN_Z, it)) }
+            NumField("Curve Out X", v[RigController.BB_CURVE_OUT_X], "rigBBoneCurveOutX", tick) { live(setValue(RigController.BB_CURVE_OUT_X, it)) }
+            NumField("Curve Out Z", v[RigController.BB_CURVE_OUT_Z], "rigBBoneCurveOutZ", tick) { live(setValue(RigController.BB_CURVE_OUT_Z, it)) }
+        }
+        val deg = (180.0 / Math.PI).toFloat()
+        for ((i, l) in listOf(RigController.BB_ROLL_IN to "Roll In", RigController.BB_ROLL_OUT to "Roll Out")) {
+            var r by remember(bone, tick, pose, i) { mutableStateOf(v[i] * deg) }
+            NumSlider("$l (deg)", r, -360f..360f, "rigBBone${l.replace(" ", "")}", format = "%.1f",
+                onChange = { r = it; live(setValue(i, it / deg)) }, onDone = { done(true) })
+        }
+        for ((i, l) in listOf(RigController.BB_SCALE_IN to "Scale In", RigController.BB_SCALE_OUT to "Scale Out")) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("X", "Y", "Z").forEachIndexed { k, axis ->
+                    NumField("$l $axis", v[i + k], "rigBBone${l.replace(" ", "")}$axis", tick, 0f) { live(setValue(i + k, it)) }
+                }
+            }
+        }
+        for ((i, l) in listOf(RigController.BB_EASE_IN to "Ease In", RigController.BB_EASE_OUT to "Ease Out")) {
+            var e by remember(bone, tick, pose, i) { mutableStateOf(v[i]) }
+            NumSlider(l, e, -5f..5f, "rigBBone${l.replace(" ", "")}", onChange = { e = it; live(setValue(i, it)) }, onDone = { done(true) })
+        }
+        // the text fields change the rig as you type: one history step for them here
+        Op("Done", "rigBBoneDone") { done(true) }
+    }
 }
 
 private val CON_TYPES = listOf(RigIds.CON_IK to "IK", RigIds.CON_COPY_ROTATION to "Copy Rotation",

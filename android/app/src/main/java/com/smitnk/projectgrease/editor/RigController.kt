@@ -20,15 +20,20 @@ class RigController(private val native: NativeEditorBridge) {
         const val CMD_POSE_COPY = 21; const val CMD_POSE_PASTE = 22; const val CMD_KEY_INSERT = 23
         const val CMD_KEY_DELETE = 24; const val CMD_KEY_INTERPOLATION = 25; const val CMD_BIND = 26
         const val CMD_EVALUATE = 27; const val CMD_DISPLAY = 28; const val CMD_PICK = 29; const val CMD_KEY_MOVE = 30
-        const val CMD_MIRROR_X = 31
+        const val CMD_MIRROR_X = 31; const val CMD_BBONE = 32; const val CMD_POSE_BBONE = 33
         // Transform Pivot Point (V3D_AROUND_LOCAL_ORIGINS / V3D_AROUND_CENTER_MEDIAN)
         const val AROUND_INDIVIDUAL = 2; const val AROUND_MEDIAN = 3
         // PG_ARM_Q_*
         const val Q_SUMMARY = 0; const val Q_BONE = 1; const val Q_POSE = 2; const val Q_KEYS = 3
         const val Q_KEY_INTERPOLATION = 4; const val Q_ENVELOPE = 5; const val Q_SELECTED = 6
-        const val Q_DISPLAY = 7
-        // bArmature.drawtype (ARM_OCTA / ARM_LINE): the overlay draws Octahedral and Stick
-        const val DISPLAY_OCTAHEDRAL = 0; const val DISPLAY_STICK = 1
+        const val Q_DISPLAY = 7; const val Q_BBONE = 8; const val Q_POSE_BBONE = 9
+        // bArmature.drawtype (ARM_OCTA / ARM_LINE / ARM_B_BONE / ARM_WIRE; Envelope is not drawn)
+        const val DISPLAY_OCTAHEDRAL = 0; const val DISPLAY_STICK = 1; const val DISPLAY_BBONE = 2; const val DISPLAY_WIRE = 4
+        /** PG_ARM_BBONE: ease in, ease out, roll in, roll out, curve in x, z, out x, z, scale in xyz, scale out xyz */
+        const val BBONE_VALUES = 14
+        const val BB_EASE_IN = 0; const val BB_EASE_OUT = 1; const val BB_ROLL_IN = 2; const val BB_ROLL_OUT = 3
+        const val BB_CURVE_IN_X = 4; const val BB_CURVE_IN_Z = 5; const val BB_CURVE_OUT_X = 6; const val BB_CURVE_OUT_Z = 7
+        const val BB_SCALE_IN = 8; const val BB_SCALE_OUT = 11
         /** ED_view3d_select_dist_px: 75 px * U.pixelsize */
         const val SELECT_DIST_PX = 75f
 
@@ -104,6 +109,16 @@ class RigController(private val native: NativeEditorBridge) {
     fun setEnvelope(bone: Int, dist: Float, weight: Float, radHead: Float, radTail: Float, deform: Boolean, multiplyVg: Boolean) =
         cmd(CMD_ENVELOPE, bone, dist, weight, radHead, radTail, if (deform) 1f else 0f, if (multiplyVg) 1f else 0f)
     fun envelope(bone: Int) = native.armatureQuery(Q_ENVELOPE, bone)
+
+    /** Bendy Bones of the bone (rna_armature.c): segments 1..32, Display Size X / Z (Blender units). */
+    data class BBone(val segments: Int, val displayX: Float, val displayZ: Float, val values: FloatArray)
+    fun bbone(bone: Int): BBone? = native.armatureQuery(Q_BBONE, bone).takeIf { it.size >= 3 + BBONE_VALUES }?.let {
+        BBone(it[0].toInt(), it[1], it[2], it.copyOfRange(3, 3 + BBONE_VALUES)) }
+    fun setBBone(bone: Int, segments: Int, displayX: Float, displayZ: Float, values: FloatArray) =
+        cmd(CMD_BBONE, bone, segments.toFloat(), displayX, displayZ, *values) == 1
+    /** The pose channel's B-Bone offsets (rna_pose.c), the same PG_ARM_BBONE order. */
+    fun poseBBone(bone: Int): FloatArray? = native.armatureQuery(Q_POSE_BBONE, bone).takeIf { it.size >= BBONE_VALUES }
+    fun setPoseBBone(bone: Int, values: FloatArray) = cmd(CMD_POSE_BBONE, bone, *values) == 1
 
     // ---- pose mode ----
     fun poseSelect(bone: Int, extend: Boolean = false) = cmd(CMD_POSE_SELECT, bone, if (extend) 1f else 0f)

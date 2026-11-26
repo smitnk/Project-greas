@@ -522,10 +522,17 @@ int project_grease_gp_transform_modal(ProjectGreaseGPHandle *handle, int phase, 
   }
   if (!ensure_ready(handle)) return 0;
   if (phase == 1) return args && n >= 2 && handle->backend.transform_update(args) ? 1 : 0;
+  if (phase == 4) return args && n >= 2 && handle->backend.transform_constraint(int(args[0]), int(args[1])) ? 1 : 0;
   if (phase != 2 && phase != 3) return 0;
   const bool open = handle->backend.transform_active();
   handle->backend.transform_end(phase == 3);
   return open ? 1 : 0;
+}
+
+int project_grease_gp_transform_numinput(ProjectGreaseGPHandle *handle, int key, char *text, int text_len)
+{
+  if (text && text_len > 0) text[0] = '\0';
+  return ensure_ready(handle) && handle->backend.transform_numinput(key, text, text_len) ? 1 : 0;
 }
 
 int project_grease_gp_lattice_active(const ProjectGreaseGPHandle *handle)

@@ -26,6 +26,7 @@
 #include "BKE_gpencil_curve_legacy.h"
 #include "BKE_gpencil_legacy.h"
 #include "project_grease_gp_backend.h"
+#include "project_grease_numinput.h"
 #include "project_grease_transform.h"
 
 extern "C" void DRW_gpencil_batch_cache_dirty_tag(bGPdata *) {}
@@ -114,7 +115,8 @@ static std::vector<Stroke> fixture(int f)
   return {line(5, 5, 9, -2, 10, [](int i) { return i >= 7; })};
 }
 
-struct Case { std::string name; int mode; float v[2]; int pivot; bool prop; int falloff; float size; bool connected; bool multi, mf; };
+struct Case { std::string name; int mode; float v[2]; int pivot; bool prop; int falloff; float size; bool connected; bool multi, mf;
+  int axes = 0, orient = -1; float v3[3] = {0, 0, 0}; /* the constraint cases (orient >= 0): exec with values final */ };
 static std::vector<Case> cases()
 {
   const char *pivots[] = {"MEDIAN_POINT", "BOUNDING_BOX_CENTER", "INDIVIDUAL_ORIGINS", "CURSOR"};
@@ -134,6 +136,26 @@ static std::vector<Case> cases()
     out.push_back({n + "_prop_connected", op.mode, {op.v[0], op.v[1]}, 0, true, PROP_SMOOTH, 35, true, false, false});
     for (int p = 1; p < 4; p++) out.push_back({n + "_prop_" + pivots[p], op.mode, {op.v[0], op.v[1]}, pivot_ids[p], true, PROP_LIN, 50, false, false, false});
     out.push_back({n + "_multiframe_falloff_prop", op.mode, {op.v[0], op.v[1]}, 0, true, PROP_SMOOTH, 35, false, true, true});
+  }
+  /* CON_CASES of the script: X = 1, Y = 2, Z = 4; planeX = Shift+X = Y|Z ... */
+  const char *locks[] = {"X", "Y", "Z", "planeX", "planeY", "planeZ"};
+  const int lock_axes[] = {1, 2, 4, 6, 5, 3};
+  struct COp { const char *name; int mode; float v[6][3]; } cops[] = {
+      {"translate", PG_TFM_TRANSLATION, {{5.5f, 0, 0}, {0, -7.25f, 0}, {0, 0, 3}, {0, 6, 2}, {3, 0, -2}, {4, -3, 0}}},
+      {"rotate", PG_TFM_ROTATION, {{0.7f}, {0.7f}, {0.7f}, {0.7f}, {0.7f}, {0.7f}}},
+      {"resize", PG_TFM_RESIZE, {{1.6f, 1, 1}, {1, 0.55f, 1}, {1, 1, 2}, {1, 0.55f, 2}, {1.6f, 1, 2}, {1.6f, 0.55f, 1}}}};
+  for (const COp &op : cops) {
+    auto add = [&](int l, const char *orient, int o, bool prop) {
+      Case c{std::string("con_") + op.name + "_" + locks[l] + "_" + (prop ? "prop" : orient), op.mode, {0, 0}, 0, prop,
+             prop ? PROP_SMOOTH : 0, prop ? 35.0f : 0.0f, false, false, false};
+      c.axes = lock_axes[l]; c.orient = o;
+      std::memcpy(c.v3, op.v[l], sizeof(c.v3));
+      out.push_back(c);
+    };
+    for (int l = 0; l < 6; l++) add(l, "GLOBAL", PG_TFM_ORIENT_GLOBAL, false);
+    add(0, "LOCAL", PG_TFM_ORIENT_LOCAL, false);
+    add(5, "LOCAL", PG_TFM_ORIENT_LOCAL, false);
+    add(1, "GLOBAL", PG_TFM_ORIENT_GLOBAL, true);
   }
   return out;
 }
@@ -172,6 +194,14 @@ static bool run(Backend &b, int mode, const float v[2], const PGTransformOptions
 {
   if (!b.transform_begin(mode, &o)) return false;
   const bool ok = b.transform_update(v);
+  b.transform_end(false);
+  return ok;
+}
+
+static bool run_con(Backend &b, const Case &c, const PGTransformOptions &o)
+{
+  if (!b.transform_begin(c.mode, &o)) return false;
+  const bool ok = b.transform_constraint(c.axes, c.orient) && b.transform_update_ex(c.v3, PG_TFM_INPUT_FINAL);
   b.transform_end(false);
   return ok;
 }
@@ -264,6 +294,71 @@ static void self_checks(Backend &b, bGPdata *gpd)
   CHECK(!b.transform_active());
   NEAR(point(gpd, 5, 0, 2)->x, 22 + 14.5, 1e-5);
 
+  /* ---- axis constraints and numeric input (the modal path) ---- */
+  /* Y lock: the gesture's X motion is dropped (applyAxisConstraintVec -> axisProjection) */
+  reset(gpd, false);
+  o = opts(c);
+  CHECK(b.transform_begin(PG_TFM_TRANSLATION, &o));
+  CHECK(b.transform_constraint(2, PG_TFM_ORIENT_GLOBAL));
+  const float mv[2] = {14.5f, -9.25f};
+  CHECK(b.transform_update(mv));
+  NEAR(point(gpd, 5, 0, 2)->x, 22, 1e-4);
+  NEAR(point(gpd, 5, 0, 2)->y, 2 - 9.25, 1e-4);
+  /* Shift+Z (plane XY) keeps both; removing the lock gives the free move back */
+  CHECK(b.transform_constraint(3, PG_TFM_ORIENT_GLOBAL));
+  NEAR(point(gpd, 5, 0, 2)->x, 22 + 14.5, 1e-4);
+  CHECK(b.transform_constraint(0, PG_TFM_ORIENT_GLOBAL));
+  NEAR(point(gpd, 5, 0, 2)->y, 2 - 9.25, 1e-4);
+  /* X lock and typed "12.5": the typed value replaces the gesture, on X only */
+  char text[256];
+  CHECK(b.transform_constraint(1, PG_TFM_ORIENT_GLOBAL));
+  for (const char *k = "12.5"; *k; k++) CHECK(b.transform_numinput(*k, text, sizeof(text)));
+  NEAR(point(gpd, 5, 0, 2)->x, 22 + 12.5, 1e-4);
+  NEAR(point(gpd, 5, 0, 2)->y, 2, 1e-5);
+  CHECK(std::strstr(text, "[12.5|] = 12.5 px") != nullptr);
+  /* '-' negates the value (fake edit), the gesture moving does not change it */
+  CHECK(b.transform_numinput('-', text, sizeof(text)));
+  CHECK(b.transform_update(mv));
+  NEAR(point(gpd, 5, 0, 2)->x, 22 - 12.5, 1e-4);
+  CHECK(std::strstr(text, "[-(12.5|)] = -12.5 px") != nullptr);
+  b.transform_end(true);
+  NEAR(point(gpd, 5, 0, 2)->x, 22, 1e-6);
+  /* no lock: Tab to the next axis, "=" for an expression: X 4, Y (2+3)*2 */
+  reset(gpd, false);
+  CHECK(b.transform_begin(PG_TFM_TRANSLATION, &o));
+  CHECK(b.transform_numinput('4', text, sizeof(text)));
+  CHECK(b.transform_numinput(PG_NUM_KEY_TAB, text, sizeof(text)));
+  for (const char *k = "=(2+3)*2"; *k; k++) CHECK(b.transform_numinput(*k, text, sizeof(text)));
+  NEAR(point(gpd, 5, 0, 2)->x, 22 + 4, 1e-4);
+  NEAR(point(gpd, 5, 0, 2)->y, 2 + 10, 1e-4);
+  /* Backspace deletes a character, then a non-expression is "Invalid" and keeps the last value */
+  CHECK(b.transform_numinput(PG_NUM_KEY_BACKSPACE, text, sizeof(text)));
+  CHECK(b.transform_numinput('*', text, sizeof(text)));
+  NEAR(point(gpd, 5, 0, 2)->y, 2 + 10, 1e-4);
+  CHECK(std::strstr(text, "Invalid") != nullptr);
+  b.transform_end(true);
+  /* rotation: degrees typed, radians inside; the Z lock typed turns about +Z (no view flip) */
+  reset(gpd, false);
+  CHECK(b.transform_begin(PG_TFM_ROTATION, &o));
+  CHECK(b.transform_constraint(4, PG_TFM_ORIENT_GLOBAL));
+  CHECK(b.transform_numinput('9', text, sizeof(text)));
+  CHECK(b.transform_numinput('0', text, sizeof(text)));
+  b.transform_end(false);
+  NEAR(point(gpd, 5, 0, 2)->x, 27.5 + 0.5, 1e-4); /* (-5.5, -0.5) turned 90 deg counter-clockwise */
+  NEAR(point(gpd, 5, 0, 2)->y, 2.5 - 5.5, 1e-4);
+  /* resize X lock typed 2 (NUM_NULL_ONE + constraintNumInput: Y and Z stay 1) */
+  reset(gpd, false);
+  CHECK(b.transform_begin(PG_TFM_RESIZE, &o));
+  CHECK(b.transform_constraint(1, PG_TFM_ORIENT_GLOBAL));
+  CHECK(b.transform_numinput('2', text, sizeof(text)));
+  b.transform_end(false);
+  NEAR(point(gpd, 5, 0, 2)->x, 27.5 - 5.5 * 2, 1e-4);
+  NEAR(point(gpd, 5, 0, 2)->y, 2, 1e-5);
+  /* the evaluator */
+  double ev = 0;
+  CHECK(pg_numinput_eval("-(1.5+2)*4/2", &ev) && ev == -7);
+  CHECK(!pg_numinput_eval("2+", &ev) && !pg_numinput_eval("(1", &ev));
+
   /* curve edit mode (createTransGPencil_curves, handles shown for selected curve points): a selected
    * control point moves with its handles; cancel puts them and the handle types back */
   reset(gpd, false);
@@ -345,7 +440,7 @@ int main()
       const Case &c = cs[k];
       reset(gpd, c.multi);
       const float v[2] = {c.mode == PG_TFM_MIRROR ? 0.0f : c.v[0], c.v[1]};
-      const bool ok = run(b, c.mode, v, opts(c));
+      const bool ok = c.orient >= 0 ? run_con(b, c, opts(c)) : run(b, c.mode, v, opts(c));
       const Json *fr = results->a[k].get("frames");
       double maxd = 0;
       int pts = 0;
@@ -357,7 +452,8 @@ int main()
           const Json *sj = fj && si < int(fj->a.size()) ? &fj->a[si] : nullptr;
           for (int i = 0; i < gps->totpoints; i++) {
             if (!sj || i >= int(sj->a.size())) { maxd = 1e9; continue; }
-            maxd = std::max({maxd, std::fabs(gps->points[i].x - sj->a[i].a[0].n), std::fabs(gps->points[i].y - sj->a[i].a[1].n)});
+            maxd = std::max({maxd, std::fabs(gps->points[i].x - sj->a[i].a[0].n), std::fabs(gps->points[i].y - sj->a[i].a[1].n),
+                             sj->a[i].a.size() > 2 ? std::fabs(gps->points[i].z - sj->a[i].a[2].n) : 0.0});
             pts++;
           }
           si++;

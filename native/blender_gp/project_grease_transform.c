@@ -11,7 +11,15 @@
  *   transform_mode_rotate.c             transdata_elem_rotate (angle * td->factor)
  *   transform_mode_mirror.c             ElementMirror (no proportional, no falloff)
  *   transform_snap.cc                   snap_increment_apply_ex; t->snap of rotate (5 deg) / resize (0.1)
- * Not ported: orientation / constraints (the canvas is the view plane), numeric input, precision
+ *   transform_constraints.c             constraintNumInput, axisProjection, isPlaneProjectionViewAligned,
+ *                                       planeProjection, projection_matrix_calc, applyAxisConstraintVec
+ *                                       / Size / Rot, constraints_rotation_impl, setUserConstraint,
+ *                                       start / stopConstraint, getConstraintSpaceDimension
+ *   transform_mode_translate/rotate/resize.c  applyTranslation / applyRotation / applyResize with
+ *                                       their numeric input and T_INPUT_IS_VALUES_FINAL branches,
+ *                                       large_rotation_limit; init*'s NumInput setup
+ * The view is the app's: orthographic, looking down -Z (viewinv[2] = +Z, viewinv[1] = +Y).
+ * Not ported: orientations other than Global / Local, precision
  * (Shift) snapping, auto-key frame copy (the app keys the frame before the gesture), layer matrices. */
 #include <float.h>
 #include <math.h>
@@ -33,6 +41,11 @@
 #include "BKE_gpencil_curve_legacy.h"
 #include "BKE_gpencil_geom_legacy.h"
 #include "BKE_gpencil_legacy.h"
+#include "BLI_math_geom.h"
+#include "BLI_math_matrix.h"
+#include "BLI_math_rotation.h"
+#include "BLI_math_vector.h"
+#include "project_grease_numinput.h"
 #include "project_grease_transform.h"
 
 #ifndef M_PI
@@ -62,7 +75,17 @@ struct PGTransInfo {
   int data_len;
   float center[3]; /* tc->center_local (identity object matrix) */
   RNG *rng;
+  /* t->con, t->spacemtx, t->num, t->idx_max and the last applied value (re-applied on a change) */
+  int con_mode;
+  float spacemtx[3][3], spacemtx_inv[3][3], con_pmtx[3][3];
+  PGNumInput num;
+  int idx_max;
+  float values[3];
+  int input;
 };
+
+enum { CON_APPLY = 1 << 0, CON_AXIS0 = 1 << 1, CON_AXIS1 = 1 << 2, CON_AXIS2 = 1 << 3 };
+static const float VIEW_Z[3] = {0, 0, 1}, VIEW_Y[3] = {0, 1, 0}; /* viewinv[2], viewinv[1] of the top view */
 
 /* ts->gp_sculpt.cur_falloff as scene.cc makes it: a 0..1 curve reset to CURVE_PRESET_GAUSS. */
 static CurveMapping *pgx_frame_falloff_curve(void)
@@ -454,7 +477,171 @@ PGTransInfo *pg_transform_begin(bGPdata *gpd, int mode, const PGTransformOptions
   if (is_prop_edit) set_prop_dist(t);
   calculatePropRatio(t);
   calculateCenter(t);
+  /* init{Translation,Rotation,Resize}: the NumInput set-up; spacemtx of Global (and Local, below) */
+  unit_m3(t->spacemtx);
+  unit_m3(t->spacemtx_inv);
+  pg_numinput_init(&t->num);
+  t->idx_max = mode == PG_TFM_TRANSLATION || mode == PG_TFM_RESIZE ? 2 : 0;
+  t->num.idx_max = (short)t->idx_max;
+  for (int i = 0; i < 3; i++) {
+    t->num.unit_type[i] = mode == PG_TFM_TRANSLATION ? PG_UNIT_LENGTH : mode == PG_TFM_ROTATION ? PG_UNIT_ROTATION : PG_UNIT_NONE;
+    if (mode == PG_TFM_RESIZE) t->num.val_flag[i] |= PG_NUM_NULL_ONE;
+  }
+  if (mode == PG_TFM_RESIZE) t->num.flag |= PG_NUM_AFFECT_ALL;
+  t->values[0] = t->values[1] = t->values[2] = mode == PG_TFM_RESIZE ? 1.0f : 0.0f;
   return t;
+}
+
+/* ---- transform_constraints.c ---- */
+static int getConstraintSpaceDimension(const PGTransInfo *t)
+{
+  return ((t->con_mode & CON_AXIS0) != 0) + ((t->con_mode & CON_AXIS1) != 0) + ((t->con_mode & CON_AXIS2) != 0);
+}
+
+static void projection_matrix_calc(const PGTransInfo *t, float r_pmtx[3][3])
+{
+  unit_m3(r_pmtx);
+  for (int i = 0; i < 3; i++) if (!(t->con_mode & (CON_AXIS0 << i))) zero_v3(r_pmtx[i]);
+  float mat[3][3];
+  mul_m3_m3m3(mat, r_pmtx, t->spacemtx_inv);
+  mul_m3_m3m3(r_pmtx, t->spacemtx, mat);
+}
+
+static void constraintNumInput(const PGTransInfo *t, float vec[3])
+{
+  const int mode = t->con_mode;
+  if (!(mode & CON_APPLY)) return;
+  const float nval = t->mode == PG_TFM_RESIZE ? 1.0f : 0.0f; /* T_NULL_ONE */
+  const int dims = getConstraintSpaceDimension(t);
+  const int axis = mode & (CON_AXIS0 | CON_AXIS1 | CON_AXIS2);
+  if (dims == 2) {
+    if (axis == (CON_AXIS0 | CON_AXIS1)) { vec[2] = nval; }
+    else if (axis == (CON_AXIS1 | CON_AXIS2)) { vec[2] = vec[1]; vec[1] = vec[0]; vec[0] = nval; }
+    else if (axis == (CON_AXIS0 | CON_AXIS2)) { vec[2] = vec[1]; vec[1] = nval; }
+  }
+  else if (dims == 1) {
+    if (mode & CON_AXIS0) { vec[1] = nval; vec[2] = nval; }
+    else if (mode & CON_AXIS1) { vec[1] = vec[0]; vec[0] = nval; vec[2] = nval; }
+    else if (mode & CON_AXIS2) { vec[2] = vec[0]; vec[0] = nval; vec[1] = nval; }
+  }
+}
+
+/* orthographic: view_vector_calc is viewinv[2] whatever the focus; viewAxisCorrectCenter is a no-op */
+static void axisProjection(const PGTransInfo *t, const float axis[3], const float in[3], float out[3])
+{
+  if (is_zero_v3(in)) return;
+  float angle = fabsf(angle_v3v3(axis, VIEW_Z));
+  if (angle > (float)M_PI_2) angle = (float)M_PI - angle;
+  if (angle < DEG2RADF(5.0f)) {
+    /* view parallel to the constraint: vertical motion, quadratic */
+    float vec[3];
+    project_v3_v3v3(vec, in, VIEW_Y);
+    float factor = dot_v3v3(VIEW_Y, vec) * 2.0f;
+    factor = factor < 0.0f ? factor * -factor : factor * factor;
+    normalize_v3_v3_length(out, axis, -factor);
+    return;
+  }
+  float vec[3], v[3], plane[3];
+  cross_v3_v3v3(plane, VIEW_Z, axis);
+  project_v3_v3v3(vec, in, plane);
+  sub_v3_v3v3(vec, in, vec);
+  add_v3_v3v3(v, vec, t->center);
+  const float factor = dot_v3v3(axis, VIEW_Z);
+  if (1.0f - fabsf(factor) < 0.0002f) {
+    mul_v3_v3fl(out, axis, factor > 0 ? 1000000000.0f : -1000000000.0f);
+    return;
+  }
+  float mul;
+  if (isect_ray_ray_v3(t->center, axis, v, VIEW_Z, &mul, NULL)) mul_v3_v3fl(out, axis, mul);
+  for (int i = 0; i < 3; i++) if (!isfinite(out[i])) out[i] = 0.0f;
+}
+
+static void constraint_plane_calc(const PGTransInfo *t, float r_plane[4])
+{
+  const float *cv[2];
+  int n = 0;
+  for (int i = 0; i < 3 && n < 2; i++) if (t->con_mode & (CON_AXIS0 << i)) cv[n++] = t->spacemtx[i];
+  cross_v3_v3v3(r_plane, cv[0], cv[1]);
+  normalize_v3(r_plane);
+  r_plane[3] = -dot_v3v3(r_plane, t->center);
+}
+
+static void applyAxisConstraintVec(const PGTransInfo *t, const float in[3], float out[3])
+{
+  copy_v3_v3(out, in);
+  if (!(t->con_mode & CON_APPLY)) return;
+  mul_m3_v3(t->con_pmtx, out);
+  const int dims = getConstraintSpaceDimension(t);
+  if (dims == 2) {
+    if (!is_zero_v3(out)) {
+      float plane[4];
+      constraint_plane_calc(t, plane);
+      if (!(fabsf(dot_v3v3(plane, VIEW_Z)) < 0.001f)) { /* !isPlaneProjectionViewAligned: planeProjection */
+        float pos[3], factor;
+        add_v3_v3v3(pos, in, t->center);
+        if (isect_ray_plane_v3(pos, VIEW_Z, plane, &factor, false)) madd_v3_v3v3fl(out, in, VIEW_Z, factor);
+      }
+    }
+  }
+  else if (dims == 1) {
+    const int a = (t->con_mode & CON_AXIS0) ? 0 : (t->con_mode & CON_AXIS1) ? 1 : 2;
+    axisProjection(t, t->spacemtx[a], in, out);
+  }
+}
+
+static void applyAxisConstraintSize(const PGTransInfo *t, float r_smat[3][3])
+{
+  if (!(t->con_mode & CON_APPLY)) return;
+  for (int i = 0; i < 3; i++) if (!(t->con_mode & (CON_AXIS0 << i))) r_smat[i][i] = 1.0f;
+  float tmat[3][3];
+  mul_m3_m3m3(tmat, r_smat, t->spacemtx_inv);
+  mul_m3_m3m3(r_smat, t->spacemtx, tmat);
+}
+
+static void constraints_rotation_impl(const PGTransInfo *t, float r_axis[3], float *r_angle)
+{
+  const int mode = t->con_mode & (CON_AXIS0 | CON_AXIS1 | CON_AXIS2);
+  const int a = (mode == CON_AXIS0 || mode == (CON_AXIS1 | CON_AXIS2)) ? 0 :
+                (mode == CON_AXIS1 || mode == (CON_AXIS0 | CON_AXIS2)) ? 1 : 2;
+  copy_v3_v3(r_axis, t->spacemtx[a]);
+  /* don't flip axis if num input or values final (CON_NOFLIP is never set here) */
+  if (r_angle && !(pg_numinput_has(&t->num) || t->input == PG_TFM_INPUT_FINAL)) {
+    if (dot_v3v3(r_axis, VIEW_Z) > 0.0f) *r_angle = -(*r_angle);
+  }
+}
+
+int pg_transform_set_constraint(PGTransInfo *t, int axes, int orient)
+{
+  if (t == NULL || axes < 0 || axes > 7 || (orient != PG_TFM_ORIENT_GLOBAL && orient != PG_TFM_ORIENT_LOCAL)) return 0;
+  if (t->mode == PG_TFM_MIRROR) return 0;
+  /* shortcut: Local is the object's rotation (transform_orientations.c V3D_ORIENT_LOCAL), and the app's GP
+   * object has none, so both give the identity; take ob->object_to_world when objects get a transform. */
+  unit_m3(t->spacemtx);
+  invert_m3_m3(t->spacemtx_inv, t->spacemtx);
+  if (axes == 0) {
+    t->con_mode = 0; /* stopConstraint */
+    t->num.idx_max = (short)t->idx_max;
+  }
+  else {
+    t->con_mode = CON_APPLY | (axes << 1); /* setConstraint + startConstraint */
+    projection_matrix_calc(t, t->con_pmtx);
+    t->num.idx_max = (short)min_ii(getConstraintSpaceDimension(t) - 1, t->idx_max);
+  }
+  return pg_transform_apply_ex(t, t->values, t->input);
+}
+
+int pg_transform_numinput(PGTransInfo *t, int key, char *text, int text_len)
+{
+  if (t == NULL || t->mode == PG_TFM_MIRROR) return 0;
+  const int used = pg_numinput_handle(&t->num, key);
+  if (used) pg_transform_apply_ex(t, t->values, PG_TFM_INPUT_MOUSE);
+  if (text) pg_numinput_output(&t->num, text, text_len);
+  return used;
+}
+
+int pg_transform_has_numinput(const PGTransInfo *t)
+{
+  return t && pg_numinput_has(&t->num);
 }
 
 float pg_transform_snap_increment(float v, float inc)
@@ -486,23 +673,82 @@ static void pgx_recalc(PGTransInfo *t)
 
 int pg_transform_apply(PGTransInfo *t, const float values[2])
 {
-  if (t == NULL || values == NULL || !isfinite(values[0]) || !isfinite(values[1])) return 0;
-  float v[2] = {values[0], values[1]};
-  if (t->o.snap) {
-    /* transform_snap_increment: t->snap[0] of each mode */
-    const float inc = t->mode == PG_TFM_TRANSLATION ? t->o.snap_translate :
-                      t->mode == PG_TFM_ROTATION    ? (float)(5.0 * M_PI / 180.0) :
-                      t->mode == PG_TFM_RESIZE      ? 0.1f : 0.0f;
-    if (t->mode == PG_TFM_TRANSLATION || t->mode == PG_TFM_RESIZE) {
-      v[0] = pg_transform_snap_increment(v[0], inc);
-      v[1] = pg_transform_snap_increment(v[1], inc);
+  if (values == NULL) return 0;
+  const float v[3] = {values[0], values[1], t && t->mode == PG_TFM_RESIZE ? values[0] : 0.0f};
+  return pg_transform_apply_ex(t, v, PG_TFM_INPUT_MOUSE);
+}
+
+static float large_rotation_limit(float angle)
+{
+  const float angle_max = (float)(M_PI * 2000.0);
+  if (fabsf(angle) > angle_max) {
+    const float angle_sign = angle < 0.0f ? -1.0f : 1.0f;
+    angle = angle_sign * (fmodf(fabsf(angle), (float)(M_PI * 2.0)) + angle_max);
+  }
+  return angle;
+}
+
+int pg_transform_apply_ex(PGTransInfo *t, const float values[3], int input)
+{
+  if (t == NULL || values == NULL || !isfinite(values[0]) || !isfinite(values[1]) || !isfinite(values[2])) return 0;
+  if (input != PG_TFM_INPUT_MOUSE && input != PG_TFM_INPUT_FINAL) return 0;
+  const float in[3] = {values[0], values[1], values[2]};
+  memmove(t->values, in, sizeof(in)); /* values may be t->values */
+  t->input = input;
+  float v[3] = {in[0], in[1], in[2]};
+  const bool final = input == PG_TFM_INPUT_FINAL;
+  const bool con = (t->con_mode & CON_APPLY) != 0;
+  const bool snap = t->o.snap && !final;
+  float gdir[3] = {0, 0, 0}, axis[3] = {0, 0, 0}, angle = 0.0f, smat[3][3];
+  if (t->mode == PG_TFM_TRANSLATION) { /* applyTranslation */
+    if (final) {
+      mul_v3_m3v3(gdir, t->spacemtx, v);
     }
-    else if (t->mode == PG_TFM_ROTATION) {
-      v[0] = pg_transform_snap_increment(v[0], inc);
+    else if (pg_numinput_apply(&t->num, gdir)) {
+      if (con) {
+        const int a = (t->con_mode & CON_AXIS0) ? 0 : (t->con_mode & CON_AXIS1) ? 1 : 2;
+        mul_v3_v3fl(gdir, t->spacemtx[a], gdir[0]);
+      }
+      else {
+        float g[3];
+        mul_v3_m3v3(g, t->spacemtx, gdir);
+        copy_v3_v3(gdir, g);
+      }
+    }
+    else {
+      if (snap) { /* transform_snap_increment: t->snap[0] */
+        v[0] = pg_transform_snap_increment(v[0], t->o.snap_translate);
+        v[1] = pg_transform_snap_increment(v[1], t->o.snap_translate);
+        v[2] = pg_transform_snap_increment(v[2], t->o.snap_translate);
+      }
+      applyAxisConstraintVec(t, v, gdir);
     }
   }
-  const int axis = (int)lroundf(v[0]);
-  if (t->mode == PG_TFM_MIRROR && axis != 0 && axis != 1) return 0;
+  else if (t->mode == PG_TFM_ROTATION) { /* applyRotation */
+    angle = v[0];
+    if (con) constraints_rotation_impl(t, axis, &angle);
+    else negate_v3_v3(axis, t->spacemtx[2]); /* orient_axis Z */
+    if (final) {
+      pg_numinput_apply(&t->num, &angle); /* stores val_org, as Blender */
+    }
+    else if (pg_numinput_apply(&t->num, &angle)) {
+      angle = large_rotation_limit(angle);
+    }
+    else if (snap) {
+      angle = pg_transform_snap_increment(angle, (float)(5.0 * M_PI / 180.0));
+    }
+    normalize_v3(axis);
+  }
+  else if (t->mode == PG_TFM_RESIZE) { /* applyResize */
+    if (!final) {
+      if (snap) for (int i = 0; i < 3; i++) v[i] = pg_transform_snap_increment(v[i], 0.1f);
+      if (pg_numinput_apply(&t->num, v)) constraintNumInput(t, v);
+    }
+    size_to_mat3(smat, v);
+    applyAxisConstraintSize(t, smat);
+  }
+  const int maxis = (int)lroundf(v[0]);
+  if (t->mode == PG_TFM_MIRROR && maxis != 0 && maxis != 1) return 0;
   const bool local = (t->around == PG_TFM_PIVOT_INDIVIDUAL); /* transdata_check_local_center */
   for (int i = 0; i < t->data_len; i++) {
     PGTransData *td = &t->data[i];
@@ -510,36 +756,31 @@ int pg_transform_apply(PGTransInfo *t, const float values[2])
     float vec[3] = {td->iloc[0] - c[0], td->iloc[1] - c[1], td->iloc[2] - c[2]};
     float out[3];
     switch (t->mode) {
-      case PG_TFM_TRANSLATION: {
+      case PG_TFM_TRANSLATION: { /* applyTranslationValue */
         const float f = td->factor * pgx_falloff(td);
-        out[0] = td->iloc[0] + v[0] * f;
-        out[1] = td->iloc[1] + v[1] * f;
-        out[2] = td->iloc[2];
+        madd_v3_v3v3fl(out, td->iloc, gdir, f);
         break;
       }
       case PG_TFM_ROTATION: {
-        /* applyRotation turns about -orient axis: a positive value is clockwise seen from +Z.
-         * ElementRotation_ex: interp_m3_m3m3(identity, R, multi_frame_falloff) of a pure rotation
-         * is the rotation by the scaled angle. */
-        const float a = -v[0] * (t->o.prop_edit ? td->factor : 1.0f) * pgx_falloff(td);
-        const float co = cosf(a), si = sinf(a);
-        out[0] = c[0] + co * vec[0] - si * vec[1];
-        out[1] = c[1] + si * vec[0] + co * vec[1];
-        out[2] = td->iloc[2];
+        /* ElementRotation_ex: interp_m3_m3m3(identity, R, multi_frame_falloff) of a pure rotation
+         * is the rotation by the scaled angle (axis_angle_normalized_to_mat3). */
+        const float a = angle * (t->o.prop_edit ? td->factor : 1.0f) * pgx_falloff(td);
+        float m[3][3];
+        axis_angle_normalized_to_mat3(m, axis, a);
+        mul_m3_v3(m, vec);
+        add_v3_v3v3(out, c, vec);
         break;
       }
-      case PG_TFM_RESIZE: {
-        const float f = td->factor * pgx_falloff(td);
-        out[0] = td->iloc[0] + (vec[0] * v[0] - vec[0]) * f;
-        out[1] = td->iloc[1] + (vec[1] * v[1] - vec[1]) * f;
-        out[2] = td->iloc[2];
+      case PG_TFM_RESIZE: { /* ElementResize (T_POINTS): iloc + (mat * vec - vec) * factor */
+        float sv[3];
+        mul_v3_m3v3(sv, smat, vec);
+        sub_v3_v3(sv, vec);
+        madd_v3_v3v3fl(out, td->iloc, sv, td->factor * pgx_falloff(td));
         break;
       }
       default: /* ElementMirror: reflect_v3_v3v3 on the global axis */
-        vec[axis] = -vec[axis];
-        out[0] = vec[0] + c[0];
-        out[1] = vec[1] + c[1];
-        out[2] = vec[2] + c[2];
+        vec[maxis] = -vec[maxis];
+        add_v3_v3v3(out, vec, c);
         break;
     }
     memcpy(td->loc, out, sizeof(out));

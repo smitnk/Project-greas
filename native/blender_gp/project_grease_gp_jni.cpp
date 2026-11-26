@@ -453,6 +453,15 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTransformModal(JNIEnv 
   return project_grease_gp_transform_modal(from_handle(handle), phase, a, n) != 0;
 }
 
+/* Numeric input key of the open stroke transform: the outputNumInput text, or null when the key was not used. */
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeTransformNumInput(JNIEnv *env, jobject, jlong handle, jint key)
+{
+  char text[256];
+  if (!project_grease_gp_transform_numinput(from_handle(handle), key, text, sizeof(text))) return nullptr;
+  return env->NewStringUTF(text);
+}
+
 /* Lasso warp (Blender lattice deform): begin returns the selection box, update takes the lattice's
  * points (2 * nu * nv canvas floats), end keeps (or cancels) the deform. */
 extern "C" JNIEXPORT jfloatArray JNICALL

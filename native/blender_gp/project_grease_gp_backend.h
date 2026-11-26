@@ -76,6 +76,9 @@ class Backend {
   // gesture's total value from the initial positions, end confirms or cancels.
   bool transform_begin(int mode, const void *opts);
   bool transform_update(const float values[2]);
+  bool transform_update_ex(const float values[3], int input); // pg_transform_apply_ex
+  bool transform_constraint(int axes, int orient);            // pg_transform_set_constraint
+  bool transform_numinput(int key, char *text, int text_len); // pg_transform_numinput
   void transform_end(bool cancel);
   bool transform_active() const;
   bool lattice_active() const; // a Lasso Warp is open

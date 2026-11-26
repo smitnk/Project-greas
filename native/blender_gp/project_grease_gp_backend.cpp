@@ -1537,6 +1537,28 @@ bool Backend::transform_update(const float values[2])
   return true;
 }
 
+bool Backend::transform_update_ex(const float values[3], int input)
+{
+  if (xform_stale(impl_) || !pg_transform_apply_ex(impl_->xform, values, input)) return false;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::transform_constraint(int axes, int orient)
+{
+  if (xform_stale(impl_) || !pg_transform_set_constraint(impl_->xform, axes, orient)) return false;
+  project_grease_gp_tag(impl_->gpd);
+  return true;
+}
+
+bool Backend::transform_numinput(int key, char *text, int text_len)
+{
+  if (xform_stale(impl_)) return false;
+  const bool used = pg_transform_numinput(impl_->xform, key, text, text_len) != 0;
+  project_grease_gp_tag(impl_->gpd);
+  return used;
+}
+
 void Backend::transform_end(bool cancel)
 {
   if (xform_stale(impl_)) return;

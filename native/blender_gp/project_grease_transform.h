@@ -5,6 +5,8 @@
  * apply = applyTranslation / applyRotation / applyResize / applyMirror (transform_mode_*.c),
  * always from the initial positions (td->iloc) with the gesture's total value, like the modal;
  * end = confirm (keep) or cancel (restoreTransObjects).
+ * Constraints (transform_constraints.c) and numeric input (editors/util/numinput.c, see
+ * project_grease_numinput.h) are set on the open session.
  * The canvas is the XY plane seen from +Z (a top view), the layer matrices are identity. */
 #pragma once
 
@@ -39,6 +41,26 @@ PGTransInfo *pg_transform_begin(struct bGPdata *gpd, int mode, const PGTransform
 int pg_transform_apply(PGTransInfo *t, const float values[2]);
 /* cancel: restore the initial positions and handle types. The session is freed. */
 void pg_transform_end(PGTransInfo *t, int cancel);
+/* The same with three values and the input kind: PG_TFM_INPUT_MOUSE is the gesture (the constraint
+ * projects it, typed numeric input overrides it), PG_TFM_INPUT_FINAL is an operator's exec with
+ * given values (T_INPUT_IS_VALUES_FINAL: values in the orientation space, no snapping, no flip).
+ * Rotation uses values[0] only; resize's third value is Z. */
+enum { PG_TFM_INPUT_MOUSE = 0, PG_TFM_INPUT_FINAL = 1 };
+int pg_transform_apply_ex(PGTransInfo *t, const float values[3], int input);
+
+/* Axis constraint (setUserConstraint): axes is a mask of the constrained axes, X = 1, Y = 2, Z = 4
+ * (one axis = an axis lock; two = a plane lock, Shift+the excluded axis); 0 removes it
+ * (stopConstraint). orient is V3D_ORIENT_GLOBAL (0) or V3D_ORIENT_LOCAL (1). The last value is
+ * applied again. Mirror ignores it. Returns 1 when set. */
+enum { PG_TFM_ORIENT_GLOBAL = 0, PG_TFM_ORIENT_LOCAL = 1 };
+int pg_transform_set_constraint(PGTransInfo *t, int axes, int orient);
+/* One key of numeric input (handleNumInput: an ASCII character or PG_NUM_KEY_*), then the last value
+ * is applied again with the typed values. text (may be NULL) gets outputNumInput's text. Returns 1
+ * when the key was used. */
+int pg_transform_numinput(PGTransInfo *t, int key, char *text, int text_len);
+/* Typed values exist (hasNumInput). */
+int pg_transform_has_numinput(const PGTransInfo *t);
+
 /* The data was freed under the session (undo, new document): free it without touching the points. */
 void pg_transform_discard(PGTransInfo *t);
 

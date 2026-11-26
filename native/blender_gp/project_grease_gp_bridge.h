@@ -143,8 +143,11 @@ int project_grease_gp_lattice_update(ProjectGreaseGPHandle *handle, int nu, int 
 void project_grease_gp_lattice_end(ProjectGreaseGPHandle *handle, int keep);
 /* Stroke transform modal (project_grease_transform.h). phase 0 begin: args = mode, pivot, cursor x, y,
  * proportional, connected, falloff, size, multi-frame falloff, snap, snap increment; 1 update:
- * args = the total value (2 floats); 2 confirm; 3 cancel. Returns 1 on success. */
+ * args = the total value (2 floats); 2 confirm; 3 cancel; 4 axis constraint: args = axes (X 1, Y 2,
+ * Z 4; 0 none), orientation (0 Global, 1 Local). Returns 1 on success. */
 int project_grease_gp_transform_modal(ProjectGreaseGPHandle *handle, int phase, const float *args, int n);
+/* One numeric input key of the open transform (pg_transform_numinput); text gets its outputNumInput text. */
+int project_grease_gp_transform_numinput(ProjectGreaseGPHandle *handle, int key, char *text, int text_len);
 int project_grease_gp_erase(ProjectGreaseGPHandle *handle, float x, float y, float radius, int mode,
                             float draw_strength, float pressure, float era_strength, float era_thickness);
 /* Eraser drag as Blender's modal GPENCIL_OT_draw (eraser): phase 0 begin / 1 move / 2 end / 3 cancel;

@@ -53,6 +53,24 @@ for op, val in (("translate", (14.5, -9.25)), ("rotate", (0.7,)), ("resize", (1.
     for p in PIVOTS[1:]:
         CASES.append(("%s_prop_%s" % (op, p), op, val, p, ("LINEAR", 50.0, False), False, False))
     CASES.append(("%s_multiframe_falloff_prop" % op, op, val, "MEDIAN_POINT", ("SMOOTH", 35.0, False), False, True))
+# Axis constraints (transform_constraints.c): exact values with constraint_axis and orient_type, median
+# pivot. A one-axis lock is constraint_axis with that axis; a plane lock (Shift+axis) the other two.
+# Translate and resize exec take the value in the orientation space whatever the axes
+# (T_INPUT_IS_VALUES_FINAL); rotate turns about the constrained axis, without the view flip.
+# name, op, value (3), constraint_axis, orient_type, prop (None | (falloff, size, connected))
+LOCKS = {"X": (True, False, False), "Y": (False, True, False), "Z": (False, False, True),
+         "planeX": (False, True, True), "planeY": (True, False, True), "planeZ": (True, True, False)}
+CON_CASES = []
+for op, vals in (("translate", {"X": (5.5, 0, 0), "Y": (0, -7.25, 0), "Z": (0, 0, 3), "planeX": (0, 6, 2),
+                                "planeY": (3, 0, -2), "planeZ": (4, -3, 0)}),
+                 ("rotate", {k: (0.7, 0, 0) for k in LOCKS}),
+                 ("resize", {"X": (1.6, 1, 1), "Y": (1, 0.55, 1), "Z": (1, 1, 2), "planeX": (1, 0.55, 2),
+                             "planeY": (1.6, 1, 2), "planeZ": (1.6, 0.55, 1)})):
+    for lock, v in vals.items():
+        CON_CASES.append(("con_%s_%s_GLOBAL" % (op, lock), op, v, LOCKS[lock], "GLOBAL", None))
+    for lock in ("X", "planeZ"):
+        CON_CASES.append(("con_%s_%s_LOCAL" % (op, lock), op, vals[lock], LOCKS[lock], "LOCAL", None))
+    CON_CASES.append(("con_%s_Y_prop" % op, op, vals["Y"], LOCKS["Y"], "GLOBAL", ("SMOOTH", 35.0, False)))
 # Increment snapping is not here: an exec with given values (T_INPUT_IS_VALUES_FINAL) never snaps,
 # and the modal needs a drawn region; the C++ test checks snap_increment_apply_ex directly.
 
@@ -141,9 +159,30 @@ def main():
         for fn in FIXTURE:
             res[str(fn)] = [[[p.co[0], p.co[1]] for p in s.points] for s in frames[fn].strokes]
         results.append({"name": name, "frames": res})
+    for name, op, val, axes, orient, prop in CON_CASES:
+        reset(False)
+        ts.transform_pivot_point = "MEDIAN_POINT"
+        ts.use_snap = False
+        ts.gpencil_sculpt.use_multiframe_falloff = False
+        kw = dict(use_proportional_edit=prop is not None, constraint_axis=axes, orient_type=orient)
+        if prop:
+            kw.update(proportional_edit_falloff=prop[0], proportional_size=prop[1],
+                      use_proportional_connected=prop[2], use_proportional_projected=False)
+        with bpy.context.temp_override(window=win, area=area, region=region, active_object=gp,
+                                       object=gp, edit_object=gp):
+            if op == "translate":
+                bpy.ops.transform.translate(value=val, **kw)
+            elif op == "rotate":
+                bpy.ops.transform.rotate(value=val[0], orient_axis="Z", **kw)
+            else:
+                bpy.ops.transform.resize(value=val, **kw)
+        res = {}
+        for fn in FIXTURE:
+            res[str(fn)] = [[list(p.co) for p in s.points] for s in frames[fn].strokes]
+        results.append({"name": name, "frames": res})
     with open(out, "w") as fh:
         json.dump({"blender": bpy.app.version_string, "active": ACTIVE, "cursor": CURSOR,
-                   "cases": [c[0] for c in CASES], "results": results}, fh, indent=1)
+                   "cases": [c[0] for c in CASES] + [c[0] for c in CON_CASES], "results": results}, fh, indent=1)
 
 
 def run():

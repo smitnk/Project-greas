@@ -977,10 +977,37 @@ private val annotationColors=listOf(0xFF0099FF.toInt(),0xFFFF3B30.toInt(),0xFF34
         Toast.makeText(context,if(ok)"Saved as "+controller.document.projectName else "Save as failed",Toast.LENGTH_SHORT).show()
         if(ok)onDismiss()
     }
+    // .blend (Blender 3.6, legacy Grease Pencil + armature) through the project JSON: native/blender_gp/project_grease_blend_io.cc
+    val openBlend=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+        if(uri==null)return@rememberLauncherForActivityResult
+        val json=runCatching{context.contentResolver.openInputStream(uri)?.use{it.readBytes()}}.getOrNull()
+            ?.let{runCatching{com.smitnk.projectgrease.nativebridge.GPNative.nativeBlendToProjectJson(it)}.getOrNull()}
+        if(json==null){Toast.makeText(context,"Not a Blender 3.6 file with a Grease Pencil object",Toast.LENGTH_LONG).show();return@rememberLauncherForActivityResult}
+        val display=runCatching{context.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{c->if(c.moveToFirst())c.getString(0) else null}}.getOrNull()
+        controller.afterReattach{
+            // a new project named after the file, so the current project's drawing is never overwritten
+            val stem=display?.substringBeforeLast('.')?.trim()?.ifEmpty{null}?:"Blender file"
+            val previous=controller.document.projectName
+            controller.document.projectName=ProjectStore(context).uniqueProjectName(stem)
+            val ok=controller.loadDocumentJson(json)
+            if(ok)onSave() else controller.document.projectName=previous
+            Toast.makeText(context,if(ok)"Opened "+controller.document.projectName else "Open .blend failed",Toast.LENGTH_SHORT).show()
+            if(ok)onDismiss()
+        }
+    }
+    val saveBlend=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-blender")){uri->
+        if(uri==null)return@rememberLauncherForActivityResult
+        val bytes=controller.saveDocumentJson()?.let{runCatching{com.smitnk.projectgrease.nativebridge.GPNative.nativeProjectJsonToBlend(it)}.getOrNull()}
+        val ok=bytes!=null&&runCatching{context.contentResolver.openOutputStream(uri,"wt")?.use{it.write(bytes);it.flush()}!=null}.getOrDefault(false)
+        Toast.makeText(context,if(ok)"Saved as .blend" else "Save as .blend failed",Toast.LENGTH_SHORT).show()
+        if(ok)onDismiss()
+    }
     ModalBottomSheet(onDismissRequest=onDismiss){Text("Project",Modifier.padding(20.dp),style=MaterialTheme.typography.headlineSmall)
         ListItem(headlineContent={Text("Open project")},modifier=Modifier.clickable{onDismiss()})
         ListItem(headlineContent={Text("Save")},modifier=Modifier.clickable{onSave();Toast.makeText(context,"Project saved",Toast.LENGTH_SHORT).show();onDismiss()})
         ListItem(headlineContent={Text("Save as")},supportingContent={Text("Write the project to a new file and continue under its name")},modifier=Modifier.clickable{saveAs.launch(controller.document.projectName.ifBlank{"Project Grease"}+".gpjson")})
+        ListItem(headlineContent={Text("Open .blend")},supportingContent={Text("A Blender 3.6 file: its Grease Pencil object and rig become a new project")},modifier=Modifier.clickable{openBlend.launch(arrayOf("*/*"))}.testTag("projectOpenBlend"))
+        ListItem(headlineContent={Text("Save as .blend")},supportingContent={Text("A copy for Blender 3.6; the project stays in its own format")},modifier=Modifier.clickable{saveBlend.launch(controller.document.projectName.ifBlank{"Project Grease"}+".blend")}.testTag("projectSaveBlend"))
         ListItem(headlineContent={Text("Export")},supportingContent={Text("SVG, PDF, PNG, GIF, PNG sequence")},modifier=Modifier.clickable{exportOpen=true})
         ListItem(headlineContent={Text("Project settings")},supportingContent={Text("Canvas size, FPS, frame range, background")},modifier=Modifier.clickable{projectSettingsOpen=true}.testTag("projectSettings"))
         ListItem(headlineContent={Text("Import SVG")},supportingContent={Text("Shapes become strokes on the active layer")},modifier=Modifier.clickable{importSvg()})

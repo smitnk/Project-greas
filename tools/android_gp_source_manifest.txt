@@ -194,3 +194,8 @@ CXX|third_party/blender/intern/iksolver/intern/IK_QSegment.cpp
 CXX|third_party/blender/intern/iksolver/intern/IK_QTask.cpp
 CXX|third_party/blender/intern/iksolver/intern/IK_Solver.cpp
 C|native/blender_gp/project_grease_blender_paint.c
+# L10 .blend open / save: Blender 3.6.23 readfile.cc / writefile.cc port (DNA reconstruct, FileReaders above).
+C|third_party/blender/source/blender/makesdna/intern/dna_genfile.c
+C|third_party/blender/source/blender/blenlib/intern/endian_switch.c
+CXX|native/blender_gp/project_grease_blend_io.cc
+CXX|native/blender_gp/project_grease_blend_io_jni.cpp

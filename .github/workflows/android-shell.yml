@@ -242,6 +242,14 @@ jobs:
             bash tools/run_native_transform_blender_parity_tests.sh | tee build/qa/blender_transform_compare_full.txt
           grep BLENDER-RUN build/qa/blender_transform_compare.txt
 
+      - name: Blender 3.6.23 binary vs PG .blend open / save (Blender makes a GP + rig file, the app opens and saves it, Blender opens the app's file; strokes / points / weights / bones / pose / F-Curves compared)
+        run: |
+          set -euo pipefail
+          mkdir -p build/qa/blend_io
+          BLEND_IO_BLENDER=build/blender-3.6.23/blender BLEND_IO_OUT=build/qa/blend_io \
+            bash tools/run_native_blend_io_tests.sh | tee build/qa/blend_io_compare.txt
+          grep BLENDER-RUN build/qa/blend_io_compare.txt
+
       - name: Cache glslang 14.3.0 (GLES shader validator)
         id: glslang-cache
         uses: actions/cache@v4

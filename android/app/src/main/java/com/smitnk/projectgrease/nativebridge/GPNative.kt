@@ -328,6 +328,12 @@ object GPNative {
     external fun nativeContextEpoch(handle: Long): Int
     /** Frees the pending fill capture and any uncommitted fill job (a dropped fill). */
     external fun nativeFillDiscardEglRenderer(handle: Long)
+
+    // ---- .blend open / save (project_grease_blend_io_jni.cpp): stateless, the project JSON in / out ----
+    /** A Blender 3.6 .blend (first legacy GP object + its armature) as project JSON; null when unreadable. */
+    external fun nativeBlendToProjectJson(data: ByteArray): String?
+    /** Project JSON as a Blender 3.6 .blend file; null on failure. */
+    external fun nativeProjectJsonToBlend(json: String): ByteArray?
 }
 
 /** Calls the batch-1 native entry points; a native library built without them must not crash the app. */

@@ -24,6 +24,8 @@
 #include "project_grease_armature.h"
 #include "project_grease_depsgraph.h"
 #include "project_grease_driver.h"
+#include "project_grease_undo.h"
+#include <unordered_map>
 
 #include <algorithm>
 #include <cmath>
@@ -232,12 +234,29 @@ static Material **gp_materials_duplicate(Material *const *source, int count)
 using ModifierStacks = std::vector<std::vector<PGModEntry>>;
 using FxStacks = std::vector<std::vector<PGFxEntry>>;
 
-struct HistorySnapshot {
-  bGPdata *data = nullptr;
-  ModifierStacks stacks; /* the live modifier stack of every layer, by layer index */
-  FxStacks fx_stacks;    /* the shader effect list of every layer, by layer index */
+/* Undo (project_grease_undo.h, Blender's undo_system.cc). The memfile of a step (memfile_undo.cc's
+ * MemFileUndoStep) is the document as chunks: a skeleton (settings, materials, layers, frames) and
+ * one chunk per stroke. A stroke chunk identical to the previous memfile's is shared by pointer
+ * (BLO_memfile_chunk_add's is_identical), so a step costs only what changed. */
+struct StrokeChunk {
+  bGPDstroke *gps = nullptr; /* an unlinked copy */
+  size_t size = 0;
+  size_t hash = 0;
+  ~StrokeChunk() { if (gps) BKE_gpencil_free_stroke(gps); }
+};
+using ChunkRef = std::shared_ptr<const StrokeChunk>;
+struct MemFileUndoData {
+  bGPdata *data = nullptr;        /* the skeleton: frames hold no strokes */
+  std::vector<ChunkRef> chunks;   /* every stroke, in layer / frame / stroke order */
+  std::vector<int> frame_strokes; /* strokes of each frame, same order */
+  ModifierStacks stacks;          /* the live modifier stack of every layer, by layer index */
+  FxStacks fx_stacks;             /* the shader effect list of every layer, by layer index */
   std::shared_ptr<PGArmature> armature; /* the rig (copy), or null */
-  size_t points = 0;     /* stroke points stored in data, for the history memory budget */
+  ~MemFileUndoData();
+};
+/* editarmature_undo.cc's UndoArmature: armature Edit mode steps hold the bones only. */
+struct ArmatureUndoData {
+  std::shared_ptr<PGArmature> armature;
 };
 
 /* One evaluated copy of a layer's current frame (see pg_mod_eval_frame). */
@@ -297,7 +316,7 @@ struct Backend::Impl {
   float brush_vertex_factor = 1.0f;
   int brush_vertex_mode = 2; /* GPPAINT_MODE_STROKE 0 / FILL 1 / BOTH 2 */
 
-  std::vector<HistorySnapshot *> undo_history;
+  pg_undo::UndoStack undo_stack;
   struct LatticePoint { bGPDstroke *gps; int index; float x, y; };
   std::vector<LatticePoint> lattice_points;
   float lattice_bounds[4] = {0, 0, 0, 0};
@@ -306,7 +325,6 @@ struct Backend::Impl {
   float fill_map_scale = 1.0f, fill_map_origin_x = 0.0f, fill_map_origin_y = 0.0f, fill_map_rotation = 0.0f;
   // Brush fill_factor ("Precision"), Blender default 1.
   float fill_factor = 1.0f;
-  std::vector<HistorySnapshot *> redo_history;
 
   // Live modifier stacks: stacks[i] belongs to the i-th layer of gpd->layers. They are document
   // state (saved, in undo snapshots); strokes never carry modifiers.
@@ -499,21 +517,7 @@ const bGPDframe *Backend::evaluated_frame(const bGPDlayer *layer, const bGPDfram
   return static_cast<const Backend *>(user)->fx_for_layer(layer, entries);
 }
 
-static void history_snapshot_free(HistorySnapshot *snapshot)
-{
-  if (!snapshot) {
-    return;
-  }
-  if (snapshot->data) {
-    BKE_gpencil_free_layers(&snapshot->data->layers);
-    BLI_freelistN(&snapshot->data->vertex_group_names);
-    gp_materials_free(snapshot->data);
-    MEM_freeN(snapshot->data);
-  }
-  delete snapshot;
-}
-
-static bGPdata *history_gp_duplicate(const bGPdata *source)
+static bGPdata *history_gp_duplicate(const bGPdata *source, bool dup_strokes = true)
 {
   if (!source) {
     return nullptr;
@@ -545,7 +549,7 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   BLI_listbase_clear(&destination->layers);
   LISTBASE_FOREACH (bGPDlayer *, source_layer, &source->layers) {
     bGPDlayer *destination_layer =
-        BKE_gpencil_layer_duplicate(source_layer, true, true);
+        BKE_gpencil_layer_duplicate(source_layer, true, dup_strokes);
     if (!destination_layer) {
       BLI_freelistN(&destination->vertex_group_names);
       BKE_gpencil_free_layers(&destination->layers);
@@ -559,40 +563,132 @@ static bGPdata *history_gp_duplicate(const bGPdata *source)
   return destination;
 }
 
-static HistorySnapshot *history_snapshot_create(const bGPdata *source,
-                                                const ModifierStacks &stacks,
-                                                const FxStacks &fx_stacks)
+MemFileUndoData::~MemFileUndoData()
 {
-  if (!source) {
+  if (data) {
+    BKE_gpencil_free_layers(&data->layers);
+    BLI_freelistN(&data->vertex_group_names);
+    gp_materials_free(data);
+    MEM_freeN(data);
+  }
+}
+
+/* The bytes of a stroke a memfile chunk compares (BLO_memfile_chunk_add's memcmp): DNA without its
+ * list links, pointers and runtime, then the points, weights and edit curve. */
+static void stroke_chunk_bytes(const bGPDstroke *gps, std::string &out)
+{
+  out.clear();
+  alignas(bGPDstroke) char head[sizeof(bGPDstroke)];
+  std::memcpy(head, gps, sizeof(head));
+  bGPDstroke *h = reinterpret_cast<bGPDstroke *>(head);
+  h->next = h->prev = nullptr;
+  h->points = nullptr;
+  h->triangles = nullptr;
+  h->dvert = nullptr;
+  h->editcurve = nullptr;
+  h->_pad3 = h->_pad5 = nullptr;
+  std::memset(&h->runtime, 0, sizeof(h->runtime));
+  out.append(head, sizeof(head));
+  for (int i = 0; i < gps->totpoints; i++) {
+    out.append(reinterpret_cast<const char *>(&gps->points[i]), offsetof(bGPDspoint, runtime));
+  }
+  if (gps->dvert) {
+    for (int i = 0; i < gps->totpoints; i++) {
+      const MDeformVert &dv = gps->dvert[i];
+      out.append(reinterpret_cast<const char *>(&dv.totweight), sizeof(dv.totweight));
+      if (dv.dw) out.append(reinterpret_cast<const char *>(dv.dw), sizeof(MDeformWeight) * dv.totweight);
+    }
+  }
+  if (gps->editcurve) {
+    const bGPDcurve *c = gps->editcurve;
+    out.append(reinterpret_cast<const char *>(&c->tot_curve_points), sizeof(c->tot_curve_points));
+    out.append(reinterpret_cast<const char *>(&c->flag), sizeof(c->flag));
+    out.append(reinterpret_cast<const char *>(c->curve_points), sizeof(bGPDcurve_point) * c->tot_curve_points);
+  }
+}
+
+static size_t stroke_chunk_size(const bGPDstroke *gps)
+{
+  size_t n = sizeof(bGPDstroke) + sizeof(bGPDspoint) * gps->totpoints + sizeof(bGPDtriangle) * gps->tot_triangles;
+  if (gps->dvert) {
+    n += sizeof(MDeformVert) * gps->totpoints;
+    for (int i = 0; i < gps->totpoints; i++) n += sizeof(MDeformWeight) * gps->dvert[i].totweight;
+  }
+  if (gps->editcurve) n += sizeof(bGPDcurve) + sizeof(bGPDcurve_point) * gps->editcurve->tot_curve_points;
+  return n;
+}
+
+/* memfile_undosys_step_encode (BLO_memfile_write: the reference is the previous memfile step). */
+static MemFileUndoData *memfile_write(const bGPdata *gpd, const MemFileUndoData *ref, size_t *r_size)
+{
+  MemFileUndoData *d = new MemFileUndoData();
+  d->data = history_gp_duplicate(gpd, false);
+  if (!d->data) {
+    delete d;
     return nullptr;
   }
-
-  HistorySnapshot *snapshot = new HistorySnapshot();
-  snapshot->data = history_gp_duplicate(source);
-  if (!snapshot->data) {
-    delete snapshot;
-    return nullptr;
-  }
-
-  snapshot->data->flag |= GP_DATA_CACHE_IS_DIRTY;
-  LISTBASE_FOREACH (const bGPDlayer *, gpl, &snapshot->data->layers) {
+  d->data->flag |= GP_DATA_CACHE_IS_DIRTY;
+  size_t size = sizeof(bGPdata) + sizeof(Material) * gpd->totcol;
+  std::string bytes, ref_bytes;
+  std::unordered_multimap<size_t, size_t> by_hash; /* ref chunks by content, built on the first miss */
+  size_t index = 0;
+  LISTBASE_FOREACH (const bGPDlayer *, gpl, &gpd->layers) {
+    size += sizeof(bGPDlayer);
     LISTBASE_FOREACH (const bGPDframe *, gpf, &gpl->frames) {
-      LISTBASE_FOREACH (const bGPDstroke *, gps, &gpf->strokes) {
-        snapshot->points += static_cast<size_t>(gps->totpoints);
+      size += sizeof(bGPDframe);
+      int n = 0;
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        stroke_chunk_bytes(gps, bytes);
+        const size_t hash = std::hash<std::string>()(bytes);
+        ChunkRef chunk;
+        auto same = [&](const ChunkRef &c) {
+          if (c->hash != hash) return false;
+          stroke_chunk_bytes(c->gps, ref_bytes);
+          return ref_bytes == bytes;
+        };
+        // The chunk in the same place first (the common case), else any identical one (reordered,
+        // inserted or deleted strokes before it).
+        if (ref && index < ref->chunks.size() && same(ref->chunks[index])) chunk = ref->chunks[index];
+        if (!chunk && ref) {
+          if (by_hash.empty()) for (size_t i = 0; i < ref->chunks.size(); i++) by_hash.emplace(ref->chunks[i]->hash, i);
+          auto range = by_hash.equal_range(hash);
+          for (auto it = range.first; it != range.second && !chunk; ++it) if (same(ref->chunks[it->second])) chunk = ref->chunks[it->second];
+        }
+        if (!chunk) {
+          auto c = std::make_shared<StrokeChunk>();
+          c->gps = BKE_gpencil_stroke_duplicate(gps, true, true);
+          c->gps->next = c->gps->prev = nullptr;
+          c->size = stroke_chunk_size(gps);
+          c->hash = hash;
+          size += c->size;
+          chunk = c;
+        }
+        d->chunks.push_back(chunk);
+        index++;
+        n++;
+      }
+      d->frame_strokes.push_back(n);
+    }
+  }
+  *r_size = size;
+  return d;
+}
+
+/* BLO_memfile_main_get: the document of a memfile, strokes copied from its chunks. */
+static bGPdata *memfile_read(const MemFileUndoData *d)
+{
+  bGPdata *out = history_gp_duplicate(d->data, false);
+  if (!out) return nullptr;
+  size_t index = 0, frame = 0;
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &out->layers) {
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+      const int n = frame < d->frame_strokes.size() ? d->frame_strokes[frame++] : 0;
+      for (int i = 0; i < n && index < d->chunks.size(); i++) {
+        BLI_addtail(&gpf->strokes, BKE_gpencil_stroke_duplicate(d->chunks[index++]->gps, true, true));
       }
     }
   }
-  snapshot->stacks = stacks;
-  snapshot->fx_stacks = fx_stacks;
-  return snapshot;
-}
-
-static void history_snapshot_clear(std::vector<HistorySnapshot *> &history)
-{
-  for (HistorySnapshot *snapshot : history) {
-    history_snapshot_free(snapshot);
-  }
-  history.clear();
+  return out;
 }
 
 static void history_copy_settings(const bGPdata *source, bGPdata *destination)
@@ -912,7 +1008,7 @@ static void set_frame(Backend::Impl *impl, bGPDframe *frame)
   }
 }
 
-static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot *snapshot)
+static bool history_restore_snapshot(Backend::Impl *impl, const MemFileUndoData *snapshot)
 {
   if (!impl || !impl->gpd || !snapshot || !snapshot->data) {
     return false;
@@ -923,7 +1019,7 @@ static bool history_restore_snapshot(Backend::Impl *impl, const HistorySnapshot 
   }
 
   // Duplicate first so an allocation failure leaves the live document intact.
-  bGPdata *restored = history_gp_duplicate(snapshot->data);
+  bGPdata *restored = memfile_read(snapshot);
   if (!restored) {
     return false;
   }
@@ -975,104 +1071,165 @@ Backend::~Backend()
   delete impl_;
 }
 
+/* ---- Undo types (BKE_undosys_type_from_context order; memfile last, the fallback) ---- */
+
+static const MemFileUndoData *memfile_reference(const Backend::Impl *impl);
+
+/* editarmature_undo.cc: armature Edit mode (ED_armature_edit / obedit is the armature). */
+static bool armature_undosys_poll(void *C)
+{
+  const Backend::Impl *impl = static_cast<const Backend::Impl *>(C);
+  return impl->armature && pg_arm_mode(impl->armature.get()) == PG_ARM_MODE_EDIT;
+}
+static bool armature_undosys_step_encode(void *C, pg_undo::UndoStep *us)
+{
+  Backend::Impl *impl = static_cast<Backend::Impl *>(C);
+  auto d = std::make_shared<ArmatureUndoData>();
+  d->armature = arm_share(pg_arm_dup(impl->armature.get()));
+  if (!d->armature) return false;
+  us->data_size = sizeof(PGArmature *) + 512 * size_t(pg_arm_bone_count(d->armature.get())); /* ~EditBone */
+  us->data = d;
+  return true;
+}
+static void armature_undosys_step_decode(void *C, pg_undo::UndoStep *us, int, bool)
+{
+  Backend::Impl *impl = static_cast<Backend::Impl *>(C);
+  const auto *d = static_cast<const ArmatureUndoData *>(us->data.get());
+  // undoarm_to_editarm: only the bones; the strokes stay as they are.
+  impl->armature = arm_share(pg_arm_dup(d->armature.get()));
+  pg_arm_set_mode(impl->armature.get(), PG_ARM_MODE_EDIT); /* ED_undo_object_editmode_restore_helper */
+  arm_sync(impl);
+  eval_cache_clear(impl);
+  if (impl->gpd) project_grease_gp_tag(impl->gpd);
+}
+static void undosys_step_free(pg_undo::UndoStep *us) { us->data.reset(); }
+
+/* memfile_undo.cc: object / pose / Grease Pencil modes. */
+static bool memfile_undosys_step_encode(void *C, pg_undo::UndoStep *us)
+{
+  Backend::Impl *impl = static_cast<Backend::Impl *>(C);
+  size_t size = 0;
+  MemFileUndoData *d = memfile_write(impl->gpd, memfile_reference(impl), &size);
+  if (!d) return false;
+  d->stacks = impl->stacks;
+  d->fx_stacks = impl->fx_stacks;
+  if (impl->armature) d->armature = arm_share(pg_arm_dup(impl->armature.get()));
+  us->data_size = size;
+  us->data = std::shared_ptr<MemFileUndoData>(d);
+  return true;
+}
+static void memfile_undosys_step_decode(void *C, pg_undo::UndoStep *us, int, bool)
+{
+  Backend::Impl *impl = static_cast<Backend::Impl *>(C);
+  if (!history_restore_snapshot(impl, static_cast<const MemFileUndoData *>(us->data.get()))) {
+    impl->last_error = "Legacy GP undo restore failed";
+  }
+}
+
+static const pg_undo::UndoType BKE_UNDOSYS_TYPE_ARMATURE = {
+    "Edit Armature", armature_undosys_poll, armature_undosys_step_encode, armature_undosys_step_decode,
+    undosys_step_free, nullptr};
+static const pg_undo::UndoType BKE_UNDOSYS_TYPE_MEMFILE = {
+    "Global Undo", nullptr, memfile_undosys_step_encode, memfile_undosys_step_decode, undosys_step_free, nullptr};
+static const std::vector<const pg_undo::UndoType *> g_undo_types = {&BKE_UNDOSYS_TYPE_ARMATURE,
+                                                                     &BKE_UNDOSYS_TYPE_MEMFILE};
+
+/* The memfile of the newest memfile step (the reference BLO_memfile_write compares against). */
+static const MemFileUndoData *memfile_reference(const Backend::Impl *impl)
+{
+  const auto &steps = impl->undo_stack.steps;
+  for (auto it = steps.rbegin(); it != steps.rend(); ++it) {
+    if ((*it)->type == &BKE_UNDOSYS_TYPE_MEMFILE) return static_cast<const MemFileUndoData *>((*it)->data.get());
+  }
+  return nullptr;
+}
+
 bool Backend::history_reset()
 {
   if (!impl_->gpd) {
     impl_->last_error = "document is not created";
     return false;
   }
-  history_snapshot_clear(impl_->undo_history);
-  history_snapshot_clear(impl_->redo_history);
-  return history_record();
+  impl_->undo_stack.types = &g_undo_types;
+  impl_->undo_stack.clear();
+  // BKE_undosys_stack_init_from_main: the first step is the memfile "Original".
+  if (!impl_->undo_stack.push_with_type(impl_, "Original", &BKE_UNDOSYS_TYPE_MEMFILE)) {
+    impl_->last_error = "Legacy GP history snapshot allocation failed";
+    return false;
+  }
+  return true;
 }
 
-bool Backend::history_record()
+bool Backend::history_record(const char *name)
 {
   if (!impl_->gpd) {
     impl_->last_error = "document is not created";
     return false;
   }
-
-  HistorySnapshot *snapshot = history_snapshot_create(impl_->gpd, impl_->stacks, impl_->fx_stacks);
-  if (!snapshot) {
+  impl_->undo_stack.types = &g_undo_types;
+  // ED_undo_push with U.undosteps = 32; U.undomemory is 0 (no limit) in Blender, 256 MB here so a
+  // phone keeps the budget the old 4M-point snapshot limit gave.
+  if (!impl_->undo_stack.push(impl_, name && *name ? name : "Edit", PG_UNDO_STEPS, PG_UNDO_MEMORY_MB)) {
     impl_->last_error = "Legacy GP history snapshot allocation failed";
     return false;
   }
-
-  if (impl_->armature) snapshot->armature = arm_share(pg_arm_dup(impl_->armature.get()));
-  history_snapshot_clear(impl_->redo_history);
-  impl_->undo_history.push_back(snapshot);
-
-  // Blender's default U.undosteps.
-  constexpr size_t kMaxHistory = 32;
-  // Each snapshot is a full document copy (~60 bytes per bGPDspoint plus weights), so 4M points keeps
-  // the undo stack near 250 MB on a phone however large the drawing; the newest step is always kept.
-  constexpr size_t kMaxHistoryPoints = 4000000;
-  size_t total_points = 0;
-  for (const HistorySnapshot *s : impl_->undo_history) {
-    total_points += s->points;
-  }
-  while (impl_->undo_history.size() > 1 &&
-         (impl_->undo_history.size() > kMaxHistory || total_points > kMaxHistoryPoints)) {
-    total_points -= impl_->undo_history.front()->points;
-    history_snapshot_free(impl_->undo_history.front());
-    impl_->undo_history.erase(impl_->undo_history.begin());
-  }
-
   impl_->last_error.clear();
   return true;
 }
 
 bool Backend::history_undo()
 {
-  if (impl_->undo_history.size() < 2) {
-    return false;
-  }
-
-  HistorySnapshot *current = impl_->undo_history.back();
-  HistorySnapshot *target = impl_->undo_history[impl_->undo_history.size() - 2];
-  if (!history_restore_snapshot(impl_, target)) {
-    impl_->last_error = "Legacy GP undo restore failed";
-    return false;
-  }
-
-  impl_->undo_history.pop_back();
-  impl_->redo_history.push_back(current);
   impl_->last_error.clear();
-  return true;
+  return impl_->undo_stack.undo(impl_) && impl_->last_error.empty();
 }
 
 bool Backend::history_redo()
 {
-  if (impl_->redo_history.empty()) {
-    return false;
-  }
-
-  HistorySnapshot *target = impl_->redo_history.back();
-  if (!history_restore_snapshot(impl_, target)) {
-    impl_->last_error = "Legacy GP redo restore failed";
-    return false;
-  }
-
-  impl_->redo_history.pop_back();
-  impl_->undo_history.push_back(target);
   impl_->last_error.clear();
-  return true;
+  return impl_->undo_stack.redo(impl_) && impl_->last_error.empty();
+}
+
+bool Backend::history_jump(int index)
+{
+  impl_->last_error.clear();
+  return impl_->undo_stack.load_from_index(impl_, index) && impl_->last_error.empty();
 }
 
 int Backend::history_undo_count() const
 {
-  return static_cast<int>(impl_->undo_history.size());
+  return static_cast<int>(impl_->undo_stack.steps.size());
+}
+
+int Backend::history_active_index() const
+{
+  return impl_->undo_stack.index_of(impl_->undo_stack.step_active);
+}
+
+std::string Backend::history_step_name(int index) const
+{
+  const auto &steps = impl_->undo_stack.steps;
+  return index >= 0 && index < int(steps.size()) ? steps[index]->name : std::string();
+}
+
+bool Backend::history_step_skip(int index) const
+{
+  const auto &steps = impl_->undo_stack.steps;
+  return index >= 0 && index < int(steps.size()) && steps[index]->skip;
+}
+
+size_t Backend::history_memory() const
+{
+  return impl_->undo_stack.data_size_all();
 }
 
 bool Backend::history_can_undo() const
 {
-  return impl_->undo_history.size() >= 2;
+  return impl_->undo_stack.can_undo();
 }
 
 bool Backend::history_can_redo() const
 {
-  return !impl_->redo_history.empty();
+  return impl_->undo_stack.can_redo();
 }
 
 bool Backend::initialize()
@@ -1179,8 +1336,7 @@ void Backend::shutdown()
   impl_->layer_created = false;
   impl_->document_created = false;
   impl_->pending_points.clear();
-  history_snapshot_clear(impl_->undo_history);
-  history_snapshot_clear(impl_->redo_history);
+  impl_->undo_stack.clear();
 
 #ifndef __ANDROID__
   if (impl_->gpu_initialized) {
@@ -1282,8 +1438,7 @@ bool Backend::reset_document()
   impl_->frame_created = false;
   impl_->stroke_open = false;
   impl_->pending_points.clear();
-  history_snapshot_clear(impl_->undo_history);
-  history_snapshot_clear(impl_->redo_history);
+  impl_->undo_stack.clear();
 
   if (!create_document() || !create_layer("Layer 1") || !create_frame(1)) {
     return false;

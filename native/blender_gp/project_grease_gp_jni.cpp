@@ -1352,6 +1352,37 @@ Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryUndoCount(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryPush(
+    JNIEnv *env, jobject, jlong handle, jstring name)
+{
+  const char *text = name ? env->GetStringUTFChars(name, nullptr) : nullptr;
+  const bool ok = project_grease_gp_history_push(from_handle(handle), text) != 0;
+  if (text) env->ReleaseStringUTFChars(name, text);
+  return ok;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryActiveIndex(
+    JNIEnv *, jobject, jlong handle)
+{
+  return project_grease_gp_history_active_index(from_handle(handle));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryStepName(
+    JNIEnv *env, jobject, jlong handle, jint index)
+{
+  return env->NewStringUTF(project_grease_gp_history_step_name(from_handle(handle), index));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryJump(
+    JNIEnv *, jobject, jlong handle, jint index)
+{
+  return project_grease_gp_history_jump(from_handle(handle), index) != 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_smitnk_projectgrease_nativebridge_GPNative_nativeHistoryCanRedo(
     JNIEnv *, jobject, jlong handle)
 {

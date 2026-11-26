@@ -452,6 +452,26 @@ int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle)
   if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return 0;
   return handle->backend.history_can_redo() ? 1 : 0;
 }
+int project_grease_gp_history_push(ProjectGreaseGPHandle *handle, const char *name)
+{
+  return ensure_ready(handle) && handle->backend.history_record(name) ? 1 : 0;
+}
+int project_grease_gp_history_active_index(const ProjectGreaseGPHandle *handle)
+{
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return -1;
+  return handle->backend.history_active_index();
+}
+const char *project_grease_gp_history_step_name(const ProjectGreaseGPHandle *handle, int index)
+{
+  static thread_local std::string name;
+  if (!ensure_ready(const_cast<ProjectGreaseGPHandle *>(handle))) return "";
+  name = handle->backend.history_step_name(index);
+  return name.c_str();
+}
+int project_grease_gp_history_jump(ProjectGreaseGPHandle *handle, int index)
+{
+  return ensure_replace(handle) && handle->backend.history_jump(index) ? 1 : 0;
+}
 int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic)
 {
   if (!ensure_operator(handle) || !points || count < 2) return 0;

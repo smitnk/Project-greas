@@ -137,12 +137,18 @@ class Backend {
   bool trim_stroke_points(int index, int index_from, int index_to, bool keep_single_point);
   // Real Legacy GP data snapshots used for editor undo/redo. Blender 3.6.23
   // uses BKE_gpencil_data_duplicate(..., internal_copy=true) for undo buffers.
+  // Blender's undo system (project_grease_undo.h): named steps, per-mode types, jump.
   bool history_reset();
-  bool history_record();
+  bool history_record(const char *name = nullptr);
   bool history_undo();
   bool history_redo();
+  bool history_jump(int index); // Edit > Undo History
   bool history_can_undo() const;
-  int history_undo_count() const; // snapshots kept, current state included
+  int history_undo_count() const; // steps kept, current state included
+  int history_active_index() const;
+  std::string history_step_name(int index) const;
+  bool history_step_skip(int index) const;
+  size_t history_memory() const; // bytes the steps own (shared chunks once)
   bool history_can_redo() const;
   bool split_stroke(int index, int before_index);
   bool create_polyline(const StrokePoint* points, int count, const StrokeStyle& style, bool cyclic);

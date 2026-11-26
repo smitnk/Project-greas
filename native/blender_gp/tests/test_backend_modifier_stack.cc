@@ -1105,7 +1105,8 @@ int main()
     z.shutdown();
   }
 
-  /* --- undo history bounds: 32 steps (U.undosteps) and a 4M stored-point budget --- */
+  /* --- undo history bounds: 32 undo steps (U.undosteps, ED_undo_push) plus the current one, and
+   * U.undomemory over the memory steps own (memfile chunks shared between steps count once) --- */
   {
     Backend h;
     CHECK(h.initialize() && h.create_document() && h.create_layer("H") && h.create_frame(1));
@@ -1116,9 +1117,9 @@ int main()
     }
     int undos = 0;
     while (h.history_undo()) undos++;
-    CHECK(undos == 31);          /* 32 snapshots kept */
-    CHECK(h.stroke_count() == 9); /* the oldest kept step: strokes 1..9 */
-    CHECK(h.history_redo() && h.stroke_count() == 10);
+    CHECK(undos == 32);          /* 33 steps kept */
+    CHECK(h.stroke_count() == 8); /* the oldest kept step: strokes 1..8 */
+    CHECK(h.history_redo() && h.stroke_count() == 9);
 
     Backend big;
     CHECK(big.initialize() && big.create_document() && big.create_layer("B") && big.create_frame(1));
@@ -1129,12 +1130,14 @@ int main()
     for (int i = 0; i < 12; i++) {
       CHECK(big.add_stroke(pts.data(), static_cast<int>(pts.size()), info) && big.history_record());
     }
-    /* 13 steps (< 32) holding ~0.1M..1.2M points; only the newest 3 fit in 4M (1.2+1.1+1.0M) */
+    /* 13 steps holding 0.1M..1.2M points: each step owns only its new stroke (~8 MB), so all 12
+     * undos fit in U.undomemory (full snapshots would need ~500 MB). */
+    CHECK(big.history_memory() < size_t(13) * 100000 * 100);
     undos = 0;
     while (big.history_undo()) undos++;
-    CHECK(undos == 2);
-    CHECK(big.point_count() == 1 + 10 * 100000);
-    CHECK(big.history_redo() && big.point_count() == 1 + 11 * 100000);
+    CHECK(undos == 12);
+    CHECK(big.point_count() == 1);
+    CHECK(big.history_redo() && big.point_count() == 1 + 100000);
     big.shutdown();
     h.shutdown();
   }

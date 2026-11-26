@@ -131,6 +131,11 @@ int project_grease_gp_history_redo(ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_can_undo(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_undo_count(const ProjectGreaseGPHandle *handle);
 int project_grease_gp_history_can_redo(const ProjectGreaseGPHandle *handle);
+/* Blender's undo system: a named push (operator name), the active step, step names, jump. */
+int project_grease_gp_history_push(ProjectGreaseGPHandle *handle, const char *name);
+int project_grease_gp_history_active_index(const ProjectGreaseGPHandle *handle);
+const char *project_grease_gp_history_step_name(const ProjectGreaseGPHandle *handle, int index); /* valid until the next call */
+int project_grease_gp_history_jump(ProjectGreaseGPHandle *handle, int index);
 int project_grease_gp_create_polyline(ProjectGreaseGPHandle *handle, const ProjectGreaseGPPoint *points, int count, int material_index, float thickness, int cyclic);
 int project_grease_gp_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius);
 int project_grease_gp_soft_erase_at(ProjectGreaseGPHandle *handle, float x, float y, float radius, float strength);

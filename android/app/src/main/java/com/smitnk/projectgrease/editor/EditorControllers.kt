@@ -25,6 +25,10 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun historyCanUndo() = handle != 0L && GPNative.nativeHistoryCanUndo(handle)
     fun historyCanRedo() = handle != 0L && GPNative.nativeHistoryCanRedo(handle)
     fun historyUndoCount() = if (handle != 0L) GPNative.nativeHistoryUndoCount(handle) else 0
+    fun historyPush(name:String) = handle != 0L && GPNative.nativeHistoryPush(handle, name)
+    fun historyActiveIndex() = if (handle != 0L) GPNative.nativeHistoryActiveIndex(handle) else -1
+    fun historyStepName(index:Int):String = if (handle != 0L) GPNative.nativeHistoryStepName(handle, index) else ""
+    fun historyJump(index:Int) = handle != 0L && GPNative.nativeHistoryJump(handle, index)
     fun detach() { handle = 0L }
     fun layerCount() = if (handle != 0L) GPNative.nativeLayerCount(handle) else 0
     fun activeLayer() = if (handle != 0L) GPNative.nativeActiveLayer(handle) else -1
@@ -159,6 +163,11 @@ class NativeEditorBridge : ModifierNative, FxNative {
     fun randomizeStrokeColor(index:Int) = legacyGeometry(index, 17)
 }
 
+/**
+ * Blender's undo stack (native project_grease_undo.h, a port of undo_system.cc): every step has the
+ * name of the operator that pushed it (ED_undo_push(C, op->type->name)), Edit > Undo History jumps
+ * to one, and the native types are per mode (armature Edit mode steps hold only the bones).
+ */
 class HistoryController(private val native: NativeEditorBridge) {
     val canUndo: Boolean get() = native.historyCanUndo()
     val canRedo: Boolean get() = native.historyCanRedo()
@@ -169,29 +178,40 @@ class HistoryController(private val native: NativeEditorBridge) {
      */
     var captureExtras: () -> Any? = { null }
     var restoreExtras: (Any?) -> Unit = {}
-    /** One list of steps (the Kotlin-side extras of each native step); [at] is the step the document is on, so undo / redo cannot desync two stacks. */
+    /** The Kotlin-side extras of each native step, index for index; [at] is the native active step. */
     private val steps = ArrayList<Any?>()
     private var at = -1
     internal val stepCount: Int get() = steps.size
     internal val stepIndex: Int get() = at
+    /** Step names, oldest first (Edit > Undo History); [stepIndex] is the current one. */
+    val stepNames: List<String> get() = (0 until native.historyUndoCount()).map(native::historyStepName)
+    /**
+     * The operator that just ran names the next push, as Blender pushes ot->name after it.
+     * shortcut: an operator that ran without pushing leaves its name for the next unnamed push; name
+     * that call site if it shows up wrong in Undo History.
+     */
+    var nextName: String? = null
+    private var batchName: String? = null
 
     // History is the actual Blender Legacy GP datablock state, not a UI flag.
     /** Called whenever an edit is recorded (or queued in a batch): keeps the document's dirty flag exact. */
     var onRecorded: () -> Unit = {}
     val isBatching: Boolean get() = batchDepth > 0
-    fun markEdit(): Boolean {
+    fun markEdit(name: String? = null): Boolean {
         onRecorded()
-        if (batchDepth > 0) { batchChanged = true; return true }
-        return record()
+        val n = name ?: nextName
+        nextName = null
+        if (batchDepth > 0) { batchChanged = true; if (n != null) batchName = n; return true }
+        return record(n ?: DEFAULT_NAME)
     }
-    private fun record(): Boolean {
-        val ok = native.historyRecord()
+    private fun record(name: String): Boolean {
+        val ok = native.historyPush(name)
         if (ok) {
             while (steps.size > at + 1) steps.removeAt(steps.size - 1) // a new step drops the redo tail
             steps += captureExtras(); at = steps.size - 1
-            // native drops its oldest snapshots past 32 steps or its point budget: drop the same ones here
+            // native drops its oldest steps past U.undosteps or U.undomemory: drop the same ones here
             val kept = native.historyUndoCount()
-            while (at + 1 > kept && at > 0) { steps.removeAt(0); at-- }
+            while (steps.size > kept && at > 0) { steps.removeAt(0); at-- }
         }
         return ok
     }
@@ -203,7 +223,7 @@ class HistoryController(private val native: NativeEditorBridge) {
      * One undo step for a whole gesture (Blender's modal transform pushes a single undo on confirm):
      * edits between the outermost beginBatch and its endBatch are recorded once, at the end.
      */
-    fun beginBatch() { if (batchDepth == 0) batchChanged = false; batchDepth++ }
+    fun beginBatch(name: String? = null) { if (batchDepth == 0) { batchChanged = false; batchName = null }; if (name != null) batchName = name; batchDepth++ }
     /** Closes one level; the step is recorded when the outermost level closes (true if one was recorded). */
     fun endBatch(): Boolean {
         if (batchDepth == 0) return false
@@ -211,7 +231,7 @@ class HistoryController(private val native: NativeEditorBridge) {
         if (batchDepth > 0) return false
         val changed = batchChanged
         batchChanged = false
-        return if (changed) record() else false
+        return if (changed) record(batchName ?: DEFAULT_NAME) else false
     }
     /** Closes every open level at once (undo, reset, surface loss): what the batch changed is recorded first. */
     fun endAllBatches(): Boolean {
@@ -220,23 +240,50 @@ class HistoryController(private val native: NativeEditorBridge) {
         return endBatch()
     }
     fun reset(): Boolean {
-        batchDepth = 0; batchChanged = false
+        batchDepth = 0; batchChanged = false; nextName = null
         steps.clear(); at = -1
         return native.historyReset().also { if (it) { steps += captureExtras(); at = 0 } }
+    }
+    /** After native moved the active step: restore that step's Kotlin extras. */
+    private fun applyActive() {
+        val i = native.historyActiveIndex()
+        if (i in steps.indices && i != at) { at = i; restoreExtras(steps[i]) }
     }
     fun undo(): Boolean {
         endAllBatches() // an open batch would record the post-undo state as a new step and clear redo
         if (!native.historyUndo()) return false
-        if (at > 0) restoreExtras(steps[--at])
-        return true
+        applyActive(); return true
     }
     fun redo(): Boolean {
         endAllBatches()
         if (!native.historyRedo()) return false
-        if (at < steps.size - 1) restoreExtras(steps[++at])
-        return true
+        applyActive(); return true
     }
-    companion object { const val MAX_STEPS = 32 } // kMaxHistory of the native history
+    /** Edit > Undo History: load step [index] (BKE_undosys_step_load_from_index). */
+    fun jump(index: Int): Boolean {
+        endAllBatches()
+        if (index == at) return true
+        if (!native.historyJump(index)) return false
+        applyActive(); return true
+    }
+    companion object {
+        const val MAX_STEPS = 32 // U.undosteps: undoable steps, the current one comes on top
+        const val DEFAULT_NAME = "Edit"
+        // Blender's ot->name where it is not the idname's words (TRANSFORM_OT_translate is "Move", ...)
+        private val OP_NAMES = mapOf("translate" to "Move", "resize" to "Resize", "select_all" to "(De)select All",
+            "draw" to "Grease Pencil Draw", "delete" to "Delete", "dissolve" to "Dissolve", "duplicate" to "Duplicate Strokes",
+            "extrude" to "Extrude Stroke Points", "copy" to "Copy Strokes", "paste" to "Paste Strokes")
+        /** The undo name of operator [idname] (ot->name): GPENCIL_OT_stroke_smooth is "Stroke Smooth". */
+        fun opName(idname: String): String {
+            val op = idname.substringAfter("_OT_")
+            return OP_NAMES[op] ?: op.split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercaseChar) }
+        }
+        /** ToolSession tools: GPENCIL_OT_draw, sculpt_paint, vertex_paint, weight_paint. */
+        fun toolName(tool: Int) = when (tool) {
+            0 -> "Grease Pencil Draw"; 1 -> "Stroke Sculpt"; 2 -> "Stroke Vertex Paint"; 3 -> "Stroke Weight Paint"
+            else -> DEFAULT_NAME
+        }
+    }
 }
 
 class DocumentController {
@@ -837,7 +884,7 @@ class EditorController {
     }
     val animation=AnimationController(native) { render() }
     /** Grease Pencil rig (armature, pose, bone keys, Armature modifier, bind); edits then history.markEdit(). */
-    val rig=RigController(native)
+    val rig=RigController(native).also { it.onUndoName = { n -> history.nextName = n } }
     val materials=MaterialController()
     val brushes=BrushController(materials)
     /** The mode set by setMode; never Sculpt (the Sculpt tool is Sculpt mode). */
@@ -1105,7 +1152,7 @@ class EditorController {
         if ((System.nanoTime() - t0) / 1_000_000 >= 120)
             noteIfSlow("tool $tool phase $phase ($count samples) [${GPNative.nativeLastFrameInfo(rendererHandle)}]", t0, t0)
         // a previous gesture whose UP never came was closed natively with edits: record that as its own step
-        if (phase == ToolSession.PHASE_BEGIN && (result and ToolSession.RESULT_ENDED) != 0) { history.markEdit(); document.markDirty() }
+        if (phase == ToolSession.PHASE_BEGIN && (result and ToolSession.RESULT_ENDED) != 0) { history.markEdit(HistoryController.toolName(sessionTool)); document.markDirty() }
         if (phase != ToolSession.PHASE_MOVE)
             com.smitnk.projectgrease.CrashLog.event("SESSION tool $tool phase $phase -> result $result, mode $mode" +
                 (if (tool == ToolSession.TOOL_VERTEX_PAINT) ", target $vertexPaintTarget, mask $vertexSelectMask, selected ${native.selectedPointCount()}, colour ${Integer.toHexString(materials.colorArgb)}" else ""))
@@ -1124,7 +1171,7 @@ class EditorController {
                     }
                 }
                 // END, and a CANCEL that left edits behind (native keeps the dabs already applied), is one undo step
-                if (phase == ToolSession.PHASE_END || sessionGestureChanged || (result and ToolSession.RESULT_ENDED) != 0) { val t1 = System.nanoTime(); history.markEdit(); document.markDirty(); noteIfSlow("undo step", t1, t1) }
+                if (phase == ToolSession.PHASE_END || sessionGestureChanged || (result and ToolSession.RESULT_ENDED) != 0) { val t1 = System.nanoTime(); history.markEdit(HistoryController.toolName(tool)); document.markDirty(); noteIfSlow("undo step", t1, t1) }
             }
             sessionTool = -1
             sessionGestureChanged = false
@@ -1422,11 +1469,14 @@ class EditorController {
     /** object.mode_set / posemode_toggle / armature editmode: Pose and armature Edit need a rig. */
     private fun rigModeToggle(idname:String):Boolean {
         com.smitnk.projectgrease.CrashLog.event("OP $idname")
+        val wasEdit = rig.exists && rig.mode == RigController.MODE_EDIT
         when (idname) {
             "OBJECT_OT_mode_set" -> { if (rig.exists) rig.setMode(RigController.MODE_OBJECT); objectMode = true }
             "OBJECT_OT_posemode_toggle" -> { if (!rig.exists || !rig.setMode(RigController.MODE_POSE)) return false; objectMode = false; rigActive = true }
             else -> { if (!rig.setMode(RigController.MODE_EDIT)) return false; objectMode = false; rigActive = true }
         }
+        // entering armature Edit mode starts its own undo type, leaving it is one memfile step (ED_undo_push)
+        if (wasEdit != (rig.exists && rig.mode == RigController.MODE_EDIT)) history.markEdit("Toggle Edit Mode")
         render(); return true
     }
     /** Object mode: make the armature (true) or the GP object active. */
@@ -3808,7 +3858,7 @@ class EditorController {
         val actcol = (r ushr 16) and 0xffff
         if (finished && actcol >= 1 && actcol - 1 != materials.activeMaterial) selectMaterial(actcol - 1)
         com.smitnk.projectgrease.CrashLog.event("OP $idname ${props.take(8).joinToString()}${if (props.size > 8) " … (${props.size} values)" else ""} -> ${if (finished) "FINISHED" else "CANCELLED"}")
-        if (finished && ((r shr 8) and 2) != 0) { history.markEdit(); document.markDirty() }
+        if (finished && ((r shr 8) and 2) != 0) { history.markEdit(HistoryController.opName(idname)); document.markDirty() }
         if (finished) render()
         return finished
     }
@@ -4222,8 +4272,18 @@ class EditorController {
     fun undo():Boolean {
         if (warpActive) { endWarp(false); return true } // undo during a warp cancels it
         cancelActiveGestures()
-        val ok = history.undo()
+        return afterHistoryStep(history.undo())
+    }
+    /** Edit > Undo History: jump to step [index]. */
+    fun undoHistoryJump(index:Int):Boolean {
+        if (warpActive) endWarp(false)
+        cancelActiveGestures()
+        return afterHistoryStep(history.jump(index))
+    }
+    private fun afterHistoryStep(ok:Boolean):Boolean {
         if (ok) {
+            // a memfile step from before armature Edit mode is Object mode again (the rig's mode is in it)
+            if (rigActive && rig.exists) objectMode = rig.mode == RigController.MODE_OBJECT
             if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
             reapplyOnion()
             restoreSelectedStroke()
@@ -4236,16 +4296,7 @@ class EditorController {
     fun redo():Boolean {
         if (warpActive) endWarp(true)
         cancelActiveGestures()
-        val ok = history.redo()
-        if (ok) {
-            if (bezierEditing) bezierEditing = native.handle != 0L && GPNative.nativeCurveEditOn(native.handle)
-            reapplyOnion()
-            restoreSelectedStroke()
-            animation.refresh()
-            document.markDirty()
-            render()
-        }
-        return ok
+        return afterHistoryStep(history.redo())
     }
 
     // =========================================================================================

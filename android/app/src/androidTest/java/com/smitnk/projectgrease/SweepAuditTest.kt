@@ -98,20 +98,21 @@ class SweepAuditTest : SweepBase() {
         assertEquals("the redo count is unchanged", redo0, redoCount())
     }
 
-    /** 40 recorded steps: native keeps 32 snapshots (31 undos), and the Kotlin steps trim with it, so every
-     *  undo lands on the document of the step it names and the Kotlin cursor stops where native does. */
+    /** 40 recorded steps: native keeps U.undosteps (32) undoable steps plus the current one, as Blender's
+     *  ED_undo_push does, and the Kotlin steps trim with it, so every undo lands on the document of the
+     *  step it names and the Kotlin cursor stops where native does. */
     @Test fun historyCapMatchesNativeAfterFortySteps() {
         onUi { controller.selectTool(GreaseTool.DRAW) }
         val docs = ArrayList<String>()
         for (i in 0 until 40) { line(60f + i * 15f); docs += signature() }
         val max = HistoryController.MAX_STEPS
-        assertEquals("Kotlin cursor matches the native cap", max - 1, onUi { controller.history.stepIndex })
+        assertEquals("Kotlin cursor matches the native cap", max, onUi { controller.history.stepIndex })
         var undos = 0
         while (onUi { controller.undo() }) {
             undos++
             assertEquals("undo $undos restores step ${40 - undos}", docs[39 - undos], signature())
         }
-        assertEquals("undo works exactly as often as native allows", max - 1, undos)
+        assertEquals("undo works exactly as often as native allows", max, undos)
         assertEquals("the Kotlin cursor is at the oldest kept step", 0, onUi { controller.history.stepIndex })
     }
 }

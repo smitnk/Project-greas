@@ -62,7 +62,16 @@ class RigController(private val native: NativeEditorBridge) {
     }
 
     private fun cmd(c: Int, bone: Int = -1, vararg args: Float, name: String? = null) =
-        native.armatureCommand(c, bone, if (args.isEmpty()) null else args, name)
+        native.armatureCommand(c, bone, if (args.isEmpty()) null else args, name).also { UNDO_NAMES[c]?.let(onUndoName) }
+    /** The Blender operator name of the command that just ran: names the undo step the caller pushes. */
+    var onUndoName: (String) -> Unit = {}
+    private val UNDO_NAMES = mapOf(CMD_CREATE to "Add Armature", CMD_REMOVE to "Delete", CMD_BONE_ADD to "Add Bone",
+        CMD_EXTRUDE to "Extrude", CMD_EDIT_SELECT to "Select", CMD_EDIT_TRANSLATE to "Move", CMD_EDIT_ROTATE to "Rotate",
+        CMD_EDIT_SCALE to "Resize", CMD_PARENT_SET to "Make Parent", CMD_PARENT_CLEAR to "Clear Parent",
+        CMD_DELETE to "Delete Selected Bone(s)", CMD_POSE_SELECT to "Select", CMD_POSE_TRANSLATE to "Move",
+        CMD_POSE_ROTATE to "Rotate", CMD_POSE_SCALE to "Resize", CMD_POSE_CLEAR to "Clear User Transforms",
+        CMD_POSE_PASTE to "Paste Pose", CMD_KEY_INSERT to "Insert Keyframe", CMD_KEY_DELETE to "Delete Keyframe",
+        CMD_BIND to "Make Parent", CMD_MIRROR_X to "Symmetrize")
 
     val exists get() = boneCount >= 0
     /** -1 without a rig. */

@@ -1969,6 +1969,9 @@ private enum class StudioPopup { NONE, OPTIONS, COLOR, MODE, BRUSH }
             item(PgIcons.Animation,"How to rig","8 short steps: armature, bones, bind, pose, keys","rigGuide"){onSheet(Sheet.RIG_GUIDE)}
             item(PgIcons.Movie,"Timeline tools","Interpolate, keyframes, markers, preview range, FPS","timeline"){onSheet(Sheet.TIMELINE)}
             item(PgIcons.Edit,"Edit actions","Stroke operators on the selection","edit"){onSheet(Sheet.MORE)}
+            var undoHistory by remember{mutableStateOf(false)}
+            item(PgIcons.Undo,"Undo History","Every step by name: tap one to go back or forward to it","undoHistory"){undoHistory=true}
+            if(undoHistory) UndoHistoryDialog(controller){undoHistory=false;onDismiss()}
             item(PgIcons.Image,"Import photo","A picture to draw over: then resize, squash, rotate it with the box","importPhoto"){onSheet(Sheet.IMPORT_PHOTO)}
             item(PgIcons.Movie,"Import video","Pick a video, trim it, place it on the timeline","importVideo"){onSheet(Sheet.IMPORT_VIDEO)}
             item(PgIcons.MusicNote,"Import audio","Pick audio files, trim them, place them on the timeline","importAudio"){onSheet(Sheet.IMPORT_AUDIO)}
